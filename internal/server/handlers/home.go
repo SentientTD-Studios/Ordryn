@@ -60,17 +60,8 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 	searchQuery := r.URL.Query().Get("search")
 	// Optional project filter: empty = all, "0" or "none" = no project, numeric id = specific project
 	projectParam := r.URL.Query().Get("project")
-	var projectFilter *int
-	if projectParam != "" {
-		if projectParam == "none" || projectParam == "0" {
-			zero := 0
-			projectFilter = &zero
-		} else {
-			if pid, err := strconv.Atoi(projectParam); err == nil {
-				projectFilter = &pid
-			}
-		}
-	}
+	projectFilter := parseProjectFilter(projectParam)
+	statusFilter := requestStatusFilter(r)
 
 	loggedOut := r.URL.Query().Get("logged_out") == "true"
 	accountCreated := r.URL.Query().Get("account_created") == "true"
@@ -93,15 +84,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if searchQuery != "" {
-		taskList, totalTasks, err = tasks.SearchTasksForUser(page, pageSize, searchQuery, userID, timezone)
-	} else {
-		if projectFilter != nil {
-			taskList, totalTasks, err = tasks.ReturnPaginationForUserWithProject(page, pageSize, userID, timezone, projectFilter)
-		} else {
-			taskList, totalTasks, err = tasks.ReturnPaginationForUser(page, pageSize, userID, timezone)
-		}
-	}
+	taskList, totalTasks, err = fetchTasksForFilters(page, pageSize, searchQuery, userID, timezone, projectFilter, statusFilter)
 
 	if err != nil {
 		if w.Header().Get("Content-Type") == "" {
@@ -139,8 +122,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 	pagination := utils.GetPaginationData(page, pageSize, totalTasks, uid)
 
 	// Compute completed/incomplete counts (may be scoped to project below)
-	completedCount := utils.GetCompletedTasksCount(userID)
-	incompleteCount := utils.GetIncompleteTasksCount(userID)
+	completedCount, incompleteCount := completedIncompleteCounts(userID, projectFilter)
 
 	// Check for password reset success parameter
 	passwordResetSuccess := r.URL.Query().Get("password_reset") == "success"
@@ -186,40 +168,11 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			tplContext["Projects"] = projList
 		}
-		// If projectFilter is set, compute completed/incomplete counts scoped to project
-		if projectFilter != nil {
-			pool, err := storage.OpenDatabase()
-			if err == nil {
-				defer storage.CloseDatabase(pool)
-				projectCond := ""
-				args := []interface{}{*userID}
-				if *projectFilter == 0 {
-					projectCond = " AND project_id IS NULL"
-				} else {
-					projectCond = " AND project_id = $2"
-					args = append(args, *projectFilter)
-				}
-				var ccount int
-				var icount int
-				if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true"+projectCond, args...).Scan(&ccount); err == nil {
-					completedCount = ccount
-				} else {
-					completedCount = 0
-				}
-				if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)"+projectCond, args...).Scan(&icount); err == nil {
-					incompleteCount = icount
-				} else {
-					incompleteCount = 0
-				}
-				// update context values
-				tplContext["CompletedTasks"] = completedCount
-				tplContext["IncompleteTasks"] = incompleteCount
-			}
-		}
 	}
 
 	// Expose the active project filter to the template so the toolbar select can reflect it
 	tplContext["ProjectFilter"] = projectParam
+	tplContext["StatusFilter"] = statusFilter
 
 	// Render the tasks and pagination controls
 	if err := utils.RenderTemplate(w, r, "index.html", tplContext); err != nil {
@@ -280,6 +233,9 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	email, _, permissions, timezone, loggedIn, _ := utils.GetSessionUserWithTimezone(r)
 
 	searchQuery := r.FormValue("search")
+	projectParam := r.FormValue("project")
+	projectFilter := parseProjectFilter(projectParam)
+	statusFilter := requestStatusFilter(r)
 
 	if loggedIn {
 		if uid := utils.GetSessionUserID(r); uid != nil {
@@ -291,10 +247,8 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	if searchQuery != "" {
 		isSearching = true
-		taskList, totalTasks, err = tasks.SearchTasksForUser(page, pageSize, searchQuery, userID, timezone)
-	} else {
-		taskList, totalTasks, err = tasks.ReturnPaginationForUser(page, pageSize, userID, timezone)
 	}
+	taskList, totalTasks, err = fetchTasksForFilters(page, pageSize, searchQuery, userID, timezone, projectFilter, statusFilter)
 
 	if err != nil {
 		if w.Header().Get("Content-Type") == "" {
@@ -330,6 +284,17 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pagination := utils.GetPaginationData(page, pageSize, totalTasks, uid)
 
+	completedCount, incompleteCount := completedIncompleteCounts(userID, projectFilter)
+	projectsList := make([]map[string]interface{}, 0)
+	if loggedIn && userID != nil {
+		if projs, perr := storage.GetProjectsForUser(*userID); perr == nil {
+			for _, p := range projs {
+				sel := projectFilter != nil && *projectFilter == p.ID
+				projectsList = append(projectsList, map[string]interface{}{"ID": p.ID, "Name": p.Name, "Selected": sel})
+			}
+		}
+	}
+
 	context := map[string]interface{}{
 		"FavoriteTasks":    favs,
 		"Tasks":            nonFavs,
@@ -349,8 +314,11 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		"LoggedOut":        loggedOut,
 		"IsSearching":      isSearching,
 		"TotalTasks":       totalTasks,
-		"CompletedTasks":   utils.GetCompletedTasksCount(userID),
-		"IncompleteTasks":  utils.GetIncompleteTasksCount(userID),
+		"CompletedTasks":   completedCount,
+		"IncompleteTasks":  incompleteCount,
+		"ProjectFilter":    projectParam,
+		"StatusFilter":     statusFilter,
+		"Projects":         projectsList,
 	}
 
 	if err := utils.RenderTemplate(w, r, "pagination.html", context); err != nil {

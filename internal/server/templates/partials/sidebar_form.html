@@ -61,6 +61,7 @@
     {{end}}
     <input type="hidden" name="currentPage" value="{{.CurrentPage}}" />
     <input type="hidden" name="project" value="{{.ProjectFilter}}" />
+    <input type="hidden" name="status" value="{{.StatusFilter}}" />
     <button type="submit" class="btn btn-primary w-100 mt-3">
         {{if .SubmitText}}{{.SubmitText}}{{else}}Add Task{{end}}
     </button>
