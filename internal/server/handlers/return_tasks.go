@@ -5,7 +5,6 @@ import (
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/tasks"
-	"context"
 	"net/http"
 	"strconv"
 )

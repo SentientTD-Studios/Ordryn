@@ -82,61 +82,8 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 
 	// Determine active project filter
 	projectParam := r.URL.Query().Get("project")
-	projectFilter := parseProjectFilter(projectParam)
 	statusFilter := requestStatusFilter(r)
 
-	{
-		pageSize := utils.AppConstants.PageSize
-		if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
-			if val, ok := sess.Values["items_per_page"]; ok {
-				switch tv := val.(type) {
-				case int:
-					if tv > 0 {
-						pageSize = tv
-					}
-				case int64:
-					if int(tv) > 0 {
-						pageSize = int(tv)
-					}
-				case float64:
-					if int(tv) > 0 {
-						pageSize = int(tv)
-					}
-				case string:
-					if v, err := strconv.Atoi(tv); err == nil && v > 0 {
-						pageSize = v
-					}
-				}
-			}
-		}
-		if err := renderFilteredTaskListPartial(w, r, currentPage, pageSize, "", &userID, timezone, loggedIn, projectParam, statusFilter); err != nil {
-			http.Error(w, "Error rendering tasks: "+err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// Get total number of tasks for this user after deletion (scoped to project if filter active)
-	var totalTasks int
-	if projectFilter == nil {
-		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1", userID).Scan(&totalTasks)
-	} else {
-		projectCond := ""
-		args := []interface{}{userID}
-		if *projectFilter == 0 {
-			projectCond = " AND project_id IS NULL"
-		} else {
-			projectCond = " AND project_id = $2"
-			args = append(args, *projectFilter)
-		}
-		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+projectCond, args...).Scan(&totalTasks)
-	}
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Error counting tasks")
-		return
-	}
-
-	// Calculate last page
 	pageSize := utils.AppConstants.PageSize
 	if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
 		if val, ok := sess.Values["items_per_page"]; ok {
@@ -160,110 +107,8 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	lastPage := (totalTasks + pageSize - 1) / pageSize
-	if lastPage < 1 {
-		lastPage = 1
-	}
-
-	// Determine which page to reload - clamp to valid range
-	reloadPage := currentPage
-	if currentPage > lastPage {
-		reloadPage = lastPage
-	}
-	if reloadPage < 1 {
-		reloadPage = 1
-	}
-
-	// Fetch tasks for the reload page (respect project filter)
-	var taskList []tasks.Task
-	if projectFilter != nil {
-		taskList, totalTasks, err = tasks.ReturnPaginationForUserWithProject(reloadPage, pageSize, &userID, timezone, projectFilter)
-	} else {
-		taskList, totalTasks, err = tasks.ReturnPaginationForUser(reloadPage, pageSize, &userID, timezone)
-	}
-	if err != nil {
-		http.Error(w, "Error fetching tasks: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Split into favorites and non-favorites and set page number
-	favs := make([]tasks.Task, 0)
-	nonFavs := make([]tasks.Task, 0)
-	for i := range taskList {
-		taskList[i].Page = reloadPage
-		if taskList[i].IsFavorite {
-			favs = append(favs, taskList[i])
-		} else {
-			nonFavs = append(nonFavs, taskList[i])
-		}
-	}
-
-	// Get pagination data
-	pagination := utils.GetPaginationData(reloadPage, pageSize, totalTasks, userID)
-
-	// Compute completed/incomplete counts scoped to project if needed
-	completedCount := utils.GetCompletedTasksCount(&userID)
-	incompleteCount := utils.GetIncompleteTasksCount(&userID)
-	if projectFilter != nil {
-		pool, err := storage.OpenDatabase()
-		if err == nil {
-			defer storage.CloseDatabase(pool)
-			projectCond := ""
-			args := []interface{}{userID}
-			if *projectFilter == 0 {
-				projectCond = " AND project_id IS NULL"
-			} else {
-				projectCond = " AND project_id = $2"
-				args = append(args, *projectFilter)
-			}
-			if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true"+projectCond, args...).Scan(&completedCount); err != nil {
-				completedCount = 0
-			}
-			if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)"+projectCond, args...).Scan(&incompleteCount); err != nil {
-				incompleteCount = 0
-			}
-		}
-	}
-
-	// Fetch projects and mark selected
-	projectsList := make([]map[string]interface{}, 0)
-	if projs, perr := storage.GetProjectsForUser(userID); perr == nil {
-		for _, p := range projs {
-			sel := false
-			if projectFilter != nil && *projectFilter == p.ID {
-				sel = true
-			}
-			projectsList = append(projectsList, map[string]interface{}{"ID": p.ID, "Name": p.Name, "Selected": sel})
-		}
-	}
-
-	// Create context for rendering
-	context := map[string]interface{}{
-		"FavoriteTasks":    favs,
-		"Tasks":            nonFavs,
-		"PreviousPage":     pagination.PreviousPage,
-		"NextPage":         pagination.NextPage,
-		"CurrentPage":      pagination.CurrentPage,
-		"PrevDisabled":     pagination.PrevDisabled,
-		"NextDisabled":     pagination.NextDisabled,
-		"TotalTasks":       totalTasks,
-		"LoggedIn":         loggedIn,
-		"TotalPages":       pagination.TotalPages,
-		"Pages":            pagination.Pages,
-		"HasRightEllipsis": pagination.HasRightEllipsis,
-		"PerPage":          pageSize,
-		"CompletedTasks":   completedCount,
-		"IncompleteTasks":  incompleteCount,
-		"Projects":         projectsList,
-		"ProjectFilter":    projectParam,
-	}
-
-	// Set response headers
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	// Render the updated pagination
-	if err := utils.RenderTemplate(w, r, "pagination.html", context); err != nil {
-		http.Error(w, "Error rendering pagination: "+err.Error(), http.StatusInternalServerError)
+	if err := renderFilteredTaskListPartial(w, r, currentPage, pageSize, "", &userID, timezone, loggedIn, projectParam, statusFilter); err != nil {
+		http.Error(w, "Error rendering tasks: "+err.Error(), http.StatusInternalServerError)
 	}
 }
 
