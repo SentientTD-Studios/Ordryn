@@ -86,6 +86,45 @@ thead th {
     font-weight: bold; /* Matches Bootstrap table head font weight */
 }
 
+.status-filter-button {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: var(--table-header-text) !important;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    font: inherit;
+    font-weight: 700;
+    line-height: 1.2;
+    max-width: 100%;
+    padding: 0;
+    text-align: left;
+    text-decoration: none;
+}
+
+.status-filter-button:hover,
+.status-filter-button:focus {
+    color: var(--table-header-text) !important;
+    opacity: 0.9;
+    text-decoration: none;
+}
+
+.status-filter-button:focus-visible {
+    outline: 2px solid var(--table-header-text);
+    outline-offset: 3px;
+}
+
+.status-filter-button .badge {
+    text-transform: none;
+}
+
+.status-filter-button .bi {
+    color: inherit;
+}
+
 tbody tr {
     transition: background-color var(--transition-time), color var(--transition-time);
 }
