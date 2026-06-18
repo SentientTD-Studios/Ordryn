@@ -115,6 +115,7 @@
                         id="search-form"
                         class="d-flex gap-2"
                         hx-post="{{basePath}}/search"
+                        hx-include="#project-filter, #status-filter"
                         hx-target="#task-container"
                         hx-swap="innerHTML"
                     >
@@ -147,7 +148,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     {{if .Projects}}
-                    <select id="project-filter" name="project" class="form-select w-auto" style="width:220px;" hx-get="{{basePath}}/api/fetch-tasks" hx-trigger="change" hx-target="#task-container" hx-swap="innerHTML">
+                    <select id="project-filter" name="project" class="form-select w-auto" style="width:220px;" hx-get="{{basePath}}/api/fetch-tasks" hx-trigger="change" hx-include="#status-filter" hx-target="#task-container" hx-swap="innerHTML">
                         <option value="" {{if eq .ProjectFilter ""}}selected{{end}}>All projects</option>
                         <option value="0" {{if or (eq .ProjectFilter "0") (eq .ProjectFilter "none")}}selected{{end}}>No project</option>
                         {{range .Projects}}

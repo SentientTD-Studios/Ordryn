@@ -48,15 +48,25 @@ export function initializeSidebarEventListeners() {
           // Ensure the form carries the current toolbar project filter so server can decide refresh
           try {
             let projField = tf.querySelector('input[name="project"]');
+            let statusField = tf.querySelector('input[name="status"]');
             const toolbar = document.querySelector("select#project-filter");
             const toolbarVal = toolbar ? toolbar.value : "";
+            const statusFilter = document.getElementById("status-filter");
+            const statusVal = statusFilter ? statusFilter.value : "";
             if (!projField) {
               projField = document.createElement("input");
               projField.type = "hidden";
               projField.name = "project";
               tf.appendChild(projField);
             }
+            if (!statusField) {
+              statusField = document.createElement("input");
+              statusField.type = "hidden";
+              statusField.name = "status";
+              tf.appendChild(statusField);
+            }
             projField.value = toolbarVal;
+            statusField.value = statusVal;
           } catch (e) {}
           const sbTitle = document.querySelector("#sidebar .sidebar-header h5");
           if (sbTitle) sbTitle.textContent = "Add Task";
@@ -83,20 +93,32 @@ export function initializeSidebarEventListeners() {
       // Ensure hidden project field exists and is kept up-to-date before submit
       try {
         let projField = tf.querySelector('input[name="project"]');
+        let statusField = tf.querySelector('input[name="status"]');
         const toolbar = document.querySelector("select#project-filter");
         const toolbarVal = toolbar ? toolbar.value : "";
+        const statusFilter = document.getElementById("status-filter");
+        const statusVal = statusFilter ? statusFilter.value : "";
         if (!projField) {
           projField = document.createElement("input");
           projField.type = "hidden";
           projField.name = "project";
           tf.appendChild(projField);
         }
+        if (!statusField) {
+          statusField = document.createElement("input");
+          statusField.type = "hidden";
+          statusField.name = "status";
+          tf.appendChild(statusField);
+        }
         projField.value = toolbarVal;
+        statusField.value = statusVal;
         // Update it on submit in case toolbar changed while form open
         tf.addEventListener("submit", function () {
           try {
             const tb = document.querySelector("select#project-filter");
             if (tb) projField.value = tb.value;
+            const sf = document.getElementById("status-filter");
+            statusField.value = sf ? sf.value : "";
           } catch (e) {}
         });
       } catch (e) {}

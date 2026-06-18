@@ -92,6 +92,7 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 
 	// Get the current project filter from query string to pass to form
 	projectFilterParam := r.URL.Query().Get("project")
+	statusFilter := requestStatusFilter(r)
 
 	data := struct {
 		FormTitle     string
@@ -105,6 +106,7 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 		DueDate       string
 		Projects      []map[string]interface{}
 		ProjectFilter string
+		StatusFilter  string
 	}{
 		FormTitle:     strings.TrimSpace(title),
 		Description:   strings.TrimSpace(description),
@@ -117,6 +119,7 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 		DueDate:       dueDate.String,
 		Projects:      projectsList,
 		ProjectFilter: projectFilterParam,
+		StatusFilter:  statusFilter,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -290,23 +293,12 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 	if activeProject == "" {
 		activeProject = strings.TrimSpace(r.URL.Query().Get("project"))
 	}
-	var projectFilter *int
-	if activeProject != "" {
-		if activeProject == "none" || activeProject == "0" {
-			zero := 0
-			projectFilter = &zero
-		} else if v, errc := strconv.Atoi(activeProject); errc == nil {
-			projectFilter = &v
-		}
-	}
+	projectFilter := parseProjectFilter(activeProject)
+	statusFilter := requestStatusFilter(r)
 
 	var taskList []tasks.Task
 	var totalTasks int
-	if projectFilter != nil {
-		taskList, totalTasks, err = tasks.ReturnPaginationForUserWithProject(page, pageSize, &userID, timezone, projectFilter)
-	} else {
-		taskList, totalTasks, err = tasks.ReturnPaginationForUser(page, pageSize, &userID, timezone)
-	}
+	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, projectFilter, statusFilter)
 	if err != nil {
 		http.Error(w, "Error fetching tasks after edit: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -338,34 +330,7 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Compute completed/incomplete counts respecting project filter
-	completedCount := utils.GetCompletedTasksCount(&userID)
-	incompleteCount := utils.GetIncompleteTasksCount(&userID)
-	if projectFilter != nil {
-		pool, err := storage.OpenDatabase()
-		if err == nil {
-			defer storage.CloseDatabase(pool)
-			projectCond := ""
-			args := []interface{}{userID}
-			if *projectFilter == 0 {
-				projectCond = " AND project_id IS NULL"
-			} else {
-				projectCond = " AND project_id = $2"
-				args = append(args, *projectFilter)
-			}
-			var ccount int
-			var icount int
-			if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true"+projectCond, args...).Scan(&ccount); err == nil {
-				completedCount = ccount
-			} else {
-				completedCount = 0
-			}
-			if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)"+projectCond, args...).Scan(&icount); err == nil {
-				incompleteCount = icount
-			} else {
-				incompleteCount = 0
-			}
-		}
-	}
+	completedCount, incompleteCount := completedIncompleteCounts(&userID, projectFilter)
 
 	// Fetch projects and mark selected
 	projectsList := make([]map[string]interface{}, 0)
@@ -397,6 +362,7 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		"PerPage":          pageSize,
 		"Projects":         projectsList,
 		"ProjectFilter":    activeProject,
+		"StatusFilter":     statusFilter,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

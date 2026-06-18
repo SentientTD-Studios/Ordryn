@@ -176,21 +176,24 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	if activeProject == "" {
 		activeProject = strings.TrimSpace(r.URL.Query().Get("project"))
 	}
-
-	var projectFilterPtr *int
-	if activeProject != "" {
-		if activeProject == "none" || activeProject == "0" {
-			zero := 0
-			projectFilterPtr = &zero
-		} else if v, errc := strconv.Atoi(activeProject); errc == nil {
-			projectFilterPtr = &v
-		}
+	activeStatus := normalizeStatusFilter(r.FormValue("status"))
+	if activeStatus == "" {
+		activeStatus = normalizeStatusFilter(r.URL.Query().Get("status"))
 	}
+
+	projectFilterPtr := parseProjectFilter(activeProject)
 
 	var totalTasks int
 	// Count tasks scoped to project if filter is active, otherwise count all
+	statusCond := ""
+	if activeStatus == "complete" {
+		statusCond = " AND completed = true"
+	} else if activeStatus == "incomplete" {
+		statusCond = " AND (completed IS NULL OR completed = false)"
+	}
+
 	if projectFilterPtr == nil {
-		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1", userID).Scan(&totalTasks)
+		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+statusCond, userID).Scan(&totalTasks)
 	} else {
 		projectCond := ""
 		args := []interface{}{userID}
@@ -200,7 +203,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 			projectCond = " AND project_id = $2"
 			args = append(args, *projectFilterPtr)
 		}
-		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+projectCond, args...).Scan(&totalTasks)
+		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+projectCond+statusCond, args...).Scan(&totalTasks)
 	}
 	if err != nil {
 		http.Error(w, "Error counting tasks after add: "+err.Error(), http.StatusInternalServerError)
@@ -219,11 +222,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var taskList []tasks.Task
-	if projectFilterPtr != nil {
-		taskList, totalTasks, err = tasks.ReturnPaginationForUserWithProject(page, pageSize, &userID, timezone, projectFilterPtr)
-	} else {
-		taskList, totalTasks, err = tasks.ReturnPaginationForUser(page, pageSize, &userID, timezone)
-	}
+	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, projectFilterPtr, activeStatus)
 	if err != nil {
 		http.Error(w, "Error fetching tasks after add: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -276,6 +275,9 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 			shouldRefresh = true
 		}
 	}
+	if !taskStatusMatchesFilter(activeStatus, false) {
+		shouldRefresh = false
+	}
 
 	// The new task belongs to a different project than the current filter.
 	// Instead of returning nothing, render the view for the project the task was added to
@@ -302,7 +304,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		projectCond = " AND project_id = $2"
 		args = append(args, *targetFilterPtr)
 	}
-	if err := db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+projectCond, args...).Scan(&totalTasksTarget); err != nil {
+	if err := db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+projectCond+statusCond, args...).Scan(&totalTasksTarget); err != nil {
 		http.Error(w, "Error counting tasks for new project: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -328,6 +330,8 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	completedCount, incompleteCount := completedIncompleteCounts(&userID, projectFilterPtr)
+
 	// Create a context for rendering pagination.html
 	tmplCtx := map[string]interface{}{
 		"FavoriteTasks":    favs,
@@ -342,10 +346,12 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		"TotalPages":       (totalTasks + pageSize - 1) / pageSize,
 		"Pages":            utils.GetPaginationData(page, pageSize, totalTasks, userID).Pages,
 		"HasRightEllipsis": utils.GetPaginationData(page, pageSize, totalTasks, userID).HasRightEllipsis,
-		"CompletedTasks":   utils.GetCompletedTasksCount(&userID),
-		"IncompleteTasks":  utils.GetIncompleteTasksCount(&userID),
+		"CompletedTasks":   completedCount,
+		"IncompleteTasks":  incompleteCount,
 		"PerPage":          pageSize,
 		"Projects":         projectsList,
+		"ProjectFilter":    activeProject,
+		"StatusFilter":     activeStatus,
 	}
 
 	// Set headers for successful addition
@@ -362,7 +368,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch tasks for the target project and page
-	taskListTarget, totalTasksTarget, err := tasks.ReturnPaginationForUserWithProject(page, pageSize, &userID, timezone, targetFilterPtr)
+	taskListTarget, totalTasksTarget, err := tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, targetFilterPtr, activeStatus)
 	if err != nil {
 		http.Error(w, "Error fetching tasks for new project: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -424,6 +430,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		"PerPage":          pageSize,
 		"Projects":         projectsList,
 		"ProjectFilter":    targetFilterParam,
+		"StatusFilter":     activeStatus,
 	}
 
 	// Instruct client to set toolbar filter to target project and render that project's view

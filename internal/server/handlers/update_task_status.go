@@ -21,6 +21,7 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	page := r.URL.Query().Get("page")
 	projectParam := r.URL.Query().Get("project")
+	statusFilter := requestStatusFilter(r)
 
 	// Require logged-in user and enforce ban check + ownership
 	email, _, _, loggedIn := utils.GetSessionUser(r)
@@ -76,17 +77,7 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optional project filter for counts + row links
-	var projectFilter *int
-	if projectParam != "" {
-		if projectParam == "none" || projectParam == "0" {
-			zero := 0
-			projectFilter = &zero
-		} else {
-			if pid, err := strconv.Atoi(projectParam); err == nil {
-				projectFilter = &pid
-			}
-		}
-	}
+	projectFilter := parseProjectFilter(projectParam)
 
 	updatedStatus := !completed
 
@@ -128,25 +119,40 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	task.Page = pageNum
 
 	if err := db.QueryRow(context.Background(), "SELECT user_id FROM tasks WHERE id = $1", id).Scan(&ownerID); err == nil {
-		var completedCount int
-		var incompleteCount int
-		if projectFilter == nil {
-			_ = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true", ownerID).Scan(&completedCount)
-			_ = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)", ownerID).Scan(&incompleteCount)
-		} else {
-			projectCond := ""
-			args := []interface{}{ownerID}
-			if *projectFilter == 0 {
-				projectCond = " AND project_id IS NULL"
-			} else {
-				projectCond = " AND project_id = $2"
-				args = append(args, *projectFilter)
-			}
-			_ = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true"+projectCond, args...).Scan(&completedCount)
-			_ = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)"+projectCond, args...).Scan(&incompleteCount)
-		}
+		completedCount, incompleteCount := completedIncompleteCounts(&ownerID, projectFilter)
 		// Emit HTMX trigger with counts payload so client can update badges
 		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"taskCountsChanged":{"completed":%d,"incomplete":%d}}`, completedCount, incompleteCount))
+	}
+
+	if statusFilter != "" {
+		pageSize := utils.AppConstants.PageSize
+		if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
+			if val, ok := sess.Values["items_per_page"]; ok {
+				switch tv := val.(type) {
+				case int:
+					if tv > 0 {
+						pageSize = tv
+					}
+				case int64:
+					if int(tv) > 0 {
+						pageSize = int(tv)
+					}
+				case float64:
+					if int(tv) > 0 {
+						pageSize = int(tv)
+					}
+				case string:
+					if v, err := strconv.Atoi(tv); err == nil && v > 0 {
+						pageSize = v
+					}
+				}
+			}
+		}
+		userPtr := &userID
+		if err := renderFilteredTaskListPartial(w, r, pageNum, pageSize, "", userPtr, timezone, true, projectParam, statusFilter); err != nil {
+			http.Error(w, "Error rendering filtered tasks: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
 	}
 
 	basePath := utils.GetBasePath()
@@ -157,10 +163,12 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		Task          tasks.Task
 		BasePath      string
 		ProjectFilter string
+		StatusFilter  string
 	}{
 		Task:          task,
 		BasePath:      basePath,
 		ProjectFilter: projectParam,
+		StatusFilter:  statusFilter,
 	}
 
 	if err := utils.Templates.ExecuteTemplate(w, "todo.html", data); err != nil {

@@ -82,16 +82,37 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 
 	// Determine active project filter
 	projectParam := r.URL.Query().Get("project")
-	var projectFilter *int
-	if projectParam != "" {
-		if projectParam == "none" || projectParam == "0" {
-			zero := 0
-			projectFilter = &zero
-		} else {
-			if pid, err := strconv.Atoi(projectParam); err == nil {
-				projectFilter = &pid
+	projectFilter := parseProjectFilter(projectParam)
+	statusFilter := requestStatusFilter(r)
+
+	{
+		pageSize := utils.AppConstants.PageSize
+		if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
+			if val, ok := sess.Values["items_per_page"]; ok {
+				switch tv := val.(type) {
+				case int:
+					if tv > 0 {
+						pageSize = tv
+					}
+				case int64:
+					if int(tv) > 0 {
+						pageSize = int(tv)
+					}
+				case float64:
+					if int(tv) > 0 {
+						pageSize = int(tv)
+					}
+				case string:
+					if v, err := strconv.Atoi(tv); err == nil && v > 0 {
+						pageSize = v
+					}
+				}
 			}
 		}
+		if err := renderFilteredTaskListPartial(w, r, currentPage, pageSize, "", &userID, timezone, loggedIn, projectParam, statusFilter); err != nil {
+			http.Error(w, "Error rendering tasks: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
 	}
 
 	// Get total number of tasks for this user after deletion (scoped to project if filter active)

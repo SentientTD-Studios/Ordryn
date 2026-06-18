@@ -51,6 +51,11 @@ export function initSortable() {
             if (typeof toolbarVal !== "undefined" && toolbarVal !== null) {
               form.append("project", toolbarVal);
             }
+            const statusFilter = document.getElementById("status-filter");
+            const statusVal = statusFilter ? statusFilter.value : "";
+            if (statusVal) {
+              form.append("status", statusVal);
+            }
           } catch (e) {}
 
           // Send HX-Request and X-Requested-With so server middleware accepts this as an XHR/HTMX call

@@ -7,7 +7,7 @@
     <td class="title-column" data-label="Title">
         <div class="d-flex align-items-center">
             <button class="btn btn-link p-0 me-2 favorite-btn" style="text-decoration:none;" 
-                hx-get="{{basePath}}/api/toggle-favorite?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}"
+                hx-get="{{basePath}}/api/toggle-favorite?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
                 hx-target="#task-container" hx-swap="innerHTML" aria-label="Toggle favorite">
                 {{if .Task.IsFavorite}}
                     <i class="bi bi-star-fill" style="color:gold;"></i>
@@ -32,9 +32,9 @@
             <!-- Status checkbox (uses existing update-status endpoint which returns complete row) -->
             <button
                 class="badge bg-{{if .Task.Completed}}success{{else}}danger text-white{{end}} status-column"
-                hx-get="{{basePath}}/api/update-status?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}"
-                hx-target="#task-{{.Task.ID}}"
-                hx-swap="outerHTML"
+                hx-get="{{basePath}}/api/update-status?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
+                hx-target="{{if .StatusFilter}}#task-container{{else}}#task-{{.Task.ID}}{{end}}"
+                hx-swap="{{if .StatusFilter}}innerHTML{{else}}outerHTML{{end}}"
                 aria-label="Toggle complete"
                 style="cursor: pointer; border: none;">
                 {{if .Task.Completed}}
@@ -48,14 +48,14 @@
 
             {{if not .Task.Completed}}
             <button class="btn btn-link p-0 mx-2 edit-btn" style="text-decoration:none;" 
-                hx-get="{{basePath}}/api/edit?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}"
+                hx-get="{{basePath}}/api/edit?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
                 hx-target="#sidebar .sidebar-body" hx-swap="innerHTML" aria-label="Edit task">
                 <i class="bi bi-pencil"></i>
             </button>
             {{end}}
 
             <button 
-                hx-get="{{basePath}}/api/confirm?id={{.Task.ID}}&page={{.Task.Page}}"
+                hx-get="{{basePath}}/api/confirm?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
                 hx-target="#modal .modal-content"
                 hx-trigger="click"
                 data-bs-toggle="modal"
