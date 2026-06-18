@@ -18,34 +18,34 @@
                     <th class="actions-column">
                         {{if eq .StatusFilter "incomplete"}}
 
-                        <button class="status-filter-button" type="button"
+                        <a class="status-filter-toggle text-white text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1&search={{.SearchQuery}}&project={{.ProjectFilter}}&status=complete"
                             title="Showing incomplete tasks. Click to show complete tasks."
                             aria-label="Filter status column to complete tasks"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1&search={{.SearchQuery}}&project={{.ProjectFilter}}&status=complete"
                             hx-target="#task-container" hx-swap="innerHTML">
-                            Status <span class="badge bg-warning text-dark">Incomplete</span>
+                            Status <span class="status-filter-state">(Incomplete)</span>
                             <i class="bi bi-arrow-right-short"></i>
-                        </button>
+                        </a>
                         {{else if eq .StatusFilter "complete"}}
 
-                        <button class="status-filter-button" type="button"
+                        <a class="status-filter-toggle text-white text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1&search={{.SearchQuery}}&project={{.ProjectFilter}}"
                             title="Showing complete tasks. Click to show all tasks."
                             aria-label="Clear status column filter"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1&search={{.SearchQuery}}&project={{.ProjectFilter}}"
                             hx-target="#task-container" hx-swap="innerHTML">
-                            Status <span class="badge bg-success">Complete</span>
+                            Status <span class="status-filter-state">(Complete)</span>
                             <i class="bi bi-x-circle"></i>
-                        </button>
+                        </a>
                         {{else}}
 
-                        <button class="status-filter-button" type="button"
+                        <a class="status-filter-toggle text-white text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1&search={{.SearchQuery}}&project={{.ProjectFilter}}&status=incomplete"
                             title="Showing all tasks. Click to show incomplete tasks."
                             aria-label="Filter status column to incomplete tasks"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1&search={{.SearchQuery}}&project={{.ProjectFilter}}&status=incomplete"
                             hx-target="#task-container" hx-swap="innerHTML">
-                            Status <span class="badge bg-secondary">All</span>
+                            Status <span class="status-filter-state">(All)</span>
                             <i class="bi bi-funnel"></i>
-                        </button>
+                        </a>
                         {{end}}
                     </th>
                 </tr>
