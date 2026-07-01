@@ -103,6 +103,18 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	// Ensure default 'user' role exists for signups
+	if err := MigrateEnsureUserRole(); err != nil {
+		fmt.Printf("migration: MigrateEnsureUserRole failed: %v\n", err)
+		errCount++
+	}
+
+	// Ensure tasks.user_id foreign key exists
+	if err := MigrateTasksUserFK(); err != nil {
+		fmt.Printf("migration: MigrateTasksUserFK failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}
@@ -154,6 +166,62 @@ func MigrateEnsureAdminPermission() error {
 		if err != nil {
 			return fmt.Errorf("failed to append permission %s: %v", m, err)
 		}
+	}
+	return nil
+}
+
+// MigrateEnsureUserRole ensures the roles table contains a 'user' role with
+// standard task permissions for new signups.
+func MigrateEnsureUserRole() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer CloseDatabase(pool)
+
+	perms := []string{"add", "edit", "delete"}
+	var existingID int
+	err = pool.QueryRow(context.Background(), "SELECT id FROM roles WHERE name = 'user'").Scan(&existingID)
+	if err == nil {
+		return nil
+	}
+
+	_, insErr := pool.Exec(context.Background(), "INSERT INTO roles (name, permissions) VALUES ($1, $2)", "user", perms)
+	if insErr != nil {
+		return fmt.Errorf("failed to create user role: %v", insErr)
+	}
+	return nil
+}
+
+// MigrateTasksUserFK adds a foreign key from tasks.user_id to users.id when missing.
+func MigrateTasksUserFK() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer CloseDatabase(pool)
+
+	var exists bool
+	err = pool.QueryRow(context.Background(),
+		"SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tasks_users')",
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check tasks user fk: %v", err)
+	}
+	if exists {
+		return nil
+	}
+
+	_, err = pool.Exec(context.Background(), "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_id INTEGER")
+	if err != nil {
+		return fmt.Errorf("failed to ensure user_id column on tasks: %v", err)
+	}
+
+	_, err = pool.Exec(context.Background(),
+		"ALTER TABLE tasks ADD CONSTRAINT fk_tasks_users FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to add tasks user foreign key: %v", err)
 	}
 	return nil
 }

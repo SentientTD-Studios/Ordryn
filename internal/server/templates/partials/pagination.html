@@ -7,6 +7,9 @@
             <span id="completed-tasks-badge" class="badge bg-success me-2">Completed: {{.CompletedTasks}}</span>
             <span id="incomplete-tasks-badge" class="badge bg-warning text-dark">Incomplete: {{.IncompleteTasks}}</span>
         <input type="hidden" id="status-filter" name="status" value="{{.StatusFilter}}" />
+        <input type="hidden" id="current-page" value="{{.CurrentPage}}">
+        <input type="hidden" id="total-pages" value="{{.TotalPages}}">
+        <input type="hidden" id="project-filter-value" value="{{.ProjectFilter}}">
         <table class="table table-striped table-bordered w-100 mb-3">
             <input type="hidden" name="currentPage" value="{{.CurrentPage}}" />
                 <thead>
@@ -141,17 +144,6 @@
             </button>
             -->
         </div>
-        {{end}}
-        {{if .LoggedIn}}
-        <!-- Modal -->
-        <div id="modal" class="modal fade" tabindex="-1" role="dialog">
-            <div class="modal-dialog" role="document">
-                <div class="modal-content">
-                    <!-- Modal content dynamically loaded -->
-                </div>
-            </div>
-        </div>
-            {{template "sidebar.html" .}}
         {{end}}
     </div>
 </div>

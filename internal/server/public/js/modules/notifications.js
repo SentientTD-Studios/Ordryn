@@ -36,16 +36,5 @@ export function showToast(message, opts) {
 }
 
 export function attachNotificationListeners() {
-  // Listen for favorite-limit-reached HTMX trigger (server sets HX-Trigger header)
-  document.body.addEventListener("favorite-limit-reached", function (evt) {
-    try {
-      // If server provided a detail.message, prefer that, otherwise default text
-      const msg =
-        (evt && evt.detail && evt.detail.message) ||
-        "You can only favorite up to 5 tasks";
-      showToast(msg, { error: true });
-    } catch (e) {
-      showToast("You can only favorite up to 5 tasks", { error: true });
-    }
-  });
+  // Reserved for future server-driven notification triggers.
 }

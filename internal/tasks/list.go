@@ -237,6 +237,14 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 		return tasks, 0, nil
 	}
 
+	statusCond := statusCondition(statusFilter)
+	countQuery := `SELECT COUNT(*) FROM tasks WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $2` + projectCond + statusCond
+	countArgs := []interface{}{searchPattern, *userID}
+	var totalTasks int
+	if err := pool.QueryRow(context.Background(), countQuery, countArgs...).Scan(&totalTasks); err != nil {
+		return nil, 0, err
+	}
+
 	rows, err := pool.Query(context.Background(),
 		`SELECT id,
 		    title, 
@@ -248,7 +256,7 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 		    COALESCE(TO_CHAR((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM'), '') AS date_modified,
 		    COALESCE(position,0)
 		 FROM tasks 
-		 WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $4`+projectCond+statusCondition(statusFilter)+`
+		 WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $4`+projectCond+statusCond+`
 		 ORDER BY position 
 		 LIMIT $3 OFFSET $5`,
 		searchPattern, timezone, pageSize, *userID, offset)
@@ -258,14 +266,12 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 	}
 
 	defer rows.Close()
-	var totalTasks int = 0
 
 	for rows.Next() {
 		var task Task
 		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Completed, &task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified, &task.Position); err != nil {
 			return nil, 0, err
 		}
-		totalTasks++
 		tasks = append(tasks, task)
 	}
 

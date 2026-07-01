@@ -13,81 +13,78 @@ import {
 } from "./form-handlers.js";
 import { showToast } from "./notifications.js";
 
-export function attachTaskDeletedListener() {
-  document.body.addEventListener("taskDeleted", function (evt) {
-    // Get the current page from the page number display
-    // Find the pagination span that contains "Page X of Y"
-    const spans = document.querySelectorAll("#task-container span");
-    let currentPage = 1;
-    for (let span of spans) {
-      const match = span.textContent.match(/Page\s+(\d+)\s+of\s+(\d+)/);
-      if (match) {
-        currentPage = parseInt(match[1]);
-        break;
-      }
+function getTaskListPage() {
+  const pageInput = document.getElementById("current-page");
+  if (pageInput && pageInput.value) {
+    const page = parseInt(pageInput.value, 10);
+    if (!Number.isNaN(page) && page > 0) {
+      return page;
     }
+  }
+  return 1;
+}
 
-    // Reload the current page
-    let url = `/api/fetch-tasks?page=${currentPage}`;
-    const searchInput = document.getElementById("search");
-    if (searchInput && searchInput.value) {
-      url += `&search=${encodeURIComponent(searchInput.value)}`;
+function buildTaskListUrl(page) {
+  let url = apiPath(`/api/fetch-tasks?page=${page}`);
+  const searchInput = document.getElementById("search");
+  if (searchInput && searchInput.value) {
+    url += `&search=${encodeURIComponent(searchInput.value)}`;
+  }
+  const statusFilter = document.getElementById("status-filter");
+  if (statusFilter && statusFilter.value) {
+    url += `&status=${encodeURIComponent(statusFilter.value)}`;
+  }
+  const projectFilter = document.getElementById("project-filter-value");
+  if (projectFilter && projectFilter.value) {
+    url += `&project=${encodeURIComponent(projectFilter.value)}`;
+  } else {
+    const projectSelect = document.getElementById("project-filter");
+    if (projectSelect && projectSelect.value) {
+      url += `&project=${encodeURIComponent(projectSelect.value)}`;
     }
-    htmx.ajax("GET", url, { target: "#task-container", swap: "innerHTML" });
+  }
+  return url;
+}
+
+export function attachTaskDeletedListener() {
+  document.body.addEventListener("taskDeleted", function () {
+    htmx.ajax("GET", buildTaskListUrl(getTaskListPage()), {
+      target: "#task-container",
+      swap: "innerHTML",
+    });
   });
 }
 
 export function attachReloadPageListener() {
   document.body.addEventListener("reloadPage", function (evt) {
-    const page = evt.detail.page || 1;
-    let url = `/api/fetch-tasks?page=${page}`;
-    const searchInput = document.getElementById("search");
-    if (searchInput && searchInput.value) {
-      url += `&search=${encodeURIComponent(searchInput.value)}`;
-    }
-    htmx.ajax("GET", url, { target: "#task-container", swap: "innerHTML" });
+    const page = evt.detail.page || getTaskListPage();
+    htmx.ajax("GET", buildTaskListUrl(page), {
+      target: "#task-container",
+      swap: "innerHTML",
+    });
   });
 }
 
 export function attachReloadPreviousPageListener() {
-  document.body.addEventListener("reload-previous-page", function (evt) {
-    // Get the current page from the page number display
-    // Find the pagination span that contains "Page X of Y"
-    const spans = document.querySelectorAll("#task-container span");
-    let currentPage = 1;
-    for (let span of spans) {
-      const match = span.textContent.match(/Page\s+(\d+)\s+of\s+(\d+)/);
-      if (match) {
-        currentPage = parseInt(match[1]);
-        break;
-      }
-    }
-    const prevPage = Math.max(currentPage - 1, 1);
-
-    // Optionally, preserve search query if present
-    const searchInput = document.getElementById("search");
-    const searchQuery = searchInput ? searchInput.value : "";
-
-    // Build the URL for the previous page
-    let url = `/api/fetch-tasks?page=${prevPage}`;
-    if (searchQuery) {
-      url += `&search=${encodeURIComponent(searchQuery)}`;
-    }
-
-    // Use HTMX to load the previous page into the task container
-    htmx.ajax("GET", url, { target: "#task-container", swap: "innerHTML" });
+  document.body.addEventListener("reload-previous-page", function () {
+    const prevPage = Math.max(getTaskListPage() - 1, 1);
+    htmx.ajax("GET", buildTaskListUrl(prevPage), {
+      target: "#task-container",
+      swap: "innerHTML",
+    });
   });
 }
 
 export function attachLoginSuccessListener() {
-  document.body.addEventListener("login-success", function (evt) {
-    // Close the login modal
-    const modal = bootstrap.Modal.getInstance(document.getElementById("modal"));
-    if (modal) {
-      modal.hide();
+  document.body.addEventListener("login-success", function () {
+    const loginModal = document.getElementById("loginmodal");
+    if (loginModal) {
+      const modal = bootstrap.Modal.getInstance(loginModal);
+      if (modal) {
+        modal.hide();
+      }
     }
 
-    // Optionally reload the page to show logged-in state
     window.location.reload();
   });
 }
@@ -237,13 +234,7 @@ export function attachHTMXAfterRequestListener() {
 export function attachHTMXAfterSettleListener() {
   document.body.addEventListener("htmx:afterSettle", (event) => {
     if (event.target.id === "task-container") {
-      initializeSidebarEventListeners();
-
-      // Reapply the active class if necessary
-      const sidebar = document.getElementById("sidebar");
-      if (sidebar && sidebar.classList.contains("htmx-added")) {
-        sidebar.classList.add("active");
-      }
+      attachEditButtonListeners();
     }
   });
 }

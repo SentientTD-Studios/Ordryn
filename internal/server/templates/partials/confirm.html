@@ -18,11 +18,4 @@
     </button>
 </div>
 
-<div id="task-list"
-    hx-get="{{basePath}}/api/get-next-item?page={{.CurrentPage}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
-    hx-trigger="taskDeleted from:body"
-    hx-target="#task-list"
-    hx-swap="beforeend">
-</div>
-
 

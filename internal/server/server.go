@@ -11,8 +11,9 @@ import (
 )
 
 // Literally just used to prevent favicon.ico from being requested
-// TODO:: Add a favicon
-func doNothing(w http.ResponseWriter, r *http.Request) {}
+func serveFavicon(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "internal/server/public/favicon.svg")
+}
 
 func StartServer() error {
 	err := utils.InitializeTemplates()
@@ -57,7 +58,7 @@ func StartServer() error {
 
 	// Regular page handlers (no HTMX requirement)
 	http.HandleFunc("/", handlers.HomeHandler)
-	http.HandleFunc("/favicon.ico", doNothing)
+	http.HandleFunc("/favicon.ico", serveFavicon)
 	http.HandleFunc("/signup", handlers.SignupPageHandler)
 	http.HandleFunc("/register", handlers.RegisterHandler)
 	http.HandleFunc("/about", handlers.AboutHandler)
@@ -86,7 +87,6 @@ func StartServer() error {
 	http.HandleFunc("/api/edit-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIEditTask)))
 	http.HandleFunc("/api/confirm", utils.RequireHTMX(handlers.APIConfirmDelete))
 	http.HandleFunc("/api/delete-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIDeleteTask)))
-	http.HandleFunc("/api/get-next-item", utils.RequireHTMX(handlers.APIGetNextItem))
 	http.HandleFunc("/api/update-status", utils.RequireHTMX(handlers.APIUpdateTaskStatus))
 	http.HandleFunc("/api/toggle-favorite", utils.RequireHTMX(handlers.APIToggleFavorite))
 	http.HandleFunc("/api/reorder-tasks", utils.RequireHTMX(handlers.APIReorderTasks))
