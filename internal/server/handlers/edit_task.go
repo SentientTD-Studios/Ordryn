@@ -236,6 +236,21 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var oldTitle, oldDescription, oldDue string
+	var oldPriority int
+	var oldProjectID sql.NullInt64
+	err = db.QueryRow(context.Background(),
+		"SELECT title, description, COALESCE(CAST(due_date AS TEXT), ''), COALESCE(priority,0), project_id FROM tasks WHERE id = $1",
+		id).Scan(&oldTitle, &oldDescription, &oldDue, &oldPriority, &oldProjectID)
+	if err != nil {
+		http.Error(w, "Error fetching task.", http.StatusInternalServerError)
+		return
+	}
+	oldTags := []storage.Tag{}
+	if taskIDInt, convErr := strconv.Atoi(id); convErr == nil {
+		oldTags, _ = storage.GetTagsForTask(taskIDInt)
+	}
+
 	// Handle optional project association
 	projectIDStr := strings.TrimSpace(r.FormValue("project_id"))
 	if projectIDStr == "" {
@@ -289,6 +304,34 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, err.Error())
 		return
+	}
+
+	newTags, _ := storage.GetTagsForTask(taskID)
+	logTagChanges(taskID, userID, oldTags, newTags)
+
+	changed := make([]string, 0, 4)
+	if oldTitle != title {
+		changed = append(changed, "title")
+	}
+	if oldDescription != description {
+		changed = append(changed, "description")
+	}
+	if oldDue != dueDate {
+		changed = append(changed, "due date")
+	}
+	if len(changed) > 0 {
+		logTaskEvent(taskID, userID, "edited", map[string]interface{}{"fields": changed})
+	}
+	if oldPriority != priority {
+		logTaskEvent(taskID, userID, "priority_changed", map[string]interface{}{"to": priorityLabel(priority)})
+	}
+
+	oldPID := projectIDFromNull(oldProjectID)
+	newPID := projectIDFromForm(projectIDStr)
+	if oldPID != newPID {
+		logTaskEvent(taskID, userID, "moved_project", map[string]interface{}{
+			"project": projectDisplayName(userID, newPID),
+		})
 	}
 
 	// Re-render pagination like add_task does

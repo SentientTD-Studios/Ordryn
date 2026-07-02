@@ -254,6 +254,9 @@ func APIReorderTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error committing position updates", http.StatusInternalServerError)
 			return
 		}
+		if len(ids) > 0 {
+			logTaskEvent(ids[0], userID, "reordered", map[string]interface{}{"count": len(ids)})
+		}
 	}
 
 	// Determine page size from session

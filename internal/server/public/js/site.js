@@ -37,6 +37,7 @@ import {
   attachNotificationListeners,
 } from "./modules/notifications.js";
 import { attachAllEventListeners } from "./modules/events.js";
+import { initKeyboardShortcuts } from "./modules/keyboard.js";
 import {
   initGlobalAnnouncement,
   dismissGlobalAnnouncement,
@@ -69,6 +70,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initAnnouncementCharCounter();
   initDescriptionToggles();
   initBulkActions();
+  initKeyboardShortcuts();
+  initRevealTokenButtons();
 
   // Debug helper: when ?cssdebug=1 is present in the URL, log which media queries match.
   (function cssDebugHelper() {
@@ -101,3 +104,16 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {}
   })();
 });
+
+function initRevealTokenButtons() {
+  document.body.addEventListener("click", (e) => {
+    const btn = e.target.closest(".reveal-token-btn");
+    if (!btn) return;
+    const cell = btn.closest("td");
+    const code = cell && cell.querySelector(".token-masked");
+    if (code && code.dataset.token) {
+      code.textContent = code.dataset.token;
+      btn.remove();
+    }
+  });
+}

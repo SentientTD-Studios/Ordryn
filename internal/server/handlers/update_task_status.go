@@ -88,6 +88,14 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if taskID, convErr := strconv.Atoi(id); convErr == nil {
+		if updatedStatus {
+			logTaskEvent(taskID, userID, "completed", nil)
+		} else {
+			logTaskEvent(taskID, userID, "reopened", nil)
+		}
+	}
+
 	// Fetch updated task data to render the complete row with updated timestamps
 	email, _, _, timezone, _, _ := utils.GetSessionUserWithTimezone(r)
 	var task tasks.Task

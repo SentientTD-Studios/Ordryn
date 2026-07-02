@@ -80,6 +80,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateTagsTables failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateTaskEventsTable(); err != nil {
+		fmt.Printf("migration: CreateTaskEventsTable failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure site_settings table exists
 	if err := CreateSiteSettingsTable(); err != nil {

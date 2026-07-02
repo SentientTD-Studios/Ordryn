@@ -189,6 +189,7 @@ func verifyTasksOwnedByUser(ctx context.Context, db *pgxpool.Pool, ids []int, us
 
 func deleteTasksForUser(ctx context.Context, db *pgxpool.Pool, ids []int, userID int) error {
 	for _, id := range ids {
+		logTaskEvent(id, userID, "deleted", nil)
 		tag, err := db.Exec(ctx, "DELETE FROM tasks WHERE id = $1 AND user_id = $2", id, userID)
 		if err != nil {
 			return err
@@ -205,6 +206,11 @@ func bulkSetCompleted(ctx context.Context, db *pgxpool.Pool, ids []int, userID i
 		if _, err := db.Exec(ctx, "UPDATE tasks SET completed = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2 AND user_id = $3", completed, id, userID); err != nil {
 			return err
 		}
+		if completed {
+			logTaskEvent(id, userID, "completed", nil)
+		} else {
+			logTaskEvent(id, userID, "reopened", nil)
+		}
 	}
 	return nil
 }
@@ -214,16 +220,19 @@ func bulkSetPriority(ctx context.Context, db *pgxpool.Pool, ids []int, userID in
 		if _, err := db.Exec(ctx, "UPDATE tasks SET priority = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2 AND user_id = $3", priority, id, userID); err != nil {
 			return err
 		}
+		logTaskEvent(id, userID, "priority_changed", map[string]interface{}{"to": priorityLabel(priority)})
 	}
 	return nil
 }
 
 func bulkMoveProject(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, projectIDStr string) error {
+	projectName := projectDisplayName(userID, projectIDFromForm(projectIDStr))
 	if projectIDStr == "" || projectIDStr == "0" {
 		for _, id := range ids {
 			if _, err := db.Exec(ctx, "UPDATE tasks SET project_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1 AND user_id = $2", id, userID); err != nil {
 				return err
 			}
+			logTaskEvent(id, userID, "moved_project", map[string]interface{}{"project": projectName})
 		}
 		return nil
 	}
@@ -238,6 +247,7 @@ func bulkMoveProject(ctx context.Context, db *pgxpool.Pool, ids []int, userID in
 		if _, err := db.Exec(ctx, "UPDATE tasks SET project_id = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2 AND user_id = $3", pid, id, userID); err != nil {
 			return err
 		}
+		logTaskEvent(id, userID, "moved_project", map[string]interface{}{"project": projectName})
 	}
 	return nil
 }
@@ -269,15 +279,35 @@ func bulkAddTag(ctx context.Context, db *pgxpool.Pool, ids []int, userID, tagID 
 		if err := storage.SetTaskTags(taskID, userID, tagIDs); err != nil {
 			return err
 		}
+		var tagName string
+		if t, err := storage.GetTagsForUser(userID); err == nil {
+			for _, tg := range t {
+				if tg.ID == tagID {
+					tagName = tg.Name
+					break
+				}
+			}
+		}
+		logTaskEvent(taskID, userID, "tag_added", map[string]interface{}{"tag": tagName, "tag_id": tagID})
 	}
 	return nil
 }
 
 func bulkRemoveTag(ctx context.Context, db *pgxpool.Pool, ids []int, userID, tagID int) error {
+	var tagName string
+	if tags, err := storage.GetTagsForUser(userID); err == nil {
+		for _, tg := range tags {
+			if tg.ID == tagID {
+				tagName = tg.Name
+				break
+			}
+		}
+	}
 	for _, taskID := range ids {
 		if _, err := db.Exec(ctx, "DELETE FROM task_tags WHERE task_id = $1 AND tag_id = $2", taskID, tagID); err != nil {
 			return err
 		}
+		logTaskEvent(taskID, userID, "tag_removed", map[string]interface{}{"tag": tagName, "tag_id": tagID})
 	}
 	return nil
 }

@@ -1,0 +1,12 @@
+{{if .Events}}
+<ul class="task-timeline-list list-unstyled mb-0">
+    {{range .Events}}
+    <li class="task-timeline-item mb-2">
+        <span class="task-timeline-label">{{.Label}}</span>
+        <span class="task-timeline-time text-muted ms-1">· {{.TimeStr}}</span>
+    </li>
+    {{end}}
+</ul>
+{{else}}
+<p class="text-muted mb-0">No activity recorded yet.</p>
+{{end}}

@@ -102,4 +102,12 @@
     <button type="submit" class="btn btn-primary w-100 mt-3">
         {{if .SubmitText}}{{.SubmitText}}{{else}}Add Task{{end}}
     </button>
+    {{if .ID}}
+    <details class="task-timeline mt-3">
+        <summary class="mb-2">Activity</summary>
+        <div hx-get="{{basePath}}/api/task-events?id={{.ID}}" hx-trigger="toggle once" hx-swap="innerHTML">
+            <span class="text-muted small">Loading activity…</span>
+        </div>
+    </details>
+    {{end}}
 </form> 

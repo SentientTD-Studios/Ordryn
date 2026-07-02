@@ -155,6 +155,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, err.Error())
 		return
 	}
+	logTaskEvent(newTaskID, userID, "created", nil)
 
 	// After successful insertion, determine the correct page to display
 	pageSize := utils.AppConstants.PageSize

@@ -2181,3 +2181,31 @@ select.form-select:focus {
 .select-column {
     width: 36px;
 }
+
+.task-row-focused {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -2px;
+}
+
+.task-timeline summary {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.task-timeline-list .task-timeline-label {
+    font-weight: 500;
+}
+
+.dashboard-stat-card .dashboard-stat-value {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.dashboard-stat-card .dashboard-stat-label {
+    font-size: 0.875rem;
+}
+
+.token-masked {
+    letter-spacing: 0.1em;
+}
