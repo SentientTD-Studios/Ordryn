@@ -18,6 +18,7 @@ type Task struct {
 	Position     int
 	ProjectID    int
 	ProjectName  string
+	Priority     int
 }
 
 func (t *Task) Validate() error {

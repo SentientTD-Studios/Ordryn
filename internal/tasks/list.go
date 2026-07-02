@@ -49,243 +49,218 @@ func ReturnTaskListForUser(userID *int) []Task {
 	return tasks
 }
 
-func ReturnPagination(page, pageSize int) ([]Task, int, error) {
-	return ReturnPaginationForUser(page, pageSize, nil, "America/New_York")
-}
+const nonFavoriteCond = " AND (is_favorite IS NULL OR is_favorite = false)"
 
-func ReturnPaginationForUser(page, pageSize int, userID *int, timezone string) ([]Task, int, error) {
-	return ReturnPaginationForUserWithFilters(page, pageSize, userID, timezone, nil, "")
-}
-
-// ReturnPaginationForUserWithProject behaves like ReturnPaginationForUser but filters tasks by project.
-// If projectFilter is nil, all projects are returned. If *projectFilter == 0, only tasks with no project are returned.
-func ReturnPaginationForUserWithProject(page, pageSize int, userID *int, timezone string, projectFilter *int) ([]Task, int, error) {
-	return ReturnPaginationForUserWithFilters(page, pageSize, userID, timezone, projectFilter, "")
-}
-
-// ReturnPaginationForUserWithFilters supports project and completion-state filtering.
-// statusFilter accepts "complete" or "incomplete"; any other value returns all statuses.
-func ReturnPaginationForUserWithFilters(page, pageSize int, userID *int, timezone string, projectFilter *int, statusFilter string) ([]Task, int, error) {
+func ReturnPaginationForUserWithFilters(page, pageSize int, userID *int, timezone string, filters ListFilters) ([]Task, int, error) {
 	pool, err := storage.OpenDatabase()
 	if err != nil {
 		return nil, 0, err
 	}
 	defer storage.CloseDatabase(pool)
 
-	var tasks []Task
-	offset := (page - 1) * pageSize
-
-	projectCond := ""
-	if projectFilter != nil {
-		if *projectFilter == 0 {
-			projectCond = " AND (project_id IS NULL)"
-		} else {
-			projectCond = fmt.Sprintf(" AND (project_id = %d)", *projectFilter)
-		}
+	if userID == nil {
+		return []Task{}, 0, nil
 	}
 
-	statusCond := statusCondition(statusFilter)
-
-	// We'll fetch favorites separately so we can always show up to 5 favorites first on page 1
-	query := `SELECT t.id, t.title, t.description, t.completed, 
-		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $3, 'YYYY/MM/DD HH:MI AM') AS date_added,
+	taskSelect := `SELECT t.id, t.title, t.description, t.completed,
+		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_added,
 		COALESCE(CAST(t.due_date AS TEXT), '') AS due_date,
-		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $3, 'YYYY/MM/DD HH:MI AM') AS date_created,
-		COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $3, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified,
-		COALESCE(t.position,0), t.project_id, COALESCE(p.name,'')
+		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_created,
+		COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified,
+		COALESCE(t.is_favorite,false), COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,'')
 		FROM tasks t LEFT JOIN projects p ON t.project_id = p.id `
 
-	var countQuery string
-	var rows interface {
-		Next() bool
-		Scan(...interface{}) error
-		Close()
-	}
+	nonFavSelect := `SELECT t.id, t.title, t.description, t.completed,
+		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_added,
+		COALESCE(CAST(t.due_date AS TEXT), '') AS due_date,
+		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_created,
+		COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified,
+		COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,'')
+		FROM tasks t LEFT JOIN projects p ON t.project_id = p.id `
 
-	if userID == nil {
-		// Not logged in - don't show any tasks
-		return tasks, 0, nil
-	}
-
-	// Logged in - show favorites first (up to 5) on page 1
-	// Fetch favorite tasks
-	favRows, err := pool.Query(context.Background(), `SELECT t.id, t.title, t.description, t.completed, TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_added, COALESCE(CAST(t.due_date AS TEXT), '') AS due_date, TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_created, COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified, COALESCE(t.is_favorite,false), COALESCE(t.position,0), t.project_id, COALESCE(p.name,'') FROM tasks t LEFT JOIN projects p ON t.project_id = p.id WHERE t.user_id = $1 AND t.is_favorite = true`+projectCond+statusCond+` ORDER BY t.position`, *userID, timezone)
+	favArgs := []interface{}{*userID, timezone}
+	favWhere := "WHERE t.user_id = $1 AND t.is_favorite = true"
+	favWhere, favArgs = appendFilterSQL(favWhere, favArgs, filters, timezone, "t")
+	favRows, err := pool.Query(context.Background(), taskSelect+favWhere+filters.orderByClause("t"), favArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer favRows.Close()
+
 	favs := make([]Task, 0)
 	for favRows.Next() {
-		var t Task
-		var pid sql.NullInt64
-		var pname sql.NullString
-		if err := favRows.Scan(&t.ID, &t.Title, &t.Description, &t.Completed, &t.DateAdded, &t.DueDate, &t.DateCreated, &t.DateModified, &t.IsFavorite, &t.Position, &pid, &pname); err != nil {
+		task, err := scanFavoriteTaskRow(favRows)
+		if err != nil {
 			return nil, 0, err
 		}
-		if pid.Valid {
-			t.ProjectID = int(pid.Int64)
-		} else {
-			t.ProjectID = 0
-		}
-		t.ProjectName = pname.String
-		favs = append(favs, t)
+		favs = append(favs, task)
 	}
 
-	// Count total tasks
+	countArgs := []interface{}{*userID}
+	countWhere := "WHERE user_id = $1" + nonFavoriteCond
+	countWhere, countArgs = appendFilterSQL(countWhere, countArgs, filters, timezone, "")
 	var totalTasks int
-	countQuery = "SELECT COUNT(*) FROM tasks WHERE user_id = $1" + projectCond + statusCond
-	err = pool.QueryRow(context.Background(), countQuery, *userID).Scan(&totalTasks)
-	if err != nil {
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks"+countWhere, countArgs...).Scan(&totalTasks); err != nil {
 		return nil, 0, err
 	}
 
-	// Calculate how many favorites to show on this page
-	favCount := len(favs)
-	if page == 1 && favCount > 0 {
-		// Need to fetch non-favorites to fill remaining slots on page 1
-		remaining := pageSize - favCount
-		if remaining < 0 {
-			remaining = 0
-		}
-		rows, err = pool.Query(context.Background(), query+`WHERE t.user_id = $4 AND (t.is_favorite IS NULL OR t.is_favorite = false)`+projectCond+statusCond+` ORDER BY t.position LIMIT $1 OFFSET $2`, remaining, 0, timezone, *userID)
+	offset := (page - 1) * pageSize
+	if offset < 0 {
+		offset = 0
+	}
+
+	nonFavArgs := []interface{}{pageSize, timezone, *userID, offset}
+	nonFavWhere := "WHERE t.user_id = $3 AND (t.is_favorite IS NULL OR t.is_favorite = false)"
+	nonFavWhere, nonFavArgs = appendFilterSQL(nonFavWhere, nonFavArgs, filters, timezone, "t")
+	rows, err := pool.Query(
+		context.Background(),
+		nonFavSelect+nonFavWhere+filters.orderByClause("t")+" LIMIT $1 OFFSET $4",
+		nonFavArgs...,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	nonFavs := make([]Task, 0)
+	for rows.Next() {
+		task, err := scanTaskRow(rows)
 		if err != nil {
 			return nil, 0, err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var task Task
-			var pid sql.NullInt64
-			var pname sql.NullString
-			if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Completed, &task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified, &task.Position, &pid, &pname); err != nil {
-				return nil, 0, err
-			}
-			if pid.Valid {
-				task.ProjectID = int(pid.Int64)
-			} else {
-				task.ProjectID = 0
-			}
-			task.ProjectName = pname.String
-			tasks = append(tasks, task)
-		}
-		// prepend favorites
-		tasks = append(favs, tasks...)
-	} else {
-		// For pages >1, skip favorites in the offset calculation
-		// Compute offset among non-favorite items
-		offsetNonFav := offset - favCount
-		if offsetNonFav < 0 {
-			offsetNonFav = 0
-		}
-		rows, err = pool.Query(context.Background(), query+`WHERE t.user_id = $4 AND (t.is_favorite IS NULL OR t.is_favorite = false)`+projectCond+statusCond+` ORDER BY t.position LIMIT $1 OFFSET $2`, pageSize, offsetNonFav, timezone, *userID)
-		if err != nil {
-			return nil, 0, err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var task Task
-			var pid sql.NullInt64
-			var pname sql.NullString
-			if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Completed, &task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified, &task.Position, &pid, &pname); err != nil {
-				return nil, 0, err
-			}
-			if pid.Valid {
-				task.ProjectID = int(pid.Int64)
-			} else {
-				task.ProjectID = 0
-			}
-			task.ProjectName = pname.String
-			tasks = append(tasks, task)
-		}
+		nonFavs = append(nonFavs, task)
+	}
+
+	tasks := nonFavs
+	if page == 1 && len(favs) > 0 {
+		tasks = append(favs, nonFavs...)
 	}
 	return tasks, totalTasks, nil
+}
+
+func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userID *int, timezone string, filters ListFilters) ([]Task, int, error) {
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer storage.CloseDatabase(pool)
+
+	if userID == nil {
+		return []Task{}, 0, nil
+	}
+
+	offset := (page - 1) * pageSize
+	searchPattern := "%" + searchQuery + "%"
+
+	countArgs := []interface{}{searchPattern, *userID}
+	countWhere := "WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $2"
+	countWhere, countArgs = appendFilterSQL(countWhere, countArgs, filters, timezone, "")
+	var totalTasks int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks"+countWhere, countArgs...).Scan(&totalTasks); err != nil {
+		return nil, 0, err
+	}
+
+	selectArgs := []interface{}{searchPattern, timezone, pageSize, *userID, offset}
+	selectWhere := "WHERE (t.title ILIKE $1 OR t.description ILIKE $1) AND t.user_id = $4"
+	selectWhere, selectArgs = appendFilterSQL(selectWhere, selectArgs, filters, timezone, "t")
+
+	query := `SELECT t.id, t.title, t.description, t.completed,
+		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM') as date_added,
+		COALESCE(CAST(t.due_date AS TEXT), '') AS due_date,
+		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM') AS date_created,
+		COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM'), '') AS date_modified,
+		COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,'')
+		FROM tasks t LEFT JOIN projects p ON t.project_id = p.id ` + selectWhere + filters.orderByClause("t") + " LIMIT $3 OFFSET $5"
+
+	rows, err := pool.Query(context.Background(), query, selectArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	tasks := make([]Task, 0)
+	for rows.Next() {
+		task, err := scanTaskRow(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, totalTasks, nil
+}
+
+func appendFilterSQL(where string, args []interface{}, filters ListFilters, timezone, tablePrefix string) (string, []interface{}) {
+	where += filters.projectCondition(tablePrefix)
+	where += filters.statusCondition(tablePrefix)
+	where, args = appendDueDateCondition(where, args, filters.DueFilter, timezone, tablePrefix)
+	where += filters.priorityCondition(tablePrefix)
+	return where, args
+}
+
+func scanFavoriteTaskRow(rows interface {
+	Scan(...interface{}) error
+}) (Task, error) {
+	var task Task
+	var pid sql.NullInt64
+	var pname sql.NullString
+	if err := rows.Scan(
+		&task.ID, &task.Title, &task.Description, &task.Completed,
+		&task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified,
+		&task.IsFavorite, &task.Position, &task.Priority, &pid, &pname,
+	); err != nil {
+		return task, err
+	}
+	if pid.Valid {
+		task.ProjectID = int(pid.Int64)
+	}
+	task.ProjectName = pname.String
+	return task, nil
+}
+
+func scanTaskRow(rows interface {
+	Scan(...interface{}) error
+}) (Task, error) {
+	var task Task
+	var pid sql.NullInt64
+	var pname sql.NullString
+	if err := rows.Scan(
+		&task.ID, &task.Title, &task.Description, &task.Completed,
+		&task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified,
+		&task.Position, &task.Priority, &pid, &pname,
+	); err != nil {
+		return task, err
+	}
+	if pid.Valid {
+		task.ProjectID = int(pid.Int64)
+	}
+	task.ProjectName = pname.String
+	return task, nil
+}
+
+func ReturnPaginationForUserWithProject(page, pageSize int, userID *int, timezone string, projectFilter *int) ([]Task, int, error) {
+	return ReturnPaginationForUserWithFilters(page, pageSize, userID, timezone, ListFilters{ProjectFilter: projectFilter})
+}
+
+func ReturnPaginationForUser(page, pageSize int, userID *int, timezone string) ([]Task, int, error) {
+	return ReturnPaginationForUserWithFilters(page, pageSize, userID, timezone, ListFilters{})
+}
+
+func SearchTasksForUserWithStatus(page, pageSize int, searchQuery string, userID *int, timezone string, statusFilter string) ([]Task, int, error) {
+	return SearchTasksForUserWithFilters(page, pageSize, searchQuery, userID, timezone, ListFilters{StatusFilter: statusFilter})
+}
+
+func SearchTasksForUser(page, pageSize int, searchQuery string, userID *int, timezone string) ([]Task, int, error) {
+	return SearchTasksForUserWithFilters(page, pageSize, searchQuery, userID, timezone, ListFilters{})
 }
 
 func SearchTasks(page, pageSize int, searchQuery string) ([]Task, int, error) {
 	return SearchTasksForUser(page, pageSize, searchQuery, nil, "America/New_York")
 }
 
-func SearchTasksForUser(page, pageSize int, searchQuery string, userID *int, timezone string) ([]Task, int, error) {
-	return SearchTasksForUserWithStatus(page, pageSize, searchQuery, userID, timezone, "")
-}
-
-func SearchTasksForUserWithStatus(page, pageSize int, searchQuery string, userID *int, timezone string, statusFilter string) ([]Task, int, error) {
-	return SearchTasksForUserWithFilters(page, pageSize, searchQuery, userID, timezone, nil, statusFilter)
-}
-
-func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userID *int, timezone string, projectFilter *int, statusFilter string) ([]Task, int, error) {
-	pool, err := storage.OpenDatabase()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	defer storage.CloseDatabase(pool)
-
-	var tasks []Task
-	offset := (page - 1) * pageSize
-	searchPattern := "%" + searchQuery + "%"
-	projectCond := ""
-	if projectFilter != nil {
-		if *projectFilter == 0 {
-			projectCond = " AND (project_id IS NULL)"
-		} else {
-			projectCond = fmt.Sprintf(" AND (project_id = %d)", *projectFilter)
-		}
-	}
-
-	// If not logged in, return empty results
-	if userID == nil {
-		return tasks, 0, nil
-	}
-
-	statusCond := statusCondition(statusFilter)
-	countQuery := `SELECT COUNT(*) FROM tasks WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $2` + projectCond + statusCond
-	countArgs := []interface{}{searchPattern, *userID}
-	var totalTasks int
-	if err := pool.QueryRow(context.Background(), countQuery, countArgs...).Scan(&totalTasks); err != nil {
-		return nil, 0, err
-	}
-
-	rows, err := pool.Query(context.Background(),
-		`SELECT t.id,
-		    t.title, 
-		    t.description,
-		    t.completed, 
-		    TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM') as date_added,
-		    COALESCE(CAST(t.due_date AS TEXT), '') AS due_date,
-		    TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM') AS date_created,
-		    COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM'), '') AS date_modified,
-		    COALESCE(t.position,0), t.project_id, COALESCE(p.name,'')
-		 FROM tasks t LEFT JOIN projects p ON t.project_id = p.id
-		 WHERE (t.title ILIKE $1 OR t.description ILIKE $1) AND t.user_id = $4`+projectCond+statusCond+`
-		 ORDER BY t.position 
-		 LIMIT $3 OFFSET $5`,
-		searchPattern, timezone, pageSize, *userID, offset)
-
-	if err != nil {
-		return nil, 0, err
-	}
-
-	defer rows.Close()
-
-	for rows.Next() {
-		var task Task
-		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Completed, &task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified, &task.Position, &task.ProjectID, &task.ProjectName); err != nil {
-			return nil, 0, err
-		}
-		tasks = append(tasks, task)
-	}
-
-	return tasks, totalTasks, nil
-
+func ReturnPagination(page, pageSize int) ([]Task, int, error) {
+	return ReturnPaginationForUser(page, pageSize, nil, "America/New_York")
 }
 
 func statusCondition(statusFilter string) string {
-	switch statusFilter {
-	case "complete", "completed":
-		return " AND completed = true"
-	case "incomplete":
-		return " AND (completed IS NULL OR completed = false)"
-	default:
-		return ""
-	}
+	return ListFilters{StatusFilter: statusFilter}.statusCondition("")
 }
