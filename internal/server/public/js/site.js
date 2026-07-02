@@ -42,6 +42,8 @@ import {
   initGlobalAnnouncement,
   dismissGlobalAnnouncement,
 } from "./modules/announcement.js";
+import { initAnnouncementCharCounter } from "./modules/admin.js";
+import { initDescriptionToggles } from "./modules/descriptions.js";
 import { initBulkActions } from "./modules/bulk.js";
 
 // Expose these to global scope for HTMX and other inline scripts
