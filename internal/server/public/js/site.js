@@ -11,6 +11,7 @@ import { initTheme, toggleTheme, attachThemeToggle } from "./modules/theme.js";
 import {
   initCharacterCounters,
   initializeProjectFormHandlers,
+  initializeProjectRenameHandlers,
   handleDescriptionInput,
 } from "./modules/form-handlers.js";
 import {
@@ -57,6 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
   attachThemeToggle();
   initCharacterCounters();
   initializeProjectFormHandlers();
+  initializeProjectRenameHandlers();
   initializeSidebarEventListeners();
   attachSortableInitializers();
   initializeModalEventListeners();

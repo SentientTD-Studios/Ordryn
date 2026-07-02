@@ -45,19 +45,14 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 	var ownerID int
 	var projectID sql.NullInt64
 	var dueDate sql.NullString
-	err = db.QueryRow(context.Background(), "SELECT title, description, completed, user_id, project_id, COALESCE(CAST(due_date AS TEXT), '') FROM tasks WHERE id = $1", id).Scan(&title, &description, &completed, &ownerID, &projectID, &dueDate)
+	var priority int
+	err = db.QueryRow(context.Background(), "SELECT title, description, completed, user_id, project_id, COALESCE(CAST(due_date AS TEXT), ''), COALESCE(priority,0) FROM tasks WHERE id = $1", id).Scan(&title, &description, &completed, &ownerID, &projectID, &dueDate, &priority)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Task not found.", http.StatusNotFound)
 			return
 		}
 		http.Error(w, "Error fetching task.", http.StatusInternalServerError)
-		return
-	}
-
-	// Only allow editing incomplete tasks
-	if completed {
-		http.Error(w, "Cannot edit a completed task.", http.StatusForbidden)
 		return
 	}
 
@@ -90,36 +85,45 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get the current project filter from query string to pass to form
-	projectFilterParam := r.URL.Query().Get("project")
-	statusFilter := requestStatusFilter(r)
+	// Get the current filters from query string to pass to form
+	fc := filterContextFromRequest(r)
 
 	data := struct {
-		FormTitle     string
-		Description   string
-		CurrentPage   string
-		ID            string
-		FormAction    string
-		SubmitText    string
-		SidebarTitle  string
-		Error         string
-		DueDate       string
-		Projects      []map[string]interface{}
-		ProjectFilter string
-		StatusFilter  string
+		FormTitle      string
+		Description    string
+		CurrentPage    string
+		ID             string
+		FormAction     string
+		SubmitText     string
+		SidebarTitle   string
+		Error          string
+		DueDate        string
+		Priority       int
+		Completed      bool
+		Projects       []map[string]interface{}
+		ProjectFilter  string
+		StatusFilter   string
+		DueFilter      string
+		SortFilter     string
+		PriorityFilter string
 	}{
-		FormTitle:     strings.TrimSpace(title),
-		Description:   strings.TrimSpace(description),
-		CurrentPage:   page,
-		ID:            id,
-		FormAction:    utils.GetBasePath() + "/api/edit-task",
-		SubmitText:    "Save Changes",
-		SidebarTitle:  "Edit Task",
-		Error:         "",
-		DueDate:       dueDate.String,
-		Projects:      projectsList,
-		ProjectFilter: projectFilterParam,
-		StatusFilter:  statusFilter,
+		FormTitle:      strings.TrimSpace(title),
+		Description:    strings.TrimSpace(description),
+		CurrentPage:    page,
+		ID:             id,
+		FormAction:     utils.GetBasePath() + "/api/edit-task",
+		SubmitText:     "Save Changes",
+		SidebarTitle:   "Edit Task",
+		Error:          "",
+		DueDate:        dueDate.String,
+		Priority:       priority,
+		Completed:      completed,
+		Projects:       projectsList,
+		ProjectFilter:  fc.Project,
+		StatusFilter:   fc.Status,
+		DueFilter:      fc.Due,
+		SortFilter:     fc.Sort,
+		PriorityFilter: fc.Priority,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -141,6 +145,10 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 	title := strings.TrimSpace(r.FormValue("title"))
 	description := strings.TrimSpace(r.FormValue("description"))
 	dueDate := strings.TrimSpace(r.FormValue("due_date"))
+	priority, err := parsePriorityValue(r.FormValue("priority_level"))
+	if err != nil {
+		priority = 0
+	}
 	pageStr := strings.TrimSpace(r.FormValue("currentPage"))
 
 	page, err := strconv.Atoi(pageStr)
@@ -191,20 +199,15 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify task exists and ownership + not completed
+	// Verify task exists and ownership
 	var ownerID int
-	var completed bool
-	err = db.QueryRow(context.Background(), "SELECT completed, user_id FROM tasks WHERE id = $1", id).Scan(&completed, &ownerID)
+	err = db.QueryRow(context.Background(), "SELECT user_id FROM tasks WHERE id = $1", id).Scan(&ownerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Task not found.", http.StatusNotFound)
 			return
 		}
 		http.Error(w, "Error fetching task.", http.StatusInternalServerError)
-		return
-	}
-	if completed {
-		http.Error(w, "Cannot edit a completed task.", http.StatusForbidden)
 		return
 	}
 
@@ -229,9 +232,9 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		// Clear project association
 		var err2 error
 		if dueDate == "" {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = NULL, due_date = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $3", title, description, id)
+			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = NULL, due_date = NULL, priority = $4, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $3", title, description, id, priority)
 		} else {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = NULL, due_date = $3, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $4", title, description, dueDate, id)
+			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = NULL, due_date = $3, priority = $5, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $4", title, description, dueDate, id, priority)
 		}
 		err = err2
 		if err != nil {
@@ -251,9 +254,9 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		}
 		var err2 error
 		if dueDate == "" {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = $3, due_date = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $4", title, description, pid, id)
+			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = $3, due_date = NULL, priority = $5, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $4", title, description, pid, id, priority)
 		} else {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = $3, due_date = $4, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $5", title, description, pid, dueDate, id)
+			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = $3, due_date = $4, priority = $6, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $5", title, description, pid, dueDate, id, priority)
 		}
 		err = err2
 		if err != nil {
@@ -288,17 +291,15 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Determine active project filter (from form or query)
-	activeProject := strings.TrimSpace(r.FormValue("project"))
-	if activeProject == "" {
-		activeProject = strings.TrimSpace(r.URL.Query().Get("project"))
-	}
+	// Determine active filters (from form or query)
+	fc := filterContextFromRequest(r)
+	activeProject := fc.Project
 	projectFilter := parseProjectFilter(activeProject)
-	statusFilter := requestStatusFilter(r)
+	listFilters := fc.ToListFilters()
 
 	var taskList []tasks.Task
 	var totalTasks int
-	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, projectFilter, statusFilter)
+	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, listFilters)
 	if err != nil {
 		http.Error(w, "Error fetching tasks after edit: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -361,8 +362,10 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		"IncompleteTasks":  incompleteCount,
 		"PerPage":          pageSize,
 		"Projects":         projectsList,
-		"ProjectFilter":    activeProject,
-		"StatusFilter":     statusFilter,
+		"Timezone":         timezone,
+	}
+	for k, v := range fc.TemplateFields() {
+		context[k] = v
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -58,10 +58,14 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	searchQuery := r.URL.Query().Get("search")
-	// Optional project filter: empty = all, "0" or "none" = no project, numeric id = specific project
-	projectParam := r.URL.Query().Get("project")
-	projectFilter := parseProjectFilter(projectParam)
-	statusFilter := requestStatusFilter(r)
+	fc := filterContextFromRequest(r)
+	if fc.Search == "" {
+		fc.Search = searchQuery
+	}
+	if fc.Page == 0 {
+		fc.Page = page
+	}
+	projectFilter := parseProjectFilter(fc.Project)
 
 	loggedOut := r.URL.Query().Get("logged_out") == "true"
 	accountCreated := r.URL.Query().Get("account_created") == "true"
@@ -84,7 +88,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	taskList, totalTasks, err = fetchTasksForFilters(page, pageSize, searchQuery, userID, timezone, projectFilter, statusFilter)
+	taskList, totalTasks, err = fetchTasksForFilters(page, pageSize, fc, userID, timezone)
 
 	if err != nil {
 		if w.Header().Get("Content-Type") == "" {
@@ -151,6 +155,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		"CompletedTasks":       completedCount,
 		"IncompleteTasks":      incompleteCount,
 		"PasswordResetSuccess": passwordResetSuccess,
+		"Timezone":             timezone,
 	}
 
 	// Include user's projects for the sidebar project select and mark selected project
@@ -170,9 +175,12 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	for k, v := range fc.TemplateFields() {
+		tplContext[k] = v
+	}
+
 	// Expose the active project filter to the template so the toolbar select can reflect it
-	tplContext["ProjectFilter"] = projectParam
-	tplContext["StatusFilter"] = statusFilter
+	tplContext["ProjectFilter"] = fc.Project
 
 	// Render the tasks and pagination controls
 	if err := utils.RenderTemplate(w, r, "index.html", tplContext); err != nil {
@@ -233,9 +241,11 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	email, _, permissions, timezone, loggedIn, _ := utils.GetSessionUserWithTimezone(r)
 
 	searchQuery := r.FormValue("search")
-	projectParam := r.FormValue("project")
-	projectFilter := parseProjectFilter(projectParam)
-	statusFilter := requestStatusFilter(r)
+	fc := filterContextFromRequest(r)
+	if fc.Search == "" {
+		fc.Search = searchQuery
+	}
+	projectFilter := parseProjectFilter(fc.Project)
 
 	if loggedIn {
 		if uid := utils.GetSessionUserID(r); uid != nil {
@@ -248,7 +258,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	if searchQuery != "" {
 		isSearching = true
 	}
-	taskList, totalTasks, err = fetchTasksForFilters(page, pageSize, searchQuery, userID, timezone, projectFilter, statusFilter)
+	taskList, totalTasks, err = fetchTasksForFilters(page, pageSize, fc, userID, timezone)
 
 	if err != nil {
 		if w.Header().Get("Content-Type") == "" {
@@ -299,7 +309,6 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		"FavoriteTasks":    favs,
 		"Tasks":            nonFavs,
 		"TotalResults":     totalTasks,
-		"SearchQuery":      searchQuery,
 		"CurrentPage":      page,
 		"PreviousPage":     pagination.PreviousPage,
 		"NextPage":         pagination.NextPage,
@@ -316,9 +325,11 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		"TotalTasks":       totalTasks,
 		"CompletedTasks":   completedCount,
 		"IncompleteTasks":  incompleteCount,
-		"ProjectFilter":    projectParam,
-		"StatusFilter":     statusFilter,
 		"Projects":         projectsList,
+		"Timezone":         timezone,
+	}
+	for k, v := range fc.TemplateFields() {
+		context[k] = v
 	}
 
 	if err := utils.RenderTemplate(w, r, "pagination.html", context); err != nil {

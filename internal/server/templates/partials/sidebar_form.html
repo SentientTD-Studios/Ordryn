@@ -3,7 +3,6 @@
     hx-include="#newTaskForm"
     method="post"
     id="newTaskForm"
-    enctype="multipart/form-data"
     hx-target="#task-container"
     hx-swap="innerHTML"
     >
@@ -20,16 +19,23 @@
         />
     </div>
     <div class="form-group">
+        {{if .Completed}}
+        <div class="alert alert-success py-2 mb-2"><i class="bi bi-check-circle"></i> This task is completed</div>
+        {{end}}
         <label for="description">Description:</label>
         <textarea
             id="description"
             name="description"
             class="form-control"
-            maxlength="100"
+            maxlength="1000"
+            hx-get="{{basePath}}/api/validate-description"
+            hx-trigger="keyup changed delay:300ms"
+            hx-target="#description-error"
+            hx-swap="innerHTML"
         >{{.Description}}</textarea>
         <div class="d-flex justify-content-between align-items-center mt-1">
-            <small class="form-hint">Max 100 Characters</small>
-            <small class="text-muted"><span id="char-count">{{if .Description}}{{len .Description}}{{else}}0{{end}}</span>/100</small>
+            <small class="form-hint">Max 1000 Characters</small>
+            <small class="text-muted"><span id="char-count">{{if .Description}}{{len .Description}}{{else}}0{{end}}</span>/1000</small>
         </div>
         {{if .Error}}
         <div id="description-error" class="invalid-feedback d-block">{{.Error}}</div>
@@ -44,6 +50,15 @@
             {{range .Projects}}
             <option value="{{.ID}}" {{if .Selected}}selected{{end}}>{{.Name}}</option>
             {{end}}
+        </select>
+    </div>
+    <div class="form-group mt-2">
+        <label for="priority">Priority:</label>
+        <select id="priority" name="priority_level" class="form-select">
+            <option value="0" {{if or (not .Priority) (eq .Priority 0)}}selected{{end}}>None</option>
+            <option value="1" {{if eq .Priority 1}}selected{{end}}>Low</option>
+            <option value="2" {{if eq .Priority 2}}selected{{end}}>Medium</option>
+            <option value="3" {{if eq .Priority 3}}selected{{end}}>High</option>
         </select>
     </div>
     <div class="form-group mt-2">
@@ -62,6 +77,9 @@
     <input type="hidden" name="currentPage" value="{{.CurrentPage}}" />
     <input type="hidden" name="project" value="{{.ProjectFilter}}" />
     <input type="hidden" name="status" value="{{.StatusFilter}}" />
+    <input type="hidden" name="due" value="{{.DueFilter}}" />
+    <input type="hidden" name="sort" value="{{.SortFilter}}" />
+    <input type="hidden" name="priority" value="{{.PriorityFilter}}" />
     <button type="submit" class="btn btn-primary w-100 mt-3">
         {{if .SubmitText}}{{.SubmitText}}{{else}}Add Task{{end}}
     </button>

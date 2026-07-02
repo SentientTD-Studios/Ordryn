@@ -1,0 +1,32 @@
+<table class="table table-striped projects-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th style="width:120px">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Projects}}
+        <tr>
+            <td data-label="Name">
+                <span class="project-name-display">{{.Name}}</span>
+                <form class="project-rename-form d-none d-inline-flex align-items-center gap-1" method="post" action="{{basePath}}/api/projects/update" hx-post="{{basePath}}/api/projects/update" hx-target="#projects-list" hx-swap="innerHTML">
+                    <input type="hidden" name="id" value="{{.ID}}" />
+                    <input class="form-control form-control-sm" name="name" value="{{.Name}}" maxlength="50" required />
+                    <button class="btn btn-sm btn-primary" type="submit" aria-label="Save project name"><i class="bi bi-check"></i></button>
+                    <button class="btn btn-sm btn-secondary cancel-rename-btn" type="button" aria-label="Cancel rename"><i class="bi bi-x"></i></button>
+                </form>
+                <button class="btn btn-sm btn-link edit-project-btn p-0 ms-1" type="button" aria-label="Rename project"><i class="bi bi-pencil"></i></button>
+            </td>
+            <td data-label="Actions">
+                <form method="post" action="{{basePath}}/api/projects/delete" hx-post="{{basePath}}/api/projects/delete" hx-target="#projects-list" hx-swap="innerHTML" style="display:inline;">
+                    <input type="hidden" name="id" value="{{.ID}}" />
+                    <button class="btn btn-sm btn-danger" type="submit" aria-label="Delete project"><i class="bi bi-trash"></i></button>
+                </form>
+            </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="2" class="text-muted">No projects yet.</td></tr>
+        {{end}}
+    </tbody>
+</table>

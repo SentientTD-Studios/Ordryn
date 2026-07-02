@@ -5,9 +5,9 @@
         </span>
     </td>
     <td class="title-column" data-label="Title">
-        <div class="d-flex align-items-center">
+        <div class="d-flex align-items-center flex-wrap">
             <button class="btn btn-link p-0 me-2 favorite-btn" style="text-decoration:none;" 
-                hx-get="{{basePath}}/api/toggle-favorite?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
+                hx-get="{{basePath}}/api/toggle-favorite?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
                 hx-target="#task-container" hx-swap="innerHTML" aria-label="Toggle favorite">
                 {{if .Task.IsFavorite}}
                     <i class="bi bi-star-fill" style="color:gold;"></i>
@@ -23,16 +23,23 @@
                     {{if .Task.DateModified}}<div>Modified: {{.Task.DateModified}}</div>{{end}}
                 </div>
             </span>
+            {{if .Task.ProjectName}}
+            <span class="badge bg-secondary project-badge ms-1">{{.Task.ProjectName}}</span>
+            {{end}}
+            {{if eq .Task.Priority 1}}<span class="badge bg-secondary priority-badge ms-1">Low</span>{{end}}
+            {{if eq .Task.Priority 2}}<span class="badge bg-warning text-dark priority-badge ms-1">Med</span>{{end}}
+            {{if eq .Task.Priority 3}}<span class="badge bg-danger priority-badge ms-1">High</span>{{end}}
         </div>
     </td>
     <td class="desc-column" data-label="Description">{{safeHTML .Task.Description}}</td>
-    <td class="date-added" data-label="Due Date">{{.Task.DueDate}}</td>
+    <td class="date-added {{dueDateClass .Task.DueDate .Task.Completed .Timezone}}" data-label="Due Date">
+        {{if eq (dueDateClass .Task.DueDate .Task.Completed .Timezone) "due-overdue"}}<i class="bi bi-exclamation-circle"></i> {{end}}{{.Task.DueDate}}
+    </td>
     <td class="actions-column" data-label="Actions">
         <div class="d-flex align-items-center gap-2 justify-content-start">
-            <!-- Status checkbox (uses existing update-status endpoint which returns complete row) -->
             <button
                 class="badge bg-{{if .Task.Completed}}success{{else}}danger text-white{{end}} status-column"
-                hx-get="{{basePath}}/api/update-status?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
+                hx-get="{{basePath}}/api/update-status?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
                 hx-target="{{if .StatusFilter}}#task-container{{else}}#task-{{.Task.ID}}{{end}}"
                 hx-swap="{{if .StatusFilter}}innerHTML{{else}}outerHTML{{end}}"
                 aria-label="Toggle complete"
@@ -46,16 +53,14 @@
                 {{end}}
             </button>
 
-            {{if not .Task.Completed}}
             <button class="btn btn-link p-0 mx-2 edit-btn" style="text-decoration:none;" 
-                hx-get="{{basePath}}/api/edit?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
+                hx-get="{{basePath}}/api/edit?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
                 hx-target="#sidebar .sidebar-body" hx-swap="innerHTML" aria-label="Edit task">
                 <i class="bi bi-pencil"></i>
             </button>
-            {{end}}
 
             <button 
-                hx-get="{{basePath}}/api/confirm?id={{.Task.ID}}&page={{.Task.Page}}&project={{.ProjectFilter}}&status={{.StatusFilter}}"
+                hx-get="{{basePath}}/api/confirm?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
                 hx-target="#modal .modal-content"
                 hx-trigger="click"
                 data-bs-toggle="modal"
@@ -68,4 +73,3 @@
         </div>
     </td>
 </tr>
-

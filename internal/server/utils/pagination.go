@@ -1,6 +1,9 @@
 package utils
 
-import "GoTodo/internal/tasks"
+import (
+	"GoTodo/internal/storage"
+	"context"
+)
 
 type PaginationData struct {
 	PreviousPage         int
@@ -64,6 +67,7 @@ func GetPaginationData(page, pageSize, totalItems, userID int) PaginationData {
 		hasRightEllipsis = true
 	}
 
+	uid := userID
 	return PaginationData{
 		PreviousPage:         prevPage,
 		NextPage:             nextPage,
@@ -73,29 +77,51 @@ func GetPaginationData(page, pageSize, totalItems, userID int) PaginationData {
 		TotalPages:           totalPages,
 		Pages:                pages,
 		HasRightEllipsis:     hasRightEllipsis,
-		TotalCompletedTasks:  GetCompletedTasksCount(&userID),
-		TotalIncompleteTasks: GetIncompleteTasksCount(&userID),
+		TotalCompletedTasks:  GetCompletedTasksCount(&uid),
+		TotalIncompleteTasks: GetIncompleteTasksCount(&uid),
 	}
 }
 
 func GetCompletedTasksCount(userID *int) int {
-	count := 0
-	var ts = tasks.ReturnTaskListForUser(userID)
-	for _, task := range ts {
-		if task.Completed {
-			count++
-		}
+	if userID == nil {
+		return 0
+	}
+
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return 0
+	}
+	defer storage.CloseDatabase(pool)
+
+	var count int
+	err = pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true",
+		*userID,
+	).Scan(&count)
+	if err != nil {
+		return 0
 	}
 	return count
 }
 
 func GetIncompleteTasksCount(userID *int) int {
-	count := 0
-	var ts = tasks.ReturnTaskListForUser(userID)
-	for _, task := range ts {
-		if !task.Completed {
-			count++
-		}
+	if userID == nil {
+		return 0
+	}
+
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return 0
+	}
+	defer storage.CloseDatabase(pool)
+
+	var count int
+	err = pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)",
+		*userID,
+	).Scan(&count)
+	if err != nil {
+		return 0
 	}
 	return count
 }

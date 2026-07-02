@@ -86,7 +86,7 @@ func APICreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := storage.CreateProject(*uidPtr, name)
+	newProject, err := storage.CreateProject(*uidPtr, name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create project: %v", err), http.StatusInternalServerError)
 		return
@@ -102,9 +102,7 @@ func APICreateProject(w http.ResponseWriter, r *http.Request) {
 		ctx := map[string]interface{}{
 			"Projects": projects,
 		}
-		// Notify client that projects changed so JS can refresh selects
-		// Also instruct client to reset the project filter to All Projects
-		w.Header().Set("HX-Trigger", "projects-changed reset-project-filter")
+		w.Header().Set("HX-Trigger", fmt.Sprintf("projects-changed set-project-filter:%d", newProject.ID))
 		utils.RenderTemplate(w, r, "projects_list.html", ctx)
 		return
 	}
@@ -173,6 +171,90 @@ func APIDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fallback: redirect back to the projects page
+	basePath := utils.GetBasePath()
+	w.Header().Set("HX-Redirect", basePath+"/projects")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, " ")
+}
+
+// APIUpdateProject renames a project owned by the logged-in user.
+func APIUpdateProject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	_, _, _, loggedIn := utils.GetSessionUser(r)
+	if !loggedIn {
+		http.Redirect(w, r, "/", http.StatusUnauthorized)
+		return
+	}
+
+	uidPtr := utils.GetSessionUserID(r)
+	if uidPtr == nil {
+		http.Redirect(w, r, "/", http.StatusUnauthorized)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	idStr := r.FormValue("id")
+	if idStr == "" {
+		http.Error(w, "Project id required", http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid project id", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if len(name) > MaxProjectNameLength {
+		w.Header().Set("X-Validation-Error", "true")
+		w.Header().Set("HX-Trigger", "project-name-error")
+		w.Header().Set("HX-Retarget", "#project-name-error")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Project name must be %d characters or less", MaxProjectNameLength)
+		return
+	}
+	if name == "" {
+		w.Header().Set("X-Validation-Error", "true")
+		w.Header().Set("HX-Trigger", "project-name-error")
+		w.Header().Set("HX-Retarget", "#project-name-error")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "Project name is required")
+		return
+	}
+
+	if _, err := storage.GetProjectByID(id, *uidPtr); err != nil {
+		http.Error(w, "Project not found.", http.StatusNotFound)
+		return
+	}
+
+	if err := storage.UpdateProject(id, *uidPtr, name); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update project: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		projects, err := storage.GetProjectsForUser(*uidPtr)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error fetching projects: %v", err), http.StatusInternalServerError)
+			return
+		}
+		ctx := map[string]interface{}{
+			"Projects": projects,
+		}
+		w.Header().Set("HX-Trigger", "projects-changed")
+		utils.RenderTemplate(w, r, "projects_list.html", ctx)
+		return
+	}
+
 	basePath := utils.GetBasePath()
 	w.Header().Set("HX-Redirect", basePath+"/projects")
 	w.WriteHeader(http.StatusOK)

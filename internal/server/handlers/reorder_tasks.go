@@ -72,7 +72,6 @@ func APIReorderTasks(w http.ResponseWriter, r *http.Request) {
 	if projectParam == "" {
 		projectParam = r.URL.Query().Get("project")
 	}
-	statusFilter := requestStatusFilter(r)
 
 	// Log the request for diagnostics
 	log.Printf("APIReorderTasks called: remote=%s user=%s loggedIn=%v order=%q page=%d project=%q",
@@ -288,7 +287,9 @@ func APIReorderTasks(w http.ResponseWriter, r *http.Request) {
 	userPtr := &userID
 	var taskList []tasks.Task
 	var totalTasks int
-	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, userPtr, timezone, projectFilter, statusFilter)
+	fc := filterContextFromRequest(r)
+	listFilters := fc.ToListFilters()
+	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, userPtr, timezone, listFilters)
 	if err != nil {
 		http.Error(w, "Error fetching tasks: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -343,8 +344,9 @@ func APIReorderTasks(w http.ResponseWriter, r *http.Request) {
 		"CompletedTasks":   completedCount,
 		"IncompleteTasks":  incompleteCount,
 		"Projects":         projectsList,
-		"ProjectFilter":    projectParam,
-		"StatusFilter":     statusFilter,
+	}
+	for k, v := range fc.TemplateFields() {
+		context[k] = v
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

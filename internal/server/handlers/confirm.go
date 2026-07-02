@@ -16,19 +16,16 @@ func APIConfirmDelete(w http.ResponseWriter, r *http.Request) {
 	if page == "" {
 		page = "1"
 	}
-	projectParam := r.URL.Query().Get("project")
-	statusFilter := requestStatusFilter(r)
+	fc := filterContextFromRequest(r)
 
 	data := struct {
-		ID            string
-		CurrentPage   string
-		ProjectFilter string
-		StatusFilter  string
+		ID          string
+		CurrentPage string
+		FilterQuery string
 	}{
-		ID:            id,
-		CurrentPage:   page,
-		ProjectFilter: projectParam,
-		StatusFilter:  statusFilter,
+		ID:          id,
+		CurrentPage: page,
+		FilterQuery: fc.QuerySuffix(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

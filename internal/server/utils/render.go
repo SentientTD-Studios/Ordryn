@@ -65,6 +65,7 @@ func InitializeTemplates() error {
 			}
 			return dict, nil
 		},
+		"dueDateClass": DueDateClass,
 	}).ParseGlob("internal/server/templates/*.html")
 	if err != nil {
 		return err

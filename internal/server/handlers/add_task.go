@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const MaxDescriptionLength = 100
+const MaxDescriptionLength = 1000
 
 func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	// fmt.Println("Request method: ", r.Method)
@@ -24,6 +24,10 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	title := strings.TrimSpace(r.FormValue("title"))
 	description := strings.TrimSpace(r.FormValue("description"))
 	dueDate := strings.TrimSpace(r.FormValue("due_date"))
+	priority := 0
+	if p, err := parsePriorityValue(r.FormValue("priority_level")); err == nil {
+		priority = p
+	}
 	pageStr := strings.TrimSpace(r.FormValue("currentPage"))
 
 	page, err := strconv.Atoi(pageStr)
@@ -111,12 +115,10 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	var newTaskProject *int
 	if projectIDStr == "" {
 		// Insert without project_id (NULL)
-		dueSQL := "NULL"
 		if dueDate != "" {
-			dueSQL = "$6"
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, "+dueSQL+")", title, description, false, userID, nextPos, dueDate)
+			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7)", title, description, false, userID, nextPos, priority, dueDate)
 		} else {
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5)", title, description, false, userID, nextPos)
+			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6)", title, description, false, userID, nextPos, priority)
 		}
 	} else {
 		pid, errConv := strconv.Atoi(projectIDStr)
@@ -130,9 +132,9 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if dueDate != "" {
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, project_id, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7)", title, description, false, userID, nextPos, pid, dueDate)
+			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7, $8)", title, description, false, userID, nextPos, priority, pid, dueDate)
 		} else {
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, project_id) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6)", title, description, false, userID, nextPos, pid)
+			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7)", title, description, false, userID, nextPos, priority, pid)
 		}
 		if err == nil {
 			newTaskProject = &pid
@@ -172,16 +174,11 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 
 	// Open a new DB connection to count total tasks (or reuse db if possible)
 	// Determine active project filter (from form or query) so we can decide whether to refresh the current view
-	activeProject := strings.TrimSpace(r.FormValue("project"))
-	if activeProject == "" {
-		activeProject = strings.TrimSpace(r.URL.Query().Get("project"))
-	}
-	activeStatus := normalizeStatusFilter(r.FormValue("status"))
-	if activeStatus == "" {
-		activeStatus = normalizeStatusFilter(r.URL.Query().Get("status"))
-	}
-
+	fc := filterContextFromRequest(r)
+	activeProject := fc.Project
+	activeStatus := fc.Status
 	projectFilterPtr := parseProjectFilter(activeProject)
+	listFilters := fc.ToListFilters()
 
 	var totalTasks int
 	// Count tasks scoped to project if filter is active, otherwise count all
@@ -222,7 +219,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var taskList []tasks.Task
-	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, projectFilterPtr, activeStatus)
+	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, listFilters)
 	if err != nil {
 		http.Error(w, "Error fetching tasks after add: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -352,6 +349,10 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		"Projects":         projectsList,
 		"ProjectFilter":    activeProject,
 		"StatusFilter":     activeStatus,
+		"Timezone":         timezone,
+	}
+	for k, v := range fc.TemplateFields() {
+		tmplCtx[k] = v
 	}
 
 	// Set headers for successful addition
@@ -368,7 +369,9 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch tasks for the target project and page
-	taskListTarget, totalTasksTarget, err := tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, targetFilterPtr, activeStatus)
+	targetFC := fc
+	targetFC.Project = targetFilterParam
+	taskListTarget, totalTasksTarget, err := tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, targetFC.ToListFilters())
 	if err != nil {
 		http.Error(w, "Error fetching tasks for new project: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -431,9 +434,13 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		"Projects":         projectsList,
 		"ProjectFilter":    targetFilterParam,
 		"StatusFilter":     activeStatus,
+		"Timezone":         timezone,
+	}
+	for k, v := range targetFC.TemplateFields() {
+		ctxT[k] = v
 	}
 
-	// Instruct client to set toolbar filter to target project and render that project's view
+	// Instruct client to set toolbar filter to target project
 	w.Header().Set("HX-Trigger", "task-added set-project-filter:"+targetFilterParam)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := utils.RenderTemplate(w, r, "pagination.html", ctxT); err != nil {

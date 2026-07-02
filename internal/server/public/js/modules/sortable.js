@@ -56,6 +56,21 @@ export function initSortable() {
             if (statusVal) {
               form.append("status", statusVal);
             }
+            const dueFilter = document.getElementById("due-filter");
+            const dueVal = dueFilter ? dueFilter.value : "";
+            if (dueVal) {
+              form.append("due", dueVal);
+            }
+            const sortFilter = document.getElementById("sort-filter");
+            const sortVal = sortFilter ? sortFilter.value : "";
+            if (sortVal) {
+              form.append("sort", sortVal);
+            }
+            const priorityFilter = document.getElementById("priority-filter");
+            const priorityVal = priorityFilter ? priorityFilter.value : "";
+            if (priorityVal) {
+              form.append("priority", priorityVal);
+            }
           } catch (e) {}
 
           // Send HX-Request and X-Requested-With so server middleware accepts this as an XHR/HTMX call

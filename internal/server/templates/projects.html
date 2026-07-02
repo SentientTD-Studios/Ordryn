@@ -23,29 +23,7 @@
                         <div class="card-body">
                             <p class="text-muted">Create projects to organize your tasks. Deleting a project will unassign tasks from it.</p>
                             <div id="projects-list">
-                                <table class="table table-striped projects-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th style="width:120px">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {{range .Projects}}
-                                        <tr>
-                                            <td data-label="Name">{{.Name}}</td>
-                                            <td data-label="Actions">
-                                                <form method="post" action="{{basePath}}/api/projects/delete" hx-post="{{basePath}}/api/projects/delete" hx-target="#projects-list" hx-swap="innerHTML" style="display:inline;">
-                                                    <input type="hidden" name="id" value="{{.ID}}" />
-                                                    <button class="btn btn-sm btn-danger" type="submit"><i class="bi bi-trash"></i></button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                        {{else}}
-                                        <tr><td colspan="2" class="text-muted">No projects yet.</td></tr>
-                                        {{end}}
-                                    </tbody>
-                                </table>
+                                {{template "project_table.html" .}}
                             </div>
                         </div>
                     </div>

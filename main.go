@@ -9,24 +9,9 @@ import (
 func main() {
 	fmt.Println("Application main function started.")
 	storage.CreateDatabase()
-	storage.CreateUsersTable()
-	storage.CreateRolesTable()
-	storage.CreateInvitesTable()
-	storage.CreateTasksTable()
-	storage.MigrateInvitesTable()     // Ensure inviteused column exists
-	storage.MigrateUsersAddTimezone() // Ensure timezone column exists
-	storage.MigrateUsersAddName()
-	storage.MigrateUsersAddIsBanned()
-	storage.MigrateUsersAddItemsPerPage()
-	storage.MigrateTasksAddIsFavorite()
-	storage.MigrateTasksAddPosition()
-
-	// The following is just for modifying columns during testing
-	/**
-	storage.AddColumns()
-	storage.RemoveColumns()
-	storage.MigrateTasksTable()
-	*/
+	if err := storage.RunMigrations(); err != nil {
+		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
+	}
 
 	err := server.StartServer()
 	if err != nil {

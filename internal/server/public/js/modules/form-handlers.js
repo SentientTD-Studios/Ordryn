@@ -9,12 +9,12 @@ export function initCharacterCounters() {
       charCount.textContent = length;
 
       // Add visual feedback when approaching limit
-      if (length > 90) {
+      if (length > 900) {
         charCount.classList.add("text-warning");
       } else {
         charCount.classList.remove("text-warning");
       }
-      if (length > 95) {
+      if (length > 950) {
         charCount.classList.add("text-danger");
       } else {
         charCount.classList.remove("text-danger");
@@ -89,6 +89,29 @@ export function initializeProjectFormHandlers() {
   }
 }
 
+export function initializeProjectRenameHandlers() {
+  document.body.addEventListener("click", function (e) {
+    const editBtn = e.target.closest(".edit-project-btn");
+    if (editBtn) {
+      const td = editBtn.closest("td");
+      if (!td) return;
+      td.querySelector(".project-name-display")?.classList.add("d-none");
+      td.querySelector(".project-rename-form")?.classList.remove("d-none");
+      editBtn.classList.add("d-none");
+      td.querySelector('.project-rename-form input[name="name"]')?.focus();
+      return;
+    }
+
+    const cancelBtn = e.target.closest(".cancel-rename-btn");
+    if (!cancelBtn) return;
+    const td = cancelBtn.closest("td");
+    if (!td) return;
+    td.querySelector(".project-name-display")?.classList.remove("d-none");
+    td.querySelector(".project-rename-form")?.classList.add("d-none");
+    td.querySelector(".edit-project-btn")?.classList.remove("d-none");
+  });
+}
+
 export function handleDescriptionInput(charCountElement) {
   const description = document.getElementById("description");
   if (!description || !charCountElement) return;
@@ -103,12 +126,12 @@ export function handleDescriptionInput(charCountElement) {
       charCountElement.textContent = length;
 
       // Add visual feedback when approaching limit
-      if (length > 90) {
+      if (length > 900) {
         charCountElement.classList.add("text-warning");
       } else {
         charCountElement.classList.remove("text-warning");
       }
-      if (length > 95) {
+      if (length > 950) {
         charCountElement.classList.add("text-danger");
       } else {
         charCountElement.classList.remove("text-danger");
