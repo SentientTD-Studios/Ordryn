@@ -109,7 +109,11 @@ func StartServer() error {
 	http.HandleFunc("/api/users", utils.RequireHTMX(utils.RequirePermission("admin", handlers.APIGetUsers)))
 	http.HandleFunc("/api/export", utils.RequireAuth(handlers.APIExportTasks))
 	http.HandleFunc("/api/import", utils.RequireHTMX(utils.RequireAuth(handlers.APIImportTasks)))
+	http.HandleFunc("/api/validate-description", utils.RequireHTMX(handlers.ValidateDescription))
+	http.HandleFunc("/api/tags/json", utils.RequireAuth(handlers.APITagsJSON))
+	http.HandleFunc("/api/tags/update", utils.RequireHTMX(utils.RequireAuth(handlers.APIUpdateTag)))
 	http.HandleFunc("/api/tags/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteTag)))
+	http.HandleFunc("/api/duplicate-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIDuplicateTask)))
 
 	// Profile API endpoints
 	http.HandleFunc("/api/update-timezone", utils.RequireHTMX(handlers.APIUpdateTimezone))

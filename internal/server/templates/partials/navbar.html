@@ -12,7 +12,9 @@
                     </li>
                     {{if .LoggedIn}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/dashboard">Dashboard</a>
+                        <a class="nav-link" href="{{basePath}}/dashboard">
+                            Dashboard{{if .OverdueCount}} <span class="badge bg-danger ms-1" title="Overdue tasks">{{.OverdueCount}}</span>{{end}}
+                        </a>
                     </li>
                     {{end}}
                     <li class="nav-item">

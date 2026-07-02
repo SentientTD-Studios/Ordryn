@@ -10,6 +10,7 @@ import (
 	"GoTodo/internal/config"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/tasks"
 	"GoTodo/internal/version"
 )
 
@@ -66,6 +67,7 @@ func InitializeTemplates() error {
 			return dict, nil
 		},
 		"dueDateClass": DueDateClass,
+		"dueDateDisplay": DueDateDisplay,
 		"renderMarkdown": func(s string) template.HTML {
 			return template.HTML(RenderMarkdown(s))
 		},
@@ -173,6 +175,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 				}
 			}
 		}
+		injectSessionNavData(ctx, r)
 		execErr = Templates.ExecuteTemplate(w, tmpl, ctx)
 	} else {
 		ctx := map[string]interface{}{
@@ -216,6 +219,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 				}
 			}
 		}
+		injectSessionNavData(ctx, r)
 		execErr = Templates.ExecuteTemplate(w, tmpl, ctx)
 	}
 	if execErr != nil {
@@ -232,4 +236,19 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 // GetBasePath returns the base path for use in templates
 func GetBasePath() string {
 	return BasePath
+}
+
+func injectSessionNavData(ctx map[string]interface{}, r *http.Request) {
+	if r == nil {
+		return
+	}
+	_, _, _, timezone, loggedIn, _ := GetSessionUserWithTimezone(r)
+	if !loggedIn {
+		return
+	}
+	if uid := GetSessionUserID(r); uid != nil {
+		if count, err := tasks.GetOverdueCount(*uid, timezone); err == nil && count > 0 {
+			ctx["OverdueCount"] = count
+		}
+	}
 }

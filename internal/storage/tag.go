@@ -134,6 +134,43 @@ func DeleteTag(id, userID int) error {
 	return nil
 }
 
+// UpdateTag renames a tag owned by the user.
+func UpdateTag(id, userID int, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("tag name is required")
+	}
+	if len(name) > 50 {
+		return fmt.Errorf("tag name must be 50 characters or less")
+	}
+
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	var exists bool
+	if err := pool.QueryRow(context.Background(),
+		"SELECT EXISTS(SELECT 1 FROM tags WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND id != $3)",
+		userID, name, id).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check tag name: %v", err)
+	}
+	if exists {
+		return fmt.Errorf("a tag with that name already exists")
+	}
+
+	tag, err := pool.Exec(context.Background(),
+		"UPDATE tags SET name = $1 WHERE id = $2 AND user_id = $3", name, id, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update tag: %v", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("tag not found")
+	}
+	return nil
+}
+
 // SetTaskTags replaces all tags on a task (max MaxTagsPerTask).
 func SetTaskTags(taskID, userID int, tagIDs []int) error {
 	if len(tagIDs) > MaxTagsPerTask {

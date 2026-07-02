@@ -48,8 +48,8 @@
             {{end}}
         {{end}}
     </td>
-    <td class="date-added {{dueDateClass .Task.DueDate .Task.Completed .Timezone}}" data-label="Due Date">
-        {{if eq (dueDateClass .Task.DueDate .Task.Completed .Timezone) "due-overdue"}}<i class="bi bi-exclamation-circle"></i> {{end}}{{.Task.DueDate}}
+    <td class="date-added {{dueDateClass .Task.DueDate .Task.Completed .Timezone}}" data-label="Due Date" title="{{.Task.DueDate}}">
+        {{if eq (dueDateClass .Task.DueDate .Task.Completed .Timezone) "due-overdue"}}<i class="bi bi-exclamation-circle"></i> {{end}}{{dueDateDisplay .Task.DueDate .Task.Completed .Timezone}}
     </td>
     <td class="actions-column" data-label="Actions">
         <div class="d-flex align-items-center gap-2 justify-content-start">
@@ -73,6 +73,12 @@
                 hx-get="{{basePath}}/api/edit?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
                 hx-target="#sidebar .sidebar-body" hx-swap="innerHTML" aria-label="Edit task">
                 <i class="bi bi-pencil"></i>
+            </button>
+
+            <button class="btn btn-link p-0 mx-1 duplicate-btn" style="text-decoration:none;"
+                hx-post="{{basePath}}/api/duplicate-task?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
+                hx-target="#task-container" hx-swap="innerHTML" aria-label="Duplicate task">
+                <i class="bi bi-copy"></i>
             </button>
 
             <button 

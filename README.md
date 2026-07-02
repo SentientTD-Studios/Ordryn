@@ -1,25 +1,37 @@
 # GoTodo
 
-GoTodo is a small, self-hosted task manager built with Go and PostgreSQL. It focuses on simplicity and a pleasant developer experience: user accounts, per-user tasks, invite flow, role-based permissions, a responsive UI, and a lightweight AJAX/HTMX interaction model.
+GoTodo is a self-hosted task manager built with Go, PostgreSQL, and HTMX. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, a responsive UI, and in-place HTMX interactions.
+
+**Current version:** v0.15.1-beta
 
 ## Features
 
-- User signup / login / logout
-- Editable profile with a single `user_name` field and timezone preference
-- Per-user tasks: add, list, update status, delete
-- Invite creation and confirmation (permission gated)
-- Role-based permissions and a default role
-- Responsive UI with Bootstrap and a dark/light theme toggle
-- HTMX for in-place interactions and partial updates
-- Asset cache-busting via `AssetVersion`
+- User signup / login / logout with forgot-password flow
+- Editable profile (display name, timezone, tasks-per-page preference)
+- Per-user tasks: add, edit, duplicate, complete, delete, drag-and-drop reorder
+- Projects with rename and delete; tags with create-on-type, rename, and delete
+- Priority levels (None / Low / Medium / High) with optional sort-by-priority view
+- Due dates with smart filters (today, overdue, this week, no date) and relative labels
+- Starred tasks pinned above pagination
+- Search with project, status, tag, and due-date filters
+- Markdown task descriptions with truncated list view and expand-in-place
+- Bulk actions: complete, delete, move project, add/remove tag, set priority
+- CSV/JSON export and CSV import (auto-creates projects and tags)
+- Task activity timeline in the edit sidebar
+- Dashboard with overdue/today counts, completion charts, and streak tracking
+- Keyboard shortcuts for power users (`?` for help)
+- Invite-only registration and role-based permissions (admin, create invites)
+- Admin panel: site settings, user management, global announcements
+- Dark and light themes
+- HTMX for partial page updates without full reloads
 
 ## Quick start
 
 Requirements:
 
-- Go (1.20+)
+- Go 1.24+
 - PostgreSQL
-- Node.js + npm (for frontend assets)
+- Node.js + npm (for frontend asset builds)
 
 1. Copy the example env file to `.env` and edit values:
 
@@ -29,93 +41,62 @@ DB_PORT=5432
 DB_USER=youruser
 DB_PASSWORD=yourpassword
 DB_NAME=gotodo
+SESSION_KEY=your-32-char-or-longer-secret-key!!
 BASE_PATH=/         # optional
 ASSET_VERSION=20251130  # optional; bump to force client cache refresh
 ```
 
-2. Install frontend dependencies and builds assets:
+2. Install frontend dependencies and build assets:
 
-```powershell
+```bash
 npm ci
 npm run build:assets
 ```
 
 3. Build and run:
 
-```powershell
-go build -o app.exe main.go
-.\app.exe
+```bash
+go build -o gotodo main.go
+./gotodo
 ```
 
 Or run directly:
 
-```powershell
+```bash
 go run main.go
 ```
 
-Open the app in your browser (default from code: http://localhost:8080).
+Open the app in your browser (default: http://localhost:8080).
 
 ## Frontend Assets
 
-The repository includes pre-built minified CSS/JS files (internal/server/public/css/site.min.css, internal/server/public/js/site.min.js) so a fresh clone works immediately.
+Pre-built minified CSS/JS are included (`internal/server/public/css/site.min.css`, `internal/server/public/js/site.min.js`) so a fresh clone works immediately.
 
-If you modify frontend source files (CSS/JS in internal/server/public/src/):
+After modifying frontend source:
 
-```powershell
+```bash
 npm ci
 npm run build:assets
-# update .asset_version if needed
-Get-Date -UFormat %Y%m%d%H%M%S | Out-File -FilePath "internal/server/public/.asset_version" -Encoding utf8
-git add internal/server/public/css/site.min.css internal/server/public/js/site.min.js internal/server/public/.asset_version
-git commit -m "Update frontend assets"
-
 ```
 
 ## Database
 
-The app uses `github.com/jackc/pgx/v5/pgxpool`. There are helper/migration functions in `internal/storage/database.go` you can run or inspect.
+The app uses `github.com/jackc/pgx/v5/pgxpool`. Migrations run automatically on startup via `internal/storage/migrations.go`.
 
-## Templates & Assets
+## Development
 
-- Templates are rendered via `utils.RenderTemplate`. The renderer injects `AssetVersion` into your templates automatically (from `ASSET_VERSION` env or fallback).
-- Use `?v={{.AssetVersion}}` on CSS/JS includes to bust caches when you update assets.
-
-## Sessions & Profile
-
-- Sessions are managed through `sessionstore`.
-- `GetSessionUserWithTimezone` returns the logged-in user's email, role, permissions, timezone, a logged-in flag, and `user_name`.
-- Profile updates are handled by `/api/update-profile` (AJAX). On success the session is updated so UI reflects the change immediately.
-
-## Theme toggle
-
-- The dark/light theme is implemented with CSS custom properties in `site.css` and a small `site.js` script that stores the choice in `localStorage`.
-- Make sure `site.js` is included on pages so the toggle initialization works correctly.
-
-## HTMX
-
-- HTMX is used for in-place swaps and short server-client flows. Some handlers set `HX-Redirect` for client-side redirects after an XHR-style submit.
-
-## Troubleshooting
-
-- Blank name after login: ensure `session.Values["user_name"]` is set during login (login handler loads it from DB).
-- 500 on profile save: confirm DB has `user_name` and `timezone` columns and check server logs for the error.
-- Theme toggle not persisting: ensure `site.js` is loaded and `localStorage.theme` is set.
-- Asset caching: bump `ASSET_VERSION` or set `ASSET_VERSION` env var to force clients to fetch updated assets.
-
-## Development notes
-
-- Code is organized under `internal/` with clear separation for handlers, templates, storage, and utils.
-- If you want automated asset versioning, set `ASSET_VERSION` in your CI/CD pipeline (build timestamp or git SHA).
-
-## Where to look
-
-- Routes and server setup: `internal/server/server.go`
+- Routes: `internal/server/server.go`
 - Handlers: `internal/server/handlers`
-- Templates: `internal/server/templates` (+ partials)
+- Templates: `internal/server/templates`
 - Static assets: `internal/server/public`
-- DB helpers and migrations: `internal/storage/database.go`
-- Template helper and session utils: `internal/server/utils`
+- Roadmap: `docs/ROADMAP.md`
 
----
+Run tests:
 
-README file generated with AI Assistance
+```bash
+SESSION_KEY=test-session-key-for-unit-tests-32chars!! go test ./...
+```
+
+## License
+
+See LICENSE file.

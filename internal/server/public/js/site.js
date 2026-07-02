@@ -12,6 +12,8 @@ import {
   initCharacterCounters,
   initializeProjectFormHandlers,
   initializeProjectRenameHandlers,
+  initializeTagRenameHandlers,
+  initDueDatePresets,
   handleDescriptionInput,
 } from "./modules/form-handlers.js";
 import {
@@ -73,6 +75,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initCharacterCounters();
   initializeProjectFormHandlers();
   initializeProjectRenameHandlers();
+  initializeTagRenameHandlers();
+  initDueDatePresets();
   initializeSidebarEventListeners();
   attachSortableInitializers();
   initializeModalEventListeners();

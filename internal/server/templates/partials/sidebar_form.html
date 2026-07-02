@@ -27,6 +27,11 @@
             name="description"
             class="form-control"
             maxlength="1000"
+            hx-get="{{basePath}}/api/validate-description"
+            hx-trigger="keyup changed delay:300ms"
+            hx-target="#description-error"
+            hx-swap="innerHTML"
+            hx-include="this"
         >{{.Description}}</textarea>
         <div class="d-flex justify-content-between align-items-center mt-1">
             <small class="form-hint">Max 1000 Characters</small>
@@ -65,6 +70,12 @@
             class="form-control"
             value="{{.DueDate}}"
         />
+        <div class="btn-group btn-group-sm mt-1" role="group" aria-label="Due date presets">
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="today">Today</button>
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="tomorrow">Tomorrow</button>
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="week">+1 week</button>
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="clear">Clear</button>
+        </div>
     </div>
     {{if .Tags}}
     <div class="form-group mt-2">

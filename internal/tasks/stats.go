@@ -38,6 +38,24 @@ type DayCount struct {
 	Count int
 }
 
+// GetOverdueCount returns the number of incomplete overdue tasks for a user.
+func GetOverdueCount(userID int, timezone string) (int, error) {
+	timezone = normalizeTimezone(timezone)
+
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return 0, err
+	}
+	defer storage.CloseDatabase(pool)
+
+	where, args := appendDueDateCondition("user_id = $1", []interface{}{userID}, "overdue", timezone, "")
+	var count int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE "+where, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("overdue count: %w", err)
+	}
+	return count, nil
+}
+
 // GetDashboardStats computes dashboard metrics for a user in their timezone.
 func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
 	timezone = normalizeTimezone(timezone)
