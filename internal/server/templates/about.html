@@ -89,6 +89,6 @@
         <!-- HTMX -->
         <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
 
-        <script src="{{basePath}}/public/js/{{if .UseMinifiedAssets}}site.min.js{{else}}site.js{{end}}?v={{.AssetVersion}}" defer></script>
+        {{template "site_script.html" .}}
     </body>
 </html>

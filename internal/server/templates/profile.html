@@ -136,7 +136,7 @@
         <script src="{{basePath}}/public/vendor/popper/popper.min.js" defer></script>
         <script src="{{basePath}}/public/vendor/bootstrap/js/bootstrap.min.js" defer></script>
         <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
-        <script src="{{basePath}}/public/js/{{if .UseMinifiedAssets}}site.min.js{{else}}site.js{{end}}?v={{.AssetVersion}}" defer></script>
+        {{template "site_script.html" .}}
 
         <script nonce="{{.CSPNonce}}">
             document.addEventListener('DOMContentLoaded', function() {

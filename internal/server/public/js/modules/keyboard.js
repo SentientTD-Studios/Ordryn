@@ -42,82 +42,94 @@ function closeOpenModals() {
   });
 }
 
+function isHelpKey(e) {
+  return e.key === "?" || (e.code === "Slash" && e.shiftKey);
+}
+
+function isSearchKey(e) {
+  return e.code === "Slash" && !e.shiftKey;
+}
+
 export function initKeyboardShortcuts() {
-  document.body.addEventListener("keydown", (e) => {
-    if (e.defaultPrevented) return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.defaultPrevented) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-    const active = document.activeElement;
-    const typing = isTypingTarget(active);
+      const active = document.activeElement;
+      const typing = isTypingTarget(active);
 
-    if (e.key === "Escape") {
-      closeOpenModals();
-      if (typeof window.closeSidebar === "function") {
-        window.closeSidebar();
+      if (e.code === "Escape") {
+        closeOpenModals();
+        if (typeof window.closeSidebar === "function") {
+          window.closeSidebar();
+        }
+        return;
       }
-      return;
-    }
 
-    if (typing) return;
+      if (typing) return;
 
-    if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
-      e.preventDefault();
-      openShortcutsModal();
-      return;
-    }
-
-    if (e.key === "/") {
-      const search = document.getElementById("search");
-      if (search) {
+      if (isHelpKey(e)) {
         e.preventDefault();
-        search.focus();
-        search.select();
+        openShortcutsModal();
+        return;
       }
-      return;
-    }
 
-    if (e.key === "n") {
-      const openBtn = document.getElementById("openSidebar");
-      if (openBtn) {
+      if (isSearchKey(e)) {
+        const search = document.getElementById("search");
+        if (search) {
+          e.preventDefault();
+          search.focus();
+          if (typeof search.select === "function") search.select();
+        }
+        return;
+      }
+
+      if (e.code === "KeyN") {
+        const openBtn = document.getElementById("openSidebar");
+        if (openBtn) {
+          e.preventDefault();
+          openBtn.click();
+        }
+        return;
+      }
+
+      const rows = getTaskRows();
+      if (rows.length === 0) return;
+
+      let focused = getFocusedRow();
+      let idx = focused ? rows.indexOf(focused) : -1;
+
+      if (e.code === "KeyJ") {
         e.preventDefault();
-        openBtn.click();
+        idx = idx < rows.length - 1 ? idx + 1 : 0;
+        setFocusedRow(rows[idx]);
+        return;
       }
-      return;
-    }
 
-    const rows = getTaskRows();
-    if (rows.length === 0) return;
+      if (e.code === "KeyK") {
+        e.preventDefault();
+        idx = idx > 0 ? idx - 1 : rows.length - 1;
+        setFocusedRow(rows[idx]);
+        return;
+      }
 
-    let focused = getFocusedRow();
-    let idx = focused ? rows.indexOf(focused) : -1;
+      if (!focused) return;
 
-    if (e.key === "j") {
-      e.preventDefault();
-      idx = idx < rows.length - 1 ? idx + 1 : 0;
-      setFocusedRow(rows[idx]);
-      return;
-    }
+      if (e.code === "KeyE") {
+        e.preventDefault();
+        const editBtn = focused.querySelector(".edit-btn");
+        if (editBtn) editBtn.click();
+        return;
+      }
 
-    if (e.key === "k") {
-      e.preventDefault();
-      idx = idx > 0 ? idx - 1 : rows.length - 1;
-      setFocusedRow(rows[idx]);
-      return;
-    }
-
-    if (!focused) return;
-
-    if (e.key === "e") {
-      e.preventDefault();
-      const editBtn = focused.querySelector(".edit-btn");
-      if (editBtn) editBtn.click();
-      return;
-    }
-
-    if (e.key === "x") {
-      e.preventDefault();
-      const statusBtn = focused.querySelector(".status-column");
-      if (statusBtn) statusBtn.click();
-    }
-  });
+      if (e.code === "KeyX") {
+        e.preventDefault();
+        const statusBtn = focused.querySelector(".status-column");
+        if (statusBtn) statusBtn.click();
+      }
+    },
+    true,
+  );
 }

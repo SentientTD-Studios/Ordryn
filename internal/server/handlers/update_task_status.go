@@ -171,15 +171,16 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	// Render the complete task row with updated data
 	fc := filterContextFromRequest(r)
 	data := struct {
-		Task          tasks.Task
-		BasePath      string
-		ProjectFilter string
-		StatusFilter  string
-		DueFilter     string
-		SortFilter    string
+		Task           tasks.Task
+		BasePath       string
+		ProjectFilter  string
+		StatusFilter   string
+		DueFilter      string
+		SortFilter     string
 		PriorityFilter string
-		FilterQuery   string
-		Timezone      string
+		FilterQuery    string
+		Timezone       string
+		IsSearching    bool
 	}{
 		Task:           task,
 		BasePath:       basePath,
@@ -190,6 +191,7 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		PriorityFilter: fc.Priority,
 		FilterQuery:    fc.QuerySuffix(),
 		Timezone:       timezone,
+		IsSearching:    fc.Search != "",
 	}
 
 	if err := utils.Templates.ExecuteTemplate(w, "todo.html", data); err != nil {

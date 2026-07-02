@@ -303,7 +303,7 @@
         <!-- SortableJS for drag-and-drop ordering -->
         <script src="{{basePath}}/public/vendor/sortable/Sortable.min.js" defer></script>
 
-        <script src="{{basePath}}/public/js/{{if .UseMinifiedAssets}}site.min.js{{else}}site.js{{end}}?v={{.AssetVersion}}" defer></script>
+        {{template "site_script.html" .}}
         <script src="{{basePath}}/public/js/site.extra.js?v={{.AssetVersion}}" defer></script>
 
         <script nonce="{{.CSPNonce}}">
