@@ -62,6 +62,14 @@ func TestMain(m *testing.M) {
 			tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
 			PRIMARY KEY (task_id, tag_id)
 		);
+		CREATE TABLE task_events (
+			id SERIAL PRIMARY KEY,
+			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL,
+			event_type VARCHAR(32) NOT NULL,
+			metadata JSONB DEFAULT '{}',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
 		INSERT INTO users (id, email) VALUES (1, 'user@example.com');
 		INSERT INTO tags (id, user_id, name, color) VALUES (1, 1, 'work', '#0d6efd'), (2, 1, 'personal', '#198754');
 		INSERT INTO tasks (title, description, user_id, completed, is_favorite, position, priority, project_id, due_date) VALUES

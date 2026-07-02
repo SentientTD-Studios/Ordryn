@@ -105,53 +105,12 @@
 
         {{template "footer.html" .}}
 
+        <script type="application/json" id="dashboard-config" nonce="{{.CSPNonce}}">{{.DashboardConfig}}</script>
+
         <script src="{{basePath}}/public/vendor/popper/popper.min.js" defer></script>
         <script src="{{basePath}}/public/vendor/bootstrap/js/bootstrap.min.js" defer></script>
         <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
-        <script src="{{basePath}}/public/vendor/chart.js/chart.umd.min.js" defer></script>
-        {{template "site_script.html" .}}
-        <script nonce="{{.CSPNonce}}">
-            document.addEventListener('DOMContentLoaded', function () {
-                if (typeof Chart === 'undefined') return;
-                var styles = getComputedStyle(document.documentElement);
-                var textColor = styles.getPropertyValue('--text-color').trim() || '#212529';
-                var gridColor = styles.getPropertyValue('--box-border').trim() || '#ccc';
-                var palette = ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#6c757d', '#6610f2', '#fd7e14', '#20c997'];
-
-                var projectLabels = {{.ProjectChartLabels}};
-                var projectData = {{.ProjectChartData}};
-                if (projectLabels.length && document.getElementById('projectChart')) {
-                    new Chart(document.getElementById('projectChart'), {
-                        type: 'doughnut',
-                        data: {
-                            labels: projectLabels,
-                            datasets: [{ data: projectData, backgroundColor: palette }]
-                        },
-                        options: {
-                            plugins: { legend: { labels: { color: textColor } } }
-                        }
-                    });
-                }
-
-                new Chart(document.getElementById('completionChart'), {
-                    type: 'bar',
-                    data: {
-                        labels: {{.CompletionLabels}},
-                        datasets: [{
-                            label: 'Completed',
-                            data: {{.CompletionData}},
-                            backgroundColor: '#0d6efd'
-                        }]
-                    },
-                    options: {
-                        scales: {
-                            x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                            y: { beginAtZero: true, ticks: { stepSize: 1, color: textColor }, grid: { color: gridColor } }
-                        },
-                        plugins: { legend: { display: false } }
-                    }
-                });
-            });
-        </script>
+        <script nonce="{{.CSPNonce}}" src="{{basePath}}/public/vendor/chart.js/chart.umd.min.js" defer></script>
+        <script src="{{basePath}}/public/js/dashboard.js?v={{.AssetVersion}}" defer type="module"></script>
     </body>
 </html>

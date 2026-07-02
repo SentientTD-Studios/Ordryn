@@ -6,6 +6,7 @@ import (
 	"GoTodo/internal/tasks"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"time"
@@ -138,33 +139,36 @@ func DashboardPageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := utils.GetSessionUserID(r)
-	if userID == nil {
+	userID, ok := resolveRequestUserID(r)
+	if !ok {
 		http.Redirect(w, r, utils.GetBasePath()+"/", http.StatusSeeOther)
 		return
 	}
 
-	stats, err := tasks.GetDashboardStats(*userID, timezone)
+	stats, err := tasks.GetDashboardStats(userID, timezone)
 	if err != nil {
 		http.Error(w, "Error loading dashboard", http.StatusInternalServerError)
 		return
 	}
 
-	projectLabels, _ := json.Marshal(projectNames(stats.ByProject))
-	projectCounts, _ := json.Marshal(projectCountsOnly(stats.ByProject))
-	chartLabels, _ := json.Marshal(dayLabels(stats.CompletionsLast7Days))
-	chartData, _ := json.Marshal(dayCountsOnly(stats.CompletionsLast7Days))
+	chartConfig, err := json.Marshal(map[string]interface{}{
+		"projectLabels": projectNames(stats.ByProject),
+		"projectData":   projectCountsOnly(stats.ByProject),
+		"completionLabels": dayLabels(stats.CompletionsLast7Days),
+		"completionData":   dayCountsOnly(stats.CompletionsLast7Days),
+	})
+	if err != nil {
+		http.Error(w, "Error preparing dashboard charts", http.StatusInternalServerError)
+		return
+	}
 
 	ctx := map[string]interface{}{
-		"LoggedIn":           true,
-		"UserEmail":          email,
-		"Permissions":        permissions,
-		"Title":              "Dashboard",
-		"Stats":              stats,
-		"ProjectChartLabels": string(projectLabels),
-		"ProjectChartData":   string(projectCounts),
-		"CompletionLabels":   string(chartLabels),
-		"CompletionData":     string(chartData),
+		"LoggedIn":        true,
+		"UserEmail":       email,
+		"Permissions":     permissions,
+		"Title":           "Dashboard",
+		"Stats":           stats,
+		"DashboardConfig": template.JS(chartConfig),
 	}
 	utils.RenderTemplate(w, r, "dashboard.html", ctx)
 }
