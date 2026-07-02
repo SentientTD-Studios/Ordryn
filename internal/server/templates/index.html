@@ -133,9 +133,12 @@
                     </form>
                     {{/* project filter moved to toolbar below */}}
                 </div>
-                <button class="btn btn-success" id="openSidebar">
-                    <i class="bi bi-plus-lg"></i> Add Task
-                </button>
+                <div class="d-flex gap-2 align-items-start flex-shrink-0">
+                    {{template "data_tools.html" .}}
+                    <button class="btn btn-success" id="openSidebar">
+                        <i class="bi bi-plus-lg"></i> Add Task
+                    </button>
+                </div>
                 {{else}}
                 <div></div>
                 {{end}}

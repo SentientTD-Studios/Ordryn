@@ -1,0 +1,19 @@
+{{/* Import / export controls — include on home (with FilterQuery) and profile (all tasks). */}}
+<div class="btn-group">
+    <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Import or export tasks">
+        <i class="bi bi-arrow-down-up"></i> Import / Export
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="{{basePath}}/import"><i class="bi bi-upload me-2"></i>Import CSV</a></li>
+        <li><hr class="dropdown-divider" /></li>
+        {{if .FilterQuery}}
+        <li><h6 class="dropdown-header">Current filters</h6></li>
+        <li><a class="dropdown-item" href="{{basePath}}/api/export?format=csv{{.FilterQuery}}" download><i class="bi bi-download me-2"></i>Export CSV</a></li>
+        <li><a class="dropdown-item" href="{{basePath}}/api/export?format=json{{.FilterQuery}}" download><i class="bi bi-download me-2"></i>Export JSON</a></li>
+        <li><hr class="dropdown-divider" /></li>
+        {{end}}
+        <li><h6 class="dropdown-header">All your tasks</h6></li>
+        <li><a class="dropdown-item" href="{{basePath}}/api/export?format=csv" download><i class="bi bi-download me-2"></i>Export all CSV</a></li>
+        <li><a class="dropdown-item" href="{{basePath}}/api/export?format=json" download><i class="bi bi-download me-2"></i>Export all JSON</a></li>
+    </ul>
+</div>

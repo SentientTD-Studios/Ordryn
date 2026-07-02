@@ -25,7 +25,11 @@
         <div class="container mt-4">
             <div class="card">
                 <div class="card-body">
-                    <h1 class="card-title h4">Import Tasks from CSV</h1>
+                    <h1 class="card-title h4">Import &amp; Export Tasks</h1>
+                    <p class="text-muted">
+                        Import tasks from a CSV file or export your tasks from the home page
+                        <strong>Import / Export</strong> menu (next to Add Task).
+                    </p>
                     <p class="text-muted">
                         Upload a CSV file to import tasks. Required column: <code>title</code>.
                         Optional columns: <code>description</code>, <code>completed</code>, <code>due_date</code>,
@@ -36,6 +40,10 @@
                         Max file size 5MB, max 5000 rows. Duplicate tasks (same title + due date) are skipped.
                         New projects and tags are created automatically when needed.
                     </p>
+
+                    <div class="mb-3 mt-3">
+                        {{template "data_tools.html" .}}
+                    </div>
 
                     <form
                         hx-post="{{basePath}}/api/import"
