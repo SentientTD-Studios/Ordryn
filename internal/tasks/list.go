@@ -75,10 +75,16 @@ func ReturnPaginationForUserWithFilters(page, pageSize int, userID *int, timezon
 	var tasks []Task
 	offset := (page - 1) * pageSize
 
-	projectCond := projectFilterSQL(projectFilter, "t")
-	countProjectCond := projectFilterSQL(projectFilter, "")
-	statusCond := statusFilterSQL(statusFilter, "t")
-	countStatusCond := statusFilterSQL(statusFilter, "")
+	projectCond := ""
+	if projectFilter != nil {
+		if *projectFilter == 0 {
+			projectCond = " AND (project_id IS NULL)"
+		} else {
+			projectCond = fmt.Sprintf(" AND (project_id = %d)", *projectFilter)
+		}
+	}
+
+	statusCond := statusCondition(statusFilter)
 
 	// We'll fetch favorites separately so we can always show up to 5 favorites first on page 1
 	query := `SELECT t.id, t.title, t.description, t.completed, 
@@ -127,7 +133,7 @@ func ReturnPaginationForUserWithFilters(page, pageSize int, userID *int, timezon
 
 	// Count total tasks
 	var totalTasks int
-	countQuery = "SELECT COUNT(*) FROM tasks WHERE user_id = $1" + countProjectCond + countStatusCond
+	countQuery = "SELECT COUNT(*) FROM tasks WHERE user_id = $1" + projectCond + statusCond
 	err = pool.QueryRow(context.Background(), countQuery, *userID).Scan(&totalTasks)
 	if err != nil {
 		return nil, 0, err
@@ -217,18 +223,18 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 	var tasks []Task
 	offset := (page - 1) * pageSize
 	searchPattern := "%" + searchQuery + "%"
-	projectCond := projectFilterSQL(projectFilter, "")
-	statusCond := statusFilterSQL(statusFilter, "")
+	projectCond := ""
+	if projectFilter != nil {
+		if *projectFilter == 0 {
+			projectCond = " AND (project_id IS NULL)"
+		} else {
+			projectCond = fmt.Sprintf(" AND (project_id = %d)", *projectFilter)
+		}
+	}
 
 	// If not logged in, return empty results
 	if userID == nil {
 		return tasks, 0, nil
-	}
-
-	var totalTasks int
-	countQuery := `SELECT COUNT(*) FROM tasks WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $2` + projectCond + statusCond
-	if err := pool.QueryRow(context.Background(), countQuery, searchPattern, *userID).Scan(&totalTasks); err != nil {
-		return nil, 0, err
 	}
 
 	rows, err := pool.Query(context.Background(),
@@ -242,7 +248,7 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 		    COALESCE(TO_CHAR((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM'), '') AS date_modified,
 		    COALESCE(position,0)
 		 FROM tasks 
-		 WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $4`+projectCond+statusCond+`
+		 WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $4`+projectCond+statusCondition(statusFilter)+`
 		 ORDER BY position 
 		 LIMIT $3 OFFSET $5`,
 		searchPattern, timezone, pageSize, *userID, offset)
@@ -252,12 +258,14 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 	}
 
 	defer rows.Close()
+	var totalTasks int = 0
 
 	for rows.Next() {
 		var task Task
 		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Completed, &task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified, &task.Position); err != nil {
 			return nil, 0, err
 		}
+		totalTasks++
 		tasks = append(tasks, task)
 	}
 
@@ -266,5 +274,12 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 }
 
 func statusCondition(statusFilter string) string {
-	return statusFilterSQL(statusFilter, "")
+	switch statusFilter {
+	case "complete", "completed":
+		return " AND completed = true"
+	case "incomplete":
+		return " AND (completed IS NULL OR completed = false)"
+	default:
+		return ""
+	}
 }
