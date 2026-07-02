@@ -88,6 +88,14 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if taskID, convErr := strconv.Atoi(id); convErr == nil {
+		if updatedStatus {
+			logTaskEvent(taskID, userID, "completed", nil)
+		} else {
+			logTaskEvent(taskID, userID, "reopened", nil)
+		}
+	}
+
 	// Fetch updated task data to render the complete row with updated timestamps
 	email, _, _, timezone, _, _ := utils.GetSessionUserWithTimezone(r)
 	var task tasks.Task
@@ -163,15 +171,16 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	// Render the complete task row with updated data
 	fc := filterContextFromRequest(r)
 	data := struct {
-		Task          tasks.Task
-		BasePath      string
-		ProjectFilter string
-		StatusFilter  string
-		DueFilter     string
-		SortFilter    string
+		Task           tasks.Task
+		BasePath       string
+		ProjectFilter  string
+		StatusFilter   string
+		DueFilter      string
+		SortFilter     string
 		PriorityFilter string
-		FilterQuery   string
-		Timezone      string
+		FilterQuery    string
+		Timezone       string
+		IsSearching    bool
 	}{
 		Task:           task,
 		BasePath:       basePath,
@@ -182,6 +191,7 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		PriorityFilter: fc.Priority,
 		FilterQuery:    fc.QuerySuffix(),
 		Timezone:       timezone,
+		IsSearching:    fc.Search != "",
 	}
 
 	if err := utils.Templates.ExecuteTemplate(w, "todo.html", data); err != nil {

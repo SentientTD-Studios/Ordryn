@@ -66,6 +66,10 @@ func InitializeTemplates() error {
 			return dict, nil
 		},
 		"dueDateClass": DueDateClass,
+		"renderMarkdown": func(s string) template.HTML {
+			return template.HTML(RenderMarkdown(s))
+		},
+		"truncateDescription": TruncateDescription,
 	}).ParseGlob("internal/server/templates/*.html")
 	if err != nil {
 		return err

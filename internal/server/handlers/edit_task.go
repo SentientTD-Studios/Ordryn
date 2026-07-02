@@ -88,6 +88,12 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 	// Get the current filters from query string to pass to form
 	fc := filterContextFromRequest(r)
 
+	taskTags, _ := storage.GetTagsForTask(0)
+	if idInt, err := strconv.Atoi(id); err == nil {
+		taskTags, _ = storage.GetTagsForTask(idInt)
+	}
+	tagOptions := buildTagFormOptions(userID, selectedTagIDMap(taskTags))
+
 	data := struct {
 		FormTitle      string
 		Description    string
@@ -101,11 +107,13 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 		Priority       int
 		Completed      bool
 		Projects       []map[string]interface{}
+		Tags           []map[string]interface{}
 		ProjectFilter  string
 		StatusFilter   string
 		DueFilter      string
 		SortFilter     string
 		PriorityFilter string
+		TagFilter      string
 	}{
 		FormTitle:      strings.TrimSpace(title),
 		Description:    strings.TrimSpace(description),
@@ -119,11 +127,13 @@ func APIEditTaskForm(w http.ResponseWriter, r *http.Request) {
 		Priority:       priority,
 		Completed:      completed,
 		Projects:       projectsList,
+		Tags:           tagOptions,
 		ProjectFilter:  fc.Project,
 		StatusFilter:   fc.Status,
 		DueFilter:      fc.Due,
 		SortFilter:     fc.Sort,
 		PriorityFilter: fc.Priority,
+		TagFilter:      fc.Tag,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -226,6 +236,21 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var oldTitle, oldDescription, oldDue string
+	var oldPriority int
+	var oldProjectID sql.NullInt64
+	err = db.QueryRow(context.Background(),
+		"SELECT title, description, COALESCE(CAST(due_date AS TEXT), ''), COALESCE(priority,0), project_id FROM tasks WHERE id = $1",
+		id).Scan(&oldTitle, &oldDescription, &oldDue, &oldPriority, &oldProjectID)
+	if err != nil {
+		http.Error(w, "Error fetching task.", http.StatusInternalServerError)
+		return
+	}
+	oldTags := []storage.Tag{}
+	if taskIDInt, convErr := strconv.Atoi(id); convErr == nil {
+		oldTags, _ = storage.GetTagsForTask(taskIDInt)
+	}
+
 	// Handle optional project association
 	projectIDStr := strings.TrimSpace(r.FormValue("project_id"))
 	if projectIDStr == "" {
@@ -263,6 +288,50 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to update task.", http.StatusInternalServerError)
 			return
 		}
+	}
+
+	taskID, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "Invalid task id", http.StatusBadRequest)
+		return
+	}
+
+	if err := assignTaskTagsFromRequest(r, taskID, userID); err != nil {
+		w.Header().Set("X-Validation-Error", "true")
+		w.Header().Set("HX-Trigger", "description-error")
+		w.Header().Set("HX-Retarget", "#description-error")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, err.Error())
+		return
+	}
+
+	newTags, _ := storage.GetTagsForTask(taskID)
+	logTagChanges(taskID, userID, oldTags, newTags)
+
+	changed := make([]string, 0, 4)
+	if oldTitle != title {
+		changed = append(changed, "title")
+	}
+	if oldDescription != description {
+		changed = append(changed, "description")
+	}
+	if oldDue != dueDate {
+		changed = append(changed, "due date")
+	}
+	if len(changed) > 0 {
+		logTaskEvent(taskID, userID, "edited", map[string]interface{}{"fields": changed})
+	}
+	if oldPriority != priority {
+		logTaskEvent(taskID, userID, "priority_changed", map[string]interface{}{"to": priorityLabel(priority)})
+	}
+
+	oldPID := projectIDFromNull(oldProjectID)
+	newPID := projectIDFromForm(projectIDStr)
+	if oldPID != newPID {
+		logTaskEvent(taskID, userID, "moved_project", map[string]interface{}{
+			"project": projectDisplayName(userID, newPID),
+		})
 	}
 
 	// Re-render pagination like add_task does
@@ -335,6 +404,7 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch projects and mark selected
 	projectsList := make([]map[string]interface{}, 0)
+	tagsList := make([]map[string]interface{}, 0)
 	if projs, perr := storage.GetProjectsForUser(userID); perr == nil {
 		for _, p := range projs {
 			sel := false
@@ -344,6 +414,7 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 			projectsList = append(projectsList, map[string]interface{}{"ID": p.ID, "Name": p.Name, "Selected": sel})
 		}
 	}
+	tagsList = tagsListForFilter(userID, fc.Tag)
 
 	context := map[string]interface{}{
 		"FavoriteTasks":    favs,
@@ -362,6 +433,7 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		"IncompleteTasks":  incompleteCount,
 		"PerPage":          pageSize,
 		"Projects":         projectsList,
+		"Tags":             tagsList,
 		"Timezone":         timezone,
 	}
 	for k, v := range fc.TemplateFields() {

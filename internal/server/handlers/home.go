@@ -173,6 +173,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			tplContext["Projects"] = projList
 		}
+		tplContext["Tags"] = tagsListForFilter(*userID, fc.Tag)
 	}
 
 	for k, v := range fc.TemplateFields() {

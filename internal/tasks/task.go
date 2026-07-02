@@ -4,6 +4,13 @@ import (
 	"fmt"
 )
 
+// Tag is a user-owned label attached to tasks.
+type Tag struct {
+	ID    int
+	Name  string
+	Color string
+}
+
 type Task struct {
 	ID           int
 	Title        string
@@ -19,6 +26,7 @@ type Task struct {
 	ProjectID    int
 	ProjectName  string
 	Priority     int
+	Tags         []Tag
 }
 
 func (t *Task) Validate() error {

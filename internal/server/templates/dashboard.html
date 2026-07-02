@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" {{if .Theme}}data-theme="{{.Theme}}"{{end}}>
+    <head>
+        <script nonce="{{.CSPNonce}}">
+            (function () {
+                try {
+                    if (!document.documentElement.getAttribute('data-theme')) {
+                        var theme = localStorage.getItem('theme');
+                        if (theme) document.documentElement.setAttribute('data-theme', theme);
+                    }
+                } catch (e) {}
+            })();
+        </script>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{if .MetaDescription}}<meta name="description" content="{{.MetaDescription}}" />{{end}}
+        <title>Dashboard - {{.SiteName}}</title>
+        <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
+        <link rel="stylesheet" href="{{basePath}}/public/css/{{if .UseMinifiedAssets}}site.min.css{{else}}site.css{{end}}?v={{.AssetVersion}}" />
+        <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
+    </head>
+    <body class="dashboard-page">
+        {{template "navbar.html" .}}
+
+        <main>
+        <div class="container mt-4 mb-5">
+            <h1 class="h3 mb-4">Dashboard</h1>
+
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3">
+                    <div class="card dashboard-stat-card border-danger">
+                        <div class="card-body">
+                            <div class="dashboard-stat-label text-muted">Overdue</div>
+                            <div class="dashboard-stat-value">{{.Stats.OverdueCount}}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card dashboard-stat-card border-warning">
+                        <div class="card-body">
+                            <div class="dashboard-stat-label text-muted">Due Today</div>
+                            <div class="dashboard-stat-value">{{.Stats.DueTodayCount}}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card dashboard-stat-card">
+                        <div class="card-body">
+                            <div class="dashboard-stat-label text-muted">Completed This Week</div>
+                            <div class="dashboard-stat-value">{{.Stats.CompletedThisWeek}}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card dashboard-stat-card">
+                        <div class="card-body">
+                            <div class="dashboard-stat-label text-muted">Completion Streak</div>
+                            <div class="dashboard-stat-value">{{.Stats.StreakDays}}<span class="fs-6 text-muted"> days</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header"><h2 class="h6 mb-0">Open Tasks by Project</h2></div>
+                        <div class="card-body">
+                            {{if .Stats.ByProject}}
+                            <canvas id="projectChart" height="220" aria-label="Tasks by project chart"></canvas>
+                            {{else}}
+                            <p class="text-muted mb-0">No open tasks yet.</p>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header"><h2 class="h6 mb-0">Completions (Last 7 Days)</h2></div>
+                        <div class="card-body">
+                            <canvas id="completionChart" height="220" aria-label="Daily completions chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{if .Stats.ByPriority}}
+            <div class="card mt-4">
+                <div class="card-header"><h2 class="h6 mb-0">Open Tasks by Priority</h2></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Priority</th><th class="text-end">Tasks</th></tr></thead>
+                        <tbody>
+                            {{range .Stats.ByPriority}}
+                            <tr><td>{{.Label}}</td><td class="text-end">{{.Count}}</td></tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {{end}}
+        </div>
+        </main>
+
+        {{template "footer.html" .}}
+
+        <script src="{{basePath}}/public/vendor/popper/popper.min.js" defer></script>
+        <script src="{{basePath}}/public/vendor/bootstrap/js/bootstrap.min.js" defer></script>
+        <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
+        <script src="{{basePath}}/public/vendor/chart.js/chart.umd.min.js" defer></script>
+        {{template "site_script.html" .}}
+        <script nonce="{{.CSPNonce}}">
+            document.addEventListener('DOMContentLoaded', function () {
+                if (typeof Chart === 'undefined') return;
+                var styles = getComputedStyle(document.documentElement);
+                var textColor = styles.getPropertyValue('--text-color').trim() || '#212529';
+                var gridColor = styles.getPropertyValue('--box-border').trim() || '#ccc';
+                var palette = ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#6c757d', '#6610f2', '#fd7e14', '#20c997'];
+
+                var projectLabels = {{.ProjectChartLabels}};
+                var projectData = {{.ProjectChartData}};
+                if (projectLabels.length && document.getElementById('projectChart')) {
+                    new Chart(document.getElementById('projectChart'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: projectLabels,
+                            datasets: [{ data: projectData, backgroundColor: palette }]
+                        },
+                        options: {
+                            plugins: { legend: { labels: { color: textColor } } }
+                        }
+                    });
+                }
+
+                new Chart(document.getElementById('completionChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: {{.CompletionLabels}},
+                        datasets: [{
+                            label: 'Completed',
+                            data: {{.CompletionData}},
+                            backgroundColor: '#0d6efd'
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            x: { ticks: { color: textColor }, grid: { color: gridColor } },
+                            y: { beginAtZero: true, ticks: { stepSize: 1, color: textColor }, grid: { color: gridColor } }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            });
+        </script>
+    </body>
+</html>

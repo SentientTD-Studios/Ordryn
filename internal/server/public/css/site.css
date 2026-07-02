@@ -2129,3 +2129,83 @@ select.form-select:focus {
         padding: 0.25rem 0.5rem;
     }
 }
+
+/* Tag chips and description expand */
+.tag-chip {
+    display: inline-block;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.2;
+    vertical-align: middle;
+}
+
+.desc-column .desc-preview,
+.desc-column .desc-content,
+.desc-column .desc-full {
+    word-break: break-word;
+}
+
+.desc-column .desc-preview p,
+.desc-column .desc-content p,
+.desc-column .desc-full p {
+    margin-bottom: 0.35rem;
+}
+
+.desc-column:not(.desc-expanded) .desc-full {
+    display: none !important;
+}
+
+.desc-column.desc-expanded .desc-preview {
+    display: none !important;
+}
+
+.desc-column.desc-expanded .desc-full {
+    display: block !important;
+}
+
+.desc-show-more,
+.desc-show-less {
+    font-size: 0.875rem;
+}
+
+.bulk-action-bar {
+    background: var(--box-bg);
+    border: 1px solid var(--box-border);
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.select-column {
+    width: 36px;
+}
+
+.task-row-focused {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -2px;
+}
+
+.task-timeline summary {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.task-timeline-list .task-timeline-label {
+    font-weight: 500;
+}
+
+.dashboard-stat-card .dashboard-stat-value {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.dashboard-stat-card .dashboard-stat-label {
+    font-size: 0.875rem;
+}
+
+.token-masked {
+    letter-spacing: 0.1em;
+}

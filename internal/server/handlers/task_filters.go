@@ -18,6 +18,7 @@ type FilterContext struct {
 	Status   string
 	Due      string
 	Priority string
+	Tag      string
 	Sort     string
 	Search   string
 	Page     int
@@ -56,6 +57,17 @@ func normalizePriorityFilter(priority string) string {
 	return ""
 }
 
+func normalizeTagFilter(tag string) string {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return ""
+	}
+	if id, err := strconv.Atoi(tag); err == nil && id > 0 {
+		return strconv.Itoa(id)
+	}
+	return ""
+}
+
 func filterContextFromRequest(r *http.Request) FilterContext {
 	fc := FilterContext{
 		Project:  firstNonEmpty(r.URL.Query().Get("project"), r.FormValue("project")),
@@ -63,6 +75,7 @@ func filterContextFromRequest(r *http.Request) FilterContext {
 		Due:      normalizeDueFilter(firstNonEmpty(r.URL.Query().Get("due"), r.FormValue("due"))),
 		Sort:     normalizeSortFilter(firstNonEmpty(r.URL.Query().Get("sort"), r.FormValue("sort"))),
 		Priority: normalizePriorityFilter(firstNonEmpty(r.URL.Query().Get("priority"), r.FormValue("priority"))),
+		Tag:      normalizeTagFilter(firstNonEmpty(r.URL.Query().Get("tag"), r.FormValue("tag"))),
 		Search:   strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("search"), r.FormValue("search"))),
 	}
 	if pageParam := firstNonEmpty(r.URL.Query().Get("page"), r.FormValue("page"), r.FormValue("currentPage")); pageParam != "" {
@@ -92,6 +105,9 @@ func (fc FilterContext) queryValues() url.Values {
 	}
 	if fc.Priority != "" {
 		values.Set("priority", fc.Priority)
+	}
+	if fc.Tag != "" {
+		values.Set("tag", fc.Tag)
 	}
 	return values
 }
@@ -128,6 +144,11 @@ func (fc FilterContext) ToListFilters() tasks.ListFilters {
 			lf.PriorityFilter = &p
 		}
 	}
+	if fc.Tag != "" {
+		if tid, err := strconv.Atoi(fc.Tag); err == nil {
+			lf.TagFilter = &tid
+		}
+	}
 	return lf
 }
 
@@ -138,6 +159,7 @@ func (fc FilterContext) TemplateFields() map[string]interface{} {
 		"DueFilter":           fc.Due,
 		"SortFilter":          fc.Sort,
 		"PriorityFilter":      fc.Priority,
+		"TagFilter":           fc.Tag,
 		"SearchQuery":         fc.Search,
 		"FilterQuery":         fc.QuerySuffix(),
 		"FilterQueryNoStatus": fc.QuerySuffixWithout("status"),
@@ -292,11 +314,18 @@ func renderFilteredTaskListPartial(w http.ResponseWriter, r *http.Request, page,
 	completedCount, incompleteCount := completedIncompleteCounts(userID, projectFilter)
 
 	projectsList := make([]map[string]interface{}, 0)
+	tagsList := make([]map[string]interface{}, 0)
 	if userID != nil {
 		if projs, perr := storage.GetProjectsForUser(*userID); perr == nil {
 			for _, p := range projs {
 				sel := projectFilter != nil && *projectFilter == p.ID
 				projectsList = append(projectsList, map[string]interface{}{"ID": p.ID, "Name": p.Name, "Selected": sel})
+			}
+		}
+		if tags, terr := storage.GetTagsForUser(*userID); terr == nil {
+			for _, tg := range tags {
+				sel := fc.Tag == strconv.Itoa(tg.ID)
+				tagsList = append(tagsList, map[string]interface{}{"ID": tg.ID, "Name": tg.Name, "Color": tg.Color, "Selected": sel})
 			}
 		}
 	}
@@ -319,6 +348,7 @@ func renderFilteredTaskListPartial(w http.ResponseWriter, r *http.Request, page,
 		"CompletedTasks":   completedCount,
 		"IncompleteTasks":  incompleteCount,
 		"Projects":         projectsList,
+		"Tags":             tagsList,
 		"IsSearching":      fc.Search != "",
 	}
 	for k, v := range fc.TemplateFields() {

@@ -1,19 +1,80 @@
 import { apiPath } from "./utils.js";
 
+let modalFocusHandler = null;
+let lastFocusedBeforeModal = null;
+
+function getModalFocusable(modalEl) {
+  return Array.from(
+    modalEl.querySelectorAll(
+      'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+}
+
+function attachModalFocusTrap(modalEl) {
+  if (!modalEl || modalEl.classList.contains("modal-focus-initialized")) return;
+  modalEl.classList.add("modal-focus-initialized");
+
+  modalEl.addEventListener("show.bs.modal", () => {
+    lastFocusedBeforeModal = document.activeElement;
+  });
+
+  modalEl.addEventListener("shown.bs.modal", () => {
+    const focusables = getModalFocusable(modalEl);
+    const first = focusables[0];
+    if (first) first.focus();
+
+    if (modalFocusHandler) {
+      document.removeEventListener("keydown", modalFocusHandler);
+    }
+    modalFocusHandler = (e) => {
+      if (e.key !== "Tab") return;
+      const items = getModalFocusable(modalEl);
+      if (items.length === 0) return;
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === firstEl) {
+        e.preventDefault();
+        lastEl.focus();
+      } else if (!e.shiftKey && document.activeElement === lastEl) {
+        e.preventDefault();
+        firstEl.focus();
+      }
+    };
+    document.addEventListener("keydown", modalFocusHandler);
+  });
+
+  modalEl.addEventListener("hide.bs.modal", () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.setAttribute("aria-hidden", "true");
+    if (modalFocusHandler) {
+      document.removeEventListener("keydown", modalFocusHandler);
+      modalFocusHandler = null;
+    }
+    if (
+      lastFocusedBeforeModal &&
+      typeof lastFocusedBeforeModal.focus === "function"
+    ) {
+      try {
+        lastFocusedBeforeModal.focus();
+      } catch (e) {}
+    }
+  });
+}
+
 export function initializeModalEventListeners() {
+  ["modal", "loginmodal", "shortcutsModal"].forEach((id) => {
+    const modalEl = document.getElementById(id);
+    if (modalEl) attachModalFocusTrap(modalEl);
+  });
+
   const modalEl = document.getElementById("modal");
   if (!modalEl) return;
-  if (!modalEl.classList.contains("modal-listeners-initialized")) {
-    modalEl.addEventListener("hide.bs.modal", () => {
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-    });
-    modalEl.addEventListener("hidden.bs.modal", () => {
-      modalEl.setAttribute("aria-hidden", "true");
-    });
-    modalEl.classList.add("modal-listeners-initialized");
-  }
   // ensure bootstrap modal instance exists so data-bs-dismiss works
   try {
     if (
@@ -34,7 +95,6 @@ export function renderChangelog(entries) {
       '<div class="text-center text-muted">No changelog entries available.</div>';
     return;
   }
-  // Build HTML with collapsible entries (collapsed by default).
   const out = document.createElement("div");
   out.className = "changelog-list";
   const MAX_MODAL = 5;
@@ -45,7 +105,6 @@ export function renderChangelog(entries) {
     const cardBody = document.createElement("div");
     cardBody.className = "card-body";
 
-    // Header button with caret and badge (shows version, title, tag, date)
     const headerBtn = document.createElement("button");
     headerBtn.type = "button";
     headerBtn.className =
@@ -78,51 +137,10 @@ export function renderChangelog(entries) {
     collapseDiv.id = `changelog-modal-${idx}-${Date.now()}`;
     collapseDiv.className = "collapse mt-2";
 
-    // Body content
     if (e.html) {
       const bodyDiv = document.createElement("div");
       bodyDiv.className = "changelog-entry-body";
       bodyDiv.innerHTML = e.html;
-
-      // If the rendered HTML includes a heading with an anchor/permalink,
-      // shorten that anchor's visible text to only the release title so the
-      // clickable area doesn't show the entire breadcrumb.
-      try {
-        const heading = bodyDiv.querySelector("h1,h2,h3,h4,h5,h6");
-        if (heading) {
-          const anchor = heading.querySelector("a");
-          if (anchor) {
-            anchor.textContent =
-              e.title ||
-              anchor.getAttribute("title") ||
-              anchor.textContent ||
-              "";
-          }
-        }
-      } catch (err) {}
-
-      // Remove any leading paragraph/div that duplicates the version/date
-      const first = bodyDiv.firstElementChild;
-      try {
-        if (
-          first &&
-          (first.tagName === "P" ||
-            first.tagName === "DIV" ||
-            first.tagName === "PRE")
-        ) {
-          const txt = (first.textContent || "").trim().toLowerCase();
-          const v = (e.version || "").toLowerCase();
-          const d = (e.date || "").toLowerCase();
-          if (
-            (v && txt.includes(v)) ||
-            (d && txt.includes(d)) ||
-            txt.includes(" - ")
-          ) {
-            first.remove();
-          }
-        }
-      } catch (err) {}
-
       collapseDiv.appendChild(bodyDiv);
     } else {
       const ul = document.createElement("ul");
@@ -136,7 +154,6 @@ export function renderChangelog(entries) {
       collapseDiv.appendChild(ul);
     }
 
-    // Toggle behavior: open/close collapse and swap arrow
     headerBtn.addEventListener("click", function (ev) {
       ev.preventDefault();
       const opened = collapseDiv.classList.toggle("show");
@@ -148,7 +165,6 @@ export function renderChangelog(entries) {
     out.appendChild(card);
   });
 
-  // If there are more entries, add a link to view the full changelog page
   if (entries.length > recent.length) {
     const more = document.createElement("div");
     more.className = "text-center mt-3";
@@ -190,7 +206,6 @@ export function attachChangelogListener() {
     try {
       changelogModalEl.addEventListener("show.bs.modal", loadChangelog);
     } catch (e) {
-      // If bootstrap isn't present or event fails, attempt to load on click of link
       const link = document.querySelector('[data-bs-target="#changelogModal"]');
       if (link) link.addEventListener("click", loadChangelog);
     }

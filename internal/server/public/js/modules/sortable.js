@@ -71,6 +71,11 @@ export function initSortable() {
             if (priorityVal) {
               form.append("priority", priorityVal);
             }
+            const tagFilter = document.getElementById("tag-filter");
+            const tagVal = tagFilter ? tagFilter.value : "";
+            if (tagVal) {
+              form.append("tag", tagVal);
+            }
           } catch (e) {}
 
           // Send HX-Request and X-Requested-With so server middleware accepts this as an XHR/HTMX call

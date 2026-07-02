@@ -11,6 +11,7 @@ type ListFilters struct {
 	StatusFilter   string
 	DueFilter      string
 	PriorityFilter *int
+	TagFilter      *int
 	Sort           string
 }
 

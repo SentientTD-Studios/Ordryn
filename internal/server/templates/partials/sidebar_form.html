@@ -71,6 +71,24 @@
             value="{{.DueDate}}"
         />
     </div>
+    {{if .Tags}}
+    <div class="form-group mt-2">
+        <label>Tags (max 5)</label>
+        {{range .Tags}}
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input" name="tag_ids" value="{{.ID}}" id="tag-{{.ID}}" {{if .Selected}}checked{{end}}>
+            <label class="form-check-label" for="tag-{{.ID}}">
+                <span class="tag-chip" style="background-color: {{.Color}};">{{.Name}}</span>
+            </label>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+    <div class="form-group mt-2">
+        <label for="new_tags">Add tags (comma-separated)</label>
+        <input type="text" id="new_tags" name="new_tags" class="form-control" placeholder="e.g. work, urgent" maxlength="200" />
+        <small class="form-hint">New tag names are created on save (max 5 tags per task).</small>
+    </div>
     {{if .ID}}
     <input type="hidden" name="id" value="{{.ID}}" />
     {{end}}
@@ -80,7 +98,16 @@
     <input type="hidden" name="due" value="{{.DueFilter}}" />
     <input type="hidden" name="sort" value="{{.SortFilter}}" />
     <input type="hidden" name="priority" value="{{.PriorityFilter}}" />
+    <input type="hidden" name="tag" value="{{.TagFilter}}" />
     <button type="submit" class="btn btn-primary w-100 mt-3">
         {{if .SubmitText}}{{.SubmitText}}{{else}}Add Task{{end}}
     </button>
+    {{if .ID}}
+    <details class="task-timeline mt-3">
+        <summary class="mb-2">Activity</summary>
+        <div hx-get="{{basePath}}/api/task-events?id={{.ID}}" hx-trigger="toggle once" hx-swap="innerHTML">
+            <span class="text-muted small">Loading activity…</span>
+        </div>
+    </details>
+    {{end}}
 </form> 

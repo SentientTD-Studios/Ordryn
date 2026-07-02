@@ -2,17 +2,112 @@ import { apiPath } from "./utils.js";
 import { attachThemeToggle, initTheme } from "./theme.js";
 import { handleDescriptionInput } from "./form-handlers.js";
 
+let sidebarFocusHandler = null;
+let lastFocusedBeforeSidebar = null;
+
+function getSidebarFocusable(sidebar) {
+  return Array.from(
+    sidebar.querySelectorAll(
+      'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+}
+
+function syncSidebarFilterFields(form) {
+  const setHidden = (name, value) => {
+    let field = form.querySelector(`input[name="${name}"]`);
+    if (!field) {
+      field = document.createElement("input");
+      field.type = "hidden";
+      field.name = name;
+      form.appendChild(field);
+    }
+    field.value = value || "";
+  };
+  const projectSelect = document.querySelector("select#project-filter");
+  const statusSelect = document.getElementById("status-filter-select");
+  const statusHidden = document.getElementById("status-filter");
+  const dueHidden = document.getElementById("due-filter");
+  const sortHidden = document.getElementById("sort-filter");
+  const priorityHidden = document.getElementById("priority-filter");
+  const priorityToolbar = document.getElementById("priority-filter-toolbar");
+  const tagHidden = document.getElementById("tag-filter");
+  const tagToolbar = document.getElementById("tag-filter-toolbar");
+
+  setHidden("project", projectSelect ? projectSelect.value : "");
+  setHidden(
+    "status",
+    statusSelect
+      ? statusSelect.value
+      : statusHidden
+        ? statusHidden.value
+        : "",
+  );
+  setHidden("due", dueHidden ? dueHidden.value : "");
+  setHidden("sort", sortHidden ? sortHidden.value : "");
+  setHidden(
+    "priority",
+    priorityToolbar
+      ? priorityToolbar.value
+      : priorityHidden
+        ? priorityHidden.value
+        : "",
+  );
+  setHidden(
+    "tag",
+    tagToolbar ? tagToolbar.value : tagHidden ? tagHidden.value : "",
+  );
+}
+
 export function openSidebar() {
   const sidebar = document.getElementById("sidebar");
-  if (sidebar) {
-    sidebar.classList.add("active");
+  if (!sidebar) return;
+
+  lastFocusedBeforeSidebar = document.activeElement;
+  sidebar.classList.add("active");
+
+  const focusables = getSidebarFocusable(sidebar);
+  const first = focusables[0] || sidebar.querySelector("#title");
+  if (first) {
+    first.focus();
   }
+
+  if (sidebarFocusHandler) {
+    document.removeEventListener("keydown", sidebarFocusHandler);
+  }
+  sidebarFocusHandler = (e) => {
+    if (e.key !== "Tab" || !sidebar.classList.contains("active")) return;
+    const items = getSidebarFocusable(sidebar);
+    if (items.length === 0) return;
+    const firstEl = items[0];
+    const lastEl = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === firstEl) {
+      e.preventDefault();
+      lastEl.focus();
+    } else if (!e.shiftKey && document.activeElement === lastEl) {
+      e.preventDefault();
+      firstEl.focus();
+    }
+  };
+  document.addEventListener("keydown", sidebarFocusHandler);
 }
 
 export function closeSidebar() {
   const sidebar = document.getElementById("sidebar");
   if (sidebar) {
     sidebar.classList.remove("active");
+  }
+  if (sidebarFocusHandler) {
+    document.removeEventListener("keydown", sidebarFocusHandler);
+    sidebarFocusHandler = null;
+  }
+  if (
+    lastFocusedBeforeSidebar &&
+    typeof lastFocusedBeforeSidebar.focus === "function"
+  ) {
+    try {
+      lastFocusedBeforeSidebar.focus();
+    } catch (e) {}
   }
 }
 
@@ -39,35 +134,17 @@ export function initializeSidebarEventListeners() {
           if (idInput) idInput.remove();
           const submit = tf.querySelector('button[type="submit"]');
           if (submit) submit.textContent = "Add Task";
-          // Ensure the form posts to the add endpoint
           try {
             tf.setAttribute("hx-post", apiPath("/api/add-task"));
           } catch (e) {}
           const cp = tf.querySelector('input[name="currentPage"]');
           if (cp) cp.value = "1";
-          // Ensure the form carries the current toolbar project filter so server can decide refresh
-          try {
-            let projField = tf.querySelector('input[name="project"]');
-            let statusField = tf.querySelector('input[name="status"]');
-            const toolbar = document.querySelector("select#project-filter");
-            const toolbarVal = toolbar ? toolbar.value : "";
-            const statusFilter = document.getElementById("status-filter");
-            const statusVal = statusFilter ? statusFilter.value : "";
-            if (!projField) {
-              projField = document.createElement("input");
-              projField.type = "hidden";
-              projField.name = "project";
-              tf.appendChild(projField);
-            }
-            if (!statusField) {
-              statusField = document.createElement("input");
-              statusField.type = "hidden";
-              statusField.name = "status";
-              tf.appendChild(statusField);
-            }
-            projField.value = toolbarVal;
-            statusField.value = statusVal;
-          } catch (e) {}
+          const newTagsEl = tf.querySelector("#new_tags");
+          if (newTagsEl) newTagsEl.value = "";
+          tf.querySelectorAll('input[name="tag_ids"]').forEach((cb) => {
+            cb.checked = false;
+          });
+          syncSidebarFilterFields(tf);
           const sbTitle = document.querySelector("#sidebar .sidebar-header h5");
           if (sbTitle) sbTitle.textContent = "Add Task";
           const charCount = document.getElementById("char-count");
@@ -92,35 +169,13 @@ export function initializeSidebarEventListeners() {
     if (tf && !tf.classList.contains("task-form-initialized")) {
       // Ensure hidden project field exists and is kept up-to-date before submit
       try {
-        let projField = tf.querySelector('input[name="project"]');
-        let statusField = tf.querySelector('input[name="status"]');
-        const toolbar = document.querySelector("select#project-filter");
-        const toolbarVal = toolbar ? toolbar.value : "";
-        const statusFilter = document.getElementById("status-filter");
-        const statusVal = statusFilter ? statusFilter.value : "";
-        if (!projField) {
-          projField = document.createElement("input");
-          projField.type = "hidden";
-          projField.name = "project";
-          tf.appendChild(projField);
+        const tf = document.getElementById("newTaskForm");
+        if (tf) {
+          syncSidebarFilterFields(tf);
+          tf.addEventListener("submit", function () {
+            syncSidebarFilterFields(tf);
+          });
         }
-        if (!statusField) {
-          statusField = document.createElement("input");
-          statusField.type = "hidden";
-          statusField.name = "status";
-          tf.appendChild(statusField);
-        }
-        projField.value = toolbarVal;
-        statusField.value = statusVal;
-        // Update it on submit in case toolbar changed while form open
-        tf.addEventListener("submit", function () {
-          try {
-            const tb = document.querySelector("select#project-filter");
-            if (tb) projField.value = tb.value;
-            const sf = document.getElementById("status-filter");
-            statusField.value = sf ? sf.value : "";
-          } catch (e) {}
-        });
       } catch (e) {}
       tf.addEventListener("htmx:afterRequest", (event) => {
         let isValidationError = false;
@@ -198,18 +253,21 @@ export function handleSidebarAwareSettle() {
 }
 
 function handleAfterSwapForSidebar(event) {
-  // Check if the sidebar element exists and is currently active
   const sidebarElement = document.getElementById("sidebar");
   if (sidebarElement && sidebarElement.classList.contains("active")) {
-    // Re-initialize character counter if elements are present
     let description = document.getElementById("description");
     let charCount = document.getElementById("char-count");
     if (description && charCount) {
       handleDescriptionInput(charCount);
     }
-    // Re-initialize theme toggle if needed
     if (typeof initTheme === "function") {
       initTheme();
+    }
+    const tf = document.getElementById("newTaskForm");
+    if (tf) {
+      syncSidebarFilterFields(tf);
+      const first = sidebarElement.querySelector("#title, input:not([type=\"hidden\"])");
+      if (first) first.focus();
     }
   }
 }

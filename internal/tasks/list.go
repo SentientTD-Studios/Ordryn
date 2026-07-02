@@ -135,6 +135,9 @@ func ReturnPaginationForUserWithFilters(page, pageSize int, userID *int, timezon
 	if page == 1 && len(favs) > 0 {
 		tasks = append(favs, nonFavs...)
 	}
+	if err := attachTagsToTasks(tasks); err != nil {
+		return nil, 0, err
+	}
 	return tasks, totalTasks, nil
 }
 
@@ -153,7 +156,7 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 	searchPattern := "%" + searchQuery + "%"
 
 	countArgs := []interface{}{searchPattern, *userID}
-	countWhere := "WHERE (title ILIKE $1 OR description ILIKE $1) AND user_id = $2"
+	countWhere := "WHERE user_id = $2 AND " + searchMatchClause("")
 	countWhere, countArgs = appendFilterSQL(countWhere, countArgs, filters, timezone, "")
 	var totalTasks int
 	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks "+countWhere, countArgs...).Scan(&totalTasks); err != nil {
@@ -161,7 +164,7 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 	}
 
 	selectArgs := []interface{}{searchPattern, timezone, pageSize, *userID, offset}
-	selectWhere := "WHERE (t.title ILIKE $1 OR t.description ILIKE $1) AND t.user_id = $4"
+	selectWhere := "WHERE (t.title ILIKE $1 OR t.description ILIKE $1 OR EXISTS (SELECT 1 FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id WHERE tt.task_id = t.id AND tg.name ILIKE $1)) AND t.user_id = $4"
 	selectWhere, selectArgs = appendFilterSQL(selectWhere, selectArgs, filters, timezone, "t")
 
 	query := `SELECT t.id, t.title, t.description, t.completed,
@@ -186,6 +189,9 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 		}
 		tasks = append(tasks, task)
 	}
+	if err := attachTagsToTasks(tasks); err != nil {
+		return nil, 0, err
+	}
 	return tasks, totalTasks, nil
 }
 
@@ -194,7 +200,55 @@ func appendFilterSQL(where string, args []interface{}, filters ListFilters, time
 	where += filters.statusCondition(tablePrefix)
 	where, args = appendDueDateCondition(where, args, filters.DueFilter, timezone, tablePrefix)
 	where += filters.priorityCondition(tablePrefix)
+	where, args = appendTagCondition(where, args, filters.TagFilter, tablePrefix)
 	return where, args
+}
+
+func searchMatchClause(tablePrefix string) string {
+	idCol := "id"
+	if tablePrefix != "" {
+		idCol = tablePrefix + ".id"
+	}
+	return fmt.Sprintf(`(title ILIKE $1 OR description ILIKE $1 OR EXISTS (
+		SELECT 1 FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id
+		WHERE tt.task_id = %s AND tg.name ILIKE $1))`, idCol)
+}
+
+func appendTagCondition(where string, args []interface{}, tagFilter *int, tablePrefix string) (string, []interface{}) {
+	if tagFilter == nil {
+		return where, args
+	}
+	args = append(args, *tagFilter)
+	idx := len(args)
+	idCol := "id"
+	if tablePrefix != "" {
+		idCol = tablePrefix + ".id"
+	}
+	where += fmt.Sprintf(" AND %s IN (SELECT task_id FROM task_tags WHERE tag_id = $%d)", idCol, idx)
+	return where, args
+}
+
+func attachTagsToTasks(taskList []Task) error {
+	if len(taskList) == 0 {
+		return nil
+	}
+	ids := make([]int, len(taskList))
+	for i, t := range taskList {
+		ids[i] = t.ID
+	}
+	tagMap, err := storage.GetTagsForTasks(ids)
+	if err != nil {
+		return err
+	}
+	for i := range taskList {
+		if tags, ok := tagMap[taskList[i].ID]; ok {
+			taskList[i].Tags = make([]Tag, len(tags))
+			for j, tg := range tags {
+				taskList[i].Tags[j] = Tag{ID: tg.ID, Name: tg.Name, Color: tg.Color}
+			}
+		}
+	}
+	return nil
 }
 
 func scanFavoriteTaskRow(rows interface {

@@ -1,4 +1,7 @@
-<tr id="task-{{.Task.ID}}">
+<tr id="task-{{.Task.ID}}" class="task-row" tabindex="-1" data-task-id="{{.Task.ID}}">
+    <td class="text-center align-middle select-column" data-label="">
+        <input type="checkbox" class="form-check-input task-select" data-task-id="{{.Task.ID}}" aria-label="Select task {{.Task.Title}}" />
+    </td>
     <td class="text-center align-middle drag-column" data-label="">
         <span class="drag-handle" style="cursor:move;">
             <i class="bi bi-grip-vertical"></i>
@@ -16,12 +19,9 @@
                 {{end}}
             </button>
             
-            <span role="button" tabindex="0" class="task-toggle title-text p-0" aria-expanded="false">
+            <span role="button" tabindex="0" class="task-toggle title-text p-0" aria-expanded="false"
+                title="Created: {{.Task.DateCreated}}{{if .Task.DateModified}} | Modified: {{.Task.DateModified}}{{end}}">
                 {{safeHTML .Task.Title}}
-                <div class="custom-tooltip">
-                    <div>Created: {{.Task.DateCreated}}</div>
-                    {{if .Task.DateModified}}<div>Modified: {{.Task.DateModified}}</div>{{end}}
-                </div>
             </span>
             {{if .Task.ProjectName}}
             <span class="badge bg-secondary project-badge ms-1">{{.Task.ProjectName}}</span>
@@ -29,9 +29,25 @@
             {{if eq .Task.Priority 1}}<span class="badge bg-secondary priority-badge ms-1">Low</span>{{end}}
             {{if eq .Task.Priority 2}}<span class="badge bg-warning text-dark priority-badge ms-1">Med</span>{{end}}
             {{if eq .Task.Priority 3}}<span class="badge bg-danger priority-badge ms-1">High</span>{{end}}
+            {{range .Task.Tags}}
+            <span class="tag-chip ms-1" style="background-color: {{.Color}};">{{.Name}}</span>
+            {{end}}
         </div>
     </td>
-    <td class="desc-column" data-label="Description">{{safeHTML .Task.Description}}</td>
+    <td class="desc-column" data-label="Description">
+        {{if .Task.Description}}
+            {{if $.IsSearching}}
+                {{safeHTML .Task.Description}}
+            {{else if gt (len .Task.Description) 120}}
+                <div class="desc-preview">{{renderMarkdown (truncateDescription .Task.Description 120)}}</div>
+                <div class="desc-full d-none">{{renderMarkdown .Task.Description}}</div>
+                <button type="button" class="btn btn-link btn-sm p-0 desc-show-more">Show more</button>
+                <button type="button" class="btn btn-link btn-sm p-0 desc-show-less d-none">Show less</button>
+            {{else}}
+                <div class="desc-content">{{renderMarkdown .Task.Description}}</div>
+            {{end}}
+        {{end}}
+    </td>
     <td class="date-added {{dueDateClass .Task.DueDate .Task.Completed .Timezone}}" data-label="Due Date">
         {{if eq (dueDateClass .Task.DueDate .Task.Completed .Timezone) "due-overdue"}}<i class="bi bi-exclamation-circle"></i> {{end}}{{.Task.DueDate}}
     </td>

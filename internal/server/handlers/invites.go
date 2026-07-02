@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -353,39 +354,56 @@ func APIGetInvites(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Render the title cell with matching markup to the template so HTMX swaps keep behavior
+		tokenCell := maskedTokenHTML(invite.Token)
 		if invite.InviteUsed == 0 {
-			fmt.Fprintf(w, `<tr>
+			fmt.Fprintf(w, `<tr id="invite-row-%d">
 			<td class="title-column" data-label="Email">
 				<form id="edit-invite-%d" style="display:inline; width:100%%;">
 					<input type="email" class="form-control form-control-sm" name="email-%d" value="%s" style="display:block; width:100%%;" />
 				</form>
 				<button type="button" class="task-toggle btn btn-link d-md-none" aria-expanded="false" title="Show invite details"></button>
 			</td>
-			<td class="desc-column" data-label="Token"><code>%s</code></td>
+			<td class="desc-column" data-label="Token">%s</td>
 			<td class="status-column" data-label="Status">%s</td>
-			<td class="delete-column" data-label="Delete">`, invite.ID, invite.ID, invite.Email, invite.Token, statusBadge)
+			<td class="delete-column" data-label="Delete">`, invite.ID, invite.ID, invite.ID, invite.Email, tokenCell, statusBadge)
 		} else {
-			fmt.Fprintf(w, `<tr>
+			fmt.Fprintf(w, `<tr id="invite-row-%d">
 			<td class="title-column" data-label="Email"><span class="task-toggle" aria-expanded="false" aria-label="Invite %d details">%s</span></td>
-			<td class="desc-column" data-label="Token"><code>%s</code></td>
+			<td class="desc-column" data-label="Token">%s</td>
 			<td class="status-column" data-label="Status">%s</td>
-			<td class="delete-column" data-label="Delete">`, invite.ID, invite.Email, invite.Token, statusBadge)
+			<td class="delete-column" data-label="Delete">`, invite.ID, invite.ID, invite.Email, tokenCell, statusBadge)
 		}
 
 		if invite.InviteUsed == 0 {
 			fmt.Fprintf(w, `<button class="btn btn-sm btn-warning me-1" hx-put="/api/invite/%d" hx-target="#invite-error" hx-swap="innerHTML" hx-include="[name='email-%d']" title="Edit invite" aria-label="Edit invite %d"><i class=\"bi bi-pencil\"></i></button>
 				<button class="btn btn-sm btn-danger" hx-get="/api/confirm-invite-delete?id=%d" hx-target="#modal .modal-content" hx-trigger="click" data-bs-toggle="modal" data-bs-target="#modal" title="Delete invite" aria-label="Delete invite %d"><i class=\"bi bi-trash\"></i></button>`, invite.ID, invite.ID, invite.ID, invite.ID, invite.ID)
 		} else {
-			// For used invites, show Ban or Unban depending on is_banned (icon-only buttons with tooltips)
-			if invite.IsBanned {
-				fmt.Fprintf(w, `<button class="btn btn-sm btn-success me-1" hx-post="/api/unban-user?email=%s" hx-trigger="click" hx-swap="none" title="Unban User?" aria-label="Unban user %s"><i class=\"bi bi-person-check\"></i></button>`, invite.Email, invite.Email)
-			} else {
-				fmt.Fprintf(w, `<button class="btn btn-sm btn-danger me-1" hx-post="/api/ban-user?email=%s" hx-trigger="click" hx-swap="none" title="Ban User?" aria-label="Ban user %s"><i class=\"bi bi-slash-circle\"></i></button>`, invite.Email, invite.Email)
-			}
+			// Used invites: edit/delete only; user moderation lives on the admin page.
+			fmt.Fprint(w, `<span class="text-muted">—</span>`)
 		}
 		fmt.Fprint(w, `</td>
 		</tr>`)
 	}
+}
+
+func renderUsersTablePartial(w http.ResponseWriter) {
+	users, err := storage.ListUsers()
+	if err != nil {
+		http.Error(w, "Error loading users", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = utils.Templates.ExecuteTemplate(w, "users_table.html", map[string]interface{}{
+		"Users": users,
+	})
+}
+
+func maskedTokenHTML(token string) string {
+	escaped := html.EscapeString(token)
+	return fmt.Sprintf(
+		`<code class="token-masked" data-token="%s">••••••••</code> <button type="button" class="btn btn-sm btn-link p-0 reveal-token-btn" aria-label="Show invite token">Show</button>`,
+		escaped,
+	)
 }
 
 // APIBanUser sets is_banned=true for the user with the provided email (if exists)
@@ -408,8 +426,12 @@ func APIBanUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error banning user", http.StatusInternalServerError)
 		return
 	}
+	if r.URL.Query().Get("source") == "admin" {
+		renderUsersTablePartial(w)
+		return
+	}
 	// Redirect to reload the page and show updated status
-	w.Header().Set("HX-Redirect", basePath+"/createinvite")
+	w.Header().Set("HX-Redirect", basePath+"/admin")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, " ")
 }
@@ -434,8 +456,12 @@ func APIUnbanUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error unbanning user", http.StatusInternalServerError)
 		return
 	}
+	if r.URL.Query().Get("source") == "admin" {
+		renderUsersTablePartial(w)
+		return
+	}
 	// Redirect to reload the page and show updated status
-	w.Header().Set("HX-Redirect", basePath+"/createinvite")
+	w.Header().Set("HX-Redirect", basePath+"/admin")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, " ")
 }

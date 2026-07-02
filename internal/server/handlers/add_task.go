@@ -113,12 +113,12 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	// Handle optional project association
 	projectIDStr := strings.TrimSpace(r.FormValue("project_id"))
 	var newTaskProject *int
+	var newTaskID int
 	if projectIDStr == "" {
-		// Insert without project_id (NULL)
 		if dueDate != "" {
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7)", title, description, false, userID, nextPos, priority, dueDate)
+			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7) RETURNING id", title, description, false, userID, nextPos, priority, dueDate).Scan(&newTaskID)
 		} else {
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6)", title, description, false, userID, nextPos, priority)
+			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6) RETURNING id", title, description, false, userID, nextPos, priority).Scan(&newTaskID)
 		}
 	} else {
 		pid, errConv := strconv.Atoi(projectIDStr)
@@ -126,15 +126,14 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid project id", http.StatusBadRequest)
 			return
 		}
-		// Ensure project belongs to this user
 		if _, errP := storage.GetProjectByID(pid, userID); errP != nil {
 			http.Error(w, "Invalid project selection", http.StatusBadRequest)
 			return
 		}
 		if dueDate != "" {
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7, $8)", title, description, false, userID, nextPos, priority, pid, dueDate)
+			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7, $8) RETURNING id", title, description, false, userID, nextPos, priority, pid, dueDate).Scan(&newTaskID)
 		} else {
-			_, err = db.Exec(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7)", title, description, false, userID, nextPos, priority, pid)
+			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7) RETURNING id", title, description, false, userID, nextPos, priority, pid).Scan(&newTaskID)
 		}
 		if err == nil {
 			newTaskProject = &pid
@@ -146,6 +145,17 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	if err := assignTaskTagsFromRequest(r, newTaskID, userID); err != nil {
+		w.Header().Set("X-Validation-Error", "true")
+		w.Header().Set("HX-Trigger", "description-error")
+		w.Header().Set("HX-Retarget", "#description-error")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, err.Error())
+		return
+	}
+	logTaskEvent(newTaskID, userID, "created", nil)
 
 	// After successful insertion, determine the correct page to display
 	pageSize := utils.AppConstants.PageSize
@@ -326,6 +336,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 			projectsList = append(projectsList, map[string]interface{}{"ID": p.ID, "Name": p.Name, "Selected": sel})
 		}
 	}
+	tagsList := tagsListForFilter(userID, fc.Tag)
 
 	completedCount, incompleteCount := completedIncompleteCounts(&userID, projectFilterPtr)
 
@@ -347,6 +358,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		"IncompleteTasks":  incompleteCount,
 		"PerPage":          pageSize,
 		"Projects":         projectsList,
+		"Tags":             tagsList,
 		"ProjectFilter":    activeProject,
 		"StatusFilter":     activeStatus,
 		"Timezone":         timezone,
@@ -432,6 +444,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		"IncompleteTasks":  incompleteCountT,
 		"PerPage":          pageSize,
 		"Projects":         projectsList,
+		"Tags":             tagsList,
 		"ProjectFilter":    targetFilterParam,
 		"StatusFilter":     activeStatus,
 		"Timezone":         timezone,

@@ -68,9 +68,12 @@ func AdminPageHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	users, _ := storage.ListUsers()
+
 	context := map[string]interface{}{
 		"LoggedIn":                 loggedIn,
 		"Permissions":              permissions,
+		"Users":                    users,
 		"SiteName":                 siteName,
 		"SiteVersion":              siteVersion,
 		"DefaultTimezone":          defaultTz,

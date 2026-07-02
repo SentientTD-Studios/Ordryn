@@ -34,14 +34,17 @@
 
                     <h2 class="h5 mt-4">Features</h2>
                     <ul>
-                        <li>Per-user tasks with projects, due dates, favorites, priority levels, and drag-and-drop ordering</li>
-                        <li>Search, project filters, status filters (all / incomplete / complete), and due-date quick filters (today, overdue, this week, no date)</li>
+                        <li>Per-user tasks with projects, tags, due dates, favorites, priority levels, drag-and-drop ordering, bulk actions, and CSV/JSON export-import</li>
+                        <li>Search, project filters, tag filters, status filters (all / incomplete / complete), and due-date quick filters (today, overdue, this week, no date)</li>
+                        <li>Markdown task descriptions with truncated list view and expand-in-place</li>
                         <li>Starred tasks appear in a pinned section on page 1 and are excluded from pagination counts</li>
                         <li>Priority badges (Low / Medium / High) and optional sort-by-priority view</li>
                         <li>User profiles with timezone and pagination preferences</li>
                         <li>Invite-only registration and role-based permissions</li>
                         <li>Dark and light themes</li>
-                        <li>Responsive layout for desktop and mobile</li>
+                        <li>Keyboard shortcuts for power users (<kbd>?</kbd> for help)</li>
+                        <li>Task activity timeline in the edit sidebar</li>
+                        <li>Dashboard with overdue/today counts, completion charts, and streak tracking</li>
                     </ul>
 
                     <h2 class="h5 mt-4">Self-hosting</h2>
@@ -49,6 +52,17 @@
                         Configure your database and session key via <code>.env</code>, run migrations on startup,
                         and serve the app behind HTTPS in production. See the project README for setup steps.
                     </p>
+
+                    <h2 class="h5 mt-4">Keyboard shortcuts</h2>
+                    <p class="card-text">On the home page when logged in, press <kbd>?</kbd> to open the shortcuts help. Common keys:</p>
+                    <ul>
+                        <li><kbd>n</kbd> — new task</li>
+                        <li><kbd>/</kbd> — focus search</li>
+                        <li><kbd>j</kbd> / <kbd>k</kbd> — move between tasks</li>
+                        <li><kbd>e</kbd> — edit focused task</li>
+                        <li><kbd>x</kbd> — toggle complete</li>
+                        <li><kbd>Esc</kbd> — close sidebar or modal</li>
+                    </ul>
 
                     <p class="text-muted mb-0">
                         Source and documentation are available on the project's GitHub repository (linked in the footer).
@@ -75,6 +89,6 @@
         <!-- HTMX -->
         <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
 
-        <script src="{{basePath}}/public/js/{{if .UseMinifiedAssets}}site.min.js{{else}}site.js{{end}}?v={{.AssetVersion}}" defer></script>
+        {{template "site_script.html" .}}
     </body>
 </html>

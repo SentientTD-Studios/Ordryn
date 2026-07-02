@@ -11,12 +11,18 @@ require (
 	golang.org/x/crypto v0.43.0
 )
 
-require golang.org/x/mod v0.32.0
+require (
+	github.com/fergusstrange/embedded-postgres v1.30.0
+	github.com/microcosm-cc/bluemonday v1.0.27
+	golang.org/x/mod v0.32.0
+)
 
 require (
-	github.com/fergusstrange/embedded-postgres v1.30.0 // indirect
+	github.com/aymerick/douceur v0.2.0 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
+	golang.org/x/net v0.45.0 // indirect
 )
 
 require (

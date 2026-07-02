@@ -10,6 +10,11 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{basePath}}">Home</a>
                     </li>
+                    {{if .LoggedIn}}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{basePath}}/dashboard">Dashboard</a>
+                    </li>
+                    {{end}}
                     <li class="nav-item">
                         <a class="nav-link" href="{{basePath}}/about">About</a>
                     </li>
@@ -45,6 +50,9 @@
                     <span class="ms-2"><i class="bi bi-moon-fill"></i></span>
                     {{if .LoggedIn}}
                     <span class="text-muted me-2">{{.UserEmail}}</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="shortcuts-help-btn" data-bs-toggle="modal" data-bs-target="#shortcutsModal" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">
+                        <i class="bi bi-question-circle"></i>
+                    </button>
                     <a href="{{basePath}}/profile" class="btn btn-outline-secondary btn-sm me-2">
                         <i class="bi bi-person-circle"></i> Profile
                     </a>
@@ -67,3 +75,4 @@
     </nav>
     {{template "global_announcement.html" .}}
     {{template "changelog.html" .}}
+    {{if .LoggedIn}}{{template "shortcuts_modal.html" .}}{{end}}
