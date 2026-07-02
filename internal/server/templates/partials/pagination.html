@@ -5,7 +5,7 @@
             <span id="total-tasks-badge" class="badge bg-primary me-2">Tasks: {{.TotalTasks}}</span>
             <span id="completed-tasks-badge" class="badge bg-success me-2">Completed: {{.CompletedTasks}}</span>
             <span id="incomplete-tasks-badge" class="badge bg-warning text-dark">Incomplete: {{.IncompleteTasks}}</span>
-            <small class="text-muted ms-2">Task count excludes starred items</small>
+            <small class="task-count-hint ms-2">Task count excludes starred items</small>
         <input type="hidden" id="status-filter" name="status" value="{{.StatusFilter}}" />
         <input type="hidden" id="due-filter" name="due" value="{{.DueFilter}}" />
         <input type="hidden" id="sort-filter" name="sort" value="{{.SortFilter}}" />
@@ -23,7 +23,7 @@
                     <th class="date-added">Due Date (if set)</th>
                     <th class="actions-column">
                         {{if eq .StatusFilter "incomplete"}}
-                        <a class="status-filter-toggle text-white text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}&status=complete"
+                        <a class="status-filter-toggle text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}&status=complete"
                             title="Showing incomplete tasks. Click to show complete tasks."
                             aria-label="Filter status column to complete tasks"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}&status=complete"
@@ -32,7 +32,7 @@
                             <i class="bi bi-arrow-right-short"></i>
                         </a>
                         {{else if eq .StatusFilter "complete"}}
-                        <a class="status-filter-toggle text-white text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}"
+                        <a class="status-filter-toggle text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}"
                             title="Showing complete tasks. Click to show all tasks."
                             aria-label="Clear status column filter"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}"
@@ -41,7 +41,7 @@
                             <i class="bi bi-x-circle"></i>
                         </a>
                         {{else}}
-                        <a class="status-filter-toggle text-white text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}&status=incomplete"
+                        <a class="status-filter-toggle text-decoration-none d-inline-flex align-items-center gap-1" href="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}&status=incomplete"
                             title="Showing all tasks. Click to show incomplete tasks."
                             aria-label="Filter status column to incomplete tasks"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1{{.FilterQueryNoStatus}}&status=incomplete"
@@ -55,9 +55,9 @@
             </thead>
             {{if .FavoriteTasks}}
             <tbody>
-                <tr class="table-light">
+                <tr class="starred-section-label">
                     <td colspan="5" class="py-1 px-2 border-0">
-                        <small class="text-muted"><i class="bi bi-star-fill"></i> Starred tasks (always visible)</small>
+                        <small><i class="bi bi-star-fill"></i> Starred tasks (always visible)</small>
                     </td>
                 </tr>
             </tbody>

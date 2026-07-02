@@ -26,6 +26,8 @@ html[data-theme="light"] #email.form-control-plaintext {
     --container-bg: #ffffff;
     --form-control-bg: #ffffff;
     --form-control-text: #212529;
+    --text-muted-color: #6c757d;
+    --section-label-bg: #eef1f4;
     --transition-time: 0.3s;
 }
 
@@ -46,6 +48,8 @@ html[data-theme="light"] #email.form-control-plaintext {
     --container-bg: #2a2a2a;
     --form-control-bg: #333;
     --form-control-text: #e9ecef;
+    --text-muted-color: #adb5bd;
+    --section-label-bg: #23272b;
 }
 
 /* ========================================
@@ -104,6 +108,58 @@ thead th {
 
 .status-filter-toggle .status-filter-state {
     font-size: 0.85em;
+}
+
+.task-count-hint {
+    color: var(--text-muted-color);
+}
+
+.starred-section-label td {
+    background-color: var(--section-label-bg);
+    color: var(--text-muted-color);
+    border-bottom: none;
+}
+
+.starred-section-label small,
+.starred-section-label .bi {
+    color: inherit;
+}
+
+.due-filter-active {
+    background-color: var(--table-header-bg);
+    border-color: var(--table-header-bg);
+    color: var(--table-header-text);
+}
+
+[data-theme="dark"] .due-filter-btn.btn-outline-secondary {
+    color: var(--text-color);
+    border-color: #6c757d;
+}
+
+[data-theme="dark"] .due-filter-btn.btn-outline-secondary:hover:not([disabled]),
+[data-theme="dark"] .due-filter-btn.btn-outline-secondary:focus:not([disabled]) {
+    color: var(--text-color);
+    background-color: var(--table-row-hover);
+    border-color: #adb5bd;
+}
+
+[data-theme="dark"] .due-filter-btn.due-filter-active {
+    background-color: var(--table-header-bg);
+    border-color: var(--table-header-bg);
+    color: var(--table-header-text);
+}
+
+[data-theme="dark"] .starred-section-label td,
+[data-theme="dark"] .starred-section-label td * {
+    color: var(--text-muted-color) !important;
+}
+
+[data-theme="dark"] .task-count-hint {
+    color: var(--text-muted-color) !important;
+}
+
+[data-theme="dark"] .priority-badge.bg-warning {
+    color: #212529 !important;
 }
 
 tbody tr {
@@ -492,12 +548,6 @@ td.delete-column {
     .priority-badge {
         font-size: 0.7rem;
         font-weight: normal;
-    }
-
-    .due-filter-active {
-        background-color: var(--bs-primary);
-        border-color: var(--bs-primary);
-        color: #fff;
     }
 
     @media (max-width: 600px) {
