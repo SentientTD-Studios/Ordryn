@@ -13,6 +13,7 @@
         </script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
         <title>{{.Title}}</title>
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
         <link rel="stylesheet" href="{{basePath}}/public/css/{{if .UseMinifiedAssets}}site.min.css{{else}}site.css{{end}}?v={{.AssetVersion}}" />

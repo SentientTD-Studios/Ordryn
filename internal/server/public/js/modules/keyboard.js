@@ -116,7 +116,7 @@ export function initKeyboardShortcuts() {
 
       if (e.code === "Escape") {
         closeOpenModals();
-        if (typeof window.closeSidebar === "function") {
+        if (!typing && typeof window.closeSidebar === "function") {
           window.closeSidebar();
         }
         return;

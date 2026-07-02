@@ -46,6 +46,17 @@ import { initAnnouncementCharCounter } from "./modules/admin.js";
 import { initDescriptionToggles } from "./modules/descriptions.js";
 import { initBulkActions } from "./modules/bulk.js";
 
+function configureHtmxCSP() {
+  if (typeof htmx === "undefined") return;
+  const nonceEl = document.querySelector("script[nonce]");
+  const nonce = nonceEl && nonceEl.getAttribute("nonce");
+  if (nonce) {
+    htmx.config.inlineScriptNonce = nonce;
+    htmx.config.allowEval = false;
+  }
+}
+configureHtmxCSP();
+
 // Expose these to global scope for HTMX and other inline scripts
 window.apiPath = apiPath;
 window.showToast = showToast;

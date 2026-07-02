@@ -138,7 +138,10 @@ export function initializeSidebarEventListeners() {
             tf.setAttribute("hx-post", apiPath("/api/add-task"));
           } catch (e) {}
           const cp = tf.querySelector('input[name="currentPage"]');
-          if (cp) cp.value = "1";
+          if (cp) {
+            const pageEl = document.getElementById("current-page");
+            cp.value = (pageEl && pageEl.value) || "1";
+          }
           const newTagsEl = tf.querySelector("#new_tags");
           if (newTagsEl) newTagsEl.value = "";
           tf.querySelectorAll('input[name="tag_ids"]').forEach((cb) => {
@@ -178,9 +181,18 @@ export function initializeSidebarEventListeners() {
         }
       } catch (e) {}
       tf.addEventListener("htmx:afterRequest", (event) => {
+        const elt = event.detail && event.detail.elt;
+        if (elt !== tf) return;
+
+        const xhr = event.detail && event.detail.xhr;
+        const responseURL = xhr && xhr.responseURL ? xhr.responseURL : "";
+        const isTaskSave =
+          responseURL.includes("/api/add-task") ||
+          responseURL.includes("/api/edit-task");
+        if (!isTaskSave) return;
+
         let isValidationError = false;
         try {
-          const xhr = event.detail && event.detail.xhr;
           const header =
             xhr && xhr.getResponseHeader
               ? xhr.getResponseHeader("X-Validation-Error")
@@ -254,20 +266,35 @@ export function handleSidebarAwareSettle() {
 
 function handleAfterSwapForSidebar(event) {
   const sidebarElement = document.getElementById("sidebar");
-  if (sidebarElement && sidebarElement.classList.contains("active")) {
-    let description = document.getElementById("description");
-    let charCount = document.getElementById("char-count");
-    if (description && charCount) {
-      handleDescriptionInput(charCount);
-    }
-    if (typeof initTheme === "function") {
-      initTheme();
-    }
-    const tf = document.getElementById("newTaskForm");
-    if (tf) {
-      syncSidebarFilterFields(tf);
-      const first = sidebarElement.querySelector("#title, input:not([type=\"hidden\"])");
-      if (first) first.focus();
-    }
+  if (!sidebarElement || !sidebarElement.classList.contains("active")) return;
+
+  const target = (event.detail && event.detail.target) || event.target;
+  if (!target) return;
+
+  // Ignore inline validation / activity loads — only react to full sidebar swaps.
+  if (target.id === "description-error") return;
+  if (target.closest && target.closest("details.task-timeline")) return;
+  if (
+    !target.classList.contains("sidebar-body") &&
+    target.id !== "sidebar"
+  ) {
+    return;
+  }
+
+  let description = document.getElementById("description");
+  let charCount = document.getElementById("char-count");
+  if (description && charCount) {
+    handleDescriptionInput(charCount);
+  }
+  if (typeof initTheme === "function") {
+    initTheme();
+  }
+  const tf = document.getElementById("newTaskForm");
+  if (tf) {
+    syncSidebarFilterFields(tf);
+    const first = sidebarElement.querySelector(
+      '#title, input:not([type="hidden"])',
+    );
+    if (first) first.focus();
   }
 }

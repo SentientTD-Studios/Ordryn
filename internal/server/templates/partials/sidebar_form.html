@@ -1,6 +1,5 @@
 <form
     hx-post="{{if .FormAction}}{{.FormAction}}{{else}}{{basePath}}/api/add-task{{end}}"
-    hx-include="#newTaskForm"
     method="post"
     id="newTaskForm"
     hx-target="#task-container"
@@ -28,10 +27,6 @@
             name="description"
             class="form-control"
             maxlength="1000"
-            hx-get="{{basePath}}/api/validate-description"
-            hx-trigger="keyup changed delay:300ms"
-            hx-target="#description-error"
-            hx-swap="innerHTML"
         >{{.Description}}</textarea>
         <div class="d-flex justify-content-between align-items-center mt-1">
             <small class="form-hint">Max 1000 Characters</small>
