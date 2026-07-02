@@ -489,6 +489,17 @@ td.delete-column {
         font-weight: normal;
     }
 
+    .priority-badge {
+        font-size: 0.7rem;
+        font-weight: normal;
+    }
+
+    .due-filter-active {
+        background-color: var(--bs-primary);
+        border-color: var(--bs-primary);
+        color: #fff;
+    }
+
     @media (max-width: 600px) {
         .project-badge {
             display: block;

@@ -33,9 +33,8 @@ func APIToggleFavorite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optional project filter
-	projectParam := r.URL.Query().Get("project")
-	projectFilter := parseProjectFilter(projectParam)
-	statusFilter := requestStatusFilter(r)
+	fc := filterContextFromRequest(r)
+	projectFilter := parseProjectFilter(fc.Project)
 
 	// Prevent banned users from performing actions
 	if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
@@ -111,7 +110,8 @@ func APIToggleFavorite(w http.ResponseWriter, r *http.Request) {
 	userPtr := &userID
 	var taskList []tasks.Task
 	var totalTasks int
-	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, userPtr, timezone, projectFilter, statusFilter)
+	listFilters := fc.ToListFilters()
+	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, userPtr, timezone, listFilters)
 	if err != nil {
 		http.Error(w, "Error fetching tasks: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -166,8 +166,9 @@ func APIToggleFavorite(w http.ResponseWriter, r *http.Request) {
 		"CompletedTasks":   completedCount,
 		"IncompleteTasks":  incompleteCount,
 		"Projects":         projectsList,
-		"ProjectFilter":    projectParam,
-		"StatusFilter":     statusFilter,
+	}
+	for k, v := range fc.TemplateFields() {
+		context[k] = v
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

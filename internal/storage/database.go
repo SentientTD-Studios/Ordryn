@@ -361,6 +361,27 @@ func MigrateTasksAddDueDate() error {
 	return nil
 }
 
+// MigrateTasksAddPriority adds priority column to tasks table.
+func MigrateTasksAddPriority() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(), "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority SMALLINT NOT NULL DEFAULT 0")
+	if err != nil {
+		return fmt.Errorf("failed to add priority column to tasks table: %v", err)
+	}
+
+	_, err = pool.Exec(context.Background(), "CREATE INDEX IF NOT EXISTS idx_tasks_user_priority ON tasks(user_id, priority)")
+	if err != nil {
+		return fmt.Errorf("failed to create priority index: %v", err)
+	}
+
+	return nil
+}
+
 // MigrateUsersAddTimezone adds timezone column to users table
 func MigrateUsersAddTimezone() error {
 	pool, err := OpenDatabase()

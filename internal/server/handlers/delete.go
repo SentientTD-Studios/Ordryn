@@ -78,8 +78,9 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine active project filter
-	projectParam := r.URL.Query().Get("project")
-	statusFilter := requestStatusFilter(r)
+	// Determine active filters from the request
+	fc := filterContextFromRequest(r)
+	fc.Page = currentPage
 
 	pageSize := utils.AppConstants.PageSize
 	if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
@@ -104,7 +105,7 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if err := renderFilteredTaskListPartial(w, r, currentPage, pageSize, "", &userID, timezone, loggedIn, projectParam, statusFilter); err != nil {
+	if err := renderFilteredTaskListPartial(w, r, currentPage, pageSize, fc, &userID, timezone, loggedIn); err != nil {
 		http.Error(w, "Error rendering tasks: "+err.Error(), http.StatusInternalServerError)
 	}
 }

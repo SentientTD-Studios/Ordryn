@@ -30,10 +30,16 @@ function buildTaskListUrl(page) {
   if (searchInput && searchInput.value) {
     url += `&search=${encodeURIComponent(searchInput.value)}`;
   }
-  const statusFilter = document.getElementById("status-filter");
-  if (statusFilter && statusFilter.value) {
-    url += `&status=${encodeURIComponent(statusFilter.value)}`;
-  }
+  const appendHidden = (id, param) => {
+    const el = document.getElementById(id);
+    if (el && el.value) {
+      url += `&${param}=${encodeURIComponent(el.value)}`;
+    }
+  };
+  appendHidden("status-filter", "status");
+  appendHidden("due-filter", "due");
+  appendHidden("sort-filter", "sort");
+  appendHidden("priority-filter", "priority");
   const projectFilter = document.getElementById("project-filter-value");
   if (projectFilter && projectFilter.value) {
     url += `&project=${encodeURIComponent(projectFilter.value)}`;

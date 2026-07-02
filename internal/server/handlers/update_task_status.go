@@ -99,12 +99,12 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 			COALESCE(CAST(t.due_date AS TEXT), '') AS due_date,
 			TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_created,
 			COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified,
-			COALESCE(t.is_favorite,false), COALESCE(t.position,0), t.project_id, COALESCE(p.name,'')
+			COALESCE(t.is_favorite,false), COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,'')
 		FROM tasks t LEFT JOIN projects p ON t.project_id = p.id 
 		WHERE t.id = $1`, id, timezone).Scan(
 		&task.ID, &task.Title, &task.Description, &task.Completed,
 		&task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified,
-		&task.IsFavorite, &task.Position, &projectID, &projectName)
+		&task.IsFavorite, &task.Position, &task.Priority, &projectID, &projectName)
 
 	if err != nil {
 		http.Error(w, "Failed to fetch updated task", http.StatusInternalServerError)
@@ -149,7 +149,9 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		userPtr := &userID
-		if err := renderFilteredTaskListPartial(w, r, pageNum, pageSize, "", userPtr, timezone, true, projectParam, statusFilter); err != nil {
+		fc := filterContextFromRequest(r)
+		fc.Page = pageNum
+		if err := renderFilteredTaskListPartial(w, r, pageNum, pageSize, fc, userPtr, timezone, true); err != nil {
 			http.Error(w, "Error rendering filtered tasks: "+err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -159,18 +161,27 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Render the complete task row with updated data
+	fc := filterContextFromRequest(r)
 	data := struct {
 		Task          tasks.Task
 		BasePath      string
 		ProjectFilter string
 		StatusFilter  string
+		DueFilter     string
+		SortFilter    string
+		PriorityFilter string
+		FilterQuery   string
 		Timezone      string
 	}{
-		Task:          task,
-		BasePath:      basePath,
-		ProjectFilter: projectParam,
-		StatusFilter:  statusFilter,
-		Timezone:      timezone,
+		Task:           task,
+		BasePath:       basePath,
+		ProjectFilter:  fc.Project,
+		StatusFilter:   fc.Status,
+		DueFilter:      fc.Due,
+		SortFilter:     fc.Sort,
+		PriorityFilter: fc.Priority,
+		FilterQuery:    fc.QuerySuffix(),
+		Timezone:       timezone,
 	}
 
 	if err := utils.Templates.ExecuteTemplate(w, "todo.html", data); err != nil {

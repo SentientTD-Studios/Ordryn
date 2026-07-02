@@ -72,6 +72,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateTasksAddDueDate failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateTasksAddPriority(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddPriority failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure site_settings table exists
 	if err := CreateSiteSettingsTable(); err != nil {

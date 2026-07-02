@@ -115,7 +115,7 @@
                         id="search-form"
                         class="d-flex gap-2"
                         hx-post="{{basePath}}/search"
-                        hx-include="#project-filter, #status-filter"
+                        hx-include="#status-filter, #due-filter, #sort-filter, #priority-filter"
                         hx-target="#task-container"
                         hx-swap="innerHTML"
                     >
@@ -148,7 +148,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     {{if .Projects}}
-                    <select id="project-filter" name="project" class="form-select w-auto" style="width:220px;" hx-get="{{basePath}}/api/fetch-tasks" hx-trigger="change" hx-include="#status-filter" hx-target="#task-container" hx-swap="innerHTML">
+                    <select id="project-filter" name="project" class="form-select w-auto" style="width:220px;" hx-get="{{basePath}}/api/fetch-tasks" hx-trigger="change" hx-include="#status-filter, #due-filter, #sort-filter, #priority-filter" hx-target="#task-container" hx-swap="innerHTML">
                         <option value="" {{if eq .ProjectFilter ""}}selected{{end}}>All projects</option>
                         <option value="0" {{if or (eq .ProjectFilter "0") (eq .ProjectFilter "none")}}selected{{end}}>No project</option>
                         {{range .Projects}}
@@ -157,8 +157,40 @@
                     </select>
                     {{end}}
                 </div>
-                <div>
-                    <!-- reserved for future toolbar actions (e.g., quick filters, export) -->
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Due date filters">
+                        <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter ""}}due-filter-active{{end}}"
+                            hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": ""}' hx-include="#project-filter, #status-filter, #sort-filter, #priority-filter, #search"
+                            hx-target="#task-container" hx-swap="innerHTML">All</button>
+                        <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "today"}}due-filter-active{{end}}"
+                            hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "today"}' hx-include="#project-filter, #status-filter, #sort-filter, #priority-filter, #search"
+                            hx-target="#task-container" hx-swap="innerHTML">Today</button>
+                        <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "overdue"}}due-filter-active{{end}}"
+                            hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "overdue"}' hx-include="#project-filter, #status-filter, #sort-filter, #priority-filter, #search"
+                            hx-target="#task-container" hx-swap="innerHTML">Overdue</button>
+                        <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "week"}}due-filter-active{{end}}"
+                            hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "week"}' hx-include="#project-filter, #status-filter, #sort-filter, #priority-filter, #search"
+                            hx-target="#task-container" hx-swap="innerHTML">This Week</button>
+                        <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "none"}}due-filter-active{{end}}"
+                            hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "none"}' hx-include="#project-filter, #status-filter, #sort-filter, #priority-filter, #search"
+                            hx-target="#task-container" hx-swap="innerHTML">No Date</button>
+                    </div>
+                    <select id="priority-filter" name="priority" class="form-select form-select-sm w-auto" aria-label="Filter by priority"
+                        hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-trigger="change"
+                        hx-include="#project-filter, #status-filter, #due-filter, #sort-filter, #search"
+                        hx-target="#task-container" hx-swap="innerHTML">
+                        <option value="" {{if eq .PriorityFilter ""}}selected{{end}}>All priorities</option>
+                        <option value="1" {{if eq .PriorityFilter "1"}}selected{{end}}>Low</option>
+                        <option value="2" {{if eq .PriorityFilter "2"}}selected{{end}}>Medium</option>
+                        <option value="3" {{if eq .PriorityFilter "3"}}selected{{end}}>High</option>
+                    </select>
+                    <button type="button" class="btn btn-sm {{if eq .SortFilter "priority"}}btn-primary{{else}}btn-outline-primary{{end}}" id="sort-priority-btn"
+                        hx-get="{{basePath}}/api/fetch-tasks?page=1"
+                        hx-vals='js:{"sort": document.getElementById("sort-filter") && document.getElementById("sort-filter").value === "priority" ? "" : "priority"}'
+                        hx-include="#project-filter, #status-filter, #due-filter, #priority-filter, #search"
+                        hx-target="#task-container" hx-swap="innerHTML">
+                        {{if eq .SortFilter "priority"}}Sort: Priority{{else}}Sort: Manual{{end}}
+                    </button>
                 </div>
             </div>
             {{end}}
