@@ -1,4 +1,7 @@
 <tr id="task-{{.Task.ID}}">
+    <td class="text-center align-middle select-column" data-label="">
+        <input type="checkbox" class="form-check-input task-select" data-task-id="{{.Task.ID}}" aria-label="Select task {{.Task.Title}}" />
+    </td>
     <td class="text-center align-middle drag-column" data-label="">
         <span class="drag-handle" style="cursor:move;">
             <i class="bi bi-grip-vertical"></i>

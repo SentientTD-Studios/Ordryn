@@ -208,10 +208,54 @@
                         title="{{if eq .SortFilter "priority"}}Sorted by priority (high first). Click to restore manual drag order.{{else}}Sorted by manual order. Click to sort by priority (high first).{{end}}">
                         {{if eq .SortFilter "priority"}}Sort: Priority{{else}}Sort: Manual{{end}}
                     </button>
+                    <a href="{{basePath}}/api/export?format=csv{{.FilterQuery}}" class="btn btn-outline-secondary btn-sm" download title="Export filtered tasks as CSV">
+                        <i class="bi bi-download"></i> Export CSV
+                    </a>
+                    <a href="{{basePath}}/api/export?format=json{{.FilterQuery}}" class="btn btn-outline-secondary btn-sm" download title="Export filtered tasks as JSON">
+                        <i class="bi bi-download"></i> Export JSON
+                    </a>
                 </div>
             </div>
             {{end}}
         </div>
+
+        {{if .LoggedIn}}
+        <div id="bulk-bar" class="bulk-action-bar d-none container mb-2" aria-hidden="true" role="region" aria-label="Bulk actions">
+            <div class="d-flex flex-wrap align-items-center gap-2 py-2 px-3">
+                <span id="bulk-count" class="fw-semibold me-2">0 selected</span>
+                <button type="button" class="btn btn-sm btn-success" data-bulk-action="complete">Complete</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="incomplete">Mark incomplete</button>
+                <button type="button" class="btn btn-sm btn-danger" data-bulk-action="delete">Delete</button>
+                {{if .Projects}}
+                <select id="bulk-project" class="form-select form-select-sm w-auto" aria-label="Move to project">
+                    <option value="">Move to project…</option>
+                    <option value="0">No project</option>
+                    {{range .Projects}}
+                    <option value="{{.ID}}">{{.Name}}</option>
+                    {{end}}
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="move_project">Move</button>
+                {{end}}
+                {{if .Tags}}
+                <select id="bulk-tag" class="form-select form-select-sm w-auto" aria-label="Tag for bulk action">
+                    <option value="">Select tag…</option>
+                    {{range .Tags}}
+                    <option value="{{.ID}}">{{.Name}}</option>
+                    {{end}}
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="add_tag">Add tag</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="remove_tag">Remove tag</button>
+                {{end}}
+                <select id="bulk-priority" class="form-select form-select-sm w-auto" aria-label="Set priority">
+                    <option value="0">Priority: None</option>
+                    <option value="1">Low</option>
+                    <option value="2">Medium</option>
+                    <option value="3">High</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="set_priority">Set priority</button>
+            </div>
+        </div>
+        {{end}}
 
         <script nonce="{{.CSPNonce}}">
             // Ensure the project filter select reflects the server-side filter on full page load.

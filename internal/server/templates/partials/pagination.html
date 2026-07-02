@@ -18,6 +18,9 @@
             <input type="hidden" name="currentPage" value="{{.CurrentPage}}" />
                 <thead>
                 <tr>
+                    <th style="width: 32px">
+                        <input type="checkbox" class="form-check-input" id="select-all-tasks" aria-label="Select all tasks on this page" title="Select all on page" />
+                    </th>
                     <th style="width: 32px"></th>
                     <th class="description-column">Title</th>
                     <th class="description-column">Description</th>
@@ -57,7 +60,7 @@
             {{if .FavoriteTasks}}
             <tbody>
                 <tr class="starred-section-label">
-                    <td colspan="5" class="py-1 px-2 border-0">
+                    <td colspan="6" class="py-1 px-2 border-0">
                         <small><i class="bi bi-star-fill"></i> Starred tasks (always visible)</small>
                     </td>
                 </tr>
@@ -72,7 +75,7 @@
                 {{range .Tasks}} {{template "todo.html" (dict "Task" . "ProjectFilter" $.ProjectFilter "StatusFilter" $.StatusFilter "Timezone" $.Timezone "FilterQuery" $.FilterQuery "IsSearching" $.IsSearching)}} {{end}}
                 {{if and (not .FavoriteTasks) (not .Tasks) (or .StatusFilter .DueFilter .TagFilter)}}
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-4">No tasks match this filter.</td>
+                    <td colspan="6" class="text-center text-muted py-4">No tasks match this filter.</td>
                 </tr>
                 {{end}}
             </tbody>

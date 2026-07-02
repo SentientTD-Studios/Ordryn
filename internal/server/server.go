@@ -66,6 +66,7 @@ func StartServer() error {
 	http.HandleFunc("/search", handlers.SearchHandler)
 	http.HandleFunc("/profile", handlers.ProfilePage)
 	http.HandleFunc("/projects", utils.RequireAuth(handlers.ProjectsPageHandler))
+	http.HandleFunc("/import", utils.RequireAuth(handlers.ImportPageHandler))
 	http.HandleFunc("/createinvite", utils.RequirePermission("createinvites", handlers.CreateInvitePageHandler))
 	http.HandleFunc("/admin", utils.RequirePermission("admin", handlers.AdminPageHandler))
 	http.HandleFunc("/admin/", utils.RequirePermission("admin", handlers.AdminPageHandler))
@@ -102,7 +103,9 @@ func StartServer() error {
 	http.HandleFunc("/api/projects/update", utils.RequireHTMX(utils.RequireAuth(handlers.APIUpdateProject)))
 	http.HandleFunc("/api/projects/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteProject)))
 	http.HandleFunc("/api/projects/json", utils.RequireHTMX(utils.RequireAuth(handlers.APIProjectsJSON)))
-	http.HandleFunc("/api/tags/json", utils.RequireHTMX(utils.RequireAuth(handlers.APITagsJSON)))
+	http.HandleFunc("/api/bulk-update", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIBulkUpdate)))
+	http.HandleFunc("/api/export", utils.RequireAuth(handlers.APIExportTasks))
+	http.HandleFunc("/api/import", utils.RequireHTMX(utils.RequireAuth(handlers.APIImportTasks)))
 	http.HandleFunc("/api/tags/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteTag)))
 
 	// Profile API endpoints

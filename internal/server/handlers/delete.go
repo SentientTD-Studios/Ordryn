@@ -61,17 +61,14 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Delete the task from the database (only if it belongs to the user)
-	result, err := db.Exec(context.Background(), "DELETE FROM tasks WHERE id = $1 AND user_id = $2", taskID, userID)
+	tid, err := strconv.Atoi(taskID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Error deleting task")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "Invalid task id")
 		return
 	}
 
-	// Check if any rows were actually deleted
-	rowsAffected := result.RowsAffected()
-	if rowsAffected == 0 {
+	if err := deleteTasksForUser(context.Background(), db, []int{tid}, userID); err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "Task not found or you don't have permission to delete it")
 		return
