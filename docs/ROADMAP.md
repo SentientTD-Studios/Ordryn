@@ -2,7 +2,7 @@
 
 **Status: Complete (v0.15.1-beta)** — All waves (0–5) and items A1–A13, B1–B16 are implemented.
 
-Post-roadmap polish (dev branch): tag management UI, duplicate task, relative due labels, due-date presets, navbar overdue badge, live description validation, Go test CI.
+Post-roadmap polish (dev branch): tag management UI, duplicate task, relative due labels, due-date presets, navbar overdue badge, live description validation, Go test CI, undo delete, ICS calendar feed, import preview, bulk due-date actions, UX polish (loading states, mobile filters, sidebar backdrop).
 
 ---
 
@@ -70,6 +70,17 @@ Post-roadmap polish (dev branch): tag management UI, duplicate task, relative du
 
 ---
 
+## Shipped post-v0.15.1
+
+| Feature | Notes |
+|---------|-------|
+| Undo delete | Session snapshot, ~60s toast on home page |
+| ICS calendar feed | Profile page subscribe URL; public `/cal/{token}.ics` |
+| Import preview | Upload CSV → preview → confirm/cancel |
+| Bulk set/clear due date | Bulk action bar |
+
+---
+
 ## Future Ideas (not in scope)
 
-See project planning notes for Tier 2+ enhancements: saved filter views, ICS feed, import preview, undo delete, email digest.
+See project planning notes for Tier 2+ enhancements: saved filter views, JSON import, email digest.

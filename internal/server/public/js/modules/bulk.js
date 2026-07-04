@@ -1,10 +1,12 @@
 import { apiPath } from "./utils.js";
 import { initSortable } from "./sortable.js";
 import { syncSortButtonState, syncFilterToolbarState } from "./events.js";
+import { showToast } from "./notifications.js";
 
 export function initBulkActions() {
   const selected = new Set();
   let lastClickedIndex = -1;
+  let bulkInFlight = false;
 
   function getVisibleCheckboxes() {
     return Array.from(document.querySelectorAll("#task-container .task-select"));
@@ -18,6 +20,15 @@ export function initBulkActions() {
     countEl.textContent = `${count} selected`;
     bar.classList.toggle("d-none", count === 0);
     bar.setAttribute("aria-hidden", count === 0 ? "true" : "false");
+  }
+
+  function setBulkLoading(loading) {
+    bulkInFlight = loading;
+    document.querySelectorAll("#bulk-bar [data-bulk-action]").forEach((btn) => {
+      btn.disabled = loading;
+    });
+    const clearBtn = document.getElementById("bulk-clear-selection");
+    if (clearBtn) clearBtn.disabled = loading;
   }
 
   function syncSelectAllState() {
@@ -88,18 +99,25 @@ export function initBulkActions() {
   });
 
   document.body.addEventListener("click", (e) => {
+    const clearBtn = e.target.closest("#bulk-clear-selection");
+    if (clearBtn) {
+      e.preventDefault();
+      clearSelection();
+      return;
+    }
+
     const btn = e.target.closest("[data-bulk-action]");
     if (!btn) return;
     e.preventDefault();
 
     const action = btn.dataset.bulkAction;
-    if (!action || selected.size === 0) return;
+    if (!action || selected.size === 0 || bulkInFlight) return;
 
     if (action === "delete") {
       const count = selected.size;
       if (
         !window.confirm(
-          `Delete ${count} task${count === 1 ? "" : "s"}? This cannot be undone.`,
+          `Delete ${count} task${count === 1 ? "" : "s"}? You can undo for a few seconds afterward.`,
         )
       ) {
         return;
@@ -141,6 +159,9 @@ export function initBulkActions() {
       form.append("due_date", "");
     }
 
+    setBulkLoading(true);
+    const deleteCount = action === "delete" ? selected.size : 0;
+
     fetch(apiPath("/api/bulk-update"), {
       method: "POST",
       headers: {
@@ -171,16 +192,17 @@ export function initBulkActions() {
         } catch (e) {}
         if (action === "delete") {
           document.body.dispatchEvent(
-            new CustomEvent("task-deleted", { detail: { count } }),
+            new CustomEvent("task-deleted", { detail: { count: deleteCount } }),
           );
-        } else if (typeof window.showToast === "function") {
-          window.showToast("Bulk action completed.");
+        } else {
+          showToast("Bulk action completed.");
         }
       })
       .catch((err) => {
-        if (typeof window.showToast === "function") {
-          window.showToast(err.message || "Bulk action failed.");
-        }
+        showToast(err.message || "Bulk action failed.", { error: true });
+      })
+      .finally(() => {
+        setBulkLoading(false);
       });
   });
 

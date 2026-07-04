@@ -48,6 +48,8 @@ import { initAnnouncementCharCounter } from "./modules/admin.js";
 import { initDescriptionToggles } from "./modules/descriptions.js";
 import { initBulkActions } from "./modules/bulk.js";
 import { initUndoDelete } from "./modules/undo.js";
+import { initFilterToolbar } from "./modules/filters.js";
+import { initShortcutsHint } from "./modules/onboarding.js";
 
 function configureHtmxCSP() {
   if (typeof htmx === "undefined") return;
@@ -90,6 +92,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initBulkActions();
   initUndoDelete();
   initKeyboardShortcuts();
+  initFilterToolbar();
+  initShortcutsHint();
   initRevealTokenButtons();
 
   // Debug helper: when ?cssdebug=1 is present in the URL, log which media queries match.

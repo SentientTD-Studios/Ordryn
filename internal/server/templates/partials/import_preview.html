@@ -42,6 +42,7 @@
                 hx-post="{{basePath}}/api/import/confirm"
                 hx-target="#import-result"
                 hx-swap="innerHTML"
+                hx-indicator="#htmx-loading-indicator"
             >
                 <i class="bi bi-check-lg"></i> Confirm import
             </button>
@@ -51,6 +52,7 @@
                 hx-post="{{basePath}}/api/import/cancel"
                 hx-target="#import-result"
                 hx-swap="innerHTML"
+                hx-indicator="#htmx-loading-indicator"
             >
                 Cancel
             </button>

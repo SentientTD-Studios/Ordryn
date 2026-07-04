@@ -6,27 +6,18 @@ import {
 } from "./utils.js";
 import { initializeSidebarEventListeners } from "./sidebar.js";
 import { initializeModalEventListeners } from "./modal.js";
+import { showToast } from "./notifications.js";
 
-export function initSortable() {
-  try {
-    if (typeof Sortable === "undefined") return;
-
-    const favList = document.getElementById("favorite-task-list");
-    const regList = document.getElementById("task-list");
-
-    const createSortable = (el, isFav) => {
-      if (!el) return;
-      // Destroy existing Sortable instance if present
-      if (el._sortable) {
-        try {
-          el._sortable.destroy();
-        } catch (e) {}
-      }
-      el._sortable = Sortable.create(el, {
-        handle: ".drag-handle",
-        draggable: "tr.task-row",
-        animation: 150,
-        onEnd: function (evt) {
+function sortableOptions(isFav) {
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  return {
+    handle: ".drag-handle",
+    draggable: "tr.task-row",
+    animation: 150,
+    delay: coarse ? 200 : 0,
+    delayOnTouchOnly: true,
+    touchStartThreshold: coarse ? 5 : 1,
+    onEnd: function (evt) {
           // Build order of ids from task rows only (ignore section labels)
           const ids = Array.from(evt.to.querySelectorAll("tr.task-row"))
             .map((row) => {
@@ -151,9 +142,30 @@ export function initSortable() {
             })
             .catch((err) => {
               console.error("Reorder failed", err);
+              showToast("Could not save task order. Please try again.", {
+                error: true,
+              });
             });
         },
-      });
+      };
+}
+
+export function initSortable() {
+  try {
+    if (typeof Sortable === "undefined") return;
+
+    const favList = document.getElementById("favorite-task-list");
+    const regList = document.getElementById("task-list");
+
+    const createSortable = (el, isFav) => {
+      if (!el) return;
+      // Destroy existing Sortable instance if present
+      if (el._sortable) {
+        try {
+          el._sortable.destroy();
+        } catch (e) {}
+      }
+      el._sortable = Sortable.create(el, sortableOptions(isFav));
     };
 
     createSortable(favList, true);

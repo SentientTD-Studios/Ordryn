@@ -5,6 +5,7 @@ import {
   attachEditButtonListeners,
   attachContextualCloseSidebar,
   handleSidebarAwareSettle,
+  openSidebar,
 } from "./sidebar.js";
 import { initializeModalEventListeners } from "./modal.js";
 import {
@@ -211,8 +212,7 @@ export function attachHTMXAfterRequestListener() {
           try {
             initializeSidebarEventListeners();
           } catch (e) {}
-          const sb = document.getElementById("sidebar");
-          if (sb) sb.classList.add("active");
+          openSidebar();
         }
       }
 
@@ -322,8 +322,7 @@ export function attachHTMXAfterSwapListeners() {
         try {
           initializeSidebarEventListeners();
         } catch (e) {}
-        const sb = document.getElementById("sidebar");
-        if (sb) sb.classList.add("active");
+        openSidebar();
       }
     } catch (e) {}
   });
@@ -343,8 +342,7 @@ export function attachHTMXAfterSwapListeners() {
         try {
           initializeSidebarEventListeners();
         } catch (e) {}
-        const sb = document.getElementById("sidebar");
-        if (sb) sb.classList.add("active");
+        openSidebar();
       }
     } catch (e) {}
   });
@@ -359,6 +357,67 @@ export function attachHTMXAfterSwapListeners() {
       try {
         initializeModalEventListeners();
       } catch (e) {}
+    }
+  });
+}
+
+export function attachHTMXLoadingListeners() {
+  let savedScrollY = 0;
+  const loadingTargets = new Set([
+    "task-container",
+    "import-result",
+    "sidebar",
+  ]);
+
+  function isLoadingTarget(evt) {
+    const detail = evt.detail;
+    if (!detail) return false;
+    const targetSel =
+      detail.elt?.getAttribute?.("hx-target") ||
+      detail.target?.getAttribute?.("id");
+    if (targetSel === "#task-container" || targetSel === "task-container") {
+      return true;
+    }
+    if (targetSel === "#import-result" || targetSel === "import-result") {
+      return true;
+    }
+    if (
+      targetSel === "#sidebar .sidebar-body" ||
+      detail.target?.classList?.contains("sidebar-body")
+    ) {
+      return true;
+    }
+    const targetId = detail.target?.id;
+    return targetId && loadingTargets.has(targetId);
+  }
+
+  document.body.addEventListener("htmx:beforeRequest", (evt) => {
+    if (!isLoadingTarget(evt)) return;
+    document.body.classList.add("htmx-loading");
+    const container = document.getElementById("task-container");
+    if (
+      container &&
+      (evt.detail.target?.id === "task-container" ||
+        evt.detail.elt?.getAttribute("hx-target") === "#task-container")
+    ) {
+      savedScrollY = window.scrollY;
+      container.classList.add("task-container-loading");
+    }
+  });
+
+  document.body.addEventListener("htmx:afterRequest", () => {
+    document.body.classList.remove("htmx-loading");
+  });
+
+  document.body.addEventListener("htmx:afterSettle", (evt) => {
+    const target = evt.detail?.target || evt.target;
+    if (!target) return;
+
+    if (target.id === "task-container") {
+      target.classList.remove("task-container-loading");
+      target.classList.add("task-container-fade-in");
+      window.scrollTo(0, savedScrollY);
+      setTimeout(() => target.classList.remove("task-container-fade-in"), 300);
     }
   });
 }
@@ -386,6 +445,7 @@ export function attachAllEventListeners() {
   attachHTMXAfterRequestListener();
   attachHTMXAfterSettleListener();
   attachHTMXAfterSwapListeners();
+  attachHTMXLoadingListeners();
   attachEditButtonListeners();
   attachContextualCloseSidebar();
   syncSortButtonState();

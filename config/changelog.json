@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.16.0",
+    "date": "2026-07-03",
+    "title": "UX polish",
+    "notes": [
+      "Loading indicators and smoother task list updates during HTMX requests",
+      "Sidebar backdrop, mobile full-width layout, and loading skeleton when editing",
+      "Sticky bulk bar with More actions dropdown; undo-aware delete messaging",
+      "Collapsible filter toolbar on mobile with active filter chips",
+      "Calendar sync link in Import/Export menu; profile clipboard toasts",
+      "Undo delete, ICS calendar feed, and import preview documented in About/README"
+    ]
+  },
+  {
     "version": "0.1.0",
     "date": "2026-01-16",
     "title": "Initial changelog",

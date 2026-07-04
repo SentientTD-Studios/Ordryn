@@ -2232,3 +2232,212 @@ select.form-select:focus {
 .token-masked {
     letter-spacing: 0.1em;
 }
+
+/* Pagination disabled button cursor */
+.btn[disabled] {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='none' stroke='%23dc3545' stroke-width='2'/%3E%3Cline x1='4' y1='4' x2='20' y2='20' stroke='%23dc3545' stroke-width='2'/%3E%3C/svg%3E") 12 12, not-allowed !important;
+    pointer-events: all !important;
+}
+
+/* HTMX loading indicators */
+.htmx-indicator {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator,
+body.htmx-loading .htmx-indicator {
+    opacity: 1;
+    visibility: visible;
+}
+
+#htmx-loading-indicator {
+    position: fixed;
+    top: 0.65rem;
+    right: 0.75rem;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    background: var(--box-bg);
+    border: 1px solid var(--box-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    font-size: 0.8125rem;
+    color: var(--text-color);
+}
+
+#htmx-loading-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 0;
+    z-index: 2001;
+    background: var(--bs-primary, #0d6efd);
+    transition: width 0.25s ease;
+    pointer-events: none;
+}
+
+body.htmx-loading #htmx-loading-bar {
+    width: 70%;
+}
+
+.task-container-loading {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+.task-container-fade-in {
+    animation: taskContainerFadeIn 0.25s ease;
+}
+
+@keyframes taskContainerFadeIn {
+    from {
+        opacity: 0.4;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Sidebar backdrop */
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 1035;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.sidebar-backdrop.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.sidebar-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem 1rem;
+    color: var(--text-muted, #6c757d);
+}
+
+@media (max-width: 520px) {
+    #sidebar {
+        width: 100%;
+        right: -100%;
+    }
+}
+
+/* Sticky bulk action bar */
+.bulk-action-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+}
+
+.bulk-action-bar:not(.d-none) {
+    margin-top: 0.25rem;
+}
+
+.bulk-more-menu {
+    min-width: 280px;
+}
+
+#bulk-count[aria-live] {
+    min-width: 5.5rem;
+}
+
+/* Filter toolbar — mobile collapse */
+.filter-toolbar-wrapper {
+    width: 100%;
+}
+
+.filter-toggle-btn {
+    display: none;
+}
+
+.filter-active-chips {
+    display: none;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    background: var(--box-bg);
+    border: 1px solid var(--box-border);
+    color: var(--text-color);
+}
+
+@media (max-width: 991px) {
+    .filter-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .filter-toolbar-panel.collapsed {
+        display: none;
+    }
+
+    .filter-active-chips.has-chips {
+        display: flex;
+    }
+
+    .filter-toolbar-inner {
+        flex-direction: column;
+        align-items: stretch !important;
+    }
+
+    .filter-toolbar-inner .btn-group {
+        flex-wrap: wrap;
+    }
+
+    .filter-toolbar-inner .form-select,
+    .filter-toolbar-inner .form-control {
+        width: 100% !important;
+        max-width: none;
+    }
+}
+
+/* Touch devices: show drag handles with long-press hint */
+@media (pointer: coarse) {
+    .drag-handle {
+        display: inline-flex !important;
+        opacity: 0.85;
+    }
+}
+
+/* Theme toggle as button */
+button.theme-toggle {
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+button.theme-toggle:focus-visible {
+    outline: 2px solid var(--bs-primary, #0d6efd);
+    outline-offset: 2px;
+}
+
+.navbar-user-email {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

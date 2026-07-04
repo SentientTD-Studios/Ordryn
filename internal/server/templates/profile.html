@@ -21,6 +21,10 @@
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
     </head>
     <body class="profile-page">
+        <div id="htmx-loading-indicator" class="htmx-indicator" aria-hidden="true" aria-live="polite">
+            <span class="spinner-border spinner-border-sm" role="status"></span>
+            <span>Loading…</span>
+        </div>
         {{template "navbar.html" .}}
 
         <main>
@@ -94,7 +98,7 @@
                             </form>
 
                             <!-- Calendar feed -->
-                            <div class="mt-4 pt-4 border-top">
+                            <div class="mt-4 pt-4 border-top" id="calendar-feed">
                                 <h4 class="mb-3">Calendar feed</h4>
                                 <p class="text-muted small">
                                     Subscribe to incomplete tasks with due dates in any calendar app. Read-only — changes in your calendar app are not synced back.
@@ -119,6 +123,7 @@
                                     hx-post="{{basePath}}/api/calendar/regenerate-token"
                                     hx-target="#calendar-feed-block"
                                     hx-swap="innerHTML"
+                                    hx-indicator="#htmx-loading-indicator"
                                 >
                                     <i class="bi bi-arrow-repeat"></i> Regenerate link
                                 </button>
@@ -183,15 +188,35 @@
                     if (!url) return;
                     navigator.clipboard.writeText(url).then(function() {
                         btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied';
+                        if (typeof window.showToast === 'function') {
+                            window.showToast('Calendar URL copied to clipboard.');
+                        }
                         setTimeout(function() {
                             btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
                         }, 2000);
-                    }).catch(function() {});
+                    }).catch(function() {
+                        if (typeof window.showToast === 'function') {
+                            window.showToast('Could not copy to clipboard.', { error: true });
+                        }
+                    });
                 });
             });
 
+            function setButtonLoading(btn, loading, defaultHtml) {
+                if (!btn) return;
+                btn.disabled = loading;
+                if (loading) {
+                    btn.dataset.defaultHtml = btn.innerHTML;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Saving…';
+                } else {
+                    btn.innerHTML = btn.dataset.defaultHtml || defaultHtml;
+                }
+            }
+
             document.getElementById('profileForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
+                const submitBtn = this.querySelector('button[type="submit"]');
+                setButtonLoading(submitBtn, true, '<i class="bi bi-check-lg"></i> Save Changes');
                 const formData = new FormData();
                 formData.append('timezone', document.getElementById('timezone').value);
                 formData.append('user_name', document.getElementById('user_name').value);
@@ -209,6 +234,9 @@
                         const successMsg = document.getElementById('successMessage');
                         successMsg.classList.remove('d-none');
                         successMsg.classList.add('show');
+                        if (typeof window.showToast === 'function') {
+                            window.showToast('Profile updated successfully.');
+                        }
                         setTimeout(function() {
                             successMsg.classList.remove('show');
                             successMsg.classList.add('d-none');
@@ -220,17 +248,26 @@
                         const errorMsg = document.getElementById('errorMessage');
                         document.getElementById('errorText').textContent = 'Error updating profile. Please try again.';
                         errorMsg.style.display = 'block';
+                        if (typeof window.showToast === 'function') {
+                            window.showToast('Error updating profile. Please try again.', { error: true });
+                        }
                     }
                 } catch (error) {
                     console.error('Error:', error);
                     const errorMsg = document.getElementById('errorMessage');
                     document.getElementById('errorText').textContent = 'An error occurred. Please try again.';
                     errorMsg.style.display = 'block';
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('An error occurred. Please try again.', { error: true });
+                    }
+                } finally {
+                    setButtonLoading(submitBtn, false, '<i class="bi bi-check-lg"></i> Save Changes');
                 }
             });
 
             document.getElementById('passwordForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
+                const submitBtn = this.querySelector('button[type="submit"]');
                 
                 const currentPassword = document.getElementById('current_password').value;
                 const newPassword = document.getElementById('new_password').value;
@@ -241,9 +278,13 @@
                     const errorMsg = document.getElementById('passwordErrorMessage');
                     document.getElementById('passwordErrorText').textContent = 'New passwords do not match.';
                     errorMsg.style.display = 'block';
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('New passwords do not match.', { error: true });
+                    }
                     return;
                 }
 
+                setButtonLoading(submitBtn, true, '<i class="bi bi-key"></i> Change Password');
                 const formData = new FormData();
                 formData.append('current_password', currentPassword);
                 formData.append('new_password', newPassword);
@@ -274,6 +315,10 @@
                             // Clear the form
                             document.getElementById('passwordForm').reset();
                             
+                            if (typeof window.showToast === 'function') {
+                                window.showToast('Password changed successfully.');
+                            }
+                            
                             setTimeout(function() {
                                 successMsg.classList.remove('show');
                                 successMsg.classList.add('d-none');
@@ -289,6 +334,10 @@
                             const successMsg = document.getElementById('passwordSuccessMessage');
                             successMsg.classList.remove('show');
                             successMsg.classList.add('d-none');
+                            
+                            if (typeof window.showToast === 'function') {
+                                window.showToast(responseText, { error: true });
+                            }
                         }
                     } else {
                         const errorMsg = document.getElementById('passwordErrorMessage');
@@ -300,6 +349,10 @@
                         const successMsg = document.getElementById('passwordSuccessMessage');
                         successMsg.classList.remove('show');
                         successMsg.classList.add('d-none');
+                        
+                        if (typeof window.showToast === 'function') {
+                            window.showToast('Error changing password. Please try again.', { error: true });
+                        }
                     }
                 } catch (error) {
                     console.error('Error:', error);
@@ -307,6 +360,11 @@
                     document.getElementById('passwordErrorText').textContent = 'An error occurred. Please try again.';
                     errorMsg.classList.add('show');
                     errorMsg.style.display = 'block';
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('An error occurred. Please try again.', { error: true });
+                    }
+                } finally {
+                    setButtonLoading(submitBtn, false, '<i class="bi bi-key"></i> Change Password');
                 }
             });
         </script>

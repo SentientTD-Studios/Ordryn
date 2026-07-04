@@ -43,19 +43,18 @@
                 </ul>
                 <div class="d-flex align-items-center gap-3">
                     <span class="me-2"><i class="bi bi-sun-fill"></i></span>
-                    {{/* Render toggle with active class when server-provided theme is dark to avoid client flip */}}
                     {{if themeIs .Theme "dark"}}
-                    <span class="theme-toggle active" id="theme-toggle" role="button" aria-label="Toggle dark/light mode"></span>
+                    <button type="button" class="theme-toggle active" id="theme-toggle" aria-label="Toggle dark/light mode"></button>
                     {{else}}
-                    <span class="theme-toggle" id="theme-toggle" role="button" aria-label="Toggle dark/light mode"></span>
+                    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle dark/light mode"></button>
                     {{end}}
                     <span class="ms-2"><i class="bi bi-moon-fill"></i></span>
                     {{if .LoggedIn}}
-                    <span class="text-muted me-2">{{.UserEmail}}</span>
-                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="shortcuts-help-btn" data-bs-toggle="modal" data-bs-target="#shortcutsModal" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">
+                    <span class="text-muted me-2 navbar-user-email d-none d-md-inline">{{.UserEmail}}</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="shortcuts-help-btn" data-bs-toggle="modal" data-bs-target="#shortcutsModal" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
                         <i class="bi bi-question-circle"></i>
                     </button>
-                    <a href="{{basePath}}/profile" class="btn btn-outline-secondary btn-sm me-2">
+                    <a href="{{basePath}}/profile#calendar-feed" class="btn btn-outline-secondary btn-sm me-2" title="Profile &amp; calendar sync">
                         <i class="bi bi-person-circle"></i> Profile
                     </a>
                     <button class="btn btn-outline-danger btn-sm" id="logout-btn" hx-post="{{basePath}}/api/logout" hx-trigger="click">
