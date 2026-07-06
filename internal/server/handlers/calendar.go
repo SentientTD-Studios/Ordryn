@@ -129,11 +129,15 @@ func calendarFeedURL(r *http.Request, token string) string {
 }
 
 func calendarFeedURLForRequest(r *http.Request, token string) string {
+	calPath := fmt.Sprintf("/cal/%s.ics", token)
 	base := utils.GetBasePath()
-	if base == "/" {
-		return fmt.Sprintf("%s://%s/cal/%s.ics", requestScheme(r), r.Host, token)
+	if strings.Contains(base, "://") {
+		return strings.TrimSuffix(base, "/") + calPath
 	}
-	return fmt.Sprintf("%s://%s%s/cal/%s.ics", requestScheme(r), r.Host, base, token)
+	if base == "/" {
+		return fmt.Sprintf("%s://%s%s", requestScheme(r), r.Host, calPath)
+	}
+	return fmt.Sprintf("%s://%s%s%s", requestScheme(r), r.Host, base, calPath)
 }
 
 func requestScheme(r *http.Request) string {

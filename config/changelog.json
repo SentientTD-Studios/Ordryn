@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.16.1",
+    "date": "2026-07-06",
+    "title": "Profile calendar feed fixes",
+    "notes": [
+      "Fixed ICS subscribe URL duplicating the site URL when basePath is configured as a full URL",
+      "Fixed Copy button on Profile not copying the calendar feed URL (clipboard fallback for HTTP)"
+    ]
+  },
+  {
     "version": "0.16.0",
     "date": "2026-07-06",
     "title": "UX consistency and guidance",
