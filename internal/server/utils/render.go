@@ -68,6 +68,7 @@ func InitializeTemplates() error {
 		},
 		"dueDateClass": DueDateClass,
 		"dueDateDisplay": DueDateDisplay,
+		"dueDateInputValue": DueDateInputValue,
 		"renderMarkdown": func(s string) template.HTML {
 			return template.HTML(RenderMarkdown(s))
 		},

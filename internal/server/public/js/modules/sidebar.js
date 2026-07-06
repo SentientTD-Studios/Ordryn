@@ -1,6 +1,6 @@
 import { apiPath } from "./utils.js";
 import { attachThemeToggle, initTheme } from "./theme.js";
-import { handleDescriptionInput } from "./form-handlers.js";
+import { bindDueDatePresets, handleDescriptionInput } from "./form-handlers.js";
 
 let sidebarFocusHandler = null;
 let lastFocusedBeforeSidebar = null;
@@ -194,6 +194,13 @@ export function initializeSidebarEventListeners() {
   // Reattach theme toggle if needed
   attachThemeToggle();
 
+  try {
+    const tf = document.getElementById("newTaskForm");
+    if (tf) {
+      bindDueDatePresets(tf);
+    }
+  } catch (e) {}
+
   // Reattach task form submit listener so dynamically swapped forms behave the same
   try {
     const tf = document.getElementById("newTaskForm");
@@ -327,6 +334,7 @@ function handleAfterSwapForSidebar(event) {
   }
   const tf = document.getElementById("newTaskForm");
   if (tf) {
+    bindDueDatePresets(tf);
     syncSidebarFilterFields(tf);
     const first = sidebarElement.querySelector(
       '#title, input:not([type="hidden"])',

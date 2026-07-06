@@ -36,3 +36,22 @@ func TestDueDateDisplay(t *testing.T) {
 		}
 	}
 }
+
+func TestDueDateInputValue(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"2026-07-17", "2026-07-17"},
+		{"2026-07-17 00:00:00+00", "2026-07-17"},
+		{"  2026-07-17  ", "2026-07-17"},
+	}
+
+	for _, tc := range tests {
+		got := DueDateInputValue(tc.in)
+		if got != tc.want {
+			t.Errorf("DueDateInputValue(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

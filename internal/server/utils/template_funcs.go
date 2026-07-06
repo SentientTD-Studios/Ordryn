@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,20 @@ func parseDueDate(dueDate string, loc *time.Location) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return t, true
+}
+
+// DueDateInputValue normalizes a stored due date for HTML date inputs (YYYY-MM-DD).
+func DueDateInputValue(dueDate string) string {
+	dueDate = strings.TrimSpace(dueDate)
+	if dueDate == "" {
+		return ""
+	}
+	if len(dueDate) >= 10 {
+		if t, err := time.Parse("2006-01-02", dueDate[:10]); err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+	return dueDate
 }
 
 // DueDateClass returns a CSS class for due-date styling based on user timezone.

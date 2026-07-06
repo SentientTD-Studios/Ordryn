@@ -142,16 +142,23 @@ function formatDateInput(date) {
   return `${y}-${m}-${d}`;
 }
 
-export function initDueDatePresets() {
-  document.body.addEventListener("click", function (e) {
+export function bindDueDatePresets(form) {
+  if (!form || form.dataset.duePresetsBound === "true") return;
+  form.dataset.duePresetsBound = "true";
+
+  form.addEventListener("click", function (e) {
     const btn = e.target.closest("[data-due-preset]");
-    if (!btn) return;
-    const input = document.getElementById("due_date");
+    if (!btn || !form.contains(btn)) return;
+
+    e.preventDefault();
+
+    const input = form.querySelector('[name="due_date"]');
     if (!input) return;
 
     const preset = btn.dataset.duePreset;
     if (preset === "clear") {
       input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
 
@@ -162,7 +169,13 @@ export function initDueDatePresets() {
       date.setDate(date.getDate() + 7);
     }
     input.value = formatDateInput(date);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
   });
+}
+
+export function initDueDatePresets() {
+  bindDueDatePresets(document.getElementById("newTaskForm"));
 }
 
 export function handleDescriptionInput(charCountElement) {
