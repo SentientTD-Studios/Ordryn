@@ -2,7 +2,7 @@
 
 GoTodo is a self-hosted task manager built with Go, PostgreSQL, and HTMX. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, a responsive UI, and in-place HTMX interactions.
 
-**Current version:** v0.15.1-beta
+**Current version:** v0.16.0-beta
 
 ## Features
 

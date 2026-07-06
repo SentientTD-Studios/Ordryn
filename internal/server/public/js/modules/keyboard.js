@@ -171,6 +171,20 @@ export function initKeyboardShortcuts() {
 
       if (!focused) return;
 
+      if (e.code === "Enter") {
+        e.preventDefault();
+        const editBtn = focused.querySelector(".edit-btn");
+        if (editBtn) editBtn.click();
+        return;
+      }
+
+      if (e.code === "KeyD") {
+        e.preventDefault();
+        const deleteBtn = focused.querySelector(".delete-btn");
+        if (deleteBtn) deleteBtn.click();
+        return;
+      }
+
       if (e.code === "KeyE") {
         e.preventDefault();
         const editBtn = focused.querySelector(".edit-btn");

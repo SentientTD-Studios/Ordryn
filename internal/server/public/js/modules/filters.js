@@ -1,3 +1,6 @@
+import { apiPath } from "./utils.js";
+import { syncDueFilterButtons, syncFilterToolbarState, syncSortButtonState } from "./events.js";
+
 const FILTER_LABELS = {
   project: "Project",
   status: "Status",
@@ -27,6 +30,11 @@ const PRIORITY_LABELS = {
   "2": "Medium",
   "3": "High",
 };
+
+function setHiddenValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
 
 function getFilterValue(name) {
   switch (name) {
@@ -66,6 +74,61 @@ function getFilterValue(name) {
   }
 }
 
+export function clearFilter(key) {
+  switch (key) {
+    case "project": {
+      const el = document.getElementById("project-filter");
+      if (el) el.value = "";
+      setHiddenValue("project-filter-value", "");
+      break;
+    }
+    case "status": {
+      const el = document.getElementById("status-filter-select");
+      if (el) el.value = "";
+      setHiddenValue("status-filter", "");
+      break;
+    }
+    case "tag": {
+      const el = document.getElementById("tag-filter-toolbar");
+      if (el) el.value = "";
+      setHiddenValue("tag-filter", "");
+      break;
+    }
+    case "due":
+      setHiddenValue("due-filter", "");
+      document.querySelectorAll(".due-filter-btn").forEach((btn) => {
+        const isAll = (btn.getAttribute("data-due") ?? "") === "";
+        btn.classList.toggle("due-filter-active", isAll);
+        btn.setAttribute("aria-pressed", isAll ? "true" : "false");
+      });
+      break;
+    case "priority": {
+      const el = document.getElementById("priority-filter-toolbar");
+      if (el) el.value = "";
+      setHiddenValue("priority-filter", "");
+      break;
+    }
+    case "sort":
+      setHiddenValue("sort-filter", "");
+      syncSortButtonState();
+      break;
+    default:
+      break;
+  }
+}
+
+export function clearAllFilters() {
+  const search = document.getElementById("search");
+  if (search) search.value = "";
+  Object.keys(FILTER_LABELS).forEach(clearFilter);
+  syncFilterToolbarState();
+  syncDueFilterButtons();
+  htmx.ajax("GET", apiPath("/api/fetch-tasks?page=1"), {
+    target: "#task-container",
+    swap: "innerHTML",
+  });
+}
+
 export function updateFilterChips() {
   const chipsEl = document.getElementById("filter-active-chips");
   if (!chipsEl) return;
@@ -77,13 +140,21 @@ export function updateFilterChips() {
     const val = getFilterValue(key);
     if (!val) return;
     count += 1;
-    const chip = document.createElement("span");
+    const chip = document.createElement("button");
+    chip.type = "button";
     chip.className = "filter-chip";
-    chip.textContent = `${FILTER_LABELS[key]}: ${val}`;
+    chip.dataset.filterKey = key;
+    chip.setAttribute("aria-label", `Remove ${FILTER_LABELS[key]} filter: ${val}`);
+    chip.innerHTML = `${FILTER_LABELS[key]}: ${val} <i class="bi bi-x ms-1" aria-hidden="true"></i>`;
     chipsEl.appendChild(chip);
   });
 
   chipsEl.classList.toggle("has-chips", count > 0);
+
+  const clearAllBtn = document.getElementById("filter-clear-all");
+  if (clearAllBtn) {
+    clearAllBtn.classList.toggle("d-none", count === 0);
+  }
 
   const toggleBtn = document.getElementById("filter-toggle-btn");
   if (toggleBtn) {
@@ -120,6 +191,49 @@ export function initFilterToolbar() {
       "aria-expanded",
       panel.classList.contains("collapsed") ? "false" : "true",
     );
+  });
+
+  const clearAllBtn = document.getElementById("filter-clear-all");
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      clearAllFilters();
+    });
+  }
+
+  document.body.addEventListener("click", (e) => {
+    if (e.target.closest("#empty-clear-filters") || e.target.closest("#filter-clear-all")) {
+      e.preventDefault();
+      clearAllFilters();
+      return;
+    }
+    if (e.target.closest("#empty-clear-search")) {
+      e.preventDefault();
+      const search = document.getElementById("search");
+      if (search) search.value = "";
+      htmx.ajax("GET", apiPath("/api/fetch-tasks?page=1"), {
+        target: "#task-container",
+        swap: "innerHTML",
+      });
+      return;
+    }
+    if (e.target.closest("#empty-add-task")) {
+      e.preventDefault();
+      const openBtn = document.getElementById("openSidebar");
+      if (openBtn) openBtn.click();
+    }
+  });
+
+  document.body.addEventListener("click", (e) => {
+    const chip = e.target.closest(".filter-chip[data-filter-key]");
+    if (!chip) return;
+    e.preventDefault();
+    clearFilter(chip.dataset.filterKey);
+    syncFilterToolbarState();
+    htmx.ajax("GET", apiPath("/api/fetch-tasks?page=1"), {
+      target: "#task-container",
+      swap: "innerHTML",
+    });
   });
 
   mq.addEventListener("change", applyCollapsedState);

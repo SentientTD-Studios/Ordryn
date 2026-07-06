@@ -29,28 +29,34 @@
 
             <div class="row g-3 mb-4">
                 <div class="col-6 col-md-3">
-                    <div class="card dashboard-stat-card border-danger">
+                    <a href="{{basePath}}/?due=overdue" class="text-decoration-none">
+                    <div class="card dashboard-stat-card border-danger h-100 dashboard-stat-link">
                         <div class="card-body">
                             <div class="dashboard-stat-label text-muted">Overdue</div>
                             <div class="dashboard-stat-value">{{.Stats.OverdueCount}}</div>
                         </div>
                     </div>
+                    </a>
                 </div>
                 <div class="col-6 col-md-3">
-                    <div class="card dashboard-stat-card border-warning">
+                    <a href="{{basePath}}/?due=today" class="text-decoration-none">
+                    <div class="card dashboard-stat-card border-warning h-100 dashboard-stat-link">
                         <div class="card-body">
                             <div class="dashboard-stat-label text-muted">Due Today</div>
                             <div class="dashboard-stat-value">{{.Stats.DueTodayCount}}</div>
                         </div>
                     </div>
+                    </a>
                 </div>
                 <div class="col-6 col-md-3">
-                    <div class="card dashboard-stat-card">
+                    <a href="{{basePath}}/?status=incomplete" class="text-decoration-none">
+                    <div class="card dashboard-stat-card h-100 dashboard-stat-link">
                         <div class="card-body">
                             <div class="dashboard-stat-label text-muted">Completed This Week</div>
                             <div class="dashboard-stat-value">{{.Stats.CompletedThisWeek}}</div>
                         </div>
                     </div>
+                    </a>
                 </div>
                 <div class="col-6 col-md-3">
                     <div class="card dashboard-stat-card">
@@ -70,7 +76,7 @@
                             {{if .Stats.ByProject}}
                             <canvas id="projectChart" height="220" aria-label="Tasks by project chart"></canvas>
                             {{else}}
-                            <p class="text-muted mb-0">No open tasks yet.</p>
+                            <p class="text-muted mb-0">No open tasks yet. <a href="{{basePath}}/">Add a task</a> to see project breakdown.</p>
                             {{end}}
                         </div>
                     </div>
@@ -80,6 +86,9 @@
                         <div class="card-header"><h2 class="h6 mb-0">Completions (Last 7 Days)</h2></div>
                         <div class="card-body">
                             <canvas id="completionChart" height="220" aria-label="Daily completions chart"></canvas>
+                            {{if eq .Stats.CompletedThisWeek 0}}
+                            <p class="text-muted small mt-2 mb-0">No completions in the last 7 days yet.</p>
+                            {{end}}
                         </div>
                     </div>
                 </div>

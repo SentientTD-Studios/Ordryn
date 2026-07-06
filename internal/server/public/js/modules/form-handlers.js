@@ -142,6 +142,8 @@ function formatDateInput(date) {
   return `${y}-${m}-${d}`;
 }
 
+export { formatDateInput };
+
 export function bindDueDatePresets(form) {
   if (!form || form.dataset.duePresetsBound === "true") return;
   form.dataset.duePresetsBound = "true";

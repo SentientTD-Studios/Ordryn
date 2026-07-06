@@ -146,7 +146,8 @@ func APIImportConfirm(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("HX-Trigger", "import-complete")
-	fmt.Fprintf(w, `<div class="alert alert-success" role="alert"><i class="bi bi-check-circle"></i> Imported %d tasks, %d skipped (duplicate title + due date).</div>`, imported, skipped)
+	base := utils.GetBasePath()
+	fmt.Fprintf(w, `<div class="alert alert-success" role="alert"><i class="bi bi-check-circle"></i> Imported %d tasks, %d skipped (duplicate title + due date). <a href="%s/" class="alert-link">View tasks</a></div>`, imported, skipped, base)
 }
 
 // APIImportCancel clears staged import data from session.

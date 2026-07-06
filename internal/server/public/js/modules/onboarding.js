@@ -13,6 +13,5 @@ export function initShortcutsHint() {
         localStorage.setItem("shortcuts-hint-dismissed", "1");
       },
     });
-    localStorage.setItem("shortcuts-hint-dismissed", "1");
   }, 1500);
 }

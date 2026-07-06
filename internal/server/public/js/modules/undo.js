@@ -1,7 +1,9 @@
 import { apiPath } from "./utils.js";
-import { initSortable } from "./sortable.js";
-import { syncSortButtonState, syncFilterToolbarState } from "./events.js";
+import { swapTaskContainerHtml } from "./events.js";
 import { showToast } from "./notifications.js";
+import { appendFilterFields } from "./filter-fields.js";
+
+const UNDO_TOAST_MS = 60000;
 
 export function initUndoDelete() {
   document.body.addEventListener("task-deleted", (e) => {
@@ -10,12 +12,12 @@ export function initUndoDelete() {
     const label = count === 1 ? "1 task deleted" : `${count} tasks deleted`;
 
     showToast(label, {
-      duration: 5000,
+      duration: UNDO_TOAST_MS,
       actionLabel: "Undo",
       onAction: () => {
         const form = new URLSearchParams();
         form.append("page", getCurrentPage());
-        appendUndoFilterFields(form);
+        appendFilterFields(form);
 
         fetch(apiPath("/api/undo-delete"), {
           method: "POST",
@@ -34,16 +36,7 @@ export function initUndoDelete() {
             return res.text();
           })
           .then((html) => {
-            const container = document.getElementById("task-container");
-            if (container) {
-              container.innerHTML = html;
-              document.body.dispatchEvent(new CustomEvent("bulk-list-updated"));
-            }
-            try {
-              initSortable();
-              syncSortButtonState();
-              syncFilterToolbarState();
-            } catch (err) {}
+            swapTaskContainerHtml(html);
             showToast("Delete undone.");
           })
           .catch((err) => {
@@ -80,27 +73,4 @@ function getCurrentPage() {
     if (!Number.isNaN(page) && page > 0) return String(page);
   }
   return "1";
-}
-
-function appendUndoFilterFields(form) {
-  const append = (name, hiddenId, toolbarId) => {
-    let val = "";
-    if (toolbarId) {
-      const toolbar = document.getElementById(toolbarId);
-      if (toolbar) val = toolbar.value;
-    }
-    if (!val && hiddenId) {
-      const hidden = document.getElementById(hiddenId);
-      if (hidden) val = hidden.value;
-    }
-    if (val) form.append(name, val);
-  };
-  append("project", "project-filter-value", "project-filter");
-  append("status", "status-filter", "status-filter-select");
-  append("due", "due-filter", null);
-  append("sort", "sort-filter", null);
-  append("priority", "priority-filter", "priority-filter-toolbar");
-  append("tag", "tag-filter", "tag-filter-toolbar");
-  const search = document.getElementById("search");
-  if (search && search.value) form.append("search", search.value);
 }

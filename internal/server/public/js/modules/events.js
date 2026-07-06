@@ -1,4 +1,4 @@
-import { apiPath } from "./utils.js";
+import { apiPath, restoreFooterIfMissing } from "./utils.js";
 import {
   initializeSidebarEventListeners,
   closeSidebar,
@@ -13,6 +13,30 @@ import {
   initCharacterCounters,
 } from "./form-handlers.js";
 import { showToast } from "./notifications.js";
+import { initSortable } from "./sortable.js";
+
+/** Replace task list HTML from fetch responses and re-bind HTMX + UI hooks. */
+export function swapTaskContainerHtml(html) {
+  const container = document.getElementById("task-container");
+  if (!container) return false;
+
+  container.innerHTML = html;
+  try {
+    if (typeof htmx !== "undefined") htmx.process(container);
+  } catch (e) {}
+  try {
+    restoreFooterIfMissing();
+  } catch (e) {}
+  try {
+    initSortable();
+    syncSortButtonState();
+    syncFilterToolbarState();
+    initializeModalEventListeners();
+    attachEditButtonListeners();
+  } catch (e) {}
+  document.body.dispatchEvent(new CustomEvent("bulk-list-updated"));
+  return true;
+}
 
 function getTaskListPage() {
   const pageInput = document.getElementById("current-page");
@@ -365,6 +389,23 @@ export function attachHTMXAfterSwapListeners() {
   });
 }
 
+export function attachHTMXErrorListeners() {
+  document.body.addEventListener("htmx:responseError", (evt) => {
+    const status = evt.detail?.xhr?.status;
+    const msg =
+      status && status >= 500
+        ? "Something went wrong on the server. Please try again."
+        : "Request failed. Please try again.";
+    showToast(msg, { error: true });
+  });
+
+  document.body.addEventListener("htmx:sendError", () => {
+    showToast("Network error. Check your connection and try again.", {
+      error: true,
+    });
+  });
+}
+
 export function attachHTMXLoadingListeners() {
   let savedScrollY = 0;
   const loadingTargets = new Set([
@@ -450,6 +491,7 @@ export function attachAllEventListeners() {
   attachHTMXAfterSettleListener();
   attachHTMXAfterSwapListeners();
   attachHTMXLoadingListeners();
+  attachHTMXErrorListeners();
   attachEditButtonListeners();
   attachContextualCloseSidebar();
   syncSortButtonState();

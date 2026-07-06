@@ -50,6 +50,7 @@ import { initBulkActions } from "./modules/bulk.js";
 import { initUndoDelete } from "./modules/undo.js";
 import { initFilterToolbar } from "./modules/filters.js";
 import { initShortcutsHint } from "./modules/onboarding.js";
+import { initProfilePage } from "./modules/profile.js";
 
 function configureHtmxCSP() {
   if (typeof htmx === "undefined") return;
@@ -94,6 +95,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initKeyboardShortcuts();
   initFilterToolbar();
   initShortcutsHint();
+  if (document.body.classList.contains("profile-page")) {
+    initProfilePage();
+  }
   initRevealTokenButtons();
 
   // Debug helper: when ?cssdebug=1 is present in the URL, log which media queries match.

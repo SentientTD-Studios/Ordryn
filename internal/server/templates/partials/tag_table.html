@@ -19,7 +19,7 @@
                 <button class="btn btn-sm btn-link edit-tag-btn p-0 ms-1" type="button" aria-label="Rename tag"><i class="bi bi-pencil"></i></button>
             </td>
             <td data-label="Actions">
-                <form method="post" action="{{basePath}}/api/tags/delete" hx-post="{{basePath}}/api/tags/delete" hx-target="#tags-list" hx-swap="innerHTML" style="display:inline;">
+                <form method="post" action="{{basePath}}/api/tags/delete" hx-post="{{basePath}}/api/tags/delete" hx-target="#tags-list" hx-swap="innerHTML" hx-confirm="Delete this tag? It will be removed from all tasks." style="display:inline;">
                     <input type="hidden" name="id" value="{{.ID}}" />
                     <button class="btn btn-sm btn-danger" type="submit" aria-label="Delete tag {{.Name}}"><i class="bi bi-trash"></i></button>
                 </form>
