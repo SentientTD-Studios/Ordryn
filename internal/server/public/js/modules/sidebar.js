@@ -214,10 +214,9 @@ export function initializeSidebarEventListeners() {
 
         const xhr = event.detail && event.detail.xhr;
         const responseURL = xhr && xhr.responseURL ? xhr.responseURL : "";
-        const isTaskSave =
-          responseURL.includes("/api/add-task") ||
-          responseURL.includes("/api/edit-task");
-        if (!isTaskSave) return;
+        const isAddTask = responseURL.includes("/api/add-task");
+        const isEditTask = responseURL.includes("/api/edit-task");
+        if (!isAddTask && !isEditTask) return;
 
         let isValidationError = false;
         try {
@@ -238,14 +237,17 @@ export function initializeSidebarEventListeners() {
 
         if (event.detail.successful && !isValidationError) {
           closeSidebar();
-          const tEl = document.getElementById("title");
-          if (tEl) tEl.value = "";
-          const dEl = document.getElementById("description");
-          if (dEl) dEl.value = "";
-          const charCount = document.getElementById("char-count");
-          if (charCount) charCount.textContent = "0";
-          const errorDiv = document.getElementById("description-error");
-          if (errorDiv) errorDiv.innerHTML = "";
+          // Only reset fields after adding a task — not after editing
+          if (isAddTask) {
+            const tEl = tf.querySelector("#title");
+            if (tEl) tEl.value = "";
+            const dEl = tf.querySelector("#description");
+            if (dEl) dEl.value = "";
+            const charCount = tf.querySelector("#char-count");
+            if (charCount) charCount.textContent = "0";
+            const errorDiv = tf.querySelector("#description-error");
+            if (errorDiv) errorDiv.innerHTML = "";
+          }
         }
       });
       tf.classList.add("task-form-initialized");

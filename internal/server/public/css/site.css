@@ -191,6 +191,19 @@ th.description-column {
     /*width: 25em;*/
 }
 
+th.tags-column,
+td.tags-column {
+    width: 14%;
+    max-width: 200px;
+}
+
+.tags-column .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+}
+
 td.description-column {
     max-width: none; /* allow description and title columns to size naturally */
 }
@@ -592,8 +605,9 @@ td.delete-column {
         vertical-align: middle;
     }
 
-    /* MOBILE: always show description/date/actions; present as full-width rows */
+    /* MOBILE: always show description/date/tags/actions; present as full-width rows */
     td.desc-column,
+    td.tags-column,
     td.date-added,
     td[data-label="Status"],
     td[data-label="Delete"] {
@@ -632,8 +646,9 @@ td.delete-column {
         vertical-align: middle;
     }
 
-    /* Make the description, date and action cells occupy full width below the title row */
+    /* Make the description, tags, date and action cells occupy full width below the title row */
     tr.expanded td.desc-column,
+    tr.expanded td.tags-column,
     tr.expanded td.date-added,
     tr.expanded td[data-label="Status"],
     tr.expanded td[data-label="Delete"] {
@@ -655,8 +670,9 @@ td.delete-column {
     tr.expanded td.date-added::before {
         display: none;
     }
-    /* also hide description label when expanded */
-    tr.expanded td.desc-column::before {
+    /* also hide description and tags labels when expanded */
+    tr.expanded td.desc-column::before,
+    tr.expanded td.tags-column::before {
         display: none;
     }
 
@@ -1103,7 +1119,7 @@ td.delete-column {
     .drag-handle { margin-right: 0.35rem; }
 
     /* COLLAPSED: hide details by default */
-    td.desc-column, td.date-added, td[data-label="Status"], td[data-label="Delete"] { display: none; }
+    td.desc-column, td.tags-column, td.date-added, td[data-label="Status"], td[data-label="Delete"] { display: none; }
 
     td.title-column { display: inline-block; flex: 1 1 auto; }
     td.title-column::before { display: none; }
@@ -1111,8 +1127,8 @@ td.delete-column {
     /* Expanded state: show details below while keeping title+drag inline */
     tr.expanded { display: flex; flex-wrap: wrap; align-items: center; }
     tr.expanded td { display: inline-flex; align-items: center; }
-    tr.expanded td.desc-column, tr.expanded td.date-added, tr.expanded td[data-label="Status"], tr.expanded td[data-label="Delete"] { display: block; flex-basis: 100%; width: 100%; padding-top: 0.5rem; }
-    tr.expanded td.desc-column::before, tr.expanded td.date-added::before, tr.expanded td[data-label="Status"]::before, tr.expanded td[data-label="Delete"]::before { display: none; }
+    tr.expanded td.desc-column, tr.expanded td.tags-column, tr.expanded td.date-added, tr.expanded td[data-label="Status"], tr.expanded td[data-label="Delete"] { display: block; flex-basis: 100%; width: 100%; padding-top: 0.5rem; }
+    tr.expanded td.desc-column::before, tr.expanded td.tags-column::before, tr.expanded td.date-added::before, tr.expanded td[data-label="Status"]::before, tr.expanded td[data-label="Delete"]::before { display: none; }
 
     /* Ensure expanded-state buttons on tablets also get full width */
 /* Global task title toggle styling (all sizes) - remove link look and add affordance */
@@ -1201,8 +1217,8 @@ tr.expanded .task-toggle::after {
     td.drag-column { display: inline-flex !important; flex: 0 0 auto !important; }
     td.title-column { display: inline-flex !important; align-items: center !important; gap: 0.5rem !important; flex: 1 1 auto !important; min-width: 0 !important; }
 
-    /* Make description, date and actions occupy full-width rows below */
-    td.desc-column, td.date-added, td.actions-column, td[data-label="Status"], td[data-label="Delete"], .status-column, .delete-column {
+    /* Make description, tags, date and actions occupy full-width rows below */
+    td.desc-column, td.tags-column, td.date-added, td.actions-column, td[data-label="Status"], td[data-label="Delete"], .status-column, .delete-column {
         display: block !important;
         width: 100% !important;
         flex-basis: 100% !important;
@@ -2163,6 +2179,11 @@ select.form-select:focus {
     color: #fff;
     line-height: 1.2;
     vertical-align: middle;
+    white-space: nowrap;
+}
+
+.tags-column .tag-list:empty {
+    display: none;
 }
 
 .desc-column .desc-preview,

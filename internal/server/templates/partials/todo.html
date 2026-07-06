@@ -29,10 +29,16 @@
             {{if eq .Task.Priority 1}}<span class="badge bg-secondary priority-badge ms-1">Low</span>{{end}}
             {{if eq .Task.Priority 2}}<span class="badge bg-warning text-dark priority-badge ms-1">Med</span>{{end}}
             {{if eq .Task.Priority 3}}<span class="badge bg-danger priority-badge ms-1">High</span>{{end}}
+        </div>
+    </td>
+    <td class="tags-column" data-label="Tags">
+        {{if .Task.Tags}}
+        <div class="tag-list">
             {{range .Task.Tags}}
-            <span class="tag-chip ms-1" style="background-color: {{.Color}};">{{.Name}}</span>
+            <span class="tag-chip" style="background-color: {{.Color}};">{{.Name}}</span>
             {{end}}
         </div>
+        {{end}}
     </td>
     <td class="desc-column" data-label="Description">
         {{if .Task.Description}}

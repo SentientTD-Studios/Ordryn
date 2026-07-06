@@ -388,6 +388,8 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("HX-Retarget", "#task-container")
+	w.Header().Set("HX-Reswap", "innerHTML")
 	userPtr := &userID
 	if err := renderFilteredTaskListPartial(w, r, page, pageSize, fc, userPtr, timezone, true); err != nil {
 		http.Error(w, "Error rendering tasks after edit: "+err.Error(), http.StatusInternalServerError)

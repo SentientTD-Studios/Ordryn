@@ -350,10 +350,11 @@ func FetchTaskByIDForUser(taskID, userID int, timezone string, page int) (Task, 
 	}
 	task.ProjectName = projectName.String
 	task.Page = page
-	if err := attachTagsToTasks([]Task{task}); err != nil {
+	tasks := []Task{task}
+	if err := attachTagsToTasks(tasks); err != nil {
 		return Task{}, err
 	}
-	return task, nil
+	return tasks[0], nil
 }
 
 // TaskMatchesFilters reports whether a task satisfies the active list filters.

@@ -205,7 +205,11 @@ export function attachHTMXAfterRequestListener() {
       const xhr = evt && evt.detail && evt.detail.xhr;
       if (!xhr || !xhr.responseURL) return;
 
-      if (xhr.responseURL.includes("/api/edit")) {
+      // Load edit form only — not edit-task saves (URL also contains "/api/edit")
+      if (
+        xhr.responseURL.includes("/api/edit") &&
+        !xhr.responseURL.includes("/api/edit-task")
+      ) {
         // Only open on success (2xx)
         const status = xhr.status || 0;
         if (status >= 200 && status < 300) {

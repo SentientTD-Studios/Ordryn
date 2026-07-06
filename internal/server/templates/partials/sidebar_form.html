@@ -2,8 +2,7 @@
     hx-post="{{if .FormAction}}{{.FormAction}}{{else}}{{basePath}}/api/add-task{{end}}"
     method="post"
     id="newTaskForm"
-    hx-target="#task-container"
-    hx-swap="innerHTML"
+    {{if .ID}}hx-target="#task-{{.ID}}" hx-swap="outerHTML"{{else}}hx-target="#task-container" hx-swap="innerHTML"{{end}}
     >
     <div class="form-group">
         <label for="title">Title:</label>
@@ -109,9 +108,15 @@
         {{if .SubmitText}}{{.SubmitText}}{{else}}Add Task{{end}}
     </button>
     {{if .ID}}
-    <details class="task-timeline mt-3">
+    <details
+        class="task-timeline mt-3"
+        hx-get="{{basePath}}/api/task-events?id={{.ID}}"
+        hx-trigger="toggle[this.open] once"
+        hx-target="find .task-timeline-body"
+        hx-swap="innerHTML"
+    >
         <summary class="mb-2">Activity</summary>
-        <div hx-get="{{basePath}}/api/task-events?id={{.ID}}" hx-trigger="toggle once" hx-swap="innerHTML">
+        <div class="task-timeline-body">
             <span class="text-muted small">Loading activity…</span>
         </div>
     </details>
