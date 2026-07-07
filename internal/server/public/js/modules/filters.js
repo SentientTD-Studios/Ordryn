@@ -81,14 +81,38 @@ function getFilterValue(name) {
   }
 }
 
+function appRootPath() {
+  let path = window.location.pathname;
+  if (path.length > 1 && path.endsWith("/")) {
+    path = path.slice(0, -1);
+  }
+  const projectMatch = path.match(/^(.*)\/p\/[^/]+$/);
+  if (projectMatch) {
+    return projectMatch[1] || "/";
+  }
+  return path || "/";
+}
+
+function projectPathSegment(value) {
+  if (!value) return null;
+  if (value === "0" || value === "none") return "none";
+  return value;
+}
+
+function getProjectFilterValue() {
+  const hidden = document.getElementById("project-filter-value");
+  if (hidden && hidden.value) return hidden.value;
+  const select = document.getElementById("project-filter");
+  if (select && select.value) return select.value;
+  return "";
+}
+
 export function syncFiltersToURL() {
   const params = new URLSearchParams();
   const append = (key, id) => {
     const el = document.getElementById(id);
     if (el && el.value) params.set(key, el.value);
   };
-  append("project", "project-filter-value");
-  if (!params.has("project")) append("project", "project-filter");
   append("status", "status-filter");
   append("due", "due-filter");
   append("completed", "completed-filter");
@@ -99,8 +123,19 @@ export function syncFiltersToURL() {
   if (search && search.value) params.set("search", search.value);
   const page = document.getElementById("current-page");
   if (page && page.value && page.value !== "1") params.set("page", page.value);
+
+  const base = appRootPath();
+  const root = base === "/" ? "" : base;
+  const segment = projectPathSegment(getProjectFilterValue());
+  let pathname;
+  if (segment) {
+    pathname = `${root}/p/${segment}`;
+  } else {
+    pathname = root || "/";
+  }
+
   const qs = params.toString();
-  const url = window.location.pathname + (qs ? "?" + qs : "");
+  const url = pathname + (qs ? "?" + qs : "");
   window.history.replaceState({}, "", url);
 }
 

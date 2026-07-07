@@ -78,6 +78,7 @@ func StartServer() error {
 
 	// Regular page handlers
 	handleBoth("/", handlers.HomeHandler)
+	handleBoth("/p/", handlers.ProjectFilterHandler)
 	handleBoth("/favicon.ico", serveFavicon)
 	handleBoth("/signup", handlers.SignupPageHandler)
 	handleBoth("/register", handlers.RegisterHandler)

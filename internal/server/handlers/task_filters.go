@@ -197,6 +197,89 @@ func parseProjectFilter(projectParam string) *int {
 	return nil
 }
 
+// parseProjectFromPath extracts the project filter segment from /p/{id} URLs.
+func parseProjectFromPath(path string) string {
+	path = strings.TrimPrefix(path, "/p/")
+	base := utils.GetBasePath()
+	if base != "" && base != "/" {
+		path = strings.TrimPrefix(path, strings.TrimSuffix(base, "/")+"/p/")
+		path = strings.TrimPrefix(path, base+"/p/")
+	}
+	segment := strings.Trim(path, "/")
+	if segment == "" || strings.Contains(segment, "/") {
+		return ""
+	}
+	switch segment {
+	case "none":
+		return "none"
+	default:
+		if _, err := strconv.Atoi(segment); err != nil {
+			return ""
+		}
+		return segment
+	}
+}
+
+func projectPathSegment(projectParam string) string {
+	if projectParam == "" {
+		return ""
+	}
+	if projectParam == "0" || projectParam == "none" {
+		return "none"
+	}
+	if _, err := strconv.Atoi(projectParam); err == nil {
+		return projectParam
+	}
+	return ""
+}
+
+func projectFilterPageURL(basePath, project string, q url.Values) string {
+	seg := projectPathSegment(project)
+	if seg == "" {
+		return homeURLWithQuery(basePath, q)
+	}
+	values := url.Values{}
+	for k, vs := range q {
+		if k == "project" {
+			continue
+		}
+		values[k] = vs
+	}
+	prefix := strings.TrimSuffix(basePath, "/")
+	if prefix == "" || prefix == "/" {
+		prefix = ""
+	}
+	path := prefix + "/p/" + seg
+	encoded := values.Encode()
+	if encoded != "" {
+		return path + "?" + encoded
+	}
+	return path
+}
+
+func homeURLWithQuery(basePath string, q url.Values) string {
+	values := url.Values{}
+	for k, vs := range q {
+		if k == "project" {
+			continue
+		}
+		values[k] = vs
+	}
+	prefix := strings.TrimSuffix(basePath, "/")
+	if prefix == "" || prefix == "/" {
+		prefix = ""
+	}
+	path := prefix + "/"
+	if prefix == "" {
+		path = "/"
+	}
+	encoded := values.Encode()
+	if encoded != "" {
+		return path + "?" + encoded
+	}
+	return path
+}
+
 func normalizeStatusFilter(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "complete", "completed":
