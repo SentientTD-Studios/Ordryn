@@ -47,6 +47,9 @@ func InitializeTemplates() error {
 			return false
 		},
 		"basePath": func() string {
+			if GetBasePath() == "/" {
+				return ""
+			}
 			return GetBasePath()
 		},
 		"themeIs": func(theme interface{}, want string) bool {
@@ -66,8 +69,8 @@ func InitializeTemplates() error {
 			}
 			return dict, nil
 		},
-		"dueDateClass": DueDateClass,
-		"dueDateDisplay": DueDateDisplay,
+		"dueDateClass":      DueDateClass,
+		"dueDateDisplay":    DueDateDisplay,
 		"dueDateInputValue": DueDateInputValue,
 		"renderMarkdown": func(s string) template.HTML {
 			return template.HTML(RenderMarkdown(s))
