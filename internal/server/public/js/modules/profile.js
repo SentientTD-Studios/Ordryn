@@ -41,6 +41,70 @@ function copyCalendarUrl(url) {
 }
 
 let profileCopyBound = false;
+let profileApiKeysBound = false;
+let profileRevokeBound = false;
+
+function formatAPIKeyDate(iso) {
+  if (!iso) return "Just now";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function ensureAPIKeyListContainer() {
+  let list = document.querySelector("#api-keys-list .api-key-list");
+  if (list) return list;
+  const container = document.getElementById("api-keys-list");
+  if (!container) return null;
+  const noMsg = document.getElementById("no-api-keys-msg");
+  list = document.createElement("div");
+  list.className = "api-key-list";
+  if (noMsg) {
+    noMsg.replaceWith(list);
+  } else {
+    container.appendChild(list);
+  }
+  return list;
+}
+
+function prependAPIKeyRow(data) {
+  const list = ensureAPIKeyListContainer();
+  if (!list || !data) return;
+  const row = document.createElement("div");
+  row.className = "api-key-row";
+  row.innerHTML = `
+    <div class="api-key-row-main">
+      <div class="api-key-name"></div>
+      <span class="api-key-prefix"></span>
+      <div class="api-key-meta text-muted small"></div>
+    </div>
+    <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn flex-shrink-0">Revoke</button>`;
+  row.querySelector(".api-key-name").textContent = data.name || "API key";
+  row.querySelector(".api-key-prefix").textContent = data.key_prefix || "";
+  row.querySelector(".api-key-meta").textContent =
+    "Created " + formatAPIKeyDate(data.created_at);
+  const revokeBtn = row.querySelector(".revoke-api-key-btn");
+  if (revokeBtn && data.id) revokeBtn.dataset.keyId = String(data.id);
+  list.prepend(row);
+}
+
+function showCreatedAPIKeyAlert(plaintext) {
+  const alertEl = document.getElementById("api-key-created-alert");
+  const plainEl = document.getElementById("api-key-plaintext");
+  if (!alertEl || !plainEl) return;
+  plainEl.value = plaintext || "";
+  alertEl.classList.remove("d-none");
+  plainEl.focus();
+  plainEl.select();
+  alertEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 
 export function initProfilePage() {
   if (!profileCopyBound) {
@@ -212,7 +276,9 @@ export function initProfilePage() {
   }
 
   const createKeyBtn = document.getElementById("create-api-key-btn");
-  if (createKeyBtn) {
+  if (createKeyBtn && !profileApiKeysBound) {
+    profileApiKeysBound = true;
+
     createKeyBtn.addEventListener("click", async () => {
       const nameEl = document.getElementById("api-key-name");
       const name = nameEl?.value?.trim();
@@ -239,59 +305,63 @@ export function initProfilePage() {
           });
           return;
         }
-        const alertEl = document.getElementById("api-key-created-alert");
-        const plainEl = document.getElementById("api-key-plaintext");
-        if (plainEl) plainEl.value = data.key || "";
-        alertEl?.classList.remove("d-none");
+        showCreatedAPIKeyAlert(data.key || "");
+        prependAPIKeyRow(data);
         if (nameEl) nameEl.value = "";
-        showToast("API key created. Copy it now — it won't be shown again.");
-        window.location.reload();
+        showToast("API key created. Copy it before dismissing the box above.");
       } catch {
         showToast("Failed to create API key.", { error: true });
       } finally {
         createKeyBtn.disabled = false;
       }
     });
-  }
 
-  document.body.addEventListener("click", async (e) => {
-    const revokeBtn = e.target.closest(".revoke-api-key-btn");
-    if (!revokeBtn) return;
-    const id = revokeBtn.dataset.keyId;
-    if (!id || !window.confirm("Revoke this API key? Apps using it will stop working.")) {
-      return;
-    }
-    try {
-      const body = new URLSearchParams({ id });
-      const res = await fetch(apiPath("/api/profile/api-keys/revoke"), {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "HX-Request": "true",
-        },
-        body: body.toString(),
-      });
-      if (!res.ok) {
-        showToast("Failed to revoke key.", { error: true });
-        return;
-      }
-      showToast("API key revoked.");
-      revokeBtn.closest(".api-key-row")?.remove();
-    } catch {
-      showToast("Failed to revoke key.", { error: true });
-    }
-  });
+    document.getElementById("dismiss-api-key-alert")?.addEventListener("click", () => {
+      const alertEl = document.getElementById("api-key-created-alert");
+      const plainEl = document.getElementById("api-key-plaintext");
+      alertEl?.classList.add("d-none");
+      if (plainEl) plainEl.value = "";
+    });
 
-  const copyKeyBtn = document.getElementById("copy-api-key-btn");
-  if (copyKeyBtn) {
-    copyKeyBtn.addEventListener("click", () => {
+    document.getElementById("copy-api-key-btn")?.addEventListener("click", () => {
       const val = document.getElementById("api-key-plaintext")?.value;
       if (!val) return;
       navigator.clipboard?.writeText(val).then(
         () => showToast("API key copied."),
         () => showToast("Could not copy.", { error: true }),
       );
+    });
+  }
+
+  if (!profileRevokeBound) {
+    profileRevokeBound = true;
+    document.body.addEventListener("click", async (e) => {
+      const revokeBtn = e.target.closest(".revoke-api-key-btn");
+      if (!revokeBtn) return;
+      const id = revokeBtn.dataset.keyId;
+      if (!id || !window.confirm("Revoke this API key? Apps using it will stop working.")) {
+        return;
+      }
+      try {
+        const body = new URLSearchParams({ id });
+        const res = await fetch(apiPath("/api/profile/api-keys/revoke"), {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "HX-Request": "true",
+          },
+          body: body.toString(),
+        });
+        if (!res.ok) {
+          showToast("Failed to revoke key.", { error: true });
+          return;
+        }
+        showToast("API key revoked.");
+        revokeBtn.closest(".api-key-row")?.remove();
+      } catch {
+        showToast("Failed to revoke key.", { error: true });
+      }
     });
   }
 }

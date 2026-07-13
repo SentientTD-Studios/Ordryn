@@ -931,21 +931,43 @@ td.delete-column {
 
 #api-keys-section .api-key-prefix {
     display: block;
-    font-size: 0.85rem;
-    color: var(--text-muted-color);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.875rem;
+    color: var(--form-control-text);
     background: transparent;
     padding: 0;
     margin-bottom: 0.25rem;
     word-break: break-all;
     white-space: normal;
+    line-height: 1.4;
+}
+
+#api-keys-section p code {
+    color: var(--form-control-text);
+    background-color: var(--section-label-bg);
+}
+
+[data-theme="dark"] #api-keys-section p code {
+    background-color: var(--form-control-bg);
+}
+
+#api-keys-section #api-key-created-alert {
+    border: 1px solid var(--box-border);
+}
+
+#api-keys-section #api-key-created-alert .form-control {
+    font-size: 0.85rem;
+    color: var(--form-control-text);
+    background-color: var(--form-control-bg);
 }
 
 #api-keys-section .api-key-meta {
     color: var(--text-muted-color);
 }
 
-#api-keys-section #api-key-created-alert .form-control {
-    font-size: 0.85rem;
+#api-keys-section .api-key-row .revoke-api-key-btn {
+    align-self: center;
+    flex-shrink: 0;
 }
 
 @media (max-width: 420px) {
