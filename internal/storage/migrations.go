@@ -111,6 +111,21 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := CreateSavedViewsTable(); err != nil {
+		fmt.Printf("migration: CreateSavedViewsTable failed: %v\n", err)
+		errCount++
+	}
+
+	if err := MigrateSiteSettingsAddEnableAPI(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddEnableAPI failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreateAPIKeysTable(); err != nil {
+		fmt.Printf("migration: CreateAPIKeysTable failed: %v\n", err)
+		errCount++
+	}
+
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {
 		fmt.Printf("migration: CreatePasswordResetTable failed: %v\n", err)

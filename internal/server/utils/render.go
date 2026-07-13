@@ -137,6 +137,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 		ctx["MetaDescription"] = ""
 		ctx["EnableGlobalAnnouncement"] = false
 		ctx["GlobalAnnouncementText"] = ""
+		ctx["EnableAPI"] = false
 		// Site version comes only from the baked-in binary; never from DB
 		ctx["SiteVersion"] = version.Version
 		if s, err := storage.GetSiteSettings(); err == nil && s != nil {
@@ -152,6 +153,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 			ctx["MetaDescription"] = s.MetaDescription
 			ctx["EnableGlobalAnnouncement"] = s.EnableGlobalAnnouncement
 			ctx["GlobalAnnouncementText"] = s.GlobalAnnouncementText
+			ctx["EnableAPI"] = s.EnableAPI
 		}
 
 		if r != nil {
@@ -197,6 +199,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 		ctx["MetaDescription"] = ""
 		ctx["EnableGlobalAnnouncement"] = false
 		ctx["GlobalAnnouncementText"] = ""
+		ctx["EnableAPI"] = false
 		ctx["SiteVersion"] = version.Version
 		if s, err := storage.GetSiteSettings(); err == nil && s != nil {
 			if s.SiteName != "" {
@@ -211,6 +214,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 			ctx["MetaDescription"] = s.MetaDescription
 			ctx["EnableGlobalAnnouncement"] = s.EnableGlobalAnnouncement
 			ctx["GlobalAnnouncementText"] = s.GlobalAnnouncementText
+			ctx["EnableAPI"] = s.EnableAPI
 		}
 		if r != nil {
 			if c, err := r.Cookie("theme"); err == nil {

@@ -134,6 +134,20 @@ func StartServer() error {
 	handleBoth("/api/tags/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteTag)))
 	handleBoth("/api/duplicate-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIDuplicateTask)))
 
+	handleBoth("/api/saved-views/json", utils.RequireAuth(handlers.APISavedViewsJSON))
+	handleBoth("/api/saved-views/save", utils.RequireHTMX(utils.RequireAuth(handlers.APISavedViewsSave)))
+	handleBoth("/api/saved-views/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APISavedViewsDelete)))
+
+	handleBoth("/api/profile/api-keys/json", utils.RequireAuth(handlers.APIProfileKeysJSON))
+	handleBoth("/api/profile/api-keys/create", utils.RequireHTMX(utils.RequireAuth(handlers.APICreateAPIKey)))
+	handleBoth("/api/profile/api-keys/revoke", utils.RequireHTMX(utils.RequireAuth(handlers.APIRevokeAPIKey)))
+
+	v1 := utils.APIChain
+	handleBoth("/api/v1/tasks", v1(handlers.APIV1TasksRouter))
+	handleBoth("/api/v1/tasks/", v1(handlers.APIV1TasksRouter))
+	handleBoth("/api/v1/projects", v1(handlers.APIV1Projects))
+	handleBoth("/api/v1/tags", v1(handlers.APIV1Tags))
+
 	handleBoth("/api/update-profile", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIUpdateProfile))))
 	handleBoth("/api/change-password", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIChangePassword))))
 	handleBoth("/api/calendar/regenerate-token", utils.RequireHTMX(utils.RequireAuth(handlers.APICalendarRegenerateToken)))

@@ -157,6 +157,12 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 
 	csrfToken, _ := utils.EnsureCSRFToken(r, w)
 
+	enableAPI := utils.IsAPIEnabled()
+	apiKeys := []map[string]interface{}{}
+	if enableAPI && userID != nil {
+		apiKeys = ListAPIKeysForProfilePage(*userID)
+	}
+
 	context := map[string]interface{}{
 		"UserEmail":         email,
 		"Email":             email,
@@ -172,6 +178,9 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 		"CalendarTokenErr":  calendarTokenErr,
 		"CSRFToken":         csrfToken,
 		"AllowedTimezones":  utils.AllowedTimezones,
+		"EnableAPI":         enableAPI,
+		"APIKeys":           apiKeys,
+		"RedisAvailable":    utils.RedisAvailable(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
