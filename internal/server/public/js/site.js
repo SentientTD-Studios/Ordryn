@@ -42,6 +42,7 @@ import { initDescriptionToggles } from "./modules/descriptions.js";
 import { initBulkActions } from "./modules/bulk.js";
 import { initUndoDelete } from "./modules/undo.js";
 import { initFilterToolbar } from "./modules/filters.js";
+import { initSavedViews } from "./modules/saved-views.js";
 import { initShortcutsHint } from "./modules/onboarding.js";
 import { initProfilePage } from "./modules/profile.js";
 import { initHomePage } from "./modules/home-init.js";
@@ -87,6 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initUndoDelete();
   initKeyboardShortcuts();
   initFilterToolbar();
+  initSavedViews();
   initShortcutsHint();
   initNavigation();
   if (document.querySelector('main[data-page="home"]')) {

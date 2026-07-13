@@ -18,6 +18,7 @@ import { initializeModalEventListeners } from "./modal.js";
 import { initSortable } from "./sortable.js";
 import { syncFilterToolbarState, syncSortButtonState } from "./events.js";
 import { updateFilterChips, syncFiltersToURL } from "./filters.js";
+import { initSavedViews } from "./saved-views.js";
 
 function focusMainAfterBoost(main) {
   if (!main) return;
@@ -43,6 +44,7 @@ function reinitHomePage(main) {
     syncFilterToolbarState();
     updateFilterChips();
     syncFiltersToURL();
+    initSavedViews();
     initializeSidebarEventListeners();
     initializeModalEventListeners();
     attachEditButtonListeners();

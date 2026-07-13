@@ -139,6 +139,50 @@
                                 <div id="calendar-sync-result" class="mt-2"></div>
                             </div>
 
+                            {{if .EnableAPI}}
+                            <div class="mt-4 pt-4 border-top" id="api-keys-section">
+                                <h4 class="mb-2">REST API</h4>
+                                <p class="text-muted small">Create API keys to access <code>/api/v1/</code> endpoints. Keys are shown once at creation.</p>
+                                {{if not .RedisAvailable}}
+                                <div class="alert alert-warning small">Redis is unavailable; API requests will be rejected until Redis is connected.</div>
+                                {{end}}
+                                <div id="api-key-created-alert" class="alert alert-success d-none" role="alert">
+                                    <strong>New API key (copy now — it won't be shown again):</strong>
+                                    <div class="input-group input-group-sm mt-2">
+                                        <input type="text" class="form-control font-monospace" id="api-key-plaintext" readonly />
+                                        <button type="button" class="btn btn-outline-secondary" id="copy-api-key-btn"><i class="bi bi-clipboard"></i> Copy</button>
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                                    <div class="flex-grow-1">
+                                        <label for="api-key-name" class="form-label small mb-1">Key name</label>
+                                        <input type="text" class="form-control form-control-sm" id="api-key-name" placeholder="e.g. Mobile app" maxlength="80" />
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-sm" id="create-api-key-btn">
+                                        <i class="bi bi-plus-lg"></i> Create key
+                                    </button>
+                                </div>
+                                <div id="api-keys-list">
+                                    {{if .APIKeys}}
+                                    <ul class="list-group list-group-flush">
+                                        {{range .APIKeys}}
+                                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                            <div>
+                                                <span class="fw-semibold">{{.Name}}</span>
+                                                <span class="text-muted small ms-2 font-monospace">{{.KeyPrefix}}</span>
+                                                <div class="text-muted small">Created {{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</div>
+                                            </div>
+                                            <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn" data-key-id="{{.ID}}">Revoke</button>
+                                        </li>
+                                        {{end}}
+                                    </ul>
+                                    {{else}}
+                                    <p class="text-muted small mb-0" id="no-api-keys-msg">No API keys yet.</p>
+                                    {{end}}
+                                </div>
+                            </div>
+                            {{end}}
+
                             <!-- Password Change Section -->
                             <div class="mt-4 pt-4 border-top">
                                 <h4 class="mb-3">Change Password</h4>

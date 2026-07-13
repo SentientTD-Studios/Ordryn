@@ -33,7 +33,9 @@ func AdminPageHandler(w http.ResponseWriter, r *http.Request) {
 	metaDescription := ""
 	enableGlobalAnnouncement := false
 	globalAnnouncementText := ""
+	enableAPI := false
 	validationError := ""
+	redisAvailable := utils.RedisAvailable()
 
 	if s, err := storage.GetSiteSettings(); err == nil && s != nil {
 		if s.SiteName != "" {
@@ -48,6 +50,7 @@ func AdminPageHandler(w http.ResponseWriter, r *http.Request) {
 		metaDescription = s.MetaDescription
 		enableGlobalAnnouncement = s.EnableGlobalAnnouncement
 		globalAnnouncementText = s.GlobalAnnouncementText
+		enableAPI = s.EnableAPI
 	}
 
 	// Check if there's a validation error and form data in session
@@ -83,6 +86,8 @@ func AdminPageHandler(w http.ResponseWriter, r *http.Request) {
 		"MetaDescription":          metaDescription,
 		"EnableGlobalAnnouncement": enableGlobalAnnouncement,
 		"GlobalAnnouncementText":   globalAnnouncementText,
+		"EnableAPI":                enableAPI,
+		"RedisAvailable":           redisAvailable,
 		"ValidationError":          validationError,
 	}
 
@@ -110,6 +115,7 @@ func APIUpdateSiteSettings(w http.ResponseWriter, r *http.Request) {
 	enableRegistrationStr := r.FormValue("enable_registration")
 	inviteOnlyStr := r.FormValue("invite_only")
 	enableGlobalAnnouncementStr := r.FormValue("enable_global_announcement")
+	enableAPIStr := r.FormValue("enable_api")
 
 	if siteName == "" {
 		utils.SetFlash(w, r, "Site name is required.")
@@ -149,6 +155,13 @@ func APIUpdateSiteSettings(w http.ResponseWriter, r *http.Request) {
 	enableRegistration := enableRegistrationStr == "true" || enableRegistrationStr == "on"
 	inviteOnly := inviteOnlyStr == "true" || inviteOnlyStr == "on"
 	enableGlobalAnnouncement := enableGlobalAnnouncementStr == "true" || enableGlobalAnnouncementStr == "on"
+	enableAPI := enableAPIStr == "true" || enableAPIStr == "on"
+
+	if enableAPI && !utils.RedisAvailable() {
+		utils.SetFlash(w, r, "Cannot enable REST API: Redis is not configured or unavailable.")
+		http.Redirect(w, r, utils.GetBasePath()+"/admin", http.StatusSeeOther)
+		return
+	}
 
 	// Persist to DB when possible; fall back to config file if DB unavailable
 	ss := storage.SiteSettings{
@@ -162,6 +175,7 @@ func APIUpdateSiteSettings(w http.ResponseWriter, r *http.Request) {
 		MetaDescription:          metaDescription,
 		EnableGlobalAnnouncement: enableGlobalAnnouncement,
 		GlobalAnnouncementText:   globalAnnouncementText,
+		EnableAPI:                enableAPI,
 	}
 	if err := storage.UpsertSiteSettings(ss); err != nil {
 		// fallback: persist to config file
