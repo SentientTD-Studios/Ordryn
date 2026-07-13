@@ -1,9 +1,35 @@
-// Helper to build correct API URLs that work on both localhost and subpaths
+// Helper to build correct API URLs that work on localhost, mounted subpaths, and /p/{project} URLs.
+let cachedBasePath = null;
+
+function detectBasePath() {
+  if (cachedBasePath !== null) return cachedBasePath;
+
+  const asset = document.querySelector(
+    'script[src*="/public/"], link[href*="/public/"]',
+  );
+  const assetPath =
+    asset?.getAttribute("src") || asset?.getAttribute("href") || "";
+
+  if (assetPath) {
+    try {
+      const path = new URL(assetPath, window.location.origin).pathname;
+      const publicIdx = path.indexOf("/public/");
+      if (publicIdx > 0) {
+        cachedBasePath = path.slice(0, publicIdx);
+        return cachedBasePath;
+      }
+    } catch (e) {
+      /* fall through to root */
+    }
+  }
+
+  cachedBasePath = "";
+  return cachedBasePath;
+}
+
 export function apiPath(endpoint) {
-  // Remove leading slash if present
-  const path = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
-  // Use relative path with dot prefix so HTMX resolves it relative to current location
-  return "./" + path;
+  const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return detectBasePath() + path;
 }
 
 export function ensureToastContainer() {
