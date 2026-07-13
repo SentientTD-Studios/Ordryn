@@ -144,8 +144,11 @@
                                 {{if not .RedisAvailable}}
                                 <div class="alert alert-warning small">Redis is unavailable; API requests will be rejected until Redis is connected.</div>
                                 {{end}}
-                                <div id="api-key-created-alert" class="alert alert-success d-none" role="alert">
-                                    <strong>New API key (copy now — it won't be shown again):</strong>
+                                <div id="api-key-created-alert" class="alert alert-success d-none mb-3" role="alert" aria-live="polite">
+                                    <div class="d-flex justify-content-between align-items-start gap-2">
+                                        <strong>New API key — copy now, it won't be shown again:</strong>
+                                        <button type="button" class="btn-close" id="dismiss-api-key-alert" aria-label="Dismiss"></button>
+                                    </div>
                                     <div class="input-group input-group-sm mt-2">
                                         <input type="text" class="form-control font-monospace" id="api-key-plaintext" readonly />
                                         <button type="button" class="btn btn-outline-secondary" id="copy-api-key-btn"><i class="bi bi-clipboard"></i> Copy</button>
@@ -164,13 +167,11 @@
                                     {{if .APIKeys}}
                                     <div class="api-key-list">
                                         {{range .APIKeys}}
-                                        <div class="api-key-row">
-                                            <div class="api-key-row-main">
-                                                <div class="api-key-name">{{.Name}}</div>
-                                                <code class="api-key-prefix" title="Key prefix (full key shown only at creation)">{{.KeyPrefix}}</code>
-                                                <div class="api-key-meta text-muted small">Created {{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</div>
-                                            </div>
-                                            <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn flex-shrink-0" data-key-id="{{.ID}}">Revoke</button>
+                                        <div class="api-key-card">
+                                            <span class="api-key-name">{{.Name}}</span>
+                                            <span class="api-key-prefix" title="Key prefix (full key shown only at creation)">{{.KeyPrefix}}</span>
+                                            <span class="api-key-meta">Created {{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</span>
+                                            <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn" data-key-id="{{.ID}}">Revoke</button>
                                         </div>
                                         {{end}}
                                     </div>
