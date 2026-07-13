@@ -2939,12 +2939,6 @@ a.text-decoration-none .dashboard-stat-link .dashboard-stat-label {
 }
 
 /* REST API documentation page */
-body.api-docs-page .api-docs-card {
-    max-width: 52rem;
-    margin-left: auto;
-    margin-right: auto;
-}
-
 body.api-docs-page .api-docs-toc {
     padding: 0.75rem 1rem;
     border-radius: 0.375rem;
