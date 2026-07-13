@@ -162,18 +162,18 @@
                                 </div>
                                 <div id="api-keys-list">
                                     {{if .APIKeys}}
-                                    <ul class="list-group list-group-flush">
+                                    <div class="api-key-list">
                                         {{range .APIKeys}}
-                                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                            <div>
-                                                <span class="fw-semibold">{{.Name}}</span>
-                                                <span class="text-muted small ms-2 font-monospace">{{.KeyPrefix}}</span>
-                                                <div class="text-muted small">Created {{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</div>
+                                        <div class="api-key-row">
+                                            <div class="api-key-row-main">
+                                                <div class="api-key-name">{{.Name}}</div>
+                                                <code class="api-key-prefix" title="Key prefix (full key shown only at creation)">{{.KeyPrefix}}</code>
+                                                <div class="api-key-meta text-muted small">Created {{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</div>
                                             </div>
-                                            <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn" data-key-id="{{.ID}}">Revoke</button>
-                                        </li>
+                                            <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn flex-shrink-0" data-key-id="{{.ID}}">Revoke</button>
+                                        </div>
                                         {{end}}
-                                    </ul>
+                                    </div>
                                     {{else}}
                                     <p class="text-muted small mb-0" id="no-api-keys-msg">No API keys yet.</p>
                                     {{end}}

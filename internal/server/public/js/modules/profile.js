@@ -277,7 +277,7 @@ export function initProfilePage() {
         return;
       }
       showToast("API key revoked.");
-      revokeBtn.closest("li")?.remove();
+      revokeBtn.closest(".api-key-row")?.remove();
     } catch {
       showToast("Failed to revoke key.", { error: true });
     }

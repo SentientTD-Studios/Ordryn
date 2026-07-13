@@ -79,8 +79,8 @@ func CreateAPIKey(userID int, name string) (plaintext string, record *APIKey, er
 	}
 	hash := HashAPIKey(plaintext)
 	prefix := plaintext
-	if len(prefix) > 16 {
-		prefix = prefix[:16] + "…"
+	if len(prefix) > 24 {
+		prefix = prefix[:24] + "…"
 	}
 
 	var id int
