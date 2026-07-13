@@ -3,8 +3,8 @@ package handlers
 import "testing"
 
 func TestSortChangelogEntriesMatchesRealGitHubAPIOrder(t *testing.T) {
-	// GitHub returns releases by creation date, not semver. v0.18.1-beta was created
-	// on 2026-07-02 as a draft and published later, so it appears below v0.15.x.
+	// Live GitHub API order for xNifty/GoTodo (2026-07-13): v0.18.1-beta is returned
+	// below v0.15.x even though it is semver-newer and the most recently published release.
 	entries := []ChangelogEntry{
 		{Version: "v0.18.0-beta", Date: "2026-07-13"},
 		{Version: "v0.17.0-beta", Date: "2026-07-07"},
