@@ -8,6 +8,7 @@ import { updateFilterChips, syncFiltersToURL } from "./filters.js";
 import { showToast } from "./notifications.js";
 
 let savedViewsBound = false;
+const SAVED_VIEW_NAME_MAX_LENGTH = 80;
 
 function getCurrentFilterState() {
   const val = (id) => {
@@ -68,10 +69,18 @@ export function applyFilterState(filter) {
   syncSortButtonState();
   updateFilterChips();
 
-  htmx.ajax("GET", apiPath("/api/fetch-tasks?page=1"), {
+  htmx.ajax("GET", buildFetchTasksUrl(filter), {
     target: "#task-container",
     swap: "innerHTML",
   });
+}
+
+function buildFetchTasksUrl(filter) {
+  const params = new URLSearchParams({ page: "1" });
+  Object.entries(filter || {}).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+  return apiPath(`/api/fetch-tasks?${params.toString()}`);
 }
 
 async function fetchSavedViews() {
@@ -156,9 +165,16 @@ async function saveCurrentView(name, id, renameOnly) {
     },
     body: body.toString(),
   });
-  const data = await res.json().catch(() => ({}));
+  const contentType = res.headers.get("Content-Type") || "";
+  const data = contentType.includes("application/json")
+    ? await res.json().catch(() => ({}))
+    : {};
   if (!res.ok) {
     showToast(data.error || "Failed to save view", { error: true });
+    return false;
+  }
+  if (!contentType.includes("application/json")) {
+    showToast("Failed to save view", { error: true });
     return false;
   }
   showToast(renameOnly ? "View renamed" : "View saved");
@@ -177,12 +193,129 @@ async function deleteView(id) {
     },
     body: body.toString(),
   });
-  if (!res.ok) {
+  const contentType = res.headers.get("Content-Type") || "";
+  if (!res.ok || !contentType.includes("application/json")) {
     showToast("Failed to delete view", { error: true });
     return;
   }
   showToast("View deleted");
   await reloadSavedViews();
+}
+
+function getSharedModal() {
+  const modalEl = document.getElementById("modal");
+  const content = modalEl?.querySelector(".modal-content");
+  if (!modalEl || !content || typeof bootstrap === "undefined") {
+    return null;
+  }
+  return { modalEl, content, modal: bootstrap.Modal.getOrCreateInstance(modalEl) };
+}
+
+function promptViewName({ title, label, submitLabel, initialValue = "" }) {
+  return new Promise((resolve) => {
+    const shared = getSharedModal();
+    if (!shared) {
+      resolve(null);
+      return;
+    }
+
+    shared.content.innerHTML = `
+      <form id="saved-view-name-form">
+        <div class="modal-header">
+          <h5 class="modal-title">${escapeHtml(title)}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <label for="saved-view-name-input" class="form-label">${escapeHtml(label)}</label>
+          <input type="text" class="form-control" id="saved-view-name-input" name="name" maxlength="${SAVED_VIEW_NAME_MAX_LENGTH}" required />
+          <div class="form-text">Use up to ${SAVED_VIEW_NAME_MAX_LENGTH} characters.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">${escapeHtml(submitLabel)}</button>
+        </div>
+      </form>
+    `;
+
+    const form = document.getElementById("saved-view-name-form");
+    const input = document.getElementById("saved-view-name-input");
+    if (input) input.value = initialValue;
+
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      form?.removeEventListener("submit", onSubmit);
+      shared.modalEl.removeEventListener("hidden.bs.modal", onHidden);
+      resolve(value);
+    };
+
+    const onSubmit = (e) => {
+      e.preventDefault();
+      const name = input?.value.trim() || "";
+      if (!name) {
+        input?.focus();
+        return;
+      }
+      finish(name);
+      shared.modal.hide();
+    };
+
+    const onHidden = () => {
+      finish(null);
+    };
+
+    form?.addEventListener("submit", onSubmit);
+    shared.modalEl.addEventListener("hidden.bs.modal", onHidden);
+    shared.modal.show();
+  });
+}
+
+function confirmDeleteView() {
+  return new Promise((resolve) => {
+    const shared = getSharedModal();
+    if (!shared) {
+      resolve(false);
+      return;
+    }
+
+    shared.content.innerHTML = `
+      <div class="modal-header">
+        <h5 class="modal-title">Delete saved view?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">This saved view will be removed. Your tasks will not be changed.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="saved-view-delete-confirm">Delete View</button>
+      </div>
+    `;
+
+    const confirmBtn = document.getElementById("saved-view-delete-confirm");
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      confirmBtn?.removeEventListener("click", onConfirm);
+      shared.modalEl.removeEventListener("hidden.bs.modal", onHidden);
+      resolve(ok);
+    };
+
+    const onConfirm = () => {
+      finish(true);
+      shared.modal.hide();
+    };
+
+    const onHidden = () => {
+      finish(false);
+    };
+
+    confirmBtn?.addEventListener("click", onConfirm);
+    shared.modalEl.addEventListener("hidden.bs.modal", onHidden);
+    shared.modal.show();
+  });
 }
 
 export function initSavedViews() {
@@ -197,9 +330,13 @@ export function initSavedViews() {
   document.body.addEventListener("click", async (e) => {
     if (e.target.closest("#saved-view-save-btn")) {
       e.preventDefault();
-      const name = window.prompt("Name for this view:");
-      if (!name || !name.trim()) return;
-      await saveCurrentView(name.trim(), null, false);
+      const name = await promptViewName({
+        title: "Save Current View",
+        label: "View name",
+        submitLabel: "Save View",
+      });
+      if (!name) return;
+      await saveCurrentView(name, null, false);
       return;
     }
 
@@ -220,9 +357,14 @@ export function initSavedViews() {
       e.preventDefault();
       const id = renameBtn.dataset.viewId;
       const current = renameBtn.dataset.viewName || "";
-      const name = window.prompt("Rename view:", current);
-      if (!name || !name.trim() || name.trim() === current) return;
-      await saveCurrentView(name.trim(), id, true);
+      const name = await promptViewName({
+        title: "Rename Saved View",
+        label: "View name",
+        submitLabel: "Rename View",
+        initialValue: current,
+      });
+      if (!name || name === current) return;
+      await saveCurrentView(name, id, true);
       return;
     }
 
@@ -230,7 +372,7 @@ export function initSavedViews() {
     if (deleteBtn) {
       e.preventDefault();
       const id = deleteBtn.dataset.viewId;
-      if (!window.confirm("Delete this saved view?")) return;
+      if (!(await confirmDeleteView())) return;
       await deleteView(id);
     }
   });
