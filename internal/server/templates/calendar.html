@@ -19,12 +19,12 @@
         <link rel="stylesheet" href="{{basePath}}/public/css/{{if .UseMinifiedAssets}}site.min.css{{else}}site.css{{end}}?v={{.AssetVersion}}" />
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
     </head>
-    <body class="calendar-page"
-        data-calendar-month="{{.YearMonth}}"
-        data-calendar-today="{{.Calendar.TodayMonth}}"
-        data-calendar-base="{{basePath}}">
+    <body>
         {{template "navbar.html" .}}
-        <main>
+        <main data-page="calendar"
+            data-calendar-month="{{.YearMonth}}"
+            data-calendar-today="{{.Calendar.TodayMonth}}"
+            data-calendar-base="{{basePath}}">
         <div class="container mt-4 mb-5 calendar-page-inner">
             <div class="calendar-toolbar d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
                 <div>

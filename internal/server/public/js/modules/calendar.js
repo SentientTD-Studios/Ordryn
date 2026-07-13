@@ -166,7 +166,9 @@ function initCalendarJumpPicker(page) {
 }
 
 export function initCalendarPage() {
-  const page = document.querySelector(".calendar-page");
+  const page =
+    document.querySelector('main[data-page="calendar"]') ||
+    document.querySelector(".calendar-page");
   if (!page) return;
 
   initCalendarJumpPicker(page);

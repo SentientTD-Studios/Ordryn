@@ -11,29 +11,28 @@ export function initAnnouncementCharCounter() {
   );
 
   if (announcementText && announcementCharCount) {
-    announcementText.addEventListener("input", function () {
-      const length = this.value.length;
-      announcementCharCount.textContent = length;
+    if (announcementText.dataset.counterBound !== "true") {
+      announcementText.dataset.counterBound = "true";
+      announcementText.addEventListener("input", function () {
+        const length = this.value.length;
+        announcementCharCount.textContent = length;
 
-      // Add visual feedback when approaching limit
-      if (length > 450) {
-        announcementCharCount.classList.add("text-warning");
-      } else {
-        announcementCharCount.classList.remove("text-warning");
-      }
-      if (length > 480) {
-        announcementCharCount.classList.add("text-danger");
-      } else {
-        announcementCharCount.classList.remove("text-danger");
-      }
-    });
+        if (length > 450) {
+          announcementCharCount.classList.add("text-warning");
+        } else {
+          announcementCharCount.classList.remove("text-warning");
+        }
+        if (length > 480) {
+          announcementCharCount.classList.add("text-danger");
+        } else {
+          announcementCharCount.classList.remove("text-danger");
+        }
 
-    // Clear error when user starts typing
-    announcementText.addEventListener("input", function () {
-      const errorDiv = document.getElementById("announcement-text-error");
-      if (errorDiv) {
-        errorDiv.innerHTML = "";
-      }
-    });
+        const errorDiv = document.getElementById("announcement-text-error");
+        if (errorDiv) {
+          errorDiv.innerHTML = "";
+        }
+      });
+    }
   }
 }

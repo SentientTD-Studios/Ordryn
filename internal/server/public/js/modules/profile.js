@@ -40,25 +40,30 @@ function copyCalendarUrl(url) {
   }
 }
 
+let profileCopyBound = false;
+
 export function initProfilePage() {
-  document.body.addEventListener("click", (e) => {
-    const btn = e.target.closest("#copy-calendar-url");
-    if (!btn) return;
-    const url =
-      btn.dataset.url ||
-      (document.getElementById("calendar-feed-url") || {}).value;
-    copyCalendarUrl(url).then((ok) => {
-      if (ok) {
-        btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied';
-        showToast("Calendar URL copied to clipboard.");
-        setTimeout(() => {
-          btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
-        }, 2000);
-      } else if (url) {
-        showToast("Could not copy to clipboard.", { error: true });
-      }
+  if (!profileCopyBound) {
+    profileCopyBound = true;
+    document.body.addEventListener("click", (e) => {
+      const btn = e.target.closest("#copy-calendar-url");
+      if (!btn) return;
+      const url =
+        btn.dataset.url ||
+        (document.getElementById("calendar-feed-url") || {}).value;
+      copyCalendarUrl(url).then((ok) => {
+        if (ok) {
+          btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied';
+          showToast("Calendar URL copied to clipboard.");
+          setTimeout(() => {
+            btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
+          }, 2000);
+        } else if (url) {
+          showToast("Could not copy to clipboard.", { error: true });
+        }
+      });
     });
-  });
+  }
 
   const regenBtn = document.getElementById("regenerate-calendar-token");
   if (regenBtn) {

@@ -92,7 +92,6 @@ The app uses `github.com/jackc/pgx/v5/pgxpool`. Migrations run automatically on 
 - Handlers: `internal/server/handlers`
 - Templates: `internal/server/templates`
 - Static assets: `internal/server/public`
-- Roadmap: `docs/ROADMAP.md`
 
 Run tests:
 

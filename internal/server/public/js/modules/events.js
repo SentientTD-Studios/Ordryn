@@ -1,4 +1,4 @@
-import { apiPath, restoreFooterIfMissing } from "./utils.js";
+import { apiPath } from "./utils.js";
 import {
   initializeSidebarEventListeners,
   closeSidebar,
@@ -38,9 +38,6 @@ export function swapTaskContainerHtml(html) {
   container.innerHTML = html;
   try {
     if (typeof htmx !== "undefined") htmx.process(container);
-  } catch (e) {}
-  try {
-    restoreFooterIfMissing();
   } catch (e) {}
   try {
     initSortable();

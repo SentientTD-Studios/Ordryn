@@ -1,7 +1,15 @@
 /** Home page boot helpers (project filter restore, auth flash URL cleanup). */
-export function initHomePage() {
-  const body = document.body;
-  const projectFilter = body.dataset.projectFilter;
+let homeListenersBound = false;
+
+function getHomeMain() {
+  return document.querySelector('main[data-page="home"]');
+}
+
+export function initHomePage(mainEl) {
+  const main = mainEl || getHomeMain();
+  if (!main) return;
+
+  const projectFilter = main.dataset.projectFilter;
   if (projectFilter !== undefined) {
     const sel = document.getElementById("project-filter");
     if (sel) sel.value = projectFilter;
@@ -27,18 +35,22 @@ export function initHomePage() {
     }, 5000);
   }
 
-  document.body.addEventListener("htmx:afterSwap", (event) => {
-    if (event.target.id === "status") {
-      setTimeout(() => {
-        event.target.style.display = "none";
-      }, 5000);
-    }
-  });
+  if (!homeListenersBound) {
+    homeListenersBound = true;
 
-  document.body.addEventListener("task-added", () => {
-    const title = document.getElementById("title");
-    const description = document.getElementById("description");
-    if (title) title.value = "";
-    if (description) description.value = "";
-  });
+    document.body.addEventListener("htmx:afterSwap", (event) => {
+      if (event.target.id === "status") {
+        setTimeout(() => {
+          event.target.style.display = "none";
+        }, 5000);
+      }
+    });
+
+    document.body.addEventListener("task-added", () => {
+      const title = document.getElementById("title");
+      const description = document.getElementById("description");
+      if (title) title.value = "";
+      if (description) description.value = "";
+    });
+  }
 }

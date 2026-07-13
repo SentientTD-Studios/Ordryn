@@ -8,7 +8,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}">Home</a>
+                        <a class="nav-link" href="{{basePath}}" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Home</a>
                     </li>
                     {{if .LoggedIn}}
                     <li class="nav-item">
@@ -21,7 +21,7 @@
                     </li>
                     {{end}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/about">About</a>
+                        <a class="nav-link" href="{{basePath}}/about" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">About</a>
                     </li>
                     {{if .LoggedIn}}
                     <li class="nav-item">
@@ -35,12 +35,12 @@
                     {{end}}
                     {{if hasPermission .Permissions "admin"}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/admin">Admin</a>
+                        <a class="nav-link" href="{{basePath}}/admin" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Admin</a>
                     </li>
                     {{end}}
                     {{if and .LoggedIn (hasPermission .Permissions "createinvites")}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/createinvite">Create Invite</a>
+                        <a class="nav-link" href="{{basePath}}/createinvite" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Create Invite</a>
                     </li>
                     {{end}}
                 </ul>

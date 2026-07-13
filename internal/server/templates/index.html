@@ -25,7 +25,7 @@
         <link rel="stylesheet" href="{{basePath}}/public/css/{{if .UseMinifiedAssets}}site.min.css{{else}}site.css{{end}}?v={{.AssetVersion}}" />
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
     </head>
-    <body data-project-filter="{{.ProjectFilter}}">
+    <body>
         <div id="htmx-loading-bar" aria-hidden="true"></div>
         <div id="htmx-loading-indicator" class="htmx-indicator" aria-hidden="true" aria-live="polite">
             <span class="spinner-border spinner-border-sm" role="status"></span>
@@ -33,7 +33,7 @@
         </div>
         {{template "navbar.html" .}}
 
-        <main>
+        <main data-page="home" data-project-filter="{{.ProjectFilter}}">
         {{if .Flashes}}
         {{range .Flashes}}
         <div

@@ -21,6 +21,12 @@ function readDashboardConfig() {
   }
 }
 
+function destroyChartOnCanvas(canvas) {
+  if (!canvas || typeof Chart === "undefined") return;
+  const existing = Chart.getChart(canvas);
+  if (existing) existing.destroy();
+}
+
 export function initDashboardCharts() {
   if (typeof Chart === "undefined") return;
 
@@ -45,6 +51,7 @@ export function initDashboardCharts() {
   const projectData = config.projectData || [];
   const projectCanvas = document.getElementById("projectChart");
   if (projectCanvas && projectLabels.length > 0) {
+    destroyChartOnCanvas(projectCanvas);
     new Chart(projectCanvas, {
       type: "doughnut",
       data: {
@@ -59,6 +66,7 @@ export function initDashboardCharts() {
 
   const completionCanvas = document.getElementById("completionChart");
   if (completionCanvas) {
+    destroyChartOnCanvas(completionCanvas);
     new Chart(completionCanvas, {
       type: "bar",
       data: {

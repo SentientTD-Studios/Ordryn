@@ -1,12 +1,5 @@
 // Import all modules
-import {
-  apiPath,
-  captureFooterHTML,
-  restoreFooterIfMissing,
-  ensureToastContainer,
-  ensureTableClasses,
-  ensureTableStructure,
-} from "./modules/utils.js";
+import { apiPath } from "./modules/utils.js";
 import { initTheme, toggleTheme, attachThemeToggle } from "./modules/theme.js";
 import {
   initCharacterCounters,
@@ -73,9 +66,6 @@ window.closeSidebar = closeSidebar;
 window.openSidebar = openSidebar;
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Capture footer HTML for restoration if HTMX removes it
-  captureFooterHTML();
-
   // Initialize all modules
   initTheme();
   attachThemeToggle();
@@ -99,13 +89,13 @@ document.addEventListener("DOMContentLoaded", () => {
   initFilterToolbar();
   initShortcutsHint();
   initNavigation();
-  if (document.body.dataset.projectFilter !== undefined) {
+  if (document.querySelector('main[data-page="home"]')) {
     initHomePage();
   }
-  if (document.body.classList.contains("profile-page")) {
+  if (document.querySelector('main[data-page="profile"]')) {
     initProfilePage();
   }
-  if (document.body.classList.contains("calendar-page")) {
+  if (document.querySelector('main[data-page="calendar"]')) {
     initCalendarPage();
   }
   initRevealTokenButtons();
