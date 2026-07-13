@@ -41,8 +41,7 @@ function copyCalendarUrl(url) {
 }
 
 let profileCopyBound = false;
-let profileApiKeysBound = false;
-let profileRevokeBound = false;
+let profileKeysDelegationBound = false;
 
 function formatAPIKeyDate(iso) {
   if (!iso) return "Just now";
@@ -80,33 +79,146 @@ function prependAPIKeyRow(data) {
   const row = document.createElement("div");
   row.className = "api-key-card";
   row.innerHTML = `
-    <span class="api-key-name"></span>
-    <span class="api-key-prefix"></span>
-    <span class="api-key-meta"></span>
-    <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn">Revoke</button>`;
+    <div class="api-key-card-header">
+      <span class="api-key-name"></span>
+      <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn">Revoke</button>
+    </div>
+    <div class="api-key-card-fields">
+      <div class="api-key-field">
+        <span class="api-key-field-label">Prefix</span>
+        <span class="api-key-field-value api-key-prefix"></span>
+      </div>
+      <div class="api-key-field">
+        <span class="api-key-field-label">Created</span>
+        <span class="api-key-field-value api-key-created"></span>
+      </div>
+    </div>`;
   row.querySelector(".api-key-name").textContent = data.name || "API key";
-  row.querySelector(".api-key-prefix").textContent = data.key_prefix || "";
-  row.querySelector(".api-key-prefix").title =
-    "Key prefix (full key shown only at creation)";
-  row.querySelector(".api-key-meta").textContent =
+  const prefixEl = row.querySelector(".api-key-prefix");
+  prefixEl.textContent = data.key_prefix || "";
+  prefixEl.title = "Key prefix (full key shown only at creation)";
+  row.querySelector(".api-key-created").textContent =
     "Created " + formatAPIKeyDate(data.created_at);
   const revokeBtn = row.querySelector(".revoke-api-key-btn");
   if (revokeBtn && data.id) revokeBtn.dataset.keyId = String(data.id);
   list.prepend(row);
 }
 
-function showCreatedAPIKeyAlert(plaintext) {
-  const alertEl = document.getElementById("api-key-created-alert");
+function showCreatedAPIKeyPanel(plaintext) {
+  const panel = document.getElementById("api-key-reveal-panel");
   const plainEl = document.getElementById("api-key-plaintext");
-  if (!alertEl || !plainEl) return;
+  if (!panel || !plainEl) return;
   plainEl.value = plaintext || "";
-  alertEl.classList.remove("d-none");
-  plainEl.focus();
-  plainEl.select();
-  alertEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  panel.hidden = false;
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  requestAnimationFrame(() => {
+    plainEl.focus();
+    plainEl.select();
+  });
+}
+
+function hideCreatedAPIKeyPanel() {
+  const panel = document.getElementById("api-key-reveal-panel");
+  const plainEl = document.getElementById("api-key-plaintext");
+  if (panel) panel.hidden = true;
+  if (plainEl) plainEl.value = "";
+}
+
+function bindProfileAPIKeyActions() {
+  if (profileKeysDelegationBound) return;
+  profileKeysDelegationBound = true;
+
+  document.body.addEventListener("click", async (e) => {
+    if (e.target.closest("#create-api-key-btn")) {
+      e.preventDefault();
+      const createKeyBtn = e.target.closest("#create-api-key-btn");
+      const nameEl = document.getElementById("api-key-name");
+      const name = nameEl?.value?.trim();
+      if (!name) {
+        showToast("Enter a name for the API key.", { error: true });
+        return;
+      }
+      createKeyBtn.disabled = true;
+      try {
+        const body = new URLSearchParams({ name });
+        const res = await fetch(apiPath("/api/profile/api-keys/create"), {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "HX-Request": "true",
+          },
+          body: body.toString(),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(data.message || data.error || "Failed to create key", {
+            error: true,
+          });
+          return;
+        }
+        showCreatedAPIKeyPanel(data.key || "");
+        prependAPIKeyRow(data);
+        if (nameEl) nameEl.value = "";
+        showToast("API key created. Copy it before dismissing the panel below.");
+      } catch {
+        showToast("Failed to create API key.", { error: true });
+      } finally {
+        createKeyBtn.disabled = false;
+      }
+      return;
+    }
+
+    if (e.target.closest("#copy-api-key-btn")) {
+      e.preventDefault();
+      const val = document.getElementById("api-key-plaintext")?.value;
+      if (!val) return;
+      navigator.clipboard?.writeText(val).then(
+        () => showToast("API key copied."),
+        () => showToast("Could not copy.", { error: true }),
+      );
+      return;
+    }
+
+    if (e.target.closest("#dismiss-api-key-reveal")) {
+      e.preventDefault();
+      hideCreatedAPIKeyPanel();
+      return;
+    }
+
+    const revokeBtn = e.target.closest(".revoke-api-key-btn");
+    if (!revokeBtn) return;
+    e.preventDefault();
+    const id = revokeBtn.dataset.keyId;
+    if (!id || !window.confirm("Revoke this API key? Apps using it will stop working.")) {
+      return;
+    }
+    try {
+      const body = new URLSearchParams({ id });
+      const res = await fetch(apiPath("/api/profile/api-keys/revoke"), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "HX-Request": "true",
+        },
+        body: body.toString(),
+      });
+      if (!res.ok) {
+        showToast("Failed to revoke key.", { error: true });
+        return;
+      }
+      showToast("API key revoked.");
+      revokeBtn.closest(".api-key-card")?.remove();
+    } catch {
+      showToast("Failed to revoke key.", { error: true });
+    }
+  });
 }
 
 export function initProfilePage() {
+  bindProfileAPIKeyActions();
+
   if (!profileCopyBound) {
     profileCopyBound = true;
     document.body.addEventListener("click", (e) => {
@@ -271,96 +383,6 @@ export function initProfilePage() {
           false,
           '<i class="bi bi-key"></i> Change Password',
         );
-      }
-    });
-  }
-
-  const createKeyBtn = document.getElementById("create-api-key-btn");
-  if (createKeyBtn && !profileApiKeysBound) {
-    profileApiKeysBound = true;
-
-    createKeyBtn.addEventListener("click", async () => {
-      const nameEl = document.getElementById("api-key-name");
-      const name = nameEl?.value?.trim();
-      if (!name) {
-        showToast("Enter a name for the API key.", { error: true });
-        return;
-      }
-      createKeyBtn.disabled = true;
-      try {
-        const body = new URLSearchParams({ name });
-        const res = await fetch(apiPath("/api/profile/api-keys/create"), {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "HX-Request": "true",
-          },
-          body: body.toString(),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          showToast(data.message || data.error || "Failed to create key", {
-            error: true,
-          });
-          return;
-        }
-        showCreatedAPIKeyAlert(data.key || "");
-        prependAPIKeyRow(data);
-        if (nameEl) nameEl.value = "";
-        showToast("API key created. Copy it before dismissing the box above.");
-      } catch {
-        showToast("Failed to create API key.", { error: true });
-      } finally {
-        createKeyBtn.disabled = false;
-      }
-    });
-
-    document.getElementById("dismiss-api-key-alert")?.addEventListener("click", () => {
-      const alertEl = document.getElementById("api-key-created-alert");
-      const plainEl = document.getElementById("api-key-plaintext");
-      alertEl?.classList.add("d-none");
-      if (plainEl) plainEl.value = "";
-    });
-
-    document.getElementById("copy-api-key-btn")?.addEventListener("click", () => {
-      const val = document.getElementById("api-key-plaintext")?.value;
-      if (!val) return;
-      navigator.clipboard?.writeText(val).then(
-        () => showToast("API key copied."),
-        () => showToast("Could not copy.", { error: true }),
-      );
-    });
-  }
-
-  if (!profileRevokeBound) {
-    profileRevokeBound = true;
-    document.body.addEventListener("click", async (e) => {
-      const revokeBtn = e.target.closest(".revoke-api-key-btn");
-      if (!revokeBtn) return;
-      const id = revokeBtn.dataset.keyId;
-      if (!id || !window.confirm("Revoke this API key? Apps using it will stop working.")) {
-        return;
-      }
-      try {
-        const body = new URLSearchParams({ id });
-        const res = await fetch(apiPath("/api/profile/api-keys/revoke"), {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "HX-Request": "true",
-          },
-          body: body.toString(),
-        });
-        if (!res.ok) {
-          showToast("Failed to revoke key.", { error: true });
-          return;
-        }
-        showToast("API key revoked.");
-        revokeBtn.closest(".api-key-card")?.remove();
-      } catch {
-        showToast("Failed to revoke key.", { error: true });
       }
     });
   }

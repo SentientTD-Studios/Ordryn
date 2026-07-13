@@ -144,16 +144,6 @@
                                 {{if not .RedisAvailable}}
                                 <div class="alert alert-warning small">Redis is unavailable; API requests will be rejected until Redis is connected.</div>
                                 {{end}}
-                                <div id="api-key-created-alert" class="alert alert-success d-none mb-3" role="alert" aria-live="polite">
-                                    <div class="d-flex justify-content-between align-items-start gap-2">
-                                        <strong>New API key — copy now, it won't be shown again:</strong>
-                                        <button type="button" class="btn-close" id="dismiss-api-key-alert" aria-label="Dismiss"></button>
-                                    </div>
-                                    <div class="input-group input-group-sm mt-2">
-                                        <input type="text" class="form-control font-monospace" id="api-key-plaintext" readonly />
-                                        <button type="button" class="btn btn-outline-secondary" id="copy-api-key-btn"><i class="bi bi-clipboard"></i> Copy</button>
-                                    </div>
-                                </div>
                                 <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
                                     <div class="flex-grow-1">
                                         <label for="api-key-name" class="form-label small mb-1">Key name</label>
@@ -163,15 +153,33 @@
                                         <i class="bi bi-plus-lg"></i> Create key
                                     </button>
                                 </div>
+                                <div id="api-key-reveal-panel" class="api-key-reveal-panel" hidden>
+                                    <p class="api-key-reveal-title mb-2">New API key — copy now, it won't be shown again</p>
+                                    <div class="input-group input-group-sm mb-2">
+                                        <input type="text" class="form-control font-monospace" id="api-key-plaintext" readonly aria-label="New API key" />
+                                        <button type="button" class="btn btn-outline-secondary" id="copy-api-key-btn"><i class="bi bi-clipboard"></i> Copy</button>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-link px-0" id="dismiss-api-key-reveal">Dismiss</button>
+                                </div>
                                 <div id="api-keys-list">
                                     {{if .APIKeys}}
                                     <div class="api-key-list">
                                         {{range .APIKeys}}
                                         <div class="api-key-card">
-                                            <span class="api-key-name">{{.Name}}</span>
-                                            <span class="api-key-prefix" title="Key prefix (full key shown only at creation)">{{.KeyPrefix}}</span>
-                                            <span class="api-key-meta">Created {{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</span>
-                                            <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn" data-key-id="{{.ID}}">Revoke</button>
+                                            <div class="api-key-card-header">
+                                                <span class="api-key-name">{{.Name}}</span>
+                                                <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn" data-key-id="{{.ID}}">Revoke</button>
+                                            </div>
+                                            <div class="api-key-card-fields">
+                                                <div class="api-key-field">
+                                                    <span class="api-key-field-label">Prefix</span>
+                                                    <span class="api-key-field-value api-key-prefix" title="Key prefix (full key shown only at creation)">{{.KeyPrefix}}</span>
+                                                </div>
+                                                <div class="api-key-field">
+                                                    <span class="api-key-field-label">Created</span>
+                                                    <span class="api-key-field-value">{{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                         {{end}}
                                     </div>
