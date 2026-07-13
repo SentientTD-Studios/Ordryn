@@ -2990,3 +2990,44 @@ body.api-docs-page .lead {
     font-size: 1.05rem;
     color: var(--text-muted-color);
 }
+
+body.api-docs-page .docs-index-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+body.api-docs-page .docs-index-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--box-border);
+    border-radius: 0.375rem;
+    background: var(--section-label-bg);
+    color: var(--text-color);
+    text-decoration: none;
+    transition: border-color var(--transition-time), background var(--transition-time);
+}
+
+body.api-docs-page .docs-index-item:hover {
+    border-color: var(--table-header-bg);
+    background: var(--table-row-hover);
+    color: var(--text-color);
+}
+
+body.api-docs-page .docs-index-item-icon {
+    flex-shrink: 0;
+    font-size: 1.5rem;
+    color: var(--table-header-bg);
+}
+
+body.api-docs-page .docs-index-item-body {
+    flex: 1;
+    min-width: 0;
+}
+
+body.api-docs-page .docs-index-item-arrow {
+    flex-shrink: 0;
+    color: var(--text-muted-color);
+}

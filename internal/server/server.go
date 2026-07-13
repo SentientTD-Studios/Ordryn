@@ -83,6 +83,7 @@ func StartServer() error {
 	handleBoth("/signup", handlers.SignupPageHandler)
 	handleBoth("/register", handlers.RegisterHandler)
 	handleBoth("/about", handlers.AboutHandler)
+	handleBoth("/documentation", handlers.DocumentationHomeHandler)
 	handleBoth("/documentation/api/v1", handlers.APIDocsV1Handler)
 	handleBoth("/changelog", handlers.ChangelogHandler)
 	handleBoth("/search", handlers.SearchHandler)
