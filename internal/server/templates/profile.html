@@ -140,7 +140,7 @@
                             {{if .EnableAPI}}
                             <div class="mt-4 pt-4 border-top" id="api-keys-section">
                                 <h4 class="mb-2">REST API</h4>
-                                <p class="text-muted small">Create API keys to access <code>/api/v1/</code> endpoints. Keys are shown once at creation.</p>
+                                <p class="text-muted small">Create API keys to access <code>/api/v1/</code> endpoints. Keys are shown once at creation. See the <a href="{{basePath}}/documentation/api/v1">API documentation</a> for endpoint details.</p>
                                 {{if not .RedisAvailable}}
                                 <div class="alert alert-warning small">Redis is unavailable; API requests will be rejected until Redis is connected.</div>
                                 {{end}}
