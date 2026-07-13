@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -71,7 +72,7 @@ func ChangelogHandler(w http.ResponseWriter, r *http.Request) {
 	repo := strings.TrimSpace(os.Getenv("GITHUB_REPO"))
 	if repo != "" {
 		if entries, err := fetchFromGitHub(repo); err == nil {
-			entries = filterEntriesBySiteVersionWithSiteVersion(entries, siteVersion)
+			entries = prepareChangelogEntries(entries, siteVersion)
 			respondJSON(w, entries)
 			return
 		}
@@ -108,8 +109,7 @@ func ChangelogHandler(w http.ResponseWriter, r *http.Request) {
 			v[i].Html = normalizeReleaseHTML(v[i].Html, v[i].Version, v[i].Title, v[i].Date)
 		}
 	}
-	// Filter out releases that are newer than the current site version (baked-in)
-	v = filterEntriesBySiteVersionWithSiteVersion(v, siteVersion)
+	v = prepareChangelogEntries(v, siteVersion)
 	respondJSON(w, v)
 }
 
@@ -148,6 +148,40 @@ func filterEntriesBySiteVersionWithSiteVersion(entries []ChangelogEntry, siteVer
 		}
 	}
 	return out
+}
+
+func prepareChangelogEntries(entries []ChangelogEntry, siteVersion string) []ChangelogEntry {
+	out := filterEntriesBySiteVersionWithSiteVersion(entries, siteVersion)
+	sortChangelogEntries(out)
+	return out
+}
+
+func sortChangelogEntries(entries []ChangelogEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		vi := normalizeSemverTag(entries[i].Version)
+		vj := normalizeSemverTag(entries[j].Version)
+		if semver.IsValid(vi) && semver.IsValid(vj) {
+			if cmp := semver.Compare(vi, vj); cmp != 0 {
+				return cmp > 0
+			}
+			return entries[i].Date > entries[j].Date
+		}
+		if semver.IsValid(vi) {
+			return true
+		}
+		if semver.IsValid(vj) {
+			return false
+		}
+		return entries[i].Date > entries[j].Date
+	})
+}
+
+func normalizeSemverTag(v string) string {
+	v = strings.TrimSpace(v)
+	if v != "" && !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	return v
 }
 
 func respondJSON(w http.ResponseWriter, v interface{}) {
@@ -475,9 +509,8 @@ func ChangelogPageHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Filter entries by the baked-in site version so we don't show releases newer than the running site
 	siteVersion := version.Version
-	entries = filterEntriesBySiteVersionWithSiteVersion(entries, siteVersion)
+	entries = prepareChangelogEntries(entries, siteVersion)
 
 	// Get session user info for navbar
 	email, _, permissions, loggedIn := srvutils.GetSessionUser(r)
