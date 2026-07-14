@@ -14,14 +14,15 @@ import (
 
 // FilterContext holds active list filters for HTMX task views.
 type FilterContext struct {
-	Project  string
-	Status   string
-	Due      string
-	Priority string
-	Tag      string
-	Sort     string
-	Search   string
-	Page     int
+	Project   string
+	Status    string
+	Due       string
+	Completed string
+	Priority  string
+	Tag       string
+	Sort      string
+	Search    string
+	Page      int
 }
 
 func firstNonEmpty(values ...string) string {
@@ -68,15 +69,25 @@ func normalizeTagFilter(tag string) string {
 	return ""
 }
 
+func normalizeCompletedFilter(completed string) string {
+	switch strings.ToLower(strings.TrimSpace(completed)) {
+	case "week":
+		return "week"
+	default:
+		return ""
+	}
+}
+
 func filterContextFromRequest(r *http.Request) FilterContext {
 	fc := FilterContext{
-		Project:  firstNonEmpty(r.URL.Query().Get("project"), r.FormValue("project")),
-		Status:   requestStatusFilter(r),
-		Due:      normalizeDueFilter(firstNonEmpty(r.URL.Query().Get("due"), r.FormValue("due"))),
-		Sort:     normalizeSortFilter(firstNonEmpty(r.URL.Query().Get("sort"), r.FormValue("sort"))),
-		Priority: normalizePriorityFilter(firstNonEmpty(r.URL.Query().Get("priority"), r.FormValue("priority"))),
-		Tag:      normalizeTagFilter(firstNonEmpty(r.URL.Query().Get("tag"), r.FormValue("tag"))),
-		Search:   strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("search"), r.FormValue("search"))),
+		Project:   firstNonEmpty(r.URL.Query().Get("project"), r.FormValue("project")),
+		Status:    requestStatusFilter(r),
+		Due:       normalizeDueFilter(firstNonEmpty(r.URL.Query().Get("due"), r.FormValue("due"))),
+		Completed: normalizeCompletedFilter(firstNonEmpty(r.URL.Query().Get("completed"), r.FormValue("completed"))),
+		Sort:      normalizeSortFilter(firstNonEmpty(r.URL.Query().Get("sort"), r.FormValue("sort"))),
+		Priority:  normalizePriorityFilter(firstNonEmpty(r.URL.Query().Get("priority"), r.FormValue("priority"))),
+		Tag:       normalizeTagFilter(firstNonEmpty(r.URL.Query().Get("tag"), r.FormValue("tag"))),
+		Search:    strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("search"), r.FormValue("search"))),
 	}
 	if pageParam := firstNonEmpty(r.URL.Query().Get("page"), r.FormValue("page"), r.FormValue("currentPage")); pageParam != "" {
 		if page, err := strconv.Atoi(pageParam); err == nil && page > 0 {
@@ -109,6 +120,9 @@ func (fc FilterContext) queryValues() url.Values {
 	if fc.Tag != "" {
 		values.Set("tag", fc.Tag)
 	}
+	if fc.Completed != "" {
+		values.Set("completed", fc.Completed)
+	}
 	return values
 }
 
@@ -134,10 +148,11 @@ func (fc FilterContext) QuerySuffixWithout(keys ...string) string {
 
 func (fc FilterContext) ToListFilters() tasks.ListFilters {
 	lf := tasks.ListFilters{
-		ProjectFilter: parseProjectFilter(fc.Project),
-		StatusFilter:  fc.Status,
-		DueFilter:     fc.Due,
-		Sort:          fc.Sort,
+		ProjectFilter:   parseProjectFilter(fc.Project),
+		StatusFilter:    fc.Status,
+		DueFilter:       fc.Due,
+		CompletedFilter: fc.Completed,
+		Sort:            fc.Sort,
 	}
 	if fc.Priority != "" {
 		if p, err := strconv.Atoi(fc.Priority); err == nil {
@@ -157,6 +172,7 @@ func (fc FilterContext) TemplateFields() map[string]interface{} {
 		"ProjectFilter":       fc.Project,
 		"StatusFilter":        fc.Status,
 		"DueFilter":           fc.Due,
+		"CompletedFilter":     fc.Completed,
 		"SortFilter":          fc.Sort,
 		"PriorityFilter":      fc.Priority,
 		"TagFilter":           fc.Tag,
@@ -179,6 +195,89 @@ func parseProjectFilter(projectParam string) *int {
 		return &pid
 	}
 	return nil
+}
+
+// parseProjectFromPath extracts the project filter segment from /p/{id} URLs.
+func parseProjectFromPath(path string) string {
+	path = strings.TrimPrefix(path, "/p/")
+	base := utils.GetBasePath()
+	if base != "" && base != "/" {
+		path = strings.TrimPrefix(path, strings.TrimSuffix(base, "/")+"/p/")
+		path = strings.TrimPrefix(path, base+"/p/")
+	}
+	segment := strings.Trim(path, "/")
+	if segment == "" || strings.Contains(segment, "/") {
+		return ""
+	}
+	switch segment {
+	case "none":
+		return "none"
+	default:
+		if _, err := strconv.Atoi(segment); err != nil {
+			return ""
+		}
+		return segment
+	}
+}
+
+func projectPathSegment(projectParam string) string {
+	if projectParam == "" {
+		return ""
+	}
+	if projectParam == "0" || projectParam == "none" {
+		return "none"
+	}
+	if _, err := strconv.Atoi(projectParam); err == nil {
+		return projectParam
+	}
+	return ""
+}
+
+func projectFilterPageURL(basePath, project string, q url.Values) string {
+	seg := projectPathSegment(project)
+	if seg == "" {
+		return homeURLWithQuery(basePath, q)
+	}
+	values := url.Values{}
+	for k, vs := range q {
+		if k == "project" {
+			continue
+		}
+		values[k] = vs
+	}
+	prefix := strings.TrimSuffix(basePath, "/")
+	if prefix == "" || prefix == "/" {
+		prefix = ""
+	}
+	path := prefix + "/p/" + seg
+	encoded := values.Encode()
+	if encoded != "" {
+		return path + "?" + encoded
+	}
+	return path
+}
+
+func homeURLWithQuery(basePath string, q url.Values) string {
+	values := url.Values{}
+	for k, vs := range q {
+		if k == "project" {
+			continue
+		}
+		values[k] = vs
+	}
+	prefix := strings.TrimSuffix(basePath, "/")
+	if prefix == "" || prefix == "/" {
+		prefix = ""
+	}
+	path := prefix + "/"
+	if prefix == "" {
+		path = "/"
+	}
+	encoded := values.Encode()
+	if encoded != "" {
+		return path + "?" + encoded
+	}
+	return path
 }
 
 func normalizeStatusFilter(status string) string {
@@ -251,6 +350,42 @@ func completedIncompleteCounts(userID *int, projectFilter *int) (int, int) {
 	}
 
 	return completedCount, incompleteCount
+}
+
+func renderSingleTaskRow(w http.ResponseWriter, task tasks.Task, fc FilterContext, timezone string) error {
+	if fc.Search != "" {
+		task.Title = highlightMatches(task.Title, fc.Search)
+		task.Description = highlightMatches(task.Description, fc.Search)
+	}
+
+	data := struct {
+		Task           tasks.Task
+		BasePath       string
+		ProjectFilter  string
+		StatusFilter   string
+		DueFilter      string
+		SortFilter     string
+		PriorityFilter string
+		FilterQuery    string
+		Timezone       string
+		IsSearching    bool
+	}{
+		Task:           task,
+		BasePath:       utils.GetBasePath(),
+		ProjectFilter:  fc.Project,
+		StatusFilter:   fc.Status,
+		DueFilter:      fc.Due,
+		SortFilter:     fc.Sort,
+		PriorityFilter: fc.Priority,
+		FilterQuery:    fc.QuerySuffix(),
+		Timezone:       timezone,
+		IsSearching:    fc.Search != "",
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("HX-Retarget", fmt.Sprintf("#task-%d", task.ID))
+	w.Header().Set("HX-Reswap", "outerHTML")
+	return utils.Templates.ExecuteTemplate(w, "todo.html", data)
 }
 
 func renderFilteredTaskListPartial(w http.ResponseWriter, r *http.Request, page, pageSize int, fc FilterContext, userID *int, timezone string, loggedIn bool) error {

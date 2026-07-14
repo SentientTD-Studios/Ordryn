@@ -19,20 +19,26 @@
                 {{end}}
             </button>
             
-            <span role="button" tabindex="0" class="task-toggle title-text p-0" aria-expanded="false"
+            <button type="button" class="btn btn-link p-0 task-toggle title-text text-start" aria-expanded="false"
                 title="Created: {{.Task.DateCreated}}{{if .Task.DateModified}} | Modified: {{.Task.DateModified}}{{end}}">
                 {{safeHTML .Task.Title}}
-            </span>
+            </button>
             {{if .Task.ProjectName}}
             <span class="badge bg-secondary project-badge ms-1">{{.Task.ProjectName}}</span>
             {{end}}
             {{if eq .Task.Priority 1}}<span class="badge bg-secondary priority-badge ms-1">Low</span>{{end}}
             {{if eq .Task.Priority 2}}<span class="badge bg-warning text-dark priority-badge ms-1">Med</span>{{end}}
             {{if eq .Task.Priority 3}}<span class="badge bg-danger priority-badge ms-1">High</span>{{end}}
+        </div>
+    </td>
+    <td class="tags-column" data-label="Tags">
+        {{if .Task.Tags}}
+        <div class="tag-list">
             {{range .Task.Tags}}
-            <span class="tag-chip ms-1" style="background-color: {{.Color}};">{{.Name}}</span>
+            <span class="tag-chip" style="background-color: {{.Color}};">{{.Name}}</span>
             {{end}}
         </div>
+        {{end}}
     </td>
     <td class="desc-column" data-label="Description">
         {{if .Task.Description}}
@@ -48,8 +54,8 @@
             {{end}}
         {{end}}
     </td>
-    <td class="date-added {{dueDateClass .Task.DueDate .Task.Completed .Timezone}}" data-label="Due Date">
-        {{if eq (dueDateClass .Task.DueDate .Task.Completed .Timezone) "due-overdue"}}<i class="bi bi-exclamation-circle"></i> {{end}}{{.Task.DueDate}}
+    <td class="date-added {{dueDateClass .Task.DueDate .Task.Completed .Timezone}}" data-label="Due Date" title="{{.Task.DueDate}}">
+        {{if eq (dueDateClass .Task.DueDate .Task.Completed .Timezone) "due-overdue"}}<i class="bi bi-exclamation-circle"></i> {{end}}{{dueDateDisplay .Task.DueDate .Task.Completed .Timezone}}
     </td>
     <td class="actions-column" data-label="Actions">
         <div class="d-flex align-items-center gap-2 justify-content-start">
@@ -73,6 +79,12 @@
                 hx-get="{{basePath}}/api/edit?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
                 hx-target="#sidebar .sidebar-body" hx-swap="innerHTML" aria-label="Edit task">
                 <i class="bi bi-pencil"></i>
+            </button>
+
+            <button class="btn btn-link p-0 mx-1 duplicate-btn" style="text-decoration:none;"
+                hx-post="{{basePath}}/api/duplicate-task?id={{.Task.ID}}&page={{.Task.Page}}{{.FilterQuery}}"
+                hx-target="#task-container" hx-swap="innerHTML" aria-label="Duplicate task">
+                <i class="bi bi-copy"></i>
             </button>
 
             <button 

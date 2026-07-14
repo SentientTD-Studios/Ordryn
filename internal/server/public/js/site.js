@@ -1,17 +1,12 @@
 // Import all modules
-import {
-  apiPath,
-  captureFooterHTML,
-  restoreFooterIfMissing,
-  ensureToastContainer,
-  ensureTableClasses,
-  ensureTableStructure,
-} from "./modules/utils.js";
+import { apiPath } from "./modules/utils.js";
 import { initTheme, toggleTheme, attachThemeToggle } from "./modules/theme.js";
 import {
   initCharacterCounters,
   initializeProjectFormHandlers,
   initializeProjectRenameHandlers,
+  initializeTagRenameHandlers,
+  initDueDatePresets,
   handleDescriptionInput,
 } from "./modules/form-handlers.js";
 import {
@@ -45,6 +40,25 @@ import {
 import { initAnnouncementCharCounter } from "./modules/admin.js";
 import { initDescriptionToggles } from "./modules/descriptions.js";
 import { initBulkActions } from "./modules/bulk.js";
+import { initUndoDelete } from "./modules/undo.js";
+import { initFilterToolbar } from "./modules/filters.js";
+import { initSavedViews } from "./modules/saved-views.js";
+import { initShortcutsHint } from "./modules/onboarding.js";
+import { initProfilePage } from "./modules/profile.js";
+import { initHomePage } from "./modules/home-init.js";
+import { initNavigation } from "./modules/navigation.js";
+import { initCalendarPage } from "./modules/calendar.js";
+
+function configureHtmxCSP() {
+  if (typeof htmx === "undefined") return;
+  const nonceEl = document.querySelector("script[nonce]");
+  const nonce = nonceEl && nonceEl.getAttribute("nonce");
+  if (nonce) {
+    htmx.config.inlineScriptNonce = nonce;
+    htmx.config.allowEval = false;
+  }
+}
+configureHtmxCSP();
 
 // Expose these to global scope for HTMX and other inline scripts
 window.apiPath = apiPath;
@@ -53,15 +67,14 @@ window.closeSidebar = closeSidebar;
 window.openSidebar = openSidebar;
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Capture footer HTML for restoration if HTMX removes it
-  captureFooterHTML();
-
   // Initialize all modules
   initTheme();
   attachThemeToggle();
   initCharacterCounters();
   initializeProjectFormHandlers();
   initializeProjectRenameHandlers();
+  initializeTagRenameHandlers();
+  initDueDatePresets();
   initializeSidebarEventListeners();
   attachSortableInitializers();
   initializeModalEventListeners();
@@ -72,7 +85,21 @@ document.addEventListener("DOMContentLoaded", () => {
   initAnnouncementCharCounter();
   initDescriptionToggles();
   initBulkActions();
+  initUndoDelete();
   initKeyboardShortcuts();
+  initFilterToolbar();
+  initSavedViews();
+  initShortcutsHint();
+  initNavigation();
+  if (document.querySelector('main[data-page="home"]')) {
+    initHomePage();
+  }
+  if (document.querySelector('main[data-page="profile"]')) {
+    initProfilePage();
+  }
+  if (document.querySelector('main[data-page="calendar"]')) {
+    initCalendarPage();
+  }
   initRevealTokenButtons();
 
   // Debug helper: when ?cssdebug=1 is present in the URL, log which media queries match.

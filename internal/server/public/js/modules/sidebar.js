@@ -1,6 +1,6 @@
 import { apiPath } from "./utils.js";
 import { attachThemeToggle, initTheme } from "./theme.js";
-import { handleDescriptionInput } from "./form-handlers.js";
+import { bindDueDatePresets, handleDescriptionInput } from "./form-handlers.js";
 
 let sidebarFocusHandler = null;
 let lastFocusedBeforeSidebar = null;
@@ -59,12 +59,39 @@ function syncSidebarFilterFields(form) {
   );
 }
 
+const SIDEBAR_LOADING_HTML =
+  '<div class="sidebar-loading" aria-busy="true">' +
+  '<div class="spinner-border text-primary" role="status">' +
+  '<span class="visually-hidden">Loading task…</span></div>' +
+  '<p class="mb-0">Loading task…</p></div>';
+
+function getSidebarBackdrop() {
+  return document.getElementById("sidebar-backdrop");
+}
+
+function setSidebarBackdrop(active) {
+  const backdrop = getSidebarBackdrop();
+  if (!backdrop) return;
+  backdrop.classList.toggle("active", active);
+  backdrop.setAttribute("aria-hidden", active ? "false" : "true");
+}
+
+function showSidebarLoading() {
+  const sidebar = document.getElementById("sidebar");
+  if (!sidebar) return;
+  const body = sidebar.querySelector(".sidebar-body");
+  if (body) body.innerHTML = SIDEBAR_LOADING_HTML;
+  const title = sidebar.querySelector(".sidebar-header h5");
+  if (title) title.textContent = "Edit Task";
+}
+
 export function openSidebar() {
   const sidebar = document.getElementById("sidebar");
   if (!sidebar) return;
 
   lastFocusedBeforeSidebar = document.activeElement;
   sidebar.classList.add("active");
+  setSidebarBackdrop(true);
 
   const focusables = getSidebarFocusable(sidebar);
   const first = focusables[0] || sidebar.querySelector("#title");
@@ -97,6 +124,7 @@ export function closeSidebar() {
   if (sidebar) {
     sidebar.classList.remove("active");
   }
+  setSidebarBackdrop(false);
   if (sidebarFocusHandler) {
     document.removeEventListener("keydown", sidebarFocusHandler);
     sidebarFocusHandler = null;
@@ -138,7 +166,10 @@ export function initializeSidebarEventListeners() {
             tf.setAttribute("hx-post", apiPath("/api/add-task"));
           } catch (e) {}
           const cp = tf.querySelector('input[name="currentPage"]');
-          if (cp) cp.value = "1";
+          if (cp) {
+            const pageEl = document.getElementById("current-page");
+            cp.value = (pageEl && pageEl.value) || "1";
+          }
           const newTagsEl = tf.querySelector("#new_tags");
           if (newTagsEl) newTagsEl.value = "";
           tf.querySelectorAll('input[name="tag_ids"]').forEach((cb) => {
@@ -163,6 +194,13 @@ export function initializeSidebarEventListeners() {
   // Reattach theme toggle if needed
   attachThemeToggle();
 
+  try {
+    const tf = document.getElementById("newTaskForm");
+    if (tf) {
+      bindDueDatePresets(tf);
+    }
+  } catch (e) {}
+
   // Reattach task form submit listener so dynamically swapped forms behave the same
   try {
     const tf = document.getElementById("newTaskForm");
@@ -178,9 +216,17 @@ export function initializeSidebarEventListeners() {
         }
       } catch (e) {}
       tf.addEventListener("htmx:afterRequest", (event) => {
+        const elt = event.detail && event.detail.elt;
+        if (elt !== tf) return;
+
+        const xhr = event.detail && event.detail.xhr;
+        const responseURL = xhr && xhr.responseURL ? xhr.responseURL : "";
+        const isAddTask = responseURL.includes("/api/add-task");
+        const isEditTask = responseURL.includes("/api/edit-task");
+        if (!isAddTask && !isEditTask) return;
+
         let isValidationError = false;
         try {
-          const xhr = event.detail && event.detail.xhr;
           const header =
             xhr && xhr.getResponseHeader
               ? xhr.getResponseHeader("X-Validation-Error")
@@ -198,14 +244,17 @@ export function initializeSidebarEventListeners() {
 
         if (event.detail.successful && !isValidationError) {
           closeSidebar();
-          const tEl = document.getElementById("title");
-          if (tEl) tEl.value = "";
-          const dEl = document.getElementById("description");
-          if (dEl) dEl.value = "";
-          const charCount = document.getElementById("char-count");
-          if (charCount) charCount.textContent = "0";
-          const errorDiv = document.getElementById("description-error");
-          if (errorDiv) errorDiv.innerHTML = "";
+          // Only reset fields after adding a task — not after editing
+          if (isAddTask) {
+            const tEl = tf.querySelector("#title");
+            if (tEl) tEl.value = "";
+            const dEl = tf.querySelector("#description");
+            if (dEl) dEl.value = "";
+            const charCount = tf.querySelector("#char-count");
+            if (charCount) charCount.textContent = "0";
+            const errorDiv = tf.querySelector("#description-error");
+            if (errorDiv) errorDiv.innerHTML = "";
+          }
         }
       });
       tf.classList.add("task-form-initialized");
@@ -223,8 +272,8 @@ function handleEditButtonClick(e) {
   try {
     const btn = e.target && e.target.closest && e.target.closest(".edit-btn");
     if (!btn) return;
-    const sb = document.getElementById("sidebar");
-    if (sb) sb.classList.add("active");
+    showSidebarLoading();
+    openSidebar();
   } catch (e) {}
 }
 
@@ -232,6 +281,12 @@ export function attachContextualCloseSidebar() {
   // Delegated close button handler: works even if the sidebar markup was swapped
   document.body.removeEventListener("click", handleSidebarCloseClick);
   document.body.addEventListener("click", handleSidebarCloseClick);
+
+  const backdrop = getSidebarBackdrop();
+  if (backdrop) {
+    backdrop.removeEventListener("click", closeSidebar);
+    backdrop.addEventListener("click", closeSidebar);
+  }
 }
 
 function handleSidebarCloseClick(e) {
@@ -254,20 +309,36 @@ export function handleSidebarAwareSettle() {
 
 function handleAfterSwapForSidebar(event) {
   const sidebarElement = document.getElementById("sidebar");
-  if (sidebarElement && sidebarElement.classList.contains("active")) {
-    let description = document.getElementById("description");
-    let charCount = document.getElementById("char-count");
-    if (description && charCount) {
-      handleDescriptionInput(charCount);
-    }
-    if (typeof initTheme === "function") {
-      initTheme();
-    }
-    const tf = document.getElementById("newTaskForm");
-    if (tf) {
-      syncSidebarFilterFields(tf);
-      const first = sidebarElement.querySelector("#title, input:not([type=\"hidden\"])");
-      if (first) first.focus();
-    }
+  if (!sidebarElement || !sidebarElement.classList.contains("active")) return;
+
+  const target = (event.detail && event.detail.target) || event.target;
+  if (!target) return;
+
+  // Ignore inline validation / activity loads — only react to full sidebar swaps.
+  if (target.id === "description-error") return;
+  if (target.closest && target.closest("details.task-timeline")) return;
+  if (
+    !target.classList.contains("sidebar-body") &&
+    target.id !== "sidebar"
+  ) {
+    return;
+  }
+
+  let description = document.getElementById("description");
+  let charCount = document.getElementById("char-count");
+  if (description && charCount) {
+    handleDescriptionInput(charCount);
+  }
+  if (typeof initTheme === "function") {
+    initTheme();
+  }
+  const tf = document.getElementById("newTaskForm");
+  if (tf) {
+    bindDueDatePresets(tf);
+    syncSidebarFilterFields(tf);
+    const first = sidebarElement.querySelector(
+      '#title, input:not([type="hidden"])',
+    );
+    if (first) first.focus();
   }
 }

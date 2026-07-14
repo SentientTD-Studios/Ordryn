@@ -6,6 +6,7 @@ nodemon.json
 config.json
 RELEASE_NOTES_DRAFT.md
 .prettierignore
+docs/
 
 # Node/npm
 node_modules/

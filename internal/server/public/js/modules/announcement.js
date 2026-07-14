@@ -1,3 +1,5 @@
+import { apiPath } from "./utils.js";
+
 export function dismissGlobalAnnouncement() {
   const announcement = document.getElementById("global-announcement");
   if (announcement) {

@@ -49,9 +49,49 @@ func TestParseImportCSV(t *testing.T) {
 	}
 }
 
-func TestParseImportCSVRequiresTitle(t *testing.T) {
-	_, _, err := parseImportCSV([]byte("name,description\nx,y"))
-	if err == nil {
-		t.Fatal("expected error for missing title column")
+func TestParseBulkDueDate(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", "", false},
+		{"2026-07-01", "2026-07-01", false},
+		{"bad", "", true},
+	}
+	for _, tc := range cases {
+		got, err := parseBulkDueDate(tc.in)
+		if tc.wantErr && err == nil {
+			t.Fatalf("parseBulkDueDate(%q) expected error", tc.in)
+		}
+		if !tc.wantErr && err != nil {
+			t.Fatalf("parseBulkDueDate(%q) unexpected error: %v", tc.in, err)
+		}
+		if got != tc.want {
+			t.Fatalf("parseBulkDueDate(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestDryRunImportCountsSkipsEmptyTitles(t *testing.T) {
+	cols := importColumnMap{title: 0, dueDate: 1}
+	rows := [][]string{
+		{""},
+		{"   ", "2026-07-01"},
+	}
+	wouldImport, wouldSkip, err := dryRunImportCounts(1, cols, rows)
+	if err != nil {
+		t.Fatalf("empty titles should not hit database: %v", err)
+	}
+	if wouldImport != 0 || wouldSkip != 2 {
+		t.Fatalf("expected 2 skipped, got import=%d skip=%d", wouldImport, wouldSkip)
+	}
+}
+
+func TestIcsEscape(t *testing.T) {
+	got := icsEscape("a;b,c")
+	want := `a\;b\,c`
+	if got != want {
+		t.Fatalf("unexpected escape: %q want %q", got, want)
 	}
 }

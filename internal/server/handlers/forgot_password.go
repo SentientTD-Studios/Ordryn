@@ -200,7 +200,7 @@ func APIResetPassword(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Internal server error")
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	_, err = db.Exec(context.Background(), "UPDATE users SET password = $1 WHERE email = $2", string(hashedPassword), reset.Email)
 	if err != nil {

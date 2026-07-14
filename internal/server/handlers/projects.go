@@ -34,9 +34,16 @@ func ProjectsPageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tags, err := storage.GetTagsForUser(*uidPtr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching tags: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	ctx := map[string]interface{}{
 		"LoggedIn": loggedIn,
 		"Projects": projects,
+		"Tags":     tags,
 	}
 	utils.RenderTemplate(w, r, "projects.html", ctx)
 }

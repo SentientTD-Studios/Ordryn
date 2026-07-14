@@ -68,7 +68,7 @@ function attachModalFocusTrap(modalEl) {
 }
 
 export function initializeModalEventListeners() {
-  ["modal", "loginmodal", "shortcutsModal"].forEach((id) => {
+  ["modal", "loginmodal", "shortcutsModal", "changelogModal"].forEach((id) => {
     const modalEl = document.getElementById(id);
     if (modalEl) attachModalFocusTrap(modalEl);
   });

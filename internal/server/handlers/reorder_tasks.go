@@ -6,6 +6,7 @@ import (
 	"GoTodo/internal/storage"
 	"GoTodo/internal/tasks"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -111,7 +112,7 @@ func APIReorderTasks(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	var userID int
 	if uid := utils.GetSessionUserID(r); uid != nil {
@@ -126,140 +127,6 @@ func APIReorderTasks(w http.ResponseWriter, r *http.Request) {
 
 	projectFilter := parseProjectFilter(projectParam)
 
-	// Validate that all provided IDs belong to the user and match is_favorite and project (if provided)
-	for _, id := range ids {
-		var exists bool
-		projectCond := ""
-		args := []interface{}{id, userID, isFav}
-		if projectFilter != nil {
-			if *projectFilter == 0 {
-				projectCond = " AND project_id IS NULL"
-			} else {
-				projectCond = " AND project_id = $4"
-				args = append(args, *projectFilter)
-			}
-		}
-		query := "SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1 AND user_id = $2 AND COALESCE(is_favorite,false) = $3" + projectCond + ")"
-		err = db.QueryRow(context.Background(), query, args...).Scan(&exists)
-		if err != nil {
-			http.Error(w, "Error validating tasks", http.StatusInternalServerError)
-			return
-		}
-		if !exists {
-			http.Error(w, "Task does not belong to user or mismatched favorite group/project", http.StatusBadRequest)
-			return
-		}
-	}
-
-	// Fetch all task IDs in this user's group ordered by position so we can renumber globally
-	projectCondAll := ""
-	argsAll := []interface{}{userID, isFav}
-	q := "SELECT id FROM tasks WHERE user_id = $1 AND COALESCE(is_favorite,false) = $2"
-	if projectFilter != nil {
-		if *projectFilter == 0 {
-			projectCondAll = " AND project_id IS NULL"
-			q += projectCondAll
-		} else {
-			projectCondAll = " AND project_id = $3"
-			q += projectCondAll
-			argsAll = append(argsAll, *projectFilter)
-		}
-	}
-	q += " ORDER BY position ASC, id ASC"
-	rowsAll, err := db.Query(context.Background(), q, argsAll...)
-	if err != nil {
-		http.Error(w, "Error fetching task list for reorder", http.StatusInternalServerError)
-		return
-	}
-	defer rowsAll.Close()
-
-	allIDs := make([]int, 0)
-	for rowsAll.Next() {
-		var tid int
-		if err := rowsAll.Scan(&tid); err != nil {
-			http.Error(w, "Error reading task ids", http.StatusInternalServerError)
-			return
-		}
-		allIDs = append(allIDs, tid)
-	}
-
-	if len(allIDs) == 0 {
-		// Nothing to reorder
-	} else {
-		// Compute page window start index and clamp
-		pageSize := utils.AppConstants.PageSize
-		if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
-			if val, ok := sess.Values["items_per_page"]; ok {
-				switch tv := val.(type) {
-				case int:
-					if tv > 0 {
-						pageSize = tv
-					}
-				case int64:
-					if int(tv) > 0 {
-						pageSize = int(tv)
-					}
-				case float64:
-					if int(tv) > 0 {
-						pageSize = int(tv)
-					}
-				case string:
-					if v, err := strconv.Atoi(tv); err == nil && v > 0 {
-						pageSize = v
-					}
-				}
-			}
-		}
-
-		start := (page - 1) * pageSize
-		if start < 0 {
-			start = 0
-		}
-		// Ensure the replacement window fits in the allIDs slice
-		if start > len(allIDs)-len(ids) {
-			start = len(allIDs) - len(ids)
-			if start < 0 {
-				start = 0
-			}
-		}
-
-		// Replace the slice segment with the new ordering provided by the client
-		for i, id := range ids {
-			if start+i < len(allIDs) {
-				allIDs[start+i] = id
-			} else {
-				// Append if somehow beyond end
-				allIDs = append(allIDs, id)
-			}
-		}
-
-		// Update positions for allIDs inside a transaction
-		tx, err := db.Begin(context.Background())
-		if err != nil {
-			http.Error(w, "Error starting transaction", http.StatusInternalServerError)
-			return
-		}
-		defer tx.Rollback(context.Background())
-
-		for idx, id := range allIDs {
-			pos := idx + 1
-			_, err := tx.Exec(context.Background(), "UPDATE tasks SET position = $1 WHERE id = $2 AND user_id = $3", pos, id, userID)
-			if err != nil {
-				http.Error(w, "Error updating positions", http.StatusInternalServerError)
-				return
-			}
-		}
-
-		if err := tx.Commit(context.Background()); err != nil {
-			http.Error(w, "Error committing position updates", http.StatusInternalServerError)
-			return
-		}
-		if len(ids) > 0 {
-			logTaskEvent(ids[0], userID, "reordered", map[string]interface{}{"count": len(ids)})
-		}
-	}
-
-	// Determine page size from session
 	pageSize := utils.AppConstants.PageSize
 	if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
 		if val, ok := sess.Values["items_per_page"]; ok {
@@ -282,6 +149,15 @@ func APIReorderTasks(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	if err := reorderTaskPositions(context.Background(), db, userID, ids, isFav, page, pageSize, projectFilter); err != nil {
+		if errors.Is(err, ErrReorderValidation) {
+			http.Error(w, "Task does not belong to user or mismatched favorite group/project", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Error updating positions", http.StatusInternalServerError)
+		return
 	}
 
 	// Optional project filter

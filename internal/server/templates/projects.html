@@ -1,8 +1,19 @@
 <!doctype html>
 <html lang="en" {{if .Theme}}data-theme="{{.Theme}}"{{end}}>
     <head>
+        <script nonce="{{.CSPNonce}}">
+            (function () {
+                try {
+                    if (!document.documentElement.getAttribute('data-theme')) {
+                        var theme = localStorage.getItem('theme');
+                        if (theme) document.documentElement.setAttribute('data-theme', theme);
+                    }
+                } catch (e) {}
+            })();
+        </script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
         {{if .MetaDescription}}<meta name="description" content="{{.MetaDescription}}" />{{end}}
         <title>Projects - {{.SiteName}}</title>
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
@@ -10,9 +21,14 @@
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
     </head>
     <body>
+        <div id="htmx-loading-bar" aria-hidden="true"></div>
+        <div id="htmx-loading-indicator" class="htmx-indicator" aria-hidden="true" aria-live="polite">
+            <span class="spinner-border spinner-border-sm" role="status"></span>
+            <span>Loading…</span>
+        </div>
         {{template "navbar.html" .}}
 
-        <main>
+        <main data-page="projects">
         <div class="container mt-4">
             <div class="row">
                 <div class="col-md-8">
@@ -27,6 +43,17 @@
                             </div>
                         </div>
                     </div>
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h3 class="mb-0 h5">Your Tags</h3>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">Rename or delete tags. Deleting a tag removes it from all tasks.</p>
+                            <div id="tags-list">
+                                {{template "tags_list.html" .}}
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-4">
                     <div class="card">
@@ -34,7 +61,7 @@
                             <h5 class="mb-0">Create Project</h5>
                         </div>
                         <div class="card-body">
-                            <form method="post" action="{{basePath}}/api/projects/create" hx-post="{{basePath}}/api/projects/create" hx-target="#projects-list" hx-swap="innerHTML" id="createProjectForm">
+                            <form method="post" action="{{basePath}}/api/projects/create" hx-post="{{basePath}}/api/projects/create" hx-target="#projects-list" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator" id="createProjectForm">
                                 <div class="mb-3">
                                     <label class="form-label">Project Name</label>
                                     <input class="form-control" name="name" id="project-name" maxlength="50" required />

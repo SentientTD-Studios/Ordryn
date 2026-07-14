@@ -5,6 +5,7 @@ import {
   attachEditButtonListeners,
   attachContextualCloseSidebar,
   handleSidebarAwareSettle,
+  openSidebar,
 } from "./sidebar.js";
 import { initializeModalEventListeners } from "./modal.js";
 import {
@@ -12,6 +13,43 @@ import {
   initCharacterCounters,
 } from "./form-handlers.js";
 import { showToast } from "./notifications.js";
+import { initSortable } from "./sortable.js";
+
+/** Registry of hooks run after manual task-list HTML swaps. */
+const postSwapHooks = [];
+
+export function registerPostSwapHook(fn) {
+  postSwapHooks.push(fn);
+}
+
+function runPostSwapHooks(container) {
+  for (const fn of postSwapHooks) {
+    try {
+      fn(container);
+    } catch (e) {}
+  }
+}
+
+/** Replace task list HTML from fetch responses and re-bind HTMX + UI hooks. */
+export function swapTaskContainerHtml(html) {
+  const container = document.getElementById("task-container");
+  if (!container) return false;
+
+  container.innerHTML = html;
+  try {
+    if (typeof htmx !== "undefined") htmx.process(container);
+  } catch (e) {}
+  try {
+    initSortable();
+    syncSortButtonState();
+    syncFilterToolbarState();
+    initializeModalEventListeners();
+    attachEditButtonListeners();
+    runPostSwapHooks(container);
+  } catch (e) {}
+  document.body.dispatchEvent(new CustomEvent("bulk-list-updated"));
+  return true;
+}
 
 function getTaskListPage() {
   const pageInput = document.getElementById("current-page");
@@ -43,6 +81,7 @@ function buildTaskListUrl(page, options = {}) {
     }
   };
   appendHidden("due-filter", "due", options.due);
+  appendHidden("completed-filter", "completed", options.completed);
   appendHidden("sort-filter", "sort", options.sort);
   const readFilter = (toolbarId, hiddenId, param, override) => {
     if (override !== undefined) {
@@ -204,15 +243,18 @@ export function attachHTMXAfterRequestListener() {
       const xhr = evt && evt.detail && evt.detail.xhr;
       if (!xhr || !xhr.responseURL) return;
 
-      if (xhr.responseURL.includes("/api/edit")) {
+      // Load edit form only — not edit-task saves (URL also contains "/api/edit")
+      if (
+        xhr.responseURL.includes("/api/edit") &&
+        !xhr.responseURL.includes("/api/edit-task")
+      ) {
         // Only open on success (2xx)
         const status = xhr.status || 0;
         if (status >= 200 && status < 300) {
           try {
             initializeSidebarEventListeners();
           } catch (e) {}
-          const sb = document.getElementById("sidebar");
-          if (sb) sb.classList.add("active");
+          openSidebar();
         }
       }
 
@@ -322,8 +364,7 @@ export function attachHTMXAfterSwapListeners() {
         try {
           initializeSidebarEventListeners();
         } catch (e) {}
-        const sb = document.getElementById("sidebar");
-        if (sb) sb.classList.add("active");
+        openSidebar();
       }
     } catch (e) {}
   });
@@ -343,8 +384,7 @@ export function attachHTMXAfterSwapListeners() {
         try {
           initializeSidebarEventListeners();
         } catch (e) {}
-        const sb = document.getElementById("sidebar");
-        if (sb) sb.classList.add("active");
+        openSidebar();
       }
     } catch (e) {}
   });
@@ -359,6 +399,90 @@ export function attachHTMXAfterSwapListeners() {
       try {
         initializeModalEventListeners();
       } catch (e) {}
+    }
+  });
+}
+
+export function attachHTMXErrorListeners() {
+  document.body.addEventListener("htmx:responseError", (evt) => {
+    const xhr = evt.detail?.xhr;
+    if (!xhr) return;
+    if (xhr.getResponseHeader?.("X-Validation-Error") === "true") return;
+    const url = xhr.responseURL || "";
+    if (url.includes("/api/validate-description")) return;
+
+    const status = xhr.status;
+    const msg =
+      status && status >= 500
+        ? "Something went wrong on the server. Please try again."
+        : "Request failed. Please try again.";
+    showToast(msg, { error: true });
+  });
+
+  document.body.addEventListener("htmx:sendError", () => {
+    showToast("Network error. Check your connection and try again.", {
+      error: true,
+    });
+  });
+}
+
+export function attachHTMXLoadingListeners() {
+  let savedScrollY = 0;
+  const loadingTargets = new Set([
+    "task-container",
+    "import-result",
+    "sidebar",
+  ]);
+
+  function isLoadingTarget(evt) {
+    const detail = evt.detail;
+    if (!detail) return false;
+    const targetSel =
+      detail.elt?.getAttribute?.("hx-target") ||
+      detail.target?.getAttribute?.("id");
+    if (targetSel === "#task-container" || targetSel === "task-container") {
+      return true;
+    }
+    if (targetSel === "#import-result" || targetSel === "import-result") {
+      return true;
+    }
+    if (
+      targetSel === "#sidebar .sidebar-body" ||
+      detail.target?.classList?.contains("sidebar-body")
+    ) {
+      return true;
+    }
+    const targetId = detail.target?.id;
+    return targetId && loadingTargets.has(targetId);
+  }
+
+  document.body.addEventListener("htmx:beforeRequest", (evt) => {
+    if (!isLoadingTarget(evt)) return;
+    document.body.classList.add("htmx-loading");
+    const container = document.getElementById("task-container");
+    if (
+      container &&
+      (evt.detail.target?.id === "task-container" ||
+        evt.detail.elt?.getAttribute("hx-target") === "#task-container")
+    ) {
+      savedScrollY = window.scrollY;
+      container.classList.add("task-container-loading");
+    }
+  });
+
+  document.body.addEventListener("htmx:afterRequest", () => {
+    document.body.classList.remove("htmx-loading");
+  });
+
+  document.body.addEventListener("htmx:afterSettle", (evt) => {
+    const target = evt.detail?.target || evt.target;
+    if (!target) return;
+
+    if (target.id === "task-container") {
+      target.classList.remove("task-container-loading");
+      target.classList.add("task-container-fade-in");
+      window.scrollTo(0, savedScrollY);
+      setTimeout(() => target.classList.remove("task-container-fade-in"), 300);
     }
   });
 }
@@ -386,6 +510,8 @@ export function attachAllEventListeners() {
   attachHTMXAfterRequestListener();
   attachHTMXAfterSettleListener();
   attachHTMXAfterSwapListeners();
+  attachHTMXLoadingListeners();
+  attachHTMXErrorListeners();
   attachEditButtonListeners();
   attachContextualCloseSidebar();
   syncSortButtonState();

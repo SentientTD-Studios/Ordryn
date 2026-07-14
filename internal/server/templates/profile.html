@@ -13,6 +13,7 @@
         </script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
         {{if .MetaDescription}}<meta name="description" content="{{.MetaDescription}}" />{{end}}
         <title>User Profile</title>
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
@@ -20,13 +21,15 @@
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
     </head>
     <body class="profile-page">
+        <div id="htmx-loading-indicator" class="htmx-indicator" aria-hidden="true" aria-live="polite">
+            <span class="spinner-border spinner-border-sm" role="status"></span>
+            <span>Loading…</span>
+        </div>
         {{template "navbar.html" .}}
 
-        <main>
-        <div class="container mt-5">
-            <div class="row justify-content-center">
-                <div class="col-md-6">
-                    <div class="card">
+        <main data-page="profile">
+        <div class="container mt-3">
+            <div class="card">
                         <div class="card-header">
                             <h2 class="card-title mb-0">User Profile</h2>
                         </div>
@@ -47,6 +50,7 @@
 
 
                             <form id="profileForm">
+                                <input type="hidden" name="csrf_token" id="csrf_token" value="{{.CSRFToken}}" />
                                 <div class="mb-3">
                                     <label for="user_name" class="form-label fw-bold">Name</label>
                                     <input type="text" id="user_name" name="user_name" class="form-control editable-field" value="{{.Name}}" maxlength="100" required autocomplete="name" />
@@ -54,19 +58,9 @@
                                 <div class="mb-3">
                                     <label for="timezone" class="form-label fw-bold">Timezone</label>
                                     <select id="timezone" class="form-select" name="timezone" required>
-                                        <option value="America/New_York" {{if eq .Timezone "America/New_York"}}selected{{end}}>Eastern Time (ET) - GMT-5</option>
-                                        <option value="America/Chicago" {{if eq .Timezone "America/Chicago"}}selected{{end}}>Central Time (CT) - GMT-6</option>
-                                        <option value="America/Denver" {{if eq .Timezone "America/Denver"}}selected{{end}}>Mountain Time (MT) - GMT-7</option>
-                                        <option value="America/Los_Angeles" {{if eq .Timezone "America/Los_Angeles"}}selected{{end}}>Pacific Time (PT) - GMT-8</option>
-                                        <option value="America/Anchorage" {{if eq .Timezone "America/Anchorage"}}selected{{end}}>Alaska Time (AKT) - GMT-9</option>
-                                        <option value="Pacific/Honolulu" {{if eq .Timezone "Pacific/Honolulu"}}selected{{end}}>Hawaii Time (HST) - GMT-10</option>
-                                        <option value="UTC" {{if eq .Timezone "UTC"}}selected{{end}}>UTC - GMT+0</option>
-                                        <option value="Europe/London" {{if eq .Timezone "Europe/London"}}selected{{end}}>London (GMT) - GMT+0</option>
-                                        <option value="Europe/Paris" {{if eq .Timezone "Europe/Paris"}}selected{{end}}>Central European Time (CET) - GMT+1</option>
-                                        <option value="Asia/Kolkata" {{if eq .Timezone "Asia/Kolkata"}}selected{{end}}>India Standard Time (IST) - GMT+5:30</option>
-                                        <option value="Asia/Shanghai" {{if eq .Timezone "Asia/Shanghai"}}selected{{end}}>China Standard Time (CST) - GMT+8</option>
-                                        <option value="Asia/Tokyo" {{if eq .Timezone "Asia/Tokyo"}}selected{{end}}>Japan Standard Time (JST) - GMT+9</option>
-                                        <option value="Pacific/Auckland" {{if eq .Timezone "Pacific/Auckland"}}selected{{end}}>New Zealand Time (NZDT) - GMT+13</option>
+                                        {{range .AllowedTimezones}}
+                                        <option value="{{.}}" {{if eq $.Timezone .}}selected{{end}}>{{.}}</option>
+                                        {{end}}
                                     </select>
                                 </div>
 
@@ -80,7 +74,14 @@
                                     </select>
                                 </div>
 
-                                
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="digest_enabled" name="digest_enabled" {{if .DigestEnabled}}checked{{end}} />
+                                        <label class="form-check-label" for="digest_enabled">Daily email digest (overdue &amp; due today)</label>
+                                    </div>
+                                    <label for="digest_hour" class="form-label small text-muted mt-1">Send at hour (your timezone)</label>
+                                    <input type="number" class="form-control form-control-sm" id="digest_hour" name="digest_hour" min="0" max="23" value="{{.DigestHour}}" />
+                                </div>
 
                                 <div class="d-flex gap-2">
                                     <button type="submit" class="btn btn-primary">
@@ -91,6 +92,103 @@
                                     </a>
                                 </div>
                             </form>
+
+                            <!-- Calendar feed -->
+                            <div class="mt-4 pt-4 border-top" id="calendar-feed">
+                                <h4 class="mb-3">Calendar feed</h4>
+                                <p class="text-muted small">
+                                    Subscribe to incomplete tasks with due dates in any calendar app. Export is read-only; import due-date changes below.
+                                </p>
+                                <div id="calendar-feed-block">
+                                    {{if .CalendarFeedURL}}
+                                    <label for="calendar-feed-url" class="form-label fw-bold">Subscribe URL</label>
+                                    <p class="text-muted small">Treat this URL like a password — anyone with it can see your task titles. Regenerate if leaked.</p>
+                                    <div class="input-group mb-2">
+                                        <input type="text" class="form-control" id="calendar-feed-url" readonly value="{{.CalendarFeedURL}}" />
+                                        <button type="button" class="btn btn-outline-secondary" id="copy-calendar-url" data-url="{{.CalendarFeedURL}}">
+                                            <i class="bi bi-clipboard"></i> Copy
+                                        </button>
+                                    </div>
+                                    {{else if .CalendarTokenErr}}
+                                    <p class="text-warning">{{.CalendarTokenErr}}</p>
+                                    {{else}}
+                                    <p class="text-muted">Calendar link unavailable. Save your profile or regenerate below.</p>
+                                    {{end}}
+                                </div>
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-warning btn-sm"
+                                    id="regenerate-calendar-token"
+                                    hx-post="{{basePath}}/api/calendar/regenerate-token"
+                                    hx-target="#calendar-feed-block"
+                                    hx-swap="innerHTML"
+                                    hx-indicator="#htmx-loading-indicator"
+                                    hx-confirm="Regenerate calendar link? Existing calendar subscriptions will stop updating."
+                                >
+                                    <i class="bi bi-arrow-repeat"></i> Regenerate link
+                                </button>
+                                <p class="text-muted small mt-2 mb-3">Regenerating invalidates any existing subscription URL.</p>
+                                <form id="calendar-sync-form" hx-post="{{basePath}}/api/calendar/sync-due-dates" hx-target="#calendar-sync-result" hx-encoding="multipart/form-data" hx-indicator="#htmx-loading-indicator" class="mb-0">
+                                    <label class="form-label fw-bold">Import due dates from calendar</label>
+                                    <p class="text-muted small">Export your subscribed calendar as .ics, then upload to sync due-date changes back to GoTodo.</p>
+                                    <input type="file" name="ics_file" accept=".ics,text/calendar" class="form-control form-control-sm mb-2" required />
+                                    <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-upload"></i> Sync due dates</button>
+                                </form>
+                                <div id="calendar-sync-result" class="mt-2"></div>
+                            </div>
+
+                            {{if .EnableAPI}}
+                            <div class="mt-4 pt-4 border-top" id="api-keys-section">
+                                <h4 class="mb-2">REST API</h4>
+                                <p class="text-muted small">Create API keys to access <code>/api/v1/</code> endpoints. Keys are shown once at creation. See the <a href="{{basePath}}/documentation/api/v1">API documentation</a> for endpoint details.</p>
+                                {{if not .RedisAvailable}}
+                                <div class="alert alert-warning small">Redis is unavailable; API requests will be rejected until Redis is connected.</div>
+                                {{end}}
+                                <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                                    <div class="flex-grow-1">
+                                        <label for="api-key-name" class="form-label small mb-1">Key name</label>
+                                        <input type="text" class="form-control form-control-sm" id="api-key-name" placeholder="e.g. Mobile app" maxlength="80" />
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-sm" id="create-api-key-btn">
+                                        <i class="bi bi-plus-lg"></i> Create key
+                                    </button>
+                                </div>
+                                <div id="api-key-reveal-panel" class="api-key-reveal-panel" hidden>
+                                    <p class="api-key-reveal-title mb-2">New API key — copy now, it won't be shown again</p>
+                                    <div class="input-group input-group-sm mb-2">
+                                        <input type="text" class="form-control font-monospace" id="api-key-plaintext" readonly aria-label="New API key" />
+                                        <button type="button" class="btn btn-outline-secondary" id="copy-api-key-btn"><i class="bi bi-clipboard"></i> Copy</button>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-link px-0" id="dismiss-api-key-reveal">Dismiss</button>
+                                </div>
+                                <div id="api-keys-list">
+                                    {{if .APIKeys}}
+                                    <div class="api-key-list">
+                                        {{range .APIKeys}}
+                                        <div class="api-key-card">
+                                            <div class="api-key-card-header">
+                                                <span class="api-key-name">{{.Name}}</span>
+                                                <button type="button" class="btn btn-outline-danger btn-sm revoke-api-key-btn" data-key-id="{{.ID}}">Revoke</button>
+                                            </div>
+                                            <div class="api-key-card-fields">
+                                                <div class="api-key-field">
+                                                    <span class="api-key-field-label">Prefix</span>
+                                                    <span class="api-key-field-value api-key-prefix" title="Key prefix (full key shown only at creation)">{{.KeyPrefix}}</span>
+                                                </div>
+                                                <div class="api-key-field">
+                                                    <span class="api-key-field-label">Created</span>
+                                                    <span class="api-key-field-value">{{.CreatedAt}}{{if .LastUsedAt}} · Last used {{.LastUsedAt}}{{end}}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {{end}}
+                                    </div>
+                                    {{else}}
+                                    <p class="text-muted small mb-0" id="no-api-keys-msg">No API keys yet.</p>
+                                    {{end}}
+                                </div>
+                            </div>
+                            {{end}}
 
                             <!-- Password Change Section -->
                             <div class="mt-4 pt-4 border-top">
@@ -105,6 +203,7 @@
                                 </div>
 
                                 <form id="passwordForm">
+                                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
                                     <div class="mb-3">
                                         <label for="current_password" class="form-label fw-bold">Current Password</label>
                                         <input type="password" id="current_password" name="current_password" class="form-control" required autocomplete="current-password" />
@@ -124,8 +223,6 @@
                                 </form>
                             </div>
                         </div>
-                    </div>
-                </div>
             </div>
         </div>
         </main>
@@ -136,133 +233,6 @@
         <script src="{{basePath}}/public/vendor/popper/popper.min.js" defer></script>
         <script src="{{basePath}}/public/vendor/bootstrap/js/bootstrap.min.js" defer></script>
         <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
-        {{template "site_script.html" .}}
-
-        <script nonce="{{.CSPNonce}}">
-            document.addEventListener('DOMContentLoaded', function() {
-                const theme = localStorage.getItem('theme') || 'light';
-                document.documentElement.setAttribute('data-theme', theme);
-            });
-
-            document.getElementById('profileForm').addEventListener('submit', async function(e) {
-                e.preventDefault();
-                const formData = new FormData();
-                formData.append('timezone', document.getElementById('timezone').value);
-                formData.append('user_name', document.getElementById('user_name').value);
-                const per = document.getElementById('items_per_page');
-                if (per) formData.append('items_per_page', per.value);
-                try {
-                    const response = await fetch('{{basePath}}/api/update-profile', {
-                        method: 'POST',
-                        headers: {
-                            'HX-Request': 'true'
-                        },
-                        body: formData
-                    });
-                    if (response.ok) {
-                        const successMsg = document.getElementById('successMessage');
-                        successMsg.classList.remove('d-none');
-                        successMsg.classList.add('show');
-                        setTimeout(function() {
-                            successMsg.classList.remove('show');
-                            successMsg.classList.add('d-none');
-                        }, 3000);
-                    } else {
-                        var successMsg = document.getElementById('successMessage');
-                        successMsg.classList.remove('show');
-                        successMsg.classList.add('d-none');
-                        const errorMsg = document.getElementById('errorMessage');
-                        document.getElementById('errorText').textContent = 'Error updating profile. Please try again.';
-                        errorMsg.style.display = 'block';
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                    const errorMsg = document.getElementById('errorMessage');
-                    document.getElementById('errorText').textContent = 'An error occurred. Please try again.';
-                    errorMsg.style.display = 'block';
-                }
-            });
-
-            document.getElementById('passwordForm').addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                const currentPassword = document.getElementById('current_password').value;
-                const newPassword = document.getElementById('new_password').value;
-                const confirmPassword = document.getElementById('confirm_password').value;
-
-                // Client-side validation: check if new passwords match
-                if (newPassword !== confirmPassword) {
-                    const errorMsg = document.getElementById('passwordErrorMessage');
-                    document.getElementById('passwordErrorText').textContent = 'New passwords do not match.';
-                    errorMsg.style.display = 'block';
-                    return;
-                }
-
-                const formData = new FormData();
-                formData.append('current_password', currentPassword);
-                formData.append('new_password', newPassword);
-                formData.append('confirm_password', confirmPassword);
-
-                try {
-                    const response = await fetch('{{basePath}}/api/change-password', {
-                        method: 'POST',
-                        headers: {
-                            'HX-Request': 'true'
-                        },
-                        body: formData
-                    });
-
-                    if (response.ok) {
-                        const responseText = await response.text();
-                        
-                        if (responseText === 'success') {
-                            const successMsg = document.getElementById('passwordSuccessMessage');
-                            successMsg.classList.remove('d-none');
-                            successMsg.classList.add('show');
-                            
-                            // Hide error message if it was showing
-                            const errorMsg = document.getElementById('passwordErrorMessage');
-                            errorMsg.classList.remove('show');
-                            errorMsg.style.display = 'none';
-                            
-                            // Clear the form
-                            document.getElementById('passwordForm').reset();
-                            
-                            setTimeout(function() {
-                                successMsg.classList.remove('show');
-                                successMsg.classList.add('d-none');
-                            }, 3000);
-                        } else {
-                            // Response text contains error message
-                            const errorMsg = document.getElementById('passwordErrorMessage');
-                            document.getElementById('passwordErrorText').textContent = responseText;
-                            errorMsg.classList.add('show');
-                            errorMsg.style.display = 'block';
-                            
-                            // Hide success message if it was showing
-                            const successMsg = document.getElementById('passwordSuccessMessage');
-                            successMsg.classList.remove('show');
-                            successMsg.classList.add('d-none');
-                        }
-                    } else {
-                        const errorMsg = document.getElementById('passwordErrorMessage');
-                        document.getElementById('passwordErrorText').textContent = 'Error changing password. Please try again.';
-                        errorMsg.classList.add('show');
-                        errorMsg.style.display = 'block';
-                        
-                        // Hide success message if it was showing
-                        const successMsg = document.getElementById('passwordSuccessMessage');
-                        successMsg.classList.remove('show');
-                        successMsg.classList.add('d-none');
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                    const errorMsg = document.getElementById('passwordErrorMessage');
-                    document.getElementById('passwordErrorText').textContent = 'An error occurred. Please try again.';
-                    errorMsg.classList.add('show');
-                    errorMsg.style.display = 'block';
-                }
-            });
-        </script>
+        {{template "profile_script.html" .}}
     </body>
 </html>

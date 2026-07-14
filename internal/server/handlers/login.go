@@ -55,7 +55,7 @@ func APILogin(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Internal server error.")
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	var hashedPassword string
 	var roleID int

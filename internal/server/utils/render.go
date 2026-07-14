@@ -10,6 +10,7 @@ import (
 	"GoTodo/internal/config"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/tasks"
 	"GoTodo/internal/version"
 )
 
@@ -66,10 +67,15 @@ func InitializeTemplates() error {
 			return dict, nil
 		},
 		"dueDateClass": DueDateClass,
+		"dueDateDisplay": DueDateDisplay,
+		"dueDateInputValue": DueDateInputValue,
 		"renderMarkdown": func(s string) template.HTML {
 			return template.HTML(RenderMarkdown(s))
 		},
 		"truncateDescription": TruncateDescription,
+		"calendarFromQuery": func(_ string) string {
+			return "&from=calendar"
+		},
 	}).ParseGlob("internal/server/templates/*.html")
 	if err != nil {
 		return err
@@ -131,6 +137,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 		ctx["MetaDescription"] = ""
 		ctx["EnableGlobalAnnouncement"] = false
 		ctx["GlobalAnnouncementText"] = ""
+		ctx["EnableAPI"] = false
 		// Site version comes only from the baked-in binary; never from DB
 		ctx["SiteVersion"] = version.Version
 		if s, err := storage.GetSiteSettings(); err == nil && s != nil {
@@ -146,6 +153,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 			ctx["MetaDescription"] = s.MetaDescription
 			ctx["EnableGlobalAnnouncement"] = s.EnableGlobalAnnouncement
 			ctx["GlobalAnnouncementText"] = s.GlobalAnnouncementText
+			ctx["EnableAPI"] = s.EnableAPI
 		}
 
 		if r != nil {
@@ -173,6 +181,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 				}
 			}
 		}
+		injectSessionNavData(ctx, r)
 		execErr = Templates.ExecuteTemplate(w, tmpl, ctx)
 	} else {
 		ctx := map[string]interface{}{
@@ -190,6 +199,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 		ctx["MetaDescription"] = ""
 		ctx["EnableGlobalAnnouncement"] = false
 		ctx["GlobalAnnouncementText"] = ""
+		ctx["EnableAPI"] = false
 		ctx["SiteVersion"] = version.Version
 		if s, err := storage.GetSiteSettings(); err == nil && s != nil {
 			if s.SiteName != "" {
@@ -204,6 +214,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 			ctx["MetaDescription"] = s.MetaDescription
 			ctx["EnableGlobalAnnouncement"] = s.EnableGlobalAnnouncement
 			ctx["GlobalAnnouncementText"] = s.GlobalAnnouncementText
+			ctx["EnableAPI"] = s.EnableAPI
 		}
 		if r != nil {
 			if c, err := r.Cookie("theme"); err == nil {
@@ -216,6 +227,7 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 				}
 			}
 		}
+		injectSessionNavData(ctx, r)
 		execErr = Templates.ExecuteTemplate(w, tmpl, ctx)
 	}
 	if execErr != nil {
@@ -232,4 +244,19 @@ func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data in
 // GetBasePath returns the base path for use in templates
 func GetBasePath() string {
 	return BasePath
+}
+
+func injectSessionNavData(ctx map[string]interface{}, r *http.Request) {
+	if r == nil {
+		return
+	}
+	_, _, _, timezone, loggedIn, _ := GetSessionUserWithTimezone(r)
+	if !loggedIn {
+		return
+	}
+	if uid := GetSessionUserID(r); uid != nil {
+		if count, err := tasks.GetOverdueCount(*uid, timezone); err == nil && count > 0 {
+			ctx["OverdueCount"] = count
+		}
+	}
 }

@@ -19,7 +19,7 @@
                 <button class="btn btn-sm btn-link edit-project-btn p-0 ms-1" type="button" aria-label="Rename project"><i class="bi bi-pencil"></i></button>
             </td>
             <td data-label="Actions">
-                <form method="post" action="{{basePath}}/api/projects/delete" hx-post="{{basePath}}/api/projects/delete" hx-target="#projects-list" hx-swap="innerHTML" style="display:inline;">
+                <form method="post" action="{{basePath}}/api/projects/delete" hx-post="{{basePath}}/api/projects/delete" hx-target="#projects-list" hx-swap="innerHTML" hx-confirm="Delete this project? Tasks will be unassigned but not deleted." style="display:inline;">
                     <input type="hidden" name="id" value="{{.ID}}" />
                     <button class="btn btn-sm btn-danger" type="submit" aria-label="Delete project"><i class="bi bi-trash"></i></button>
                 </form>

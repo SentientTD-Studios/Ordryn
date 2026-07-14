@@ -51,7 +51,7 @@ func APIToggleFavorite(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	var userID int
 	if uid := utils.GetSessionUserID(r); uid != nil {

@@ -4,11 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
 )
 
 const (
@@ -16,53 +12,6 @@ const (
 	GREEN = "\033[32m"
 	RESET = "\033[0m"
 )
-
-func OpenDatabase() (*pgxpool.Pool, error) {
-	// Try to load .env, but don't crash if it's not there.
-	// In Cloud Run, there won't be a .env file at all.
-	_ = godotenv.Load()
-
-	required := []string{
-		"DB_HOST",
-		"DB_PORT",
-		"DB_USER",
-		"DB_PASSWORD",
-		"DB_NAME",
-	}
-
-	config := make(map[string]string)
-	//missing := []string{}
-
-	for _, key := range required {
-		val := os.Getenv(key)
-		if val == "" {
-			//missing = append(missing, key)
-			log.Fatalf("missing env variables: %v", key)
-		} else {
-			config[key] = val
-		}
-	}
-
-	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s",
-		config["DB_USER"],
-		config["DB_PASSWORD"],
-		config["DB_HOST"],
-		config["DB_PORT"],
-		config["DB_NAME"],
-	)
-
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
-	}
-
-	return pool, nil
-}
-
-func CloseDatabase(pool *pgxpool.Pool) {
-	pool.Close()
-}
 
 // This will solely add new columns we need later down the line..it's dumb, but this is how I'm handling it for now
 func AddColumns() (bool, error) {
@@ -187,6 +136,21 @@ func MigrateUsersAddIsBanned() error {
 	_, err = pool.Exec(context.Background(), "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE")
 	if err != nil {
 		return fmt.Errorf("failed to add is_banned column to users table: %v", err)
+	}
+	return nil
+}
+
+// MigrateUsersAddCalendarToken adds a unique calendar feed token column to users.
+func MigrateUsersAddCalendarToken() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(), "ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_token VARCHAR(64) UNIQUE")
+	if err != nil {
+		return fmt.Errorf("failed to add calendar_token column to users table: %v", err)
 	}
 	return nil
 }
@@ -425,6 +389,29 @@ func MigrateUsersAddItemsPerPage() error {
 	_, err = pool.Exec(context.Background(), "ALTER TABLE users ADD COLUMN IF NOT EXISTS items_per_page INTEGER DEFAULT 15")
 	if err != nil {
 		return fmt.Errorf("failed to add items_per_page column to users table: %v", err)
+	}
+	return nil
+}
+
+// MigrateUsersAddDigestSettings adds email digest preference columns.
+func MigrateUsersAddDigestSettings() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(), "ALTER TABLE users ADD COLUMN IF NOT EXISTS digest_enabled BOOLEAN DEFAULT FALSE")
+	if err != nil {
+		return fmt.Errorf("failed to add digest_enabled: %v", err)
+	}
+	_, err = pool.Exec(context.Background(), "ALTER TABLE users ADD COLUMN IF NOT EXISTS digest_hour INTEGER DEFAULT 8")
+	if err != nil {
+		return fmt.Errorf("failed to add digest_hour: %v", err)
+	}
+	_, err = pool.Exec(context.Background(), "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_digest_sent DATE")
+	if err != nil {
+		return fmt.Errorf("failed to add last_digest_sent: %v", err)
 	}
 	return nil
 }

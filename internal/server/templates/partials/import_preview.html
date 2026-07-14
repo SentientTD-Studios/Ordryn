@@ -1,0 +1,61 @@
+<div class="import-preview card border mt-3">
+    <div class="card-body">
+        <h2 class="h5 card-title">Import preview</h2>
+        <p class="text-muted mb-2">
+            <strong>{{.WouldImport}}</strong> task{{if ne .WouldImport 1}}s{{end}} will be imported,
+            <strong>{{.WouldSkip}}</strong> skipped as duplicates or empty rows
+            ({{.TotalRows}} total rows in file).
+        </p>
+
+        {{if .PreviewRows}}
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-3">
+                <thead>
+                    <tr>
+                        <th scope="col">Title</th>
+                        <th scope="col">Project</th>
+                        <th scope="col">Due date</th>
+                        <th scope="col">Tags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .PreviewRows}}
+                    <tr>
+                        <td>{{.Title}}</td>
+                        <td>{{if .Project}}{{.Project}}{{else}}<span class="text-muted">—</span>{{end}}</td>
+                        <td>{{if .DueDate}}{{.DueDate}}{{else}}<span class="text-muted">—</span>{{end}}</td>
+                        <td>{{if .Tags}}{{.Tags}}{{else}}<span class="text-muted">—</span>{{end}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{if gt .TotalRows 10}}
+        <p class="text-muted small">Showing first 10 rows.</p>
+        {{end}}
+        {{end}}
+
+        <div class="d-flex flex-wrap gap-2">
+            <button
+                type="button"
+                class="btn btn-primary"
+                hx-post="{{basePath}}/api/import/confirm"
+                hx-target="#import-result"
+                hx-swap="innerHTML"
+                hx-indicator="#htmx-loading-indicator"
+            >
+                <i class="bi bi-check-lg"></i> Confirm import
+            </button>
+            <button
+                type="button"
+                class="btn btn-outline-secondary"
+                hx-post="{{basePath}}/api/import/cancel"
+                hx-target="#import-result"
+                hx-swap="innerHTML"
+                hx-indicator="#htmx-loading-indicator"
+            >
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>

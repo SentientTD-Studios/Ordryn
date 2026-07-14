@@ -16,6 +16,7 @@ func TestValidateSavedViewFilterRejectsInvalidValues(t *testing.T) {
 		{name: "project", filter: storage.SavedViewFilter{Project: "-1"}},
 		{name: "status", filter: storage.SavedViewFilter{Status: "open"}},
 		{name: "due", filter: storage.SavedViewFilter{Due: "tomorrow"}},
+		{name: "completed", filter: storage.SavedViewFilter{Completed: "month"}},
 		{name: "priority", filter: storage.SavedViewFilter{Priority: "4"}},
 		{name: "tag", filter: storage.SavedViewFilter{Tag: "zero"}},
 		{name: "sort", filter: storage.SavedViewFilter{Sort: "name"}},

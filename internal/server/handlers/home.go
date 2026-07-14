@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 func getUserIDFromEmail(email string) *int {
@@ -32,6 +33,31 @@ func getUserIDFromEmail(email string) *int {
 }
 
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
+	if project := strings.TrimSpace(r.URL.Query().Get("project")); project != "" && parseProjectFilter(project) != nil {
+		target := projectFilterPageURL(utils.GetBasePath(), project, r.URL.Query())
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+		return
+	}
+	renderHome(w, r, filterContextFromRequest(r))
+}
+
+// ProjectFilterHandler serves the home task list filtered by project via /p/{id}.
+func ProjectFilterHandler(w http.ResponseWriter, r *http.Request) {
+	project := parseProjectFromPath(r.URL.Path)
+	if project == "" {
+		http.Redirect(w, r, homeURLWithQuery(utils.GetBasePath(), r.URL.Query()), http.StatusSeeOther)
+		return
+	}
+	fc := filterContextFromRequest(r)
+	if project == "none" {
+		fc.Project = "0"
+	} else {
+		fc.Project = project
+	}
+	renderHome(w, r, fc)
+}
+
+func renderHome(w http.ResponseWriter, r *http.Request, fc FilterContext) {
 	page := 1
 	// determine page size from session if present
 	pageSize := utils.AppConstants.PageSize
@@ -58,7 +84,6 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	searchQuery := r.URL.Query().Get("search")
-	fc := filterContextFromRequest(r)
 	if fc.Search == "" {
 		fc.Search = searchQuery
 	}

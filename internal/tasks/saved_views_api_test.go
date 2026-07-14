@@ -2,7 +2,7 @@ package tasks_test
 
 import (
 	"GoTodo/internal/server/handlers"
-	"GoTodo/internal/sessionstore"
+	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"bytes"
 	"encoding/json"
@@ -90,6 +90,7 @@ func TestAPIV1SavedViewsCRUD(t *testing.T) {
 				"project": "none",
 				"status": "completed",
 				"due": "TODAY",
+				"completed": "WEEK",
 				"priority": "3",
 				"tag": "1",
 				"sort": "PRIORITY",
@@ -102,6 +103,7 @@ func TestAPIV1SavedViewsCRUD(t *testing.T) {
 	var updated savedViewResponse
 	decodeSavedViewResponse(t, update, &updated)
 	if updated.Name != "Today" || updated.Filter.Status != "complete" ||
+		updated.Filter.Completed != "week" ||
 		updated.Filter.Due != "today" || updated.Filter.Sort != "priority" ||
 		updated.SortOrder != 4 {
 		t.Fatalf("unexpected updated view: %+v", updated)
@@ -169,22 +171,8 @@ func performSavedViewRequest(
 
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	session, err := sessionstore.Store.Get(request, "session")
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	session.Values["email"] = email
-	session.Values["user_id"] = userID
-	session.Values["role_id"] = 1
-	session.Values["permissions"] = []string{}
-
-	cookieRecorder := httptest.NewRecorder()
-	if err := session.Save(request, cookieRecorder); err != nil {
-		t.Fatalf("save session: %v", err)
-	}
-	for _, cookie := range cookieRecorder.Result().Cookies() {
-		request.AddCookie(cookie)
-	}
+	_ = email
+	request = utils.SetAPIUserID(request, userID)
 
 	response := httptest.NewRecorder()
 	handlers.APIV1SavedViewsRouter(response, request)

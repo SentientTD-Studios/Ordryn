@@ -19,19 +19,19 @@ var (
 	ErrSavedViewNameConflict = errors.New("a saved view with this name already exists")
 )
 
-// SavedViewFilter contains the task-list query parameters stored by a view.
-// Page is intentionally excluded so applying a view starts at the first page.
+// SavedViewFilter mirrors FilterContext fields (excluding page).
 type SavedViewFilter struct {
-	Project  string `json:"project"`
-	Status   string `json:"status"`
-	Due      string `json:"due"`
-	Priority string `json:"priority"`
-	Tag      string `json:"tag"`
-	Sort     string `json:"sort"`
-	Search   string `json:"search"`
+	Project   string `json:"project"`
+	Status    string `json:"status"`
+	Due       string `json:"due"`
+	Completed string `json:"completed"`
+	Priority  string `json:"priority"`
+	Tag       string `json:"tag"`
+	Sort      string `json:"sort"`
+	Search    string `json:"search"`
 }
 
-// SavedView is a user-owned named task filter.
+// SavedView is a per-user named filter preset.
 type SavedView struct {
 	ID        int
 	UserID    int
@@ -42,7 +42,7 @@ type SavedView struct {
 	UpdatedAt time.Time
 }
 
-// CreateSavedViewsTable ensures the saved-views schema exists.
+// CreateSavedViewsTable ensures the saved_views table exists.
 func CreateSavedViewsTable() error {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -63,16 +63,19 @@ func CreateSavedViewsTable() error {
 		);
 		ALTER TABLE saved_views
 			ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-		CREATE INDEX IF NOT EXISTS idx_saved_views_user_id
-			ON saved_views(user_id);
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to create saved_views table: %w", err)
 	}
+	_, err = pool.Exec(context.Background(),
+		`CREATE INDEX IF NOT EXISTS idx_saved_views_user_id ON saved_views(user_id)`)
+	if err != nil {
+		return fmt.Errorf("failed to create saved_views index: %w", err)
+	}
 	return nil
 }
 
-// ListSavedViewsForUser returns all views owned by userID.
+// ListSavedViewsForUser returns saved views ordered by sort_order then name.
 func ListSavedViewsForUser(userID int) ([]SavedView, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -80,32 +83,44 @@ func ListSavedViewsForUser(userID int) ([]SavedView, error) {
 	}
 	defer CloseDatabase(pool)
 
-	rows, err := pool.Query(context.Background(), `
-		SELECT id, user_id, name, filter_json, sort_order, created_at, updated_at
-		FROM saved_views
-		WHERE user_id = $1
-		ORDER BY sort_order ASC, LOWER(name) ASC, id ASC
-	`, userID)
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, user_id, name, filter_json, sort_order, created_at, updated_at
+		 FROM saved_views WHERE user_id = $1
+		 ORDER BY sort_order ASC, LOWER(name) ASC, id ASC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list saved views: %w", err)
 	}
 	defer rows.Close()
 
-	views := make([]SavedView, 0)
+	out := make([]SavedView, 0)
 	for rows.Next() {
 		view, err := scanSavedView(rows)
 		if err != nil {
 			return nil, err
 		}
-		views = append(views, *view)
+		out = append(out, *view)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to list saved views: %w", err)
 	}
-	return views, nil
+	return out, nil
 }
 
-// GetSavedViewByID returns a user-owned saved view.
+// CountSavedViewsForUser returns how many saved views a user has.
+func CountSavedViewsForUser(userID int) (int, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return 0, err
+	}
+	defer CloseDatabase(pool)
+
+	var count int
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM saved_views WHERE user_id = $1`, userID).Scan(&count)
+	return count, err
+}
+
+// GetSavedViewByID returns a saved view owned by userID.
 func GetSavedViewByID(id, userID int) (*SavedView, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -113,11 +128,9 @@ func GetSavedViewByID(id, userID int) (*SavedView, error) {
 	}
 	defer CloseDatabase(pool)
 
-	view, err := scanSavedView(pool.QueryRow(context.Background(), `
-		SELECT id, user_id, name, filter_json, sort_order, created_at, updated_at
-		FROM saved_views
-		WHERE id = $1 AND user_id = $2
-	`, id, userID))
+	view, err := scanSavedView(pool.QueryRow(context.Background(),
+		`SELECT id, user_id, name, filter_json, sort_order, created_at, updated_at
+		 FROM saved_views WHERE id = $1 AND user_id = $2`, id, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSavedViewNotFound
 	}
@@ -127,8 +140,14 @@ func GetSavedViewByID(id, userID int) (*SavedView, error) {
 	return view, nil
 }
 
-// CreateSavedView inserts a saved view, enforcing the per-user limit.
-func CreateSavedView(userID int, name string, filter SavedViewFilter, sortOrder *int) (*SavedView, error) {
+// CreateSavedView inserts a new saved view for the user.
+func CreateSavedView(userID int, name string, filter SavedViewFilter, sortOrder int) (*SavedView, error) {
+	return CreateSavedViewWithSort(userID, name, filter, &sortOrder)
+}
+
+// CreateSavedViewWithSort inserts a view and atomically enforces the per-user limit.
+// When sortOrder is nil, the new view is placed after the user's existing views.
+func CreateSavedViewWithSort(userID int, name string, filter SavedViewFilter, sortOrder *int) (*SavedView, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -141,7 +160,6 @@ func CreateSavedView(userID int, name string, filter SavedViewFilter, sortOrder 
 	}
 	defer tx.Rollback(context.Background())
 
-	// Lock the owner row so concurrent creates cannot exceed the view limit.
 	var ownerID int
 	if err := tx.QueryRow(context.Background(),
 		"SELECT id FROM users WHERE id = $1 FOR UPDATE", userID).Scan(&ownerID); err != nil {
@@ -152,11 +170,8 @@ func CreateSavedView(userID int, name string, filter SavedViewFilter, sortOrder 
 	}
 
 	var count int
-	if err := tx.QueryRow(context.Background(), `
-		SELECT COUNT(*)
-		FROM saved_views
-		WHERE user_id = $1
-	`, userID).Scan(&count); err != nil {
+	if err := tx.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM saved_views WHERE user_id = $1", userID).Scan(&count); err != nil {
 		return nil, fmt.Errorf("failed to count saved views: %w", err)
 	}
 	if count >= MaxSavedViewsPerUser {
@@ -167,18 +182,18 @@ func CreateSavedView(userID int, name string, filter SavedViewFilter, sortOrder 
 		nextSortOrder = *sortOrder
 	}
 
-	rawFilter, err := json.Marshal(filter)
+	raw, err := json.Marshal(filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode saved view filter: %w", err)
 	}
 
-	view, err := scanSavedView(tx.QueryRow(context.Background(), `
-		INSERT INTO saved_views (user_id, name, filter_json, sort_order)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, user_id, name, filter_json, sort_order, created_at, updated_at
-	`, userID, name, rawFilter, nextSortOrder))
+	view, err := scanSavedView(tx.QueryRow(context.Background(),
+		`INSERT INTO saved_views (user_id, name, filter_json, sort_order)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id, user_id, name, filter_json, sort_order, created_at, updated_at`,
+		userID, name, raw, nextSortOrder))
 	if err != nil {
-		if isUniqueViolation(err) {
+		if isSavedViewUniqueViolation(err) {
 			return nil, ErrSavedViewNameConflict
 		}
 		return nil, fmt.Errorf("failed to create saved view: %w", err)
@@ -189,8 +204,14 @@ func CreateSavedView(userID int, name string, filter SavedViewFilter, sortOrder 
 	return view, nil
 }
 
-// UpdateSavedView applies the supplied fields to a user-owned saved view.
-func UpdateSavedView(id, userID int, name *string, filter *SavedViewFilter, sortOrder *int) (*SavedView, error) {
+// UpdateSavedView updates name and/or filter for an existing saved view.
+func UpdateSavedView(id, userID int, name string, filter *SavedViewFilter) error {
+	_, err := PatchSavedView(id, userID, &name, filter, nil)
+	return err
+}
+
+// PatchSavedView applies the supplied fields to a user-owned saved view.
+func PatchSavedView(id, userID int, name *string, filter *SavedViewFilter, sortOrder *int) (*SavedView, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -219,7 +240,7 @@ func UpdateSavedView(id, userID int, name *string, filter *SavedViewFilter, sort
 		return nil, ErrSavedViewNotFound
 	}
 	if err != nil {
-		if isUniqueViolation(err) {
+		if isSavedViewUniqueViolation(err) {
 			return nil, ErrSavedViewNameConflict
 		}
 		return nil, fmt.Errorf("failed to update saved view: %w", err)
@@ -227,7 +248,7 @@ func UpdateSavedView(id, userID int, name *string, filter *SavedViewFilter, sort
 	return view, nil
 }
 
-// DeleteSavedView removes a user-owned saved view.
+// DeleteSavedView removes a saved view owned by the user.
 func DeleteSavedView(id, userID int) error {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -236,7 +257,7 @@ func DeleteSavedView(id, userID int) error {
 	defer CloseDatabase(pool)
 
 	result, err := pool.Exec(context.Background(),
-		"DELETE FROM saved_views WHERE id = $1 AND user_id = $2", id, userID)
+		`DELETE FROM saved_views WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete saved view: %w", err)
 	}
@@ -270,7 +291,7 @@ func scanSavedView(row savedViewScanner) (*SavedView, error) {
 	return &view, nil
 }
 
-func isUniqueViolation(err error) bool {
+func isSavedViewUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

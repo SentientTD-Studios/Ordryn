@@ -16,6 +16,7 @@ type SiteSettings struct {
 	MetaDescription          string
 	EnableGlobalAnnouncement bool
 	GlobalAnnouncementText   string
+	EnableAPI                bool
 }
 
 // CreateSiteSettingsTable ensures the site_settings table exists.
@@ -56,8 +57,8 @@ func GetSiteSettings() (*SiteSettings, error) {
 	defer CloseDatabase(pool)
 
 	var s SiteSettings
-	row := pool.QueryRow(context.Background(), "SELECT site_name, default_timezone, show_changelog, site_version, enable_registration, invite_only, COALESCE(meta_description, ''), COALESCE(enable_global_announcement, FALSE), COALESCE(global_announcement_text, '') FROM site_settings WHERE id = 1")
-	if err := row.Scan(&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog, &s.SiteVersion, &s.EnableRegistration, &s.InviteOnly, &s.MetaDescription, &s.EnableGlobalAnnouncement, &s.GlobalAnnouncementText); err != nil {
+	row := pool.QueryRow(context.Background(), "SELECT site_name, default_timezone, show_changelog, COALESCE(site_version, ''), enable_registration, invite_only, COALESCE(meta_description, ''), COALESCE(enable_global_announcement, FALSE), COALESCE(global_announcement_text, ''), COALESCE(enable_api, FALSE) FROM site_settings WHERE id = 1")
+	if err := row.Scan(&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog, &s.SiteVersion, &s.EnableRegistration, &s.InviteOnly, &s.MetaDescription, &s.EnableGlobalAnnouncement, &s.GlobalAnnouncementText, &s.EnableAPI); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -72,8 +73,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 	defer CloseDatabase(pool)
 
 	_, err = pool.Exec(context.Background(), `
-        INSERT INTO site_settings (id, site_name, default_timezone, show_changelog, site_version, enable_registration, invite_only, meta_description, enable_global_announcement, global_announcement_text)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO site_settings (id, site_name, default_timezone, show_changelog, site_version, enable_registration, invite_only, meta_description, enable_global_announcement, global_announcement_text, enable_api)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
@@ -83,8 +84,9 @@ func UpsertSiteSettings(s SiteSettings) error {
             invite_only = EXCLUDED.invite_only,
             meta_description = EXCLUDED.meta_description,
             enable_global_announcement = EXCLUDED.enable_global_announcement,
-            global_announcement_text = EXCLUDED.global_announcement_text
-    `, s.SiteName, s.DefaultTimezone, s.ShowChangelog, s.SiteVersion, s.EnableRegistration, s.InviteOnly, s.MetaDescription, s.EnableGlobalAnnouncement, s.GlobalAnnouncementText)
+            global_announcement_text = EXCLUDED.global_announcement_text,
+            enable_api = EXCLUDED.enable_api
+    `, s.SiteName, s.DefaultTimezone, s.ShowChangelog, s.SiteVersion, s.EnableRegistration, s.InviteOnly, s.MetaDescription, s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI)
 	if err != nil {
 		return fmt.Errorf("failed to upsert site_settings: %v", err)
 	}
@@ -135,6 +137,20 @@ func MigrateSiteSettingsAddGlobalAnnouncement() error {
 	}
 	if _, err := pool.Exec(context.Background(), "ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS global_announcement_text TEXT"); err != nil {
 		return fmt.Errorf("failed to add global_announcement_text column to site_settings: %v", err)
+	}
+	return nil
+}
+
+// MigrateSiteSettingsAddEnableAPI adds enable_api column if it doesn't exist.
+func MigrateSiteSettingsAddEnableAPI() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	if _, err := pool.Exec(context.Background(), "ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS enable_api BOOLEAN DEFAULT FALSE"); err != nil {
+		return fmt.Errorf("failed to add enable_api column to site_settings: %v", err)
 	}
 	return nil
 }

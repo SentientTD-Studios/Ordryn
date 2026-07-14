@@ -4,6 +4,7 @@ import (
 	"GoTodo/internal/storage"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,8 +38,28 @@ type DayCount struct {
 	Count int
 }
 
+// GetOverdueCount returns the number of incomplete overdue tasks for a user.
+func GetOverdueCount(userID int, timezone string) (int, error) {
+	timezone = normalizeTimezone(timezone)
+
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return 0, err
+	}
+	defer storage.CloseDatabase(pool)
+
+	where, args := appendDueDateCondition("user_id = $1", []interface{}{userID}, "overdue", timezone, "")
+	var count int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE "+where, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("overdue count: %w", err)
+	}
+	return count, nil
+}
+
 // GetDashboardStats computes dashboard metrics for a user in their timezone.
 func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
+	timezone = normalizeTimezone(timezone)
+
 	pool, err := storage.OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -57,20 +78,49 @@ func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
 	}
 
 	todayWhere, todayArgs := appendDueDateCondition(where, args, "today", timezone, "")
+	todayWhere += " AND (completed IS NULL OR completed = false)"
 	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM tasks WHERE "+todayWhere, todayArgs...).Scan(&stats.DueTodayCount); err != nil {
 		return nil, fmt.Errorf("due today count: %w", err)
 	}
 
-	weekQ := `SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true
-		AND ((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >=
-		    date_trunc('week', (NOW() AT TIME ZONE $2))::date`
+	weekQ := `
+		SELECT COUNT(*) FROM (
+			SELECT DISTINCT te.task_id
+			FROM task_events te
+			WHERE te.user_id = $1 AND te.event_type = 'completed'
+			  AND (((te.created_at AT TIME ZONE 'UTC') AT TIME ZONE $2))::date >= date_trunc('week', (NOW() AT TIME ZONE $2))::date
+			UNION
+			SELECT DISTINCT t.id
+			FROM tasks t
+			WHERE t.user_id = $1 AND t.completed = true
+			  AND NOT EXISTS (
+			    SELECT 1 FROM task_events te2
+			    WHERE te2.task_id = t.id AND te2.event_type = 'completed'
+			  )
+			  AND ((COALESCE(t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >=
+			      date_trunc('week', (NOW() AT TIME ZONE $2))::date
+		) completed`
 	if err := pool.QueryRow(ctx, weekQ, userID, timezone).Scan(&stats.CompletedThisWeek); err != nil {
 		return nil, fmt.Errorf("completed week: %w", err)
 	}
 
-	monthQ := `SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true
-		AND ((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >=
-		    date_trunc('month', (NOW() AT TIME ZONE $2))::date`
+	monthQ := `
+		SELECT COUNT(*) FROM (
+			SELECT DISTINCT te.task_id
+			FROM task_events te
+			WHERE te.user_id = $1 AND te.event_type = 'completed'
+			  AND (((te.created_at AT TIME ZONE 'UTC') AT TIME ZONE $2))::date >= date_trunc('month', (NOW() AT TIME ZONE $2))::date
+			UNION
+			SELECT DISTINCT t.id
+			FROM tasks t
+			WHERE t.user_id = $1 AND t.completed = true
+			  AND NOT EXISTS (
+			    SELECT 1 FROM task_events te2
+			    WHERE te2.task_id = t.id AND te2.event_type = 'completed'
+			  )
+			  AND ((COALESCE(t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >=
+			      date_trunc('month', (NOW() AT TIME ZONE $2))::date
+		) completed`
 	if err := pool.QueryRow(ctx, monthQ, userID, timezone).Scan(&stats.CompletedThisMonth); err != nil {
 		return nil, fmt.Errorf("completed month: %w", err)
 	}
@@ -122,12 +172,22 @@ func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
 			'1 day'::interval
 		) AS d
 		LEFT JOIN (
-			SELECT ((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2)::date AS day, COUNT(*) AS cnt
-			FROM tasks
-			WHERE user_id = $1 AND completed = true
-			  AND date_modified IS NOT NULL
-			  AND ((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >= ((NOW() AT TIME ZONE $2)::date - INTERVAL '6 days')::date
-			GROUP BY 1
+			SELECT day, COUNT(*) AS cnt FROM (
+				SELECT DISTINCT te.task_id, (((te.created_at AT TIME ZONE 'UTC') AT TIME ZONE $2))::date AS day
+				FROM task_events te
+				WHERE te.user_id = $1 AND te.event_type = 'completed'
+				  AND (((te.created_at AT TIME ZONE 'UTC') AT TIME ZONE $2))::date >= ((NOW() AT TIME ZONE $2)::date - INTERVAL '6 days')::date
+				UNION
+				SELECT DISTINCT t.id AS task_id, ((COALESCE(t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE $2)::date AS day
+				FROM tasks t
+				WHERE t.user_id = $1 AND t.completed = true
+				  AND NOT EXISTS (
+				    SELECT 1 FROM task_events te2
+				    WHERE te2.task_id = t.id AND te2.event_type = 'completed'
+				  )
+				  AND ((COALESCE(t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >= ((NOW() AT TIME ZONE $2)::date - INTERVAL '6 days')::date
+			) completions
+			GROUP BY day
 		) c ON c.day = d::date
 		ORDER BY d`
 	chartRows, err := pool.Query(ctx, chartQ, userID, timezone)
@@ -151,10 +211,21 @@ func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
 
 func completionStreak(ctx context.Context, pool *pgxpool.Pool, userID int, timezone string) int {
 	rows, err := pool.Query(ctx, `
-		SELECT DISTINCT ((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2)::date AS day
-		FROM tasks
-		WHERE user_id = $1 AND completed = true AND date_modified IS NOT NULL
-		  AND ((date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >= ((NOW() AT TIME ZONE $2)::date - INTERVAL '90 days')::date
+		SELECT DISTINCT day FROM (
+			SELECT (((te.created_at AT TIME ZONE 'UTC') AT TIME ZONE $2))::date AS day
+			FROM task_events te
+			WHERE te.user_id = $1 AND te.event_type = 'completed'
+			  AND (((te.created_at AT TIME ZONE 'UTC') AT TIME ZONE $2))::date >= ((NOW() AT TIME ZONE $2)::date - INTERVAL '90 days')::date
+			UNION
+			SELECT ((COALESCE(t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE $2)::date AS day
+			FROM tasks t
+			WHERE t.user_id = $1 AND t.completed = true
+			  AND NOT EXISTS (
+			    SELECT 1 FROM task_events te2
+			    WHERE te2.task_id = t.id AND te2.event_type = 'completed'
+			  )
+			  AND ((COALESCE(t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE $2)::date >= ((NOW() AT TIME ZONE $2)::date - INTERVAL '90 days')::date
+		) days
 		ORDER BY day DESC`, userID, timezone)
 	if err != nil {
 		return 0
@@ -183,4 +254,15 @@ func completionStreak(ctx context.Context, pool *pgxpool.Pool, userID int, timez
 		}
 	}
 	return streak
+}
+
+func normalizeTimezone(timezone string) string {
+	timezone = strings.TrimSpace(timezone)
+	if timezone == "" {
+		return "America/New_York"
+	}
+	if _, err := time.LoadLocation(timezone); err != nil {
+		return "America/New_York"
+	}
+	return timezone
 }

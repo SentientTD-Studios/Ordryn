@@ -162,18 +162,17 @@ func GetSessionUserWithTimezone(r *http.Request) (email string, roleID int, perm
 // RequireAuth is a middleware that checks if a user is logged in
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		basePath := GetBasePath()
 		email, _, _, loggedIn := GetSessionUser(r)
 		if !loggedIn {
-			http.Redirect(w, r, "/", http.StatusUnauthorized)
+			http.Redirect(w, r, basePath+"/", http.StatusSeeOther)
 			return
 		}
 
-		// If the user has been banned since their session was created, clear session and force logout
 		if email != "" {
 			if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
-				// Clear session cookie and redirect to home
 				sessionstore.ClearSessionCookie(w, r)
-				http.Redirect(w, r, "/", http.StatusUnauthorized)
+				http.Redirect(w, r, basePath+"/", http.StatusSeeOther)
 				return
 			}
 		}
@@ -186,15 +185,14 @@ func RequirePermission(permission string, next http.HandlerFunc) http.HandlerFun
 	return func(w http.ResponseWriter, r *http.Request) {
 		email, _, permissions, loggedIn := GetSessionUser(r)
 		if !loggedIn {
-			http.Redirect(w, r, "/", http.StatusUnauthorized)
+			http.Redirect(w, r, GetBasePath()+"/", http.StatusSeeOther)
 			return
 		}
 
-		// If the user has been banned since their session was created, clear session and force logout
 		if email != "" {
 			if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
 				sessionstore.ClearSessionCookie(w, r)
-				http.Redirect(w, r, "/", http.StatusUnauthorized)
+				http.Redirect(w, r, GetBasePath()+"/", http.StatusSeeOther)
 				return
 			}
 		}
@@ -209,7 +207,7 @@ func RequirePermission(permission string, next http.HandlerFunc) http.HandlerFun
 
 		if !hasPermission {
 			SetFlash(w, r, "You don't have permission to access this.")
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			http.Redirect(w, r, GetBasePath()+"/", http.StatusSeeOther)
 			return
 		}
 
