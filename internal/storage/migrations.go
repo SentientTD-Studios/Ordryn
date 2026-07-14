@@ -92,6 +92,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateTaskEventsTable failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateSavedViewsTable(); err != nil {
+		fmt.Printf("migration: CreateSavedViewsTable failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure site_settings table exists
 	if err := CreateSiteSettingsTable(); err != nil {

@@ -34,6 +34,16 @@ func TestMain(m *testing.M) {
 
 	_, err = pool.Exec(context.Background(), `
 		CREATE TABLE users (id SERIAL PRIMARY KEY, email TEXT);
+		CREATE TABLE saved_views (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			filter_json JSONB NOT NULL DEFAULT '{}',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (user_id, name)
+		);
 		CREATE TABLE projects (id SERIAL PRIMARY KEY, user_id INT, name TEXT);
 		CREATE TABLE tags (
 			id SERIAL PRIMARY KEY,
@@ -70,7 +80,9 @@ func TestMain(m *testing.M) {
 			metadata JSONB DEFAULT '{}',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
-		INSERT INTO users (id, email) VALUES (1, 'user@example.com');
+		INSERT INTO users (id, email) VALUES
+			(1, 'user@example.com'),
+			(2, 'other@example.com');
 		INSERT INTO tags (id, user_id, name, color) VALUES (1, 1, 'work', '#0d6efd'), (2, 1, 'personal', '#198754');
 		INSERT INTO tasks (title, description, user_id, completed, is_favorite, position, priority, project_id, due_date) VALUES
 		 ('Favorite task', 'fav desc', 1, false, true, 1, 2, NULL, CURRENT_DATE),
