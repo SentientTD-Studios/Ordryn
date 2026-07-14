@@ -120,6 +120,17 @@ func TestSearchTasksForUserWithFilters(t *testing.T) {
 	userID := 1
 	timezone := "America/New_York"
 
+	favoriteResults, favoriteTotal, err := tasks.SearchTasksForUserWithFilters(1, 10, "Favorite", &userID, timezone, tasks.ListFilters{})
+	if err != nil {
+		t.Fatalf("favorite search: %v", err)
+	}
+	if favoriteTotal != 1 || len(favoriteResults) != 1 {
+		t.Fatalf("expected one favorite search result, got total %d and %d tasks", favoriteTotal, len(favoriteResults))
+	}
+	if !favoriteResults[0].IsFavorite {
+		t.Fatalf("expected search result %q to preserve favorite status", favoriteResults[0].Title)
+	}
+
 	_, total, err := tasks.SearchTasksForUserWithFilters(1, 10, "task", &userID, timezone, tasks.ListFilters{StatusFilter: "incomplete"})
 	if err != nil {
 		t.Fatalf("SearchTasksForUserWithFilters: %v", err)
