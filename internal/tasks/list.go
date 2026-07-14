@@ -172,7 +172,7 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 		COALESCE(CAST(t.due_date AS TEXT), '') AS due_date,
 		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM') AS date_created,
 		COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MM AM'), '') AS date_modified,
-		COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,'')
+		COALESCE(t.is_favorite,false), COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,'')
 		FROM tasks t LEFT JOIN projects p ON t.project_id = p.id ` + selectWhere + filters.orderByClause("t") + " LIMIT $3 OFFSET $5"
 
 	rows, err := pool.Query(context.Background(), query, selectArgs...)
@@ -183,7 +183,7 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 
 	tasks := make([]Task, 0)
 	for rows.Next() {
-		task, err := scanTaskRow(rows)
+		task, err := scanFavoriteTaskRow(rows)
 		if err != nil {
 			return nil, 0, err
 		}
