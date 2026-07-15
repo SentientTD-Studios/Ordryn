@@ -144,6 +144,13 @@ func StartServer() error {
 	handleBoth("/api/profile/api-keys/create", utils.RequireHTMX(utils.RequireAuth(handlers.APICreateAPIKey)))
 	handleBoth("/api/profile/api-keys/revoke", utils.RequireHTMX(utils.RequireAuth(handlers.APIRevokeAPIKey)))
 
+	devicePublic := handlers.DeviceAuthPublicChain
+	handleBoth("/api/v1/auth/device/code", devicePublic(handlers.APIDeviceCode))
+	handleBoth("/api/v1/auth/device/token", devicePublic(handlers.APIDeviceToken))
+	handleBoth("/auth/device", handlers.DeviceAuthPageHandler)
+	handleBoth("/api/auth/device/approve", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIDeviceApprove))))
+	handleBoth("/api/auth/device/deny", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIDeviceDeny))))
+
 	v1 := utils.APIChain
 	handleBoth("/api/v1/tasks", v1(handlers.APIV1TasksRouter))
 	handleBoth("/api/v1/tasks/", v1(handlers.APIV1TasksRouter))

@@ -129,6 +129,29 @@ func ListAPIKeysForUser(userID int) ([]APIKey, error) {
 	return out, nil
 }
 
+// RevokeAPIKeysByName revokes all active keys for a user that share the given name.
+func RevokeAPIKeysByName(userID int, name string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(),
+		`UPDATE api_keys SET revoked_at = NOW()
+		 WHERE user_id = $1 AND name = $2 AND revoked_at IS NULL`,
+		userID, name)
+	return err
+}
+
+// CreateOrRotateAPIKey revokes any existing same-name keys, then creates a new one.
+func CreateOrRotateAPIKey(userID int, name string) (plaintext string, record *APIKey, err error) {
+	if err := RevokeAPIKeysByName(userID, name); err != nil {
+		return "", nil, err
+	}
+	return CreateAPIKey(userID, name)
+}
+
 // RevokeAPIKey marks a key as revoked for the owning user.
 func RevokeAPIKey(keyID, userID int) error {
 	pool, err := OpenDatabase()

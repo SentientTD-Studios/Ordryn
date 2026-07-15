@@ -82,7 +82,7 @@ func APICreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Key name is too long.")
 		return
 	}
-	plaintext, record, err := storage.CreateAPIKey(*uid, name)
+	plaintext, record, err := storage.CreateOrRotateAPIKey(*uid, name)
 	if err != nil {
 		http.Error(w, "Failed to create API key", http.StatusInternalServerError)
 		return

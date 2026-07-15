@@ -54,6 +54,7 @@
                         <ul class="list-inline mb-0">
                             <li class="list-inline-item"><a href="#overview">Overview</a></li>
                             <li class="list-inline-item"><a href="#authentication">Authentication</a></li>
+                            <li class="list-inline-item"><a href="#device-auth">Device authorization</a></li>
                             <li class="list-inline-item"><a href="#errors">Errors</a></li>
                             <li class="list-inline-item"><a href="#rate-limits">Rate limits</a></li>
                             <li class="list-inline-item"><a href="#tasks">Tasks</a></li>
@@ -106,6 +107,46 @@
                         Revoked keys stop working immediately. The API requires Redis for key validation and rate limiting.
                     </p>
 
+                    <h2 id="device-auth" class="h4 mt-4">Device authorization</h2>
+                    <p>
+                        Mobile and desktop clients can obtain an API key through a browser hand-off when you are already signed in on the web.
+                        The client requests a device code, opens the verification URL in a browser, and polls until you approve access.
+                    </p>
+                    <table class="table table-sm api-docs-table">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Path</th>
+                                <th>Auth</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/device/code</code></td><td>Public (API enabled + Redis)</td><td>Start device authorization; returns <code>device_code</code>, <code>user_code</code>, and verification URLs</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/device/token</code></td><td>Public (API enabled + Redis)</td><td>Poll for approval; returns <code>api_key</code> once when approved</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/auth/device?user_code=…</code></td><td>Browser session (optional)</td><td>Approve or deny the request in the browser</td></tr>
+                        </tbody>
+                    </table>
+                    <h3 class="h5 mt-3">Start authorization</h3>
+                    <pre class="api-docs-pre"><code>POST {{basePath}}/api/v1/auth/device/code
+Content-Type: application/json
+
+{"client_name": "Android app"}</code></pre>
+                    <p class="text-muted small">Response includes <code>verification_uri_complete</code> (open in a browser), <code>expires_in</code> (600 seconds), and <code>interval</code> (poll every 5 seconds).</p>
+                    <h3 class="h5 mt-3">Poll for token</h3>
+                    <pre class="api-docs-pre"><code>POST {{basePath}}/api/v1/auth/device/token
+Content-Type: application/json
+
+{
+  "device_code": "DEVICE_CODE",
+  "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
+}</code></pre>
+                    <p class="text-muted small mb-0">
+                        While pending, the token endpoint returns <code>400</code> with <code>{"error":"authorization_pending"}</code>.
+                        On approval it returns <code>api_key</code>, <code>name</code>, and <code>key_prefix</code> once.
+                        Approving again with the same <code>client_name</code> rotates (revokes) the previous key for that name.
+                    </p>
+
                     <h2 id="errors" class="h4 mt-4">Errors</h2>
                     <p>Failed requests return JSON with a stable <code>error</code> code and a human-readable <code>message</code>:</p>
                     <pre class="api-docs-pre"><code>{
@@ -122,6 +163,7 @@
                         </thead>
                         <tbody>
                             <tr><td>400</td><td><code>invalid_request</code></td><td>Bad parameters or JSON body</td></tr>
+                            <tr><td>400</td><td><code>authorization_pending</code> / <code>access_denied</code> / <code>expired_token</code></td><td>Device authorization polling states</td></tr>
                             <tr><td>401</td><td><code>unauthorized</code></td><td>Missing, invalid, or revoked API key</td></tr>
                             <tr><td>403</td><td><code>api_disabled</code></td><td>REST API disabled in site settings</td></tr>
                             <tr><td>404</td><td><code>not_found</code></td><td>Resource not found (or not owned by you)</td></tr>
