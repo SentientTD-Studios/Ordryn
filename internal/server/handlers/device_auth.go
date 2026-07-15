@@ -57,26 +57,17 @@ func APIDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	basePath := utils.GetBasePath()
-	verificationPath := basePath + "/auth/device?user_code=" + record.UserCode
-	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
-	}
-	host := r.Host
-	if host == "" {
-		host = "localhost"
-	}
-	verificationComplete := scheme + "://" + host + verificationPath
+	verificationURI := utils.AbsoluteURLForRequest(r, "/auth/device")
+	verificationURIComplete := utils.AbsoluteURLForRequest(r, "/auth/device?user_code="+record.UserCode)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"device_code":              record.DeviceCode,
-		"user_code":                record.UserCode,
-		"verification_uri":           basePath + "/auth/device",
-		"verification_uri_complete": verificationComplete,
-		"expires_in":               utils.DeviceAuthTTLSeconds,
-		"interval":                 utils.DeviceAuthInterval,
+		"device_code":               record.DeviceCode,
+		"user_code":                 record.UserCode,
+		"verification_uri":          verificationURI,
+		"verification_uri_complete": verificationURIComplete,
+		"expires_in":                utils.DeviceAuthTTLSeconds,
+		"interval":                  utils.DeviceAuthInterval,
 	})
 }
 
