@@ -11,7 +11,7 @@ const UIHtmx = "htmx"
 // UISPA prefers the Vue SPA (served under /app, and at / when selected).
 const UISPA = "spa"
 
-var activeUI = UIHtmx
+var activeUI = UISPA
 
 // SetRuntimeUI records the selected web UI for diagnostics/routing.
 func SetRuntimeUI(ui string) {
@@ -23,7 +23,7 @@ func GetRuntimeUI() string {
 	return activeUI
 }
 
-// ResolveUI returns GOTODO_UI / --ui (default: htmx during migration).
+// ResolveUI returns GOTODO_UI / --ui (default: spa after Phase C cutover).
 func ResolveUI(args []string) string {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -37,14 +37,14 @@ func ResolveUI(args []string) string {
 	if v := os.Getenv("GOTODO_UI"); v != "" {
 		return normalizeUI(v)
 	}
-	return UIHtmx
+	return UISPA
 }
 
 func normalizeUI(v string) string {
 	switch strings.ToLower(strings.TrimSpace(v)) {
-	case UISPA:
-		return UISPA
-	default:
+	case UIHtmx:
 		return UIHtmx
+	default:
+		return UISPA
 	}
 }

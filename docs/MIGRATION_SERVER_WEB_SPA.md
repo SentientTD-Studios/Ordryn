@@ -252,19 +252,20 @@ Priority order for SPA MVP:
 | P1 | Bulk actions | `POST /api/v1/tasks/bulk` | **Done** |
 | P1 | Task events / audit | `GET /api/v1/tasks/{id}/events` | **Done** |
 | P1 | Undo delete | `POST /api/v1/tasks/undo` + `undo_token` | **Done** — Redis token (~120s) + session fallback |
-| P2 | Saved views | exists | Wire in SPA |
-| P2 | Dashboard stats | `GET /api/v1/dashboard` | |
-| P2 | Export / import | `GET/POST /api/v1/export|import` | May be multipart |
-| P2 | Calendar feed token + sync | under `/api/v1/calendar/*` | ICS URL can stay tokenized `/cal/...` |
-| P2 | Admin site settings | `GET/PATCH /api/v1/admin/settings` | |
-| P2 | Users ban/unban + list | `/api/v1/admin/users` | |
-| P2 | Invites CRUD | `/api/v1/admin/invites` or `/api/v1/invites` | |
+| P2 | Saved views | exists | **Done** — SPA `/views` |
+| P2 | Dashboard stats | `GET /api/v1/dashboard` | **Done** |
+| P2 | Export / import | `GET/POST /api/v1/export|import` | **Export done**; import stays HTMX (multipart) until later |
+| P2 | Calendar feed token + sync | under `/api/v1/calendar/*` | **Done** — token + regenerate; ICS `/cal/...` |
+| P2 | Admin site settings | `GET/PATCH /api/v1/admin/settings` | **Done** |
+| P2 | Users ban/unban + list | `/api/v1/admin/users` | **Done** |
+| P2 | Invites CRUD | `/api/v1/invites` | **Done** |
 | P3 | Announcements dismiss | minor | |
 | P3 | Duplicate task | `POST /api/v1/tasks/{id}/duplicate` | |
 
 - [x] P0 projects + tags write endpoints on `/api/v1`
 - [x] P1 profile, API keys, bulk, events, undo on `/api/v1`
-- [ ] Remaining P2/P3 rows in implementation PRs
+- [x] P2 dashboard/calendar/export/admin/invites/saved-views (+ SPA wiring)
+- [ ] Remaining P3 rows + multipart import in later PRs
 - [ ] Keep `/documentation/api/v1` **or** replace with generated docs from OpenAPI (prefer OpenAPI as source)
 
 #### A4 — OpenAPI
@@ -296,10 +297,11 @@ Priority order for SPA MVP:
 
 **Goal:** SPA replaces HTMX for all supported product surfaces.
 
-- [ ] Admin, invites, import/export, calendar, dashboard, saved views, device approve (`/auth/device`)
-- [ ] Keyboard shortcuts / bulk / undo parity as needed
-- [ ] Default `GOTODO_UI=spa` (or `full` serves SPA at `/`)
-- [ ] HTMX UI available only behind explicit legacy flag (temporary)
+- [x] Admin, invites, export, calendar, dashboard, saved views, device approve (`/app/auth/device`; `/auth/device` redirects when `GOTODO_UI=spa`)
+- [x] Bulk + undo parity on SPA tasks (keyboard shortcuts deferred)
+- [x] Default `GOTODO_UI=spa` (`/` → `/app/`; HTMX via `GOTODO_UI=htmx`)
+- [x] HTMX UI available only behind explicit legacy flag (temporary)
+- [ ] Multipart import UI in SPA (still HTMX `/import` for now)
 
 **Exit criteria:** Maintainer dogfoods SPA as default; no P0/P1 feature requires HTMX.
 
@@ -370,7 +372,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase C:** SPA parity (admin, invites, import/export, calendar, dashboard, saved views, device approve) and default `GOTODO_UI=spa`.
+**Phase C remainder:** SPA multipart import (+ optional password-reset JSON). Then **Phase D** HTMX removal.
 
 ---
 
@@ -390,8 +392,8 @@ Resolve by editing this section; promote to §1 when decided.
 
 ## 11. Definition of done (whole migration)
 
-- [ ] `GOTODO_MODE=api` is a supported, documented deploy mode
-- [ ] SPA is the default web UI
+- [x] `GOTODO_MODE=api` is a supported, documented deploy mode
+- [x] SPA is the default web UI
 - [ ] HTMX, Go HTML templates for app UI, and fragment handlers are gone
 - [ ] Android and SPA share OpenAPI `/api/v1`
 - [ ] Register + bootstrap paths work without a pre-existing frontend
@@ -414,3 +416,4 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Phase A4: `openapi.yaml` + OpenAPI path coverage tests/CI |
 | 2026-07-16 | D7 revised: SPA stack is **Vue 3 + TypeScript + Vite** (was React) |
 | 2026-07-16 | Phase B: Vue SPA under `web/`, served at `/app/`, `GOTODO_UI` flag |
+| 2026-07-16 | Phase C: SPA parity surfaces + default `GOTODO_UI=spa`; P2 v1 admin/invites/dashboard/calendar/export |

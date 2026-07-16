@@ -57,11 +57,16 @@ export function useAuth() {
     return user.value
   }
 
+  function hasPermission(permission: string) {
+    return !!user.value?.permissions?.includes(permission)
+  }
+
   return {
     user,
     loading,
     bootstrapped,
     isAuthenticated,
+    hasPermission,
     refresh,
     login,
     register,

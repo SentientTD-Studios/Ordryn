@@ -288,6 +288,75 @@ textarea {
   padding: 1rem 0.25rem;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius);
+  background: rgba(15, 107, 92, 0.08);
+  border: 1px solid rgba(15, 107, 92, 0.18);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(20, 35, 31, 0.06);
+}
+
+.stat-label {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stat strong {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+
+.split h2,
+.stack h2,
+.page h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  margin: 0 0 0.65rem;
+}
+
+.break {
+  overflow-wrap: anywhere;
+}
+
+.select-all {
+  background: transparent;
+  border-style: dashed;
+}
+
 .toasts {
   position: fixed;
   right: 1rem;

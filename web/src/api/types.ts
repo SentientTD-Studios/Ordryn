@@ -44,6 +44,83 @@ export type TaskList = {
   total_pages: number
 }
 
+export type SavedViewFilter = {
+  project?: string
+  status?: string
+  due?: string
+  completed?: string
+  priority?: string
+  tag?: string
+  sort?: string
+  search?: string
+}
+
+export type SavedView = {
+  id: number
+  name: string
+  filter: SavedViewFilter
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type DashboardStats = {
+  overdue_count: number
+  due_today_count: number
+  completed_this_week: number
+  completed_this_month: number
+  streak_days: number
+  by_project: { name: string; count: number }[]
+  by_priority: { priority: number; label: string; count: number }[]
+  completions_last_7_days: { date: string; count: number }[]
+}
+
+export type CalendarInfo = {
+  token: string
+  feed_url: string
+}
+
+export type Invite = {
+  id: number
+  email: string
+  token: string
+  used: boolean
+}
+
+export type AdminSettings = {
+  site_name: string
+  default_timezone: string
+  show_changelog: boolean
+  site_version: string
+  enable_registration: boolean
+  invite_only: boolean
+  meta_description: string
+  enable_global_announcement: boolean
+  global_announcement_text: string
+  enable_api: boolean
+}
+
+export type AdminUser = {
+  id: number
+  email: string
+  user_name: string
+  is_banned: boolean
+}
+
+export type APIKey = {
+  id: number
+  name: string
+  key_prefix: string
+  created_at: string
+  last_used_at?: string | null
+}
+
+export type DeviceStatus = {
+  user_code: string
+  client_name: string
+  status: string
+}
+
 export type APIErrorBody = {
   error: string
   message: string

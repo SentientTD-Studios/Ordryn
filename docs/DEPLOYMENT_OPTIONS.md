@@ -21,14 +21,14 @@ This is **not** three mandatory products. Android (and a future SPA repo) are op
               │                    │
               │                    ├── Android app (separate repo, optional)
               │                    └── future SPA / scripts / integrations
-              └── today’s HTMX UI (SPA later in Phase B)
+              └── Vue SPA at `/app/` (default); HTMX via `GOTODO_UI=htmx`
 ```
 
 | Option | Env / flag | Who it’s for | UI |
 |--------|------------|--------------|-----|
-| **Full** (default) | `GOTODO_MODE=full` or omit | Normal self-host | Yes — HTMX today; Vue SPA at `/app/` when built |
+| **Full** (default) | `GOTODO_MODE=full` or omit | Normal self-host | Yes — Vue SPA at `/app/` when built (`GOTODO_UI=spa` default) |
 | **API only** | `GOTODO_MODE=api` or `--mode=api` | Headless / app clients / “server without frontend” | No HTML UI |
-| **SPA preferred** | `GOTODO_UI=spa` (with `full`) | Dogfood Vue client | `/` redirects to `/app/` |
+| **Legacy HTMX** | `GOTODO_UI=htmx` (with `full`) | Temporary fallback | HTMX at `/` |
 
 Both modes share the same database, migrations, `/api/v1`, bootstrap, and Redis requirements for the REST API.
 
@@ -52,7 +52,7 @@ Physical package ownership for a future extract is detailed in [`REPO_SPLIT.md`]
 
 | Capability | Full mode | API mode |
 |------------|-----------|----------|
-| Browser task UI (HTMX) | Yes | No |
+| Browser task UI (SPA / HTMX) | Yes (SPA default; HTMX with `GOTODO_UI=htmx`) | No |
 | `/api/v1/*` JSON | Yes (if `enable_api`) | Yes (if `enable_api`) |
 | Bootstrap admin / API key via env | Yes | Yes |
 | `GET /api/v1/health` | Yes | Yes |
