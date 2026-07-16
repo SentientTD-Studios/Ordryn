@@ -6,7 +6,10 @@ nodemon.json
 config.json
 RELEASE_NOTES_DRAFT.md
 .prettierignore
-docs/
+# Ignore ad-hoc docs drafts; keep locked migration docs tracked.
+docs/*
+!docs/MIGRATION_SERVER_WEB_SPA.md
+!docs/REPO_SPLIT.md
 
 # Node/npm
 node_modules/

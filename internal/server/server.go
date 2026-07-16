@@ -35,17 +35,23 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 }
 
 func StartServer() error {
-	err := utils.InitializeTemplates()
-	if err != nil {
-		fmt.Println("Error initializing templates: ", err)
-		return fmt.Errorf("failed to initialize templates: %v", err)
+	mode := utils.ResolveMode(os.Args[1:])
+	utils.SetRuntimeMode(mode)
+	utils.LoadRuntimeConfig()
+
+	if mode == utils.ModeFull {
+		if err := utils.InitializeTemplates(); err != nil {
+			fmt.Println("Error initializing templates: ", err)
+			return fmt.Errorf("failed to initialize templates: %v", err)
+		}
+	} else {
+		fmt.Println("Starting in API-only mode (GOTODO_MODE=api / --mode=api); skipping templates and web UI routes")
 	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-
 	addr := fmt.Sprintf(":%s", port)
 
 	if err := utils.InitRedis(); err != nil {
@@ -56,12 +62,48 @@ func StartServer() error {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
 	}
 
-	if err := handlers.PreloadChangelog(); err != nil {
-		fmt.Printf("Warning: Preloading changelog failed: %v\n", err)
+	if err := RunBootstrap(); err != nil {
+		return fmt.Errorf("bootstrap failed: %w", err)
 	}
 
 	digest.StartDigestWorker()
 
+	registerAPIV1Routes()
+
+	if mode == utils.ModeFull {
+		if err := handlers.PreloadChangelog(); err != nil {
+			fmt.Printf("Warning: Preloading changelog failed: %v\n", err)
+		}
+		registerStaticAndWebRoutes()
+		registerHTMXAPIRoutes()
+	}
+
+	fmt.Printf("Starting server on %s (mode=%s)\n", addr, mode)
+	return http.ListenAndServe(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux))
+}
+
+// registerAPIV1Routes registers JSON API routes used by SPA / Android / API-only hosts.
+func registerAPIV1Routes() {
+	handleBoth("/api/v1/health", handlers.APIV1Health)
+
+	devicePublic := handlers.DeviceAuthPublicChain
+	handleBoth("/api/v1/auth/device/code", devicePublic(handlers.APIDeviceCode))
+	handleBoth("/api/v1/auth/device/token", devicePublic(handlers.APIDeviceToken))
+
+	v1 := utils.APIChain
+	handleBoth("/api/v1/tasks", v1(handlers.APIV1TasksRouter))
+	handleBoth("/api/v1/tasks/", v1(handlers.APIV1TasksRouter))
+	handleBoth("/api/v1/projects", v1(handlers.APIV1Projects))
+	handleBoth("/api/v1/tags", v1(handlers.APIV1TagsRouter))
+	handleBoth("/api/v1/tags/", v1(handlers.APIV1TagsRouter))
+	handleBoth("/api/v1/saved-views", v1(handlers.APIV1SavedViewsRouter))
+	handleBoth("/api/v1/saved-views/", v1(handlers.APIV1SavedViewsRouter))
+
+	// Tokenized ICS feed does not require the HTML UI.
+	handleBoth("/cal/", handlers.CalendarFeedHandler)
+}
+
+func registerStaticAndWebRoutes() {
 	fs := http.FileServer(http.Dir("internal/server/public"))
 	for _, prefix := range routePaths() {
 		publicPath := prefix + "/public/"
@@ -76,7 +118,6 @@ func StartServer() error {
 		})))
 	}
 
-	// Regular page handlers
 	handleBoth("/", handlers.HomeHandler)
 	handleBoth("/p/", handlers.ProjectFilterHandler)
 	handleBoth("/favicon.ico", serveFavicon)
@@ -97,8 +138,11 @@ func StartServer() error {
 	handleBoth("/admin/", utils.RequirePermission("admin", handlers.AdminPageHandler))
 	handleBoth("/forgot-password", handlers.ForgotPasswordPage)
 	handleBoth("/password-reset", handlers.PasswordResetPage)
+	handleBoth("/auth/device", handlers.DeviceAuthPageHandler)
+	handleBoth("/changelog/page", handlers.ChangelogPageHandler)
+}
 
-	// API endpoints
+func registerHTMXAPIRoutes() {
 	handleBoth("/api/signup", utils.RequireHTMX(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APISignup)))
 	handleBoth("/api/login", utils.RequireHTMX(utils.RateLimitMiddleware(10, 1.0, 60, utils.KeyByIP)(handlers.APILogin)))
 	handleBoth("/api/logout", utils.RequireHTMX(handlers.APILogout))
@@ -116,7 +160,6 @@ func StartServer() error {
 	handleBoth("/api/reorder-tasks", utils.RequireHTMX(handlers.APIReorderTasks))
 
 	handleBoth("/partials/login", utils.RequireHTMX(handlers.APIGetLoginPartial))
-	handleBoth("/changelog/page", handlers.ChangelogPageHandler)
 
 	handleBoth("/api/projects/create", utils.RequireHTMX(utils.RequireAuth(handlers.APICreateProject)))
 	handleBoth("/api/projects/update", utils.RequireHTMX(utils.RequireAuth(handlers.APIUpdateProject)))
@@ -144,28 +187,13 @@ func StartServer() error {
 	handleBoth("/api/profile/api-keys/create", utils.RequireHTMX(utils.RequireAuth(handlers.APICreateAPIKey)))
 	handleBoth("/api/profile/api-keys/revoke", utils.RequireHTMX(utils.RequireAuth(handlers.APIRevokeAPIKey)))
 
-	devicePublic := handlers.DeviceAuthPublicChain
-	handleBoth("/api/v1/auth/device/code", devicePublic(handlers.APIDeviceCode))
-	handleBoth("/api/v1/auth/device/token", devicePublic(handlers.APIDeviceToken))
-	handleBoth("/auth/device", handlers.DeviceAuthPageHandler)
 	handleBoth("/api/auth/device/approve", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIDeviceApprove))))
 	handleBoth("/api/auth/device/deny", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIDeviceDeny))))
-
-	v1 := utils.APIChain
-	handleBoth("/api/v1/tasks", v1(handlers.APIV1TasksRouter))
-	handleBoth("/api/v1/tasks/", v1(handlers.APIV1TasksRouter))
-	handleBoth("/api/v1/projects", v1(handlers.APIV1Projects))
-	handleBoth("/api/v1/tags", v1(handlers.APIV1TagsRouter))
-	handleBoth("/api/v1/tags/", v1(handlers.APIV1TagsRouter))
-	handleBoth("/api/v1/saved-views", v1(handlers.APIV1SavedViewsRouter))
-	handleBoth("/api/v1/saved-views/", v1(handlers.APIV1SavedViewsRouter))
 
 	handleBoth("/api/update-profile", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIUpdateProfile))))
 	handleBoth("/api/change-password", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIChangePassword))))
 	handleBoth("/api/calendar/regenerate-token", utils.RequireHTMX(utils.RequireAuth(handlers.APICalendarRegenerateToken)))
 	handleBoth("/api/calendar/sync-due-dates", utils.RequireHTMX(utils.RequireAuth(handlers.APICalendarSyncDueDates)))
-
-	handleBoth("/cal/", handlers.CalendarFeedHandler)
 
 	handleBoth("/api/create-invite", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APICreateInvite)))
 	handleBoth("/api/invites", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APIGetInvites)))
@@ -190,7 +218,4 @@ func StartServer() error {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-
-	fmt.Printf("Starting server on %s\n", addr)
-	return http.ListenAndServe(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux))
 }

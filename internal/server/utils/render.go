@@ -19,16 +19,11 @@ var BasePath string
 
 func InitializeTemplates() error {
 	var err error
-	// Load repo config (fallbacks to env/defaults internally)
-	config.Load()
-	BasePath = config.Cfg.BasePath
-	if BasePath == "" {
-		BasePath = "/"
-	}
-
-	BasePath = strings.TrimSuffix(BasePath, "/")
-	if BasePath == "" {
-		BasePath = "/"
+	// Config/BasePath may already be loaded via LoadRuntimeConfig(); keep idempotent.
+	if config.Cfg.BasePath == "" && BasePath == "" {
+		LoadRuntimeConfig()
+	} else if BasePath == "" {
+		ApplyBasePathFromConfig()
 	}
 
 	Templates, err = template.New("").Funcs(template.FuncMap{

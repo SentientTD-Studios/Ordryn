@@ -109,4 +109,25 @@ See LICENSE file.
 
 Server / SPA web / app split work happens on branch `cursor/server-split-f103`.
 
-See [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md) and [`docs/REPO_SPLIT.md`](docs/REPO_SPLIT.md).
+- Plan: [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md)
+- What goes into new **server** / **web** / **Android** repos: [`docs/REPO_SPLIT.md`](docs/REPO_SPLIT.md)
+
+## API-only mode (no web UI)
+
+Run the JSON API without loading HTMX templates or static UI assets:
+
+```bash
+export GOTODO_MODE=api   # or: go run . --mode=api
+export GOTODO_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+export GOTODO_BOOTSTRAP_ADMIN_PASSWORD='choose-a-strong-password'
+export GOTODO_BOOTSTRAP_ENABLE_API=true
+export GOTODO_BOOTSTRAP_CREATE_API_KEY=true
+# Also set DB_*, SESSION_KEY, REDIS_URL (Redis required for /api/v1)
+
+go run . --mode=api
+curl -s http://localhost:8080/api/v1/health
+```
+
+On first boot, bootstrap may print a one-time API key named `bootstrap`. Use:
+
+`Authorization: Bearer <key>` against `/api/v1/tasks` and other v1 routes.
