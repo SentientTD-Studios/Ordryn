@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"encoding/json"
@@ -82,7 +83,7 @@ func APIDeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := storage.DeleteTag(id, *uidPtr); err != nil {
+	if err := domain.DeleteTag(r.Context(), *uidPtr, id); err != nil {
 		http.Error(w, "Failed to delete tag", http.StatusInternalServerError)
 		return
 	}
@@ -131,7 +132,7 @@ func APIUpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := storage.UpdateTag(id, *uidPtr, name); err != nil {
+	if err := domain.RenameTag(r.Context(), *uidPtr, id, name); err != nil {
 		w.Header().Set("X-Validation-Error", "true")
 		w.Header().Set("HX-Retarget", "#tag-name-error")
 		w.Header().Set("HX-Reswap", "innerHTML")

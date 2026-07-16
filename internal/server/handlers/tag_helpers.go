@@ -6,8 +6,12 @@ import (
 	"strconv"
 )
 
+func resolveTaskTagIDsFromRequest(r *http.Request, userID int) ([]int, error) {
+	return storage.ResolveTaskTagIDs(userID, r.Form["tag_ids"], r.FormValue("new_tags"))
+}
+
 func assignTaskTagsFromRequest(r *http.Request, taskID, userID int) error {
-	tagIDs, err := storage.ResolveTaskTagIDs(userID, r.Form["tag_ids"], r.FormValue("new_tags"))
+	tagIDs, err := resolveTaskTagIDsFromRequest(r, userID)
 	if err != nil {
 		return err
 	}

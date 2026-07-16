@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"encoding/json"
@@ -93,7 +94,7 @@ func APICreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newProject, err := storage.CreateProject(*uidPtr, name)
+	newProject, err := domain.CreateProject(r.Context(), *uidPtr, name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create project: %v", err), http.StatusInternalServerError)
 		return
@@ -154,8 +155,7 @@ func APIDeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete the project (ownership enforced in storage layer)
-	err = storage.DeleteProject(id, *uidPtr)
+	err = domain.DeleteProject(r.Context(), *uidPtr, id)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to delete project: %v", err), http.StatusInternalServerError)
 		return
@@ -243,7 +243,7 @@ func APIUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := storage.UpdateProject(id, *uidPtr, name); err != nil {
+	if err := domain.RenameProject(r.Context(), *uidPtr, id, name); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to update project: %v", err), http.StatusInternalServerError)
 		return
 	}

@@ -226,9 +226,9 @@ Agents should complete phases in order. Each phase has **exit criteria**. Check 
 
 #### A2 — Domain extraction (stop duplicating SQL)
 
-- [ ] Extract task create/update/delete/status/favorite/reorder into `internal/domain` (or `internal/tasks` services)
-- [ ] HTMX handlers and `api_v1` both call the same functions
-- [ ] Same for projects + tags mutations
+- [x] Extract task create/update/delete/status/favorite/reorder into `internal/domain`
+- [x] HTMX handlers and `api_v1` both call the same functions
+- [x] Same for projects + tags mutations (`domain.CreateProject` / `Rename*` / `Delete*` / `CreateTag`)
 
 #### A3 — Resource parity (v1 gaps vs current HTMX product)
 
@@ -361,7 +361,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase A2:** extract shared task/project/tag domain services used by HTMX + `/api/v1`.
+**Phase A3 (P0 leftovers):** project write endpoints on `/api/v1`, tag rename on v1, then remaining resource parity.
 
 ---
 
@@ -398,3 +398,4 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Working branch set to `cursor/server-split-f103`; leave `dev` alone until merged to `main` |
 | 2026-07-16 | Phase 0 implemented; added `docs/REPO_SPLIT.md` for future server/web repos |
 | 2026-07-16 | Phase A1: JSON register/login/logout + `/api/v1/me`; password-reset deferred to C |
+| 2026-07-16 | Phase A2: `internal/domain` task/project/tag writes shared by HTMX + `/api/v1` |

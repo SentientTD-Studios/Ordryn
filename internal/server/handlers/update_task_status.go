@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
@@ -38,63 +39,35 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := resolveRequestUserID(r)
+	if !ok {
+		http.Error(w, "Error getting user ID", http.StatusInternalServerError)
+		return
+	}
+
+	taskID, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	projectFilter := parseProjectFilter(projectParam)
+
+	if _, err := domain.ToggleTaskCompleted(r.Context(), userID, taskID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			http.Error(w, "Task not found.", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to update task status.", http.StatusInternalServerError)
+		return
+	}
+
 	db, err := storage.OpenDatabase()
 	if err != nil {
 		http.Error(w, "Failed to connect to database", http.StatusInternalServerError)
 		return
 	}
-
 	defer storage.CloseDatabase(db)
-
-	var completed bool
-
-	// Ensure task exists and belongs to the current user
-	var ownerID int
-	err = db.QueryRow(context.Background(), "SELECT completed, user_id FROM tasks WHERE id = $1", id).Scan(&completed, &ownerID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "Task not found.", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Task not found.", http.StatusInternalServerError)
-		return
-	}
-
-	// Verify ownership
-	var userID int
-	if uid := utils.GetSessionUserID(r); uid != nil {
-		userID = *uid
-	} else {
-		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", email).Scan(&userID)
-		if err != nil {
-			http.Error(w, "Error getting user ID", http.StatusInternalServerError)
-			return
-		}
-	}
-	if ownerID != userID {
-		http.Error(w, "Not authorized to update this task.", http.StatusForbidden)
-		return
-	}
-
-	// Optional project filter for counts + row links
-	projectFilter := parseProjectFilter(projectParam)
-
-	updatedStatus := !completed
-
-	_, err = db.Exec(context.Background(), "UPDATE tasks SET completed = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2", updatedStatus, id)
-
-	if err != nil {
-		http.Error(w, "Failed to update task status.", http.StatusInternalServerError)
-		return
-	}
-
-	if taskID, convErr := strconv.Atoi(id); convErr == nil {
-		if updatedStatus {
-			logTaskEvent(taskID, userID, "completed", nil)
-		} else {
-			logTaskEvent(taskID, userID, "reopened", nil)
-		}
-	}
 
 	// Fetch updated task data to render the complete row with updated timestamps
 	email, _, _, timezone, _, _ := utils.GetSessionUserWithTimezone(r)
@@ -126,11 +99,9 @@ func APIUpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	pageNum, _ := strconv.Atoi(page)
 	task.Page = pageNum
 
-	if err := db.QueryRow(context.Background(), "SELECT user_id FROM tasks WHERE id = $1", id).Scan(&ownerID); err == nil {
-		completedCount, incompleteCount := completedIncompleteCounts(&ownerID, projectFilter)
-		// Emit HTMX trigger with counts payload so client can update badges
-		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"taskCountsChanged":{"completed":%d,"incomplete":%d}}`, completedCount, incompleteCount))
-	}
+	ownerID := userID
+	completedCount, incompleteCount := completedIncompleteCounts(&ownerID, projectFilter)
+	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"taskCountsChanged":{"completed":%d,"incomplete":%d}}`, completedCount, incompleteCount))
 
 	if isCalendarReturn(r) {
 		respondCalendarRedirect(w, r, calendarMonthFromRequest(r, timezone), timezone)

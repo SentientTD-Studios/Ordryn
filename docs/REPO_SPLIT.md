@@ -29,7 +29,8 @@ Move / keep these as the server product:
 |----------------|-------|
 | `main.go` / future `cmd/gotodo` | Entry; supports `GOTODO_MODE=api\|full` |
 | `internal/storage/**` | Postgres, migrations, API keys, settings |
-| `internal/tasks/**` | List/filter/stats (later `internal/domain`) |
+| `internal/domain/**` | Shared write use-cases (tasks/projects/tags) |
+| `internal/tasks/**` | List/filter/stats reads |
 | `internal/sessionstore/**` | Cookie sessions for SPA login |
 | `internal/config/**`, `internal/version/**` | Runtime config + version |
 | `internal/server` API surface | `/api/v1/**`, bootstrap, digest, Redis rate limit |

@@ -1,18 +1,19 @@
 package handlers
 
 import (
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/tasks"
-	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-const MaxDescriptionLength = 1000
+// MaxDescriptionLength aliases the shared domain limit for HTMX handlers/validators.
+const MaxDescriptionLength = domain.MaxDescriptionLength
 
 func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	// fmt.Println("Request method: ", r.Method)
@@ -62,15 +63,6 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		// return
 	}
 
-	db, err := storage.OpenDatabase()
-	if err != nil {
-		fmt.Println("We failed to open the database.")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer storage.CloseDatabase(db)
-
-	// Get user ID from session (fallback to querying by email if not present)
 	email, _, _, timezone, loggedIn, _ := utils.GetSessionUserWithTimezone(r)
 	if !loggedIn {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -78,7 +70,6 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Prevent banned users from performing actions
 	if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
 		sessionstore.ClearSessionCookie(w, r)
 		basePath := utils.GetBasePath()
@@ -88,74 +79,56 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID int
-	if uid := utils.GetSessionUserID(r); uid != nil {
-		userID = *uid
-	} else {
-		// fallback to DB lookup if session doesn't contain user_id
-		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", email).Scan(&userID)
-		if err != nil {
-			fmt.Printf("Error getting user ID: %v\n", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	}
-
-	// Determine next position within non-favorite group for this user
-	var nextPos int
-	err = db.QueryRow(context.Background(), "SELECT COALESCE(MAX(position),0) + 1 FROM tasks WHERE user_id = $1 AND (is_favorite IS NULL OR is_favorite = false)", userID).Scan(&nextPos)
-	if err != nil {
-		fmt.Printf("Error determining next position: %v\n", err)
+	userID, ok := resolveRequestUserID(r)
+	if !ok {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	// Handle optional project association
 	projectIDStr := strings.TrimSpace(r.FormValue("project_id"))
+	var projectID *int
 	var newTaskProject *int
-	var newTaskID int
-	if projectIDStr == "" {
-		if dueDate != "" {
-			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7) RETURNING id", title, description, false, userID, nextPos, priority, dueDate).Scan(&newTaskID)
-		} else {
-			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6) RETURNING id", title, description, false, userID, nextPos, priority).Scan(&newTaskID)
-		}
-	} else {
+	if projectIDStr != "" {
 		pid, errConv := strconv.Atoi(projectIDStr)
 		if errConv != nil {
 			http.Error(w, "Invalid project id", http.StatusBadRequest)
 			return
 		}
-		if _, errP := storage.GetProjectByID(pid, userID); errP != nil {
-			http.Error(w, "Invalid project selection", http.StatusBadRequest)
-			return
-		}
-		if dueDate != "" {
-			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id, due_date) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7, $8) RETURNING id", title, description, false, userID, nextPos, priority, pid, dueDate).Scan(&newTaskID)
-		} else {
-			err = db.QueryRow(context.Background(), "INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id) VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'UTC', $5, $6, $7) RETURNING id", title, description, false, userID, nextPos, priority, pid).Scan(&newTaskID)
-		}
-		if err == nil {
-			newTaskProject = &pid
-		}
-	}
-	if err != nil {
-		fmt.Println("We failed to insert into the database.")
-		fmt.Println("Failed values:", title, description, false)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+		projectID = &pid
+		newTaskProject = &pid
 	}
 
-	if err := assignTaskTagsFromRequest(r, newTaskID, userID); err != nil {
+	tagIDs, tagErr := resolveTaskTagIDsFromRequest(r, userID)
+	if tagErr != nil {
 		w.Header().Set("X-Validation-Error", "true")
 		w.Header().Set("HX-Trigger", "description-error")
 		w.Header().Set("HX-Retarget", "#description-error")
 		w.Header().Set("HX-Reswap", "innerHTML")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, err.Error())
+		fmt.Fprint(w, tagErr.Error())
 		return
 	}
-	logTaskEvent(newTaskID, userID, "created", nil)
+
+	if _, err := domain.CreateTask(r.Context(), userID, domain.CreateTaskInput{
+		Title:       title,
+		Description: description,
+		DueDate:     dueDate,
+		ProjectID:   projectID,
+		Priority:    priority,
+		TagIDs:      tagIDs,
+	}); err != nil {
+		if strings.Contains(err.Error(), "validation") {
+			w.Header().Set("X-Validation-Error", "true")
+			w.Header().Set("HX-Trigger", "description-error")
+			w.Header().Set("HX-Retarget", "#description-error")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	if isCalendarReturn(r) {
 		respondCalendarRedirect(w, r, calendarMonthFromRequest(r, timezone), timezone)

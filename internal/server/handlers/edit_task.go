@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
@@ -199,13 +200,6 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := storage.OpenDatabase()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer storage.CloseDatabase(db)
-
 	email, _, _, timezone, loggedIn, _ := utils.GetSessionUserWithTimezone(r)
 	if !loggedIn {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -222,85 +216,10 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify task exists and ownership
-	var ownerID int
-	err = db.QueryRow(context.Background(), "SELECT user_id FROM tasks WHERE id = $1", id).Scan(&ownerID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "Task not found.", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Error fetching task.", http.StatusInternalServerError)
+	userID, ok := resolveRequestUserID(r)
+	if !ok {
+		http.Error(w, "Error getting user ID", http.StatusInternalServerError)
 		return
-	}
-
-	var userID int
-	if uid := utils.GetSessionUserID(r); uid != nil {
-		userID = *uid
-	} else {
-		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", email).Scan(&userID)
-		if err != nil {
-			http.Error(w, "Error getting user ID", http.StatusInternalServerError)
-			return
-		}
-	}
-	if ownerID != userID {
-		http.Error(w, "Not authorized to edit this task.", http.StatusForbidden)
-		return
-	}
-
-	var oldTitle, oldDescription, oldDue string
-	var oldPriority int
-	var oldProjectID sql.NullInt64
-	err = db.QueryRow(context.Background(),
-		"SELECT title, description, COALESCE(CAST(due_date AS TEXT), ''), COALESCE(priority,0), project_id FROM tasks WHERE id = $1",
-		id).Scan(&oldTitle, &oldDescription, &oldDue, &oldPriority, &oldProjectID)
-	if err != nil {
-		http.Error(w, "Error fetching task.", http.StatusInternalServerError)
-		return
-	}
-	oldTags := []storage.Tag{}
-	if taskIDInt, convErr := strconv.Atoi(id); convErr == nil {
-		oldTags, _ = storage.GetTagsForTask(taskIDInt)
-	}
-
-	// Handle optional project association
-	projectIDStr := strings.TrimSpace(r.FormValue("project_id"))
-	if projectIDStr == "" {
-		// Clear project association
-		var err2 error
-		if dueDate == "" {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = NULL, due_date = NULL, priority = $4, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $3", title, description, id, priority)
-		} else {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = NULL, due_date = $3, priority = $5, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $4", title, description, dueDate, id, priority)
-		}
-		err = err2
-		if err != nil {
-			http.Error(w, "Failed to update task.", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		pid, errConv := strconv.Atoi(projectIDStr)
-		if errConv != nil {
-			http.Error(w, "Invalid project id", http.StatusBadRequest)
-			return
-		}
-		// Validate ownership of chosen project
-		if _, perr := storage.GetProjectByID(pid, userID); perr != nil {
-			http.Error(w, "Invalid project selection", http.StatusBadRequest)
-			return
-		}
-		var err2 error
-		if dueDate == "" {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = $3, due_date = NULL, priority = $5, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $4", title, description, pid, id, priority)
-		} else {
-			_, err2 = db.Exec(context.Background(), "UPDATE tasks SET title = $1, description = $2, project_id = $3, due_date = $4, priority = $6, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $5", title, description, pid, dueDate, id, priority)
-		}
-		err = err2
-		if err != nil {
-			http.Error(w, "Failed to update task.", http.StatusInternalServerError)
-			return
-		}
 	}
 
 	taskID, err := strconv.Atoi(id)
@@ -309,43 +228,77 @@ func APIEditTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := assignTaskTagsFromRequest(r, taskID, userID); err != nil {
+	oldTags, _ := storage.GetTagsForTask(taskID)
+	tagIDs, tagErr := resolveTaskTagIDsFromRequest(r, userID)
+	if tagErr != nil {
 		w.Header().Set("X-Validation-Error", "true")
 		w.Header().Set("HX-Trigger", "description-error")
 		w.Header().Set("HX-Retarget", "#description-error")
 		w.Header().Set("HX-Reswap", "innerHTML")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, err.Error())
+		fmt.Fprint(w, tagErr.Error())
+		return
+	}
+
+	projectIDStr := strings.TrimSpace(r.FormValue("project_id"))
+	var projectPtr *int
+	if projectIDStr == "" {
+		zero := 0
+		projectPtr = &zero
+	} else {
+		pid, errConv := strconv.Atoi(projectIDStr)
+		if errConv != nil {
+			http.Error(w, "Invalid project id", http.StatusBadRequest)
+			return
+		}
+		projectPtr = &pid
+	}
+	projectField := &projectPtr
+
+	titleCopy, descCopy, dueCopy := title, description, dueDate
+	prioCopy := priority
+	in := domain.UpdateTaskInput{
+		Title:       &titleCopy,
+		Description: &descCopy,
+		DueDate:     &dueCopy,
+		Priority:    &prioCopy,
+		ProjectID:   projectField,
+		TagIDs:      &tagIDs,
+	}
+	if dueDate == "" {
+		in.ClearDue = true
+	}
+
+	result, err := domain.UpdateTask(r.Context(), userID, taskID, in)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			http.Error(w, "Task not found.", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, domain.ErrValidation) {
+			w.Header().Set("X-Validation-Error", "true")
+			w.Header().Set("HX-Trigger", "description-error")
+			w.Header().Set("HX-Retarget", "#description-error")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, err.Error())
+			return
+		}
+		http.Error(w, "Failed to update task.", http.StatusInternalServerError)
 		return
 	}
 
 	newTags, _ := storage.GetTagsForTask(taskID)
 	logTagChanges(taskID, userID, oldTags, newTags)
-
-	changed := make([]string, 0, 4)
-	if oldTitle != title {
-		changed = append(changed, "title")
+	if result.PriorityChanged {
+		logTaskEvent(taskID, userID, "priority_changed", map[string]interface{}{"to": priorityLabel(result.NewPriority)})
 	}
-	if oldDescription != description {
-		changed = append(changed, "description")
-	}
-	if oldDue != dueDate {
-		changed = append(changed, "due date")
-	}
-	if len(changed) > 0 {
-		logTaskEvent(taskID, userID, "edited", map[string]interface{}{"fields": changed})
-	}
-	if oldPriority != priority {
-		logTaskEvent(taskID, userID, "priority_changed", map[string]interface{}{"to": priorityLabel(priority)})
-	}
-
-	oldPID := projectIDFromNull(oldProjectID)
-	newPID := projectIDFromForm(projectIDStr)
-	if oldPID != newPID {
+	if result.ProjectChanged {
 		logTaskEvent(taskID, userID, "moved_project", map[string]interface{}{
-			"project": projectDisplayName(userID, newPID),
+			"project": projectDisplayName(userID, result.NewProjectID),
 		})
 	}
+	logTaskEvent(taskID, userID, "edited", map[string]interface{}{"fields": []string{"title", "description", "due date"}})
 
 	// Re-render the task row in place when it still matches the active filters.
 	if isCalendarReturn(r) {

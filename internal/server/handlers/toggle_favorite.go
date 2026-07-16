@@ -1,11 +1,12 @@
 package handlers
 
 import (
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/tasks"
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -46,37 +47,17 @@ func APIToggleFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := storage.OpenDatabase()
-	if err != nil {
+	userID, ok := resolveRequestUserID(r)
+	if !ok {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer storage.CloseDatabase(db)
 
-	var userID int
-	if uid := utils.GetSessionUserID(r); uid != nil {
-		userID = *uid
-	} else {
-		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", email).Scan(&userID)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+	if _, err := domain.ToggleTaskFavorite(r.Context(), userID, id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			http.Error(w, "Task not found", http.StatusNotFound)
 			return
 		}
-	}
-
-	// Get current favorite status
-	var isFav bool
-	err = db.QueryRow(context.Background(), "SELECT COALESCE(is_favorite,false) FROM tasks WHERE id = $1 AND user_id = $2", id, userID).Scan(&isFav)
-	if err != nil {
-		http.Error(w, "Task not found", http.StatusNotFound)
-		return
-	}
-
-	// No favorite limit enforced: allow toggling freely
-
-	// Toggle favorite
-	_, err = db.Exec(context.Background(), "UPDATE tasks SET is_favorite = NOT COALESCE(is_favorite,false), date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1 AND user_id = $2", id, userID)
-	if err != nil {
 		http.Error(w, "Error updating favorite", http.StatusInternalServerError)
 		return
 	}
