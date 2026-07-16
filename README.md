@@ -109,6 +109,7 @@ The app uses `github.com/jackc/pgx/v5/pgxpool`. There are helper/migration funct
 
 ## Where to look
 
+- **Architecture migration (server / SPA web / app):** [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md) — work branch `cursor/server-split-f103`
 - Routes and server setup: `internal/server/server.go`
 - Handlers: `internal/server/handlers`
 - Templates: `internal/server/templates` (+ partials)
