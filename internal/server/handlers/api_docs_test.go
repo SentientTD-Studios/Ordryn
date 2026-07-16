@@ -21,6 +21,10 @@ func TestAPIV1DocsIncludeSavedViews(t *testing.T) {
 		`/api/v1/projects/{id}`,
 		`POST</span></td><td><code>/api/v1/projects`,
 		`PATCH</span></td><td><code>/api/v1/tags/{id}`,
+		`/api/v1/tasks/bulk`,
+		`/api/v1/tasks/undo`,
+		`/api/v1/me/password`,
+		`/api/v1/api-keys`,
 		`name_conflict`,
 		`limit_reached`,
 	}

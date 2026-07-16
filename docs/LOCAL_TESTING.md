@@ -154,6 +154,8 @@ go test ./internal/domain/ ./internal/server/handlers/ ./internal/server/utils/ 
 - [ ] `POST /api/v1/auth/login` + `GET /api/v1/me` (cookie)
 - [ ] Bearer `GET /api/v1/tasks` and `POST /api/v1/tasks`
 - [ ] Bearer project create/rename/delete and tag create/rename/delete
+- [ ] `PATCH /api/v1/me`, `POST /api/v1/me/password`, API key list/create/revoke
+- [ ] `POST /api/v1/tasks/bulk`, delete → `undo_token` → `POST /api/v1/tasks/undo`, `GET .../events`
 - [ ] (Optional) Android or HTTP client against LAN URL
 
 ---

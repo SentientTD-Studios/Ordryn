@@ -163,10 +163,11 @@ func isWriteMethod(method string) bool {
 }
 
 // APIChain composes the standard /api/v1 middleware chain.
+// Accepts a session cookie (SPA) or Bearer API key; Redis is required for rate limiting.
 func APIChain(handler http.HandlerFunc) http.HandlerFunc {
 	chain := RequireAPIEnabled(
 		RequireAPIRedis(
-			RequireAPIKey(
+			RequireSessionOrAPIKey(
 				APIRateLimitMiddleware(120, 2.0, 60, 1.0, 120)(handler),
 			),
 		),

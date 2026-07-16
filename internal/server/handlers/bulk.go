@@ -206,6 +206,10 @@ func deleteTasksForUser(ctx context.Context, db *pgxpool.Pool, r *http.Request, 
 	if err := savePendingUndo(r, w, snapshots); err != nil {
 		return err
 	}
+	return deleteTaskRows(ctx, db, ids, userID)
+}
+
+func deleteTaskRows(ctx context.Context, db *pgxpool.Pool, ids []int, userID int) error {
 	for _, id := range ids {
 		logTaskEvent(id, userID, "deleted", nil)
 		tag, err := db.Exec(ctx, "DELETE FROM tasks WHERE id = $1 AND user_id = $2", id, userID)
@@ -217,6 +221,23 @@ func deleteTasksForUser(ctx context.Context, db *pgxpool.Pool, r *http.Request, 
 		}
 	}
 	return nil
+}
+
+// deleteTasksForAPI deletes tasks and returns a Redis undo token (session undo saved when possible).
+func deleteTasksForAPI(ctx context.Context, db *pgxpool.Pool, r *http.Request, w http.ResponseWriter, ids []int, userID int) (string, error) {
+	snapshots, err := snapshotTasksForUndo(ctx, db, ids, userID)
+	if err != nil {
+		return "", err
+	}
+	if err := deleteTaskRows(ctx, db, ids, userID); err != nil {
+		return "", err
+	}
+	_ = savePendingUndo(r, w, snapshots)
+	token, err := utils.SaveUndoToken(ctx, userID, toRedisUndoSnapshots(snapshots))
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func bulkSetCompleted(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, completed bool) error {

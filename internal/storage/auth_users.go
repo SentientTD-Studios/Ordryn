@@ -11,13 +11,15 @@ import (
 
 // UserProfile is the public account view for /api/v1/me and auth responses.
 type UserProfile struct {
-	ID           int
-	Email        string
-	UserName     string
-	Timezone     string
-	ItemsPerPage int
-	RoleID       int
-	Permissions  []string
+	ID            int
+	Email         string
+	UserName      string
+	Timezone      string
+	ItemsPerPage  int
+	RoleID        int
+	Permissions   []string
+	DigestEnabled bool
+	DigestHour    int
 }
 
 // GetUserProfileByID loads profile fields and role permissions for a user.
@@ -31,11 +33,13 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 	var p UserProfile
 	err = pool.QueryRow(context.Background(), `
 		SELECT u.id, u.email, COALESCE(u.user_name, ''), COALESCE(u.timezone, 'America/New_York'),
-		       COALESCE(u.items_per_page, 15), u.role_id, COALESCE(r.permissions, '{}')
+		       COALESCE(u.items_per_page, 15), u.role_id, COALESCE(r.permissions, '{}'),
+		       COALESCE(u.digest_enabled, false), COALESCE(u.digest_hour, 8)
 		FROM users u
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1`, userID).Scan(
 		&p.ID, &p.Email, &p.UserName, &p.Timezone, &p.ItemsPerPage, &p.RoleID, &p.Permissions,
+		&p.DigestEnabled, &p.DigestHour,
 	)
 	if err != nil {
 		return nil, err
@@ -44,6 +48,45 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		p.Permissions = []string{}
 	}
 	return &p, nil
+}
+
+// UpdateUserProfileByID updates mutable profile fields for a user.
+func UpdateUserProfileByID(userID int, userName, timezone string, itemsPerPage int, digestEnabled bool, digestHour int) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(), `
+		UPDATE users SET user_name = $1, timezone = $2, items_per_page = $3,
+		       digest_enabled = $4, digest_hour = $5
+		WHERE id = $6`,
+		userName, timezone, itemsPerPage, digestEnabled, digestHour, userID)
+	return err
+}
+
+// GetPasswordHashByID returns the bcrypt hash for a user id.
+func GetPasswordHashByID(userID int) (string, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return "", err
+	}
+	defer CloseDatabase(pool)
+	var hash string
+	err = pool.QueryRow(context.Background(), `SELECT password FROM users WHERE id = $1`, userID).Scan(&hash)
+	return hash, err
+}
+
+// UpdatePasswordByID sets a new password hash for a user.
+func UpdatePasswordByID(userID int, hashedPassword string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(), `UPDATE users SET password = $1 WHERE id = $2`, hashedPassword, userID)
+	return err
 }
 
 // LookupInvite returns invite id and whether it was already used.

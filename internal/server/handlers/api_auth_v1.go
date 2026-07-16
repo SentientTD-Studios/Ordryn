@@ -29,12 +29,14 @@ type apiAuthLoginRequest struct {
 }
 
 type apiUserMeJSON struct {
-	ID           int      `json:"id"`
-	Email        string   `json:"email"`
-	UserName     string   `json:"user_name"`
-	Timezone     string   `json:"timezone"`
-	ItemsPerPage int      `json:"items_per_page"`
-	Permissions  []string `json:"permissions"`
+	ID            int      `json:"id"`
+	Email         string   `json:"email"`
+	UserName      string   `json:"user_name"`
+	Timezone      string   `json:"timezone"`
+	ItemsPerPage  int      `json:"items_per_page"`
+	Permissions   []string `json:"permissions"`
+	DigestEnabled bool     `json:"digest_enabled"`
+	DigestHour    int      `json:"digest_hour"`
 }
 
 func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
@@ -43,12 +45,14 @@ func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
 		perms = []string{}
 	}
 	return apiUserMeJSON{
-		ID:           p.ID,
-		Email:        p.Email,
-		UserName:     p.UserName,
-		Timezone:     p.Timezone,
-		ItemsPerPage: p.ItemsPerPage,
-		Permissions:  perms,
+		ID:            p.ID,
+		Email:         p.Email,
+		UserName:      p.UserName,
+		Timezone:      p.Timezone,
+		ItemsPerPage:  p.ItemsPerPage,
+		Permissions:   perms,
+		DigestEnabled: p.DigestEnabled,
+		DigestHour:    p.DigestHour,
 	}
 }
 
@@ -292,21 +296,3 @@ func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// APIV1Me handles GET /api/v1/me.
-func APIV1Me(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
-		return
-	}
-	userID, ok := utils.GetAPIUserID(r)
-	if !ok {
-		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
-		return
-	}
-	profile, err := storage.GetUserProfileByID(userID)
-	if err != nil {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
-		return
-	}
-	writeAPIUserJSON(w, http.StatusOK, profile)
-}
