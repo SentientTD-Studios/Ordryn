@@ -84,13 +84,19 @@
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/register</code></td><td>Register (session cookie)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/login</code></td><td>Login (session cookie)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/logout</code></td><td>Clear session cookie</td></tr>
-                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/me</code></td><td>Current user (session or API key)</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/me</code></td><td>Current user / update profile</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/me/password</code></td><td>Change password</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><code>/api/v1/api-keys</code></td><td>List / create API keys</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/api-keys/{id}</code></td><td>Revoke an API key</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/tasks</code></td><td>List tasks (with filters and pagination)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/tasks</code></td><td>Create a task</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/tasks/{id}</code></td><td>Get one task</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/tasks/{id}</code></td><td>Update a task</td></tr>
-                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/tasks/{id}</code></td><td>Delete a task</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/tasks/{id}</code></td><td>Delete a task (returns undo_token)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/tasks/reorder</code></td><td>Reorder tasks within a favorite group</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/tasks/bulk</code></td><td>Bulk actions</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/tasks/undo</code></td><td>Restore deleted tasks via undo_token</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/tasks/{id}/events</code></td><td>Task activity timeline</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/saved-views</code></td><td>List saved views</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/saved-views</code></td><td>Create a saved view</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/saved-views/{id}</code></td><td>Get one saved view</td></tr>
@@ -120,8 +126,8 @@
                     <h2 id="session-auth" class="h4 mt-4">Session auth (SPA)</h2>
                     <p>
                         Browser / SPA clients can register and log in with JSON and receive an httpOnly session cookie
-                        (same cookie store as the legacy web UI). <code>GET /api/v1/me</code> accepts either that cookie
-                        or a Bearer API key. Task routes under <code>/api/v1/tasks</code> still require a Bearer key today.
+                        (same cookie store as the legacy web UI). Resource routes under <code>/api/v1</code> accept either
+                        that cookie or a Bearer API key (Redis required for rate limiting / key lookup).
                     </p>
                     <table class="table table-sm api-docs-table">
                         <thead>
@@ -136,7 +142,10 @@
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/register</code></td><td>Public (API enabled + Redis)</td><td>Create account; respects invite-only settings; sets session cookie; returns user JSON</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/login</code></td><td>Public (API enabled + Redis)</td><td>Email/password login; sets session cookie; returns user JSON</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/logout</code></td><td>API enabled</td><td>Clears session cookie</td></tr>
-                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/me</code></td><td>Session cookie or Bearer</td><td>Current user profile</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/me</code></td><td>Session cookie or Bearer</td><td>Read or update profile</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/me/password</code></td><td>Session cookie or Bearer</td><td>Change password</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><code>/api/v1/api-keys</code></td><td>Session cookie or Bearer</td><td>List or create keys</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/api-keys/{id}</code></td><td>Session cookie or Bearer</td><td>Revoke a key</td></tr>
                         </tbody>
                     </table>
                     <pre class="api-docs-pre"><code>POST {{basePath}}/api/v1/auth/login
@@ -322,7 +331,29 @@ Content-Type: application/json
 
                     <h3 class="h5 mt-3">Delete task</h3>
                     <p><span class="badge bg-danger">DELETE</span> <code>/api/v1/tasks/{id}</code></p>
-                    <p>Returns <code>204 No Content</code> on success.</p>
+                    <p>Returns JSON with a one-time <code>undo_token</code> (valid ~120 seconds):</p>
+                    <pre class="api-docs-pre"><code>{ "ok": true, "undo_token": "…", "expires_in": 120 }</code></pre>
+
+                    <h3 class="h5 mt-3">Bulk actions</h3>
+                    <p><span class="badge bg-primary">POST</span> <code>/api/v1/tasks/bulk</code></p>
+                    <pre class="api-docs-pre"><code>{
+  "action": "complete",          // complete|incomplete|delete|move_project|add_tag|remove_tag|set_priority|set_due_date
+  "task_ids": [1, 2, 3],
+  "project_id": 4,               // move_project (omit/null clears project)
+  "tag_id": 7,                   // add_tag / remove_tag
+  "priority": 2,                 // set_priority (0-3)
+  "due_date": "2026-08-01"       // set_due_date ("" clears)
+}</code></pre>
+                    <p>Returns <code>{ "ok": true, "affected": N, "action": "…" }</code>. Deletes also include <code>undo_token</code>.</p>
+
+                    <h3 class="h5 mt-3">Undo delete</h3>
+                    <p><span class="badge bg-primary">POST</span> <code>/api/v1/tasks/undo</code></p>
+                    <pre class="api-docs-pre"><code>{ "undo_token": "…" }</code></pre>
+                    <p>Restores tasks from the token (or from the session cookie undo buffer if no token is sent).</p>
+
+                    <h3 class="h5 mt-3">Task events</h3>
+                    <p><span class="badge bg-success">GET</span> <code>/api/v1/tasks/{id}/events</code></p>
+                    <p>Returns a JSON array of activity entries (<code>event_type</code>, <code>label</code>, <code>metadata</code>, <code>created_at</code>).</p>
 
                     <h3 class="h5 mt-3">Reorder tasks</h3>
                     <p><span class="badge bg-primary">POST</span> <code>/api/v1/tasks/reorder</code></p>

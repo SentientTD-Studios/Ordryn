@@ -91,6 +91,9 @@ func registerAPIV1Routes() {
 	handleBoth("/api/v1/auth/login", authPublic(handlers.APIV1AuthLogin))
 	handleBoth("/api/v1/auth/logout", utils.RequireAPIEnabled(handlers.APIV1AuthLogout))
 	handleBoth("/api/v1/me", utils.AuthSessionChain(handlers.APIV1Me))
+	handleBoth("/api/v1/me/password", utils.AuthSessionChain(handlers.APIV1ChangePassword))
+	handleBoth("/api/v1/api-keys", utils.AuthSessionChain(handlers.APIV1APIKeysRouter))
+	handleBoth("/api/v1/api-keys/", utils.AuthSessionChain(handlers.APIV1APIKeysRouter))
 
 	devicePublic := handlers.DeviceAuthPublicChain
 	handleBoth("/api/v1/auth/device/code", devicePublic(handlers.APIDeviceCode))

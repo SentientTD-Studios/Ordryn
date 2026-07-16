@@ -5,11 +5,13 @@ import (
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/tasks"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type apiTagJSON struct {
@@ -98,6 +100,28 @@ type apiProjectPatchRequest struct {
 	Name string `json:"name"`
 }
 
+type apiBulkRequest struct {
+	Action    string  `json:"action"`
+	TaskIDs   []int   `json:"task_ids"`
+	ProjectID *int    `json:"project_id"`
+	TagID     *int    `json:"tag_id"`
+	Priority  *int    `json:"priority"`
+	DueDate   *string `json:"due_date"`
+}
+
+type apiUndoRequest struct {
+	UndoToken string `json:"undo_token"`
+}
+
+type apiTaskEventJSON struct {
+	ID        int                    `json:"id"`
+	TaskID    int                    `json:"task_id"`
+	EventType string                 `json:"event_type"`
+	Label     string                 `json:"label"`
+	Metadata  map[string]interface{} `json:"metadata"`
+	CreatedAt string                 `json:"created_at"`
+}
+
 func tagToAPIJSON(t storage.Tag) apiTagJSON {
 	return apiTagJSON{ID: t.ID, Name: t.Name, Color: t.Color}
 }
@@ -146,7 +170,7 @@ func decodeJSONBody(r *http.Request, dest interface{}) error {
 	return json.Unmarshal(body, dest)
 }
 
-// APIV1TasksRouter handles /api/v1/tasks, /api/v1/tasks/reorder, and /api/v1/tasks/{id}.
+// APIV1TasksRouter handles /api/v1/tasks, reorder/bulk/undo, /api/v1/tasks/{id}, and events.
 func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "tasks")
 	if sub == "" {
@@ -160,12 +184,42 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if sub == "reorder" {
+	switch sub {
+	case "reorder":
 		if r.Method != http.MethodPost {
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 			return
 		}
 		apiV1ReorderTasks(w, r)
+		return
+	case "bulk":
+		if r.Method != http.MethodPost {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		apiV1BulkTasks(w, r)
+		return
+	case "undo":
+		if r.Method != http.MethodPost {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		apiV1UndoTasks(w, r)
+		return
+	}
+	if strings.HasSuffix(sub, "/events") {
+		idStr := strings.TrimSuffix(sub, "/events")
+		idStr = strings.TrimSuffix(idStr, "/")
+		id, err := strconv.Atoi(idStr)
+		if err != nil || id <= 0 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task id.")
+			return
+		}
+		if r.Method != http.MethodGet {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		apiV1TaskEvents(w, r, id)
 		return
 	}
 	id, err := strconv.Atoi(sub)
@@ -352,15 +406,217 @@ func apiV1DeleteTask(w http.ResponseWriter, r *http.Request, taskID int) {
 		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
 		return
 	}
-	if err := domain.DeleteTask(r.Context(), userID, taskID); err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
+	db, err := storage.OpenDatabase()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Database error.")
+		return
+	}
+	defer storage.CloseDatabase(db)
+
+	token, err := deleteTasksForAPI(r.Context(), db, r, w, []int{taskID}, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Task not found.")
 			return
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to delete task.")
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":          true,
+		"undo_token":  token,
+		"expires_in":  utils.UndoTTLSeconds,
+	})
+}
+
+func apiV1BulkTasks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	var req apiBulkRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	action := strings.TrimSpace(req.Action)
+	if action == "" {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "action is required.")
+		return
+	}
+	if len(req.TaskIDs) == 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "task_ids is required.")
+		return
+	}
+	if len(req.TaskIDs) > maxBulkTaskIDs {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request",
+			"Maximum "+strconv.Itoa(maxBulkTaskIDs)+" tasks per bulk action.")
+		return
+	}
+
+	db, err := storage.OpenDatabase()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Database error.")
+		return
+	}
+	defer storage.CloseDatabase(db)
+
+	ctx := r.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := verifyTasksOwnedByUser(ctx, db, req.TaskIDs, userID); err != nil {
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden", err.Error())
+		return
+	}
+
+	var undoToken string
+	switch action {
+	case "complete":
+		err = bulkSetCompleted(ctx, db, req.TaskIDs, userID, true)
+	case "incomplete":
+		err = bulkSetCompleted(ctx, db, req.TaskIDs, userID, false)
+	case "move_project":
+		projectIDStr := ""
+		if req.ProjectID != nil {
+			projectIDStr = strconv.Itoa(*req.ProjectID)
+		}
+		err = bulkMoveProject(ctx, db, req.TaskIDs, userID, projectIDStr)
+	case "add_tag":
+		if req.TagID == nil || *req.TagID <= 0 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "tag_id is required.")
+			return
+		}
+		err = bulkAddTag(ctx, db, req.TaskIDs, userID, *req.TagID)
+	case "remove_tag":
+		if req.TagID == nil || *req.TagID <= 0 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "tag_id is required.")
+			return
+		}
+		err = bulkRemoveTag(ctx, db, req.TaskIDs, userID, *req.TagID)
+	case "set_priority":
+		if req.Priority == nil || *req.Priority < 0 || *req.Priority > 3 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "priority must be 0-3.")
+			return
+		}
+		err = bulkSetPriority(ctx, db, req.TaskIDs, userID, *req.Priority)
+	case "set_due_date":
+		raw := ""
+		if req.DueDate != nil {
+			raw = *req.DueDate
+		}
+		dueDate, derr := parseBulkDueDate(raw)
+		if derr != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", derr.Error())
+			return
+		}
+		err = bulkSetDueDate(ctx, db, req.TaskIDs, userID, dueDate)
+	case "delete":
+		undoToken, err = deleteTasksForAPI(ctx, db, r, w, req.TaskIDs, userID)
+	default:
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Unknown bulk action.")
+		return
+	}
+	if err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+
+	resp := map[string]interface{}{
+		"ok":       true,
+		"affected": len(req.TaskIDs),
+		"action":   action,
+	}
+	if undoToken != "" {
+		resp["undo_token"] = undoToken
+		resp["expires_in"] = utils.UndoTTLSeconds
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func apiV1UndoTasks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	var req apiUndoRequest
+	// Empty body is allowed when restoring from session pending_undo.
+	_ = decodeJSONBody(r, &req)
+
+	var snaps []DeletedTaskSnapshot
+	if strings.TrimSpace(req.UndoToken) != "" {
+		redisSnaps, err := utils.LoadUndoToken(r.Context(), userID, req.UndoToken)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		snaps = fromRedisUndoSnapshots(redisSnaps)
+	} else {
+		pu, err := loadPendingUndo(r)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		snaps = pu.Tasks
+	}
+
+	db, err := storage.OpenDatabase()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Database error.")
+		return
+	}
+	defer storage.CloseDatabase(db)
+
+	if err := restoreDeletedTasks(r.Context(), db, userID, snaps); err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to restore tasks.")
+		return
+	}
+	_ = clearPendingUndo(r, w)
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":        true,
+		"restored":  len(snaps),
+	})
+}
+
+func apiV1TaskEvents(w http.ResponseWriter, r *http.Request, taskID int) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	tz := GetUserTimezoneByID(userID)
+	if _, err := tasks.FetchTaskByIDForUser(taskID, userID, tz, 1); err != nil {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Task not found.")
+		return
+	}
+	events, err := storage.GetEventsForTask(taskID, userID, 50)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load events.")
+		return
+	}
+	out := make([]apiTaskEventJSON, 0, len(events))
+	for _, ev := range events {
+		meta := ev.Metadata
+		if meta == nil {
+			meta = map[string]interface{}{}
+		}
+		out = append(out, apiTaskEventJSON{
+			ID:        ev.ID,
+			TaskID:    ev.TaskID,
+			EventType: ev.EventType,
+			Label:     formatEventLabel(ev.EventType, meta),
+			Metadata:  meta,
+			CreatedAt: ev.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func apiV1ReorderTasks(w http.ResponseWriter, r *http.Request) {

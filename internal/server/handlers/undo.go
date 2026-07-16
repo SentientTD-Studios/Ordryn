@@ -15,6 +15,44 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func toRedisUndoSnapshots(tasks []DeletedTaskSnapshot) []utils.UndoTaskSnapshot {
+	out := make([]utils.UndoTaskSnapshot, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, utils.UndoTaskSnapshot{
+			ID:          t.ID,
+			Title:       t.Title,
+			Description: t.Description,
+			DueDate:     t.DueDate,
+			Completed:   t.Completed,
+			IsFavorite:  t.IsFavorite,
+			Priority:    t.Priority,
+			Position:    t.Position,
+			ProjectID:   t.ProjectID,
+			TagIDs:      t.TagIDs,
+		})
+	}
+	return out
+}
+
+func fromRedisUndoSnapshots(tasks []utils.UndoTaskSnapshot) []DeletedTaskSnapshot {
+	out := make([]DeletedTaskSnapshot, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, DeletedTaskSnapshot{
+			ID:          t.ID,
+			Title:       t.Title,
+			Description: t.Description,
+			DueDate:     t.DueDate,
+			Completed:   t.Completed,
+			IsFavorite:  t.IsFavorite,
+			Priority:    t.Priority,
+			Position:    t.Position,
+			ProjectID:   t.ProjectID,
+			TagIDs:      t.TagIDs,
+		})
+	}
+	return out
+}
+
 const undoTTL = 120 * time.Second
 
 // DeletedTaskSnapshot captures task state for undo restore.

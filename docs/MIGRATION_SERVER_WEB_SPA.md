@@ -247,11 +247,11 @@ Priority order for SPA MVP:
 | P0 | Tasks CRUD + reorder + filters | mostly exists | Ensure filter query parity with web |
 | P0 | Projects CRUD | add POST/PATCH/DELETE | **Done** — list/create/rename/delete |
 | P0 | Tags CRUD | add PATCH/rename if needed | **Done** — list/create/rename/delete |
-| P1 | Profile update / change password / timezone / items_per_page | `/api/v1/me` PATCH + password endpoint | |
-| P1 | API key list/create/revoke | `/api/v1/api-keys` | Session **or** admin bootstrap; needed by SPA settings |
-| P1 | Bulk actions | `POST /api/v1/tasks/bulk` | |
-| P1 | Task events / audit | `GET /api/v1/tasks/{id}/events` | |
-| P1 | Undo delete | `POST /api/v1/tasks/{id}/restore` or undo token | Match current undo semantics |
+| P1 | Profile update / change password / timezone / items_per_page | `/api/v1/me` PATCH + password endpoint | **Done** |
+| P1 | API key list/create/revoke | `/api/v1/api-keys` | **Done** — session or Bearer |
+| P1 | Bulk actions | `POST /api/v1/tasks/bulk` | **Done** |
+| P1 | Task events / audit | `GET /api/v1/tasks/{id}/events` | **Done** |
+| P1 | Undo delete | `POST /api/v1/tasks/undo` + `undo_token` | **Done** — Redis token (~120s) + session fallback |
 | P2 | Saved views | exists | Wire in SPA |
 | P2 | Dashboard stats | `GET /api/v1/dashboard` | |
 | P2 | Export / import | `GET/POST /api/v1/export|import` | May be multipart |
@@ -263,7 +263,8 @@ Priority order for SPA MVP:
 | P3 | Duplicate task | `POST /api/v1/tasks/{id}/duplicate` | |
 
 - [x] P0 projects + tags write endpoints on `/api/v1`
-- [ ] Remaining P1/P2/P3 rows in implementation PRs
+- [x] P1 profile, API keys, bulk, events, undo on `/api/v1`
+- [ ] Remaining P2/P3 rows in implementation PRs
 - [ ] Keep `/documentation/api/v1` **or** replace with generated docs from OpenAPI (prefer OpenAPI as source)
 
 #### A4 — OpenAPI
@@ -369,7 +370,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase A3 P1:** profile update / change password, API key list/create/revoke, bulk actions, task events, undo delete. Then **A4 OpenAPI**.
+**Phase A4:** add `openapi.yaml` covering implemented `/api/v1` routes + lightweight CI check. Then Phase B SPA scaffold under `web/`.
 
 ---
 
@@ -409,3 +410,4 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Phase A2: `internal/domain` task/project/tag writes shared by HTMX + `/api/v1` |
 | 2026-07-16 | Clarified one-product deploy model; added `DEPLOYMENT_OPTIONS.md` + `LOCAL_TESTING.md` |
 | 2026-07-16 | Phase A3 P0: `/api/v1` project CRUD + tag rename (`PATCH`) |
+| 2026-07-16 | Phase A3 P1: profile/password, api-keys, bulk, events, undo_token; session-or-Bearer on APIChain |
