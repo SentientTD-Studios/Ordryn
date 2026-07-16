@@ -91,9 +91,9 @@ Already decided separately. Consumer of the same OpenAPI contract as web.
 |-------------------------------------|--------|
 | `/api/v1/tasks`, projects, tags, saved-views | Exists |
 | Device SSO code/token | Exists |
-| `GET /api/v1/health` | **Phase 0 (this branch)** |
-| `GET /api/v1/me`, register/login JSON | Phase A |
-| Bootstrap / enable API without HTML | **Phase 0 (this branch)** |
+| `GET /api/v1/health` | Exists (Phase 0) |
+| `GET /api/v1/me`, register/login/logout JSON | Exists (Phase A1) |
+| Bootstrap / enable API without HTML | Exists (Phase 0) |
 
 ---
 

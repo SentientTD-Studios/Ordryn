@@ -217,12 +217,12 @@ Agents should complete phases in order. Each phase has **exit criteria**. Check 
 
 #### A1 — Auth & session JSON
 
-- [ ] `POST /api/v1/auth/register`
-- [ ] `POST /api/v1/auth/login`
-- [ ] `POST /api/v1/auth/logout`
-- [ ] `GET /api/v1/me`
-- [ ] Password reset flow JSON (request + confirm) **or** documented deferral to Phase C
-- [ ] Contract tests / fixtures for auth responses
+- [x] `POST /api/v1/auth/register`
+- [x] `POST /api/v1/auth/login`
+- [x] `POST /api/v1/auth/logout`
+- [x] `GET /api/v1/me`
+- [x] Password reset flow JSON **deferred to Phase C** (documented in API docs + this plan)
+- [x] Contract tests / fixtures for auth responses (`api_auth_v1_test.go`)
 
 #### A2 — Domain extraction (stop duplicating SQL)
 
@@ -361,7 +361,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase A1:** `POST /api/v1/auth/register|login|logout` and `GET /api/v1/me`.
+**Phase A2:** extract shared task/project/tag domain services used by HTMX + `/api/v1`.
 
 ---
 
@@ -397,3 +397,4 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Initial locked plan: server / SPA web / app; HTMX removal; phased API-first path |
 | 2026-07-16 | Working branch set to `cursor/server-split-f103`; leave `dev` alone until merged to `main` |
 | 2026-07-16 | Phase 0 implemented; added `docs/REPO_SPLIT.md` for future server/web repos |
+| 2026-07-16 | Phase A1: JSON register/login/logout + `/api/v1/me`; password-reset deferred to C |
