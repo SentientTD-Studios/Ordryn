@@ -132,7 +132,7 @@ func APIUpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := domain.RenameTag(r.Context(), *uidPtr, id, name); err != nil {
+	if _, err := domain.RenameTag(r.Context(), *uidPtr, id, name); err != nil {
 		w.Header().Set("X-Validation-Error", "true")
 		w.Header().Set("HX-Retarget", "#tag-name-error")
 		w.Header().Set("HX-Reswap", "innerHTML")

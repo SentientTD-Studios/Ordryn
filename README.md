@@ -105,16 +105,20 @@ No `.env` file is required for tests; a test session key is used automatically u
 
 See LICENSE file.
 
-## Architecture migration
+## Architecture & deployment
 
-Server / SPA web / app split work happens on branch `cursor/server-split-f103`.
+Ordryn is **one binary**. Operators choose UI+API or API-only; separate web/Android repos are optional clients, not required to self-host.
 
-- Plan: [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md)
-- What goes into new **server** / **web** / **Android** repos: [`docs/REPO_SPLIT.md`](docs/REPO_SPLIT.md)
+| Doc | Purpose |
+|-----|---------|
+| [`docs/DEPLOYMENT_OPTIONS.md`](docs/DEPLOYMENT_OPTIONS.md) | `full` vs `api`, what users run |
+| [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md) | Local smoke tests (UI, API-only, Android against LAN) |
+| [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md) | Server Split plan (branch `cursor/server-split-f103`) |
+| [`docs/REPO_SPLIT.md`](docs/REPO_SPLIT.md) | Logical ownership; optional future extracts |
 
 ## API-only mode (no web UI)
 
-Run the JSON API without loading HTMX templates or static UI assets:
+Run the JSON API without loading HTMX templates or static UI assets. Full walkthrough: [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md).
 
 ```bash
 export GOTODO_MODE=api   # or: go run . --mode=api

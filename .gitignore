@@ -10,6 +10,8 @@ RELEASE_NOTES_DRAFT.md
 docs/*
 !docs/MIGRATION_SERVER_WEB_SPA.md
 !docs/REPO_SPLIT.md
+!docs/DEPLOYMENT_OPTIONS.md
+!docs/LOCAL_TESTING.md
 
 # Node/npm
 node_modules/

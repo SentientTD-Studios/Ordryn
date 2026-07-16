@@ -5,11 +5,17 @@
 **Working branch:** `cursor/server-split-f103` (“Server Split”) — **all migration work lands here**  
 **Do not touch:** `dev` (no further commits to `dev` for this effort)  
 **Baseline on branch:** former `dev` API v1 / device SSO merged into Server Split for implementation  
-**Also see:** [`REPO_SPLIT.md`](./REPO_SPLIT.md) — what belongs in new server / web / Android repos  
+**Also see:**
+- [`DEPLOYMENT_OPTIONS.md`](./DEPLOYMENT_OPTIONS.md) — one binary; `full` vs `api`; optional clients
+- [`LOCAL_TESTING.md`](./LOCAL_TESTING.md) — get a testable local stack now
+- [`REPO_SPLIT.md`](./REPO_SPLIT.md) — logical ownership + optional future extracts  
+
 **Last updated:** 2026-07-16
 
 This document is the durable source of truth for the architecture migration.  
 Future agents and sessions should treat decisions marked **LOCKED** as settled unless a maintainer explicitly revises this file.
+
+**Product model reminder:** Ordryn stays **one self-hostable binary**. “Server / web / app” is a *logical* split (API vs SPA vs Android). Separate git repos are optional later — not required for local testing or for users who only want the API.
 
 ---
 
@@ -28,7 +34,8 @@ flowchart LR
 | **Leave `dev` alone** | No commits, rebases, or PRs into/from `dev` for this migration |
 | **Baseline** | API v1 work from `dev` is on Server Split; do not commit back to `dev` |
 | **Landing** | After local testing on Server Split, open a PR into the organization-level repository / `main` |
-| **New repos** | Track extraction inventory in [`REPO_SPLIT.md`](./REPO_SPLIT.md) |
+| **Local test** | Follow [`LOCAL_TESTING.md`](./LOCAL_TESTING.md) — Ordryn alone is enough; no sibling repos required |
+| **New repos** | Optional later; inventory in [`REPO_SPLIT.md`](./REPO_SPLIT.md) |
 
 ---
 
@@ -36,7 +43,7 @@ flowchart LR
 
 | # | Decision | Status |
 |---|----------|--------|
-| D1 | Split into **server** (API + domain), **web** (SPA client), **app** (Android, separate repo) | **LOCKED** |
+| D1 | Split **logically** into **server** (API + domain), **web** (SPA client), **app** (Android). Physical multi-repo extract is optional; one Ordryn binary remains the self-host path | **LOCKED** |
 | D2 | Decouple from **HTMX entirely**; web becomes a **true SPA** over JSON `/api/v1` | **LOCKED** |
 | D3 | No long-term dual UI stack (HTMX + SPA). Short transition window only; HTMX removal is an explicit phase | **LOCKED** |
 | D4 | Android stays in a **separate repository**; this repo owns the API contract (+ optional SPA) | **LOCKED** |
@@ -204,7 +211,7 @@ Agents should complete phases in order. Each phase has **exit criteria**. Check 
 - [x] Load config without `InitializeTemplates()` (`utils.LoadRuntimeConfig`)
 - [x] `--mode=api` / `GOTODO_MODE=api` skips template parse, static file routes, HTML/HTMX routes
 - [x] Bootstrap admin + `enable_api` + optional API key (`GOTODO_BOOTSTRAP_*`)
-- [x] Document API-only run + repo split (`README`, `docs/REPO_SPLIT.md`)
+- [x] Document API-only run + deploy options + local testing (`README`, `DEPLOYMENT_OPTIONS.md`, `LOCAL_TESTING.md`, `REPO_SPLIT.md`)
 - [x] Health endpoint: `GET /api/v1/health` (no auth) → `{ version, api_enabled, redis_ok, mode }`
 
 **Exit criteria:** Fresh DB + API-only binary → bootstrap → `curl` health + authenticated task list works with minted key. No `templates/` required on disk for `api` mode.
@@ -238,8 +245,8 @@ Priority order for SPA MVP:
 |----------|------------|-----------|-------|
 | P0 | Auth register/login/me/health | A1 + Phase 0 | Unblocks SPA + API-only |
 | P0 | Tasks CRUD + reorder + filters | mostly exists | Ensure filter query parity with web |
-| P0 | Projects CRUD | add POST/PATCH/DELETE | List exists |
-| P0 | Tags CRUD | add PATCH/rename if needed | Create/delete exist |
+| P0 | Projects CRUD | add POST/PATCH/DELETE | **Done** — list/create/rename/delete |
+| P0 | Tags CRUD | add PATCH/rename if needed | **Done** — list/create/rename/delete |
 | P1 | Profile update / change password / timezone / items_per_page | `/api/v1/me` PATCH + password endpoint | |
 | P1 | API key list/create/revoke | `/api/v1/api-keys` | Session **or** admin bootstrap; needed by SPA settings |
 | P1 | Bulk actions | `POST /api/v1/tasks/bulk` | |
@@ -255,7 +262,8 @@ Priority order for SPA MVP:
 | P3 | Announcements dismiss | minor | |
 | P3 | Duplicate task | `POST /api/v1/tasks/{id}/duplicate` | |
 
-- [ ] Check off each row in implementation PRs
+- [x] P0 projects + tags write endpoints on `/api/v1`
+- [ ] Remaining P1/P2/P3 rows in implementation PRs
 - [ ] Keep `/documentation/api/v1` **or** replace with generated docs from OpenAPI (prefer OpenAPI as source)
 
 #### A4 — OpenAPI
@@ -361,7 +369,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase A3 (P0 leftovers):** project write endpoints on `/api/v1`, tag rename on v1, then remaining resource parity.
+**Phase A3 P1:** profile update / change password, API key list/create/revoke, bulk actions, task events, undo delete. Then **A4 OpenAPI**.
 
 ---
 
@@ -399,3 +407,5 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Phase 0 implemented; added `docs/REPO_SPLIT.md` for future server/web repos |
 | 2026-07-16 | Phase A1: JSON register/login/logout + `/api/v1/me`; password-reset deferred to C |
 | 2026-07-16 | Phase A2: `internal/domain` task/project/tag writes shared by HTMX + `/api/v1` |
+| 2026-07-16 | Clarified one-product deploy model; added `DEPLOYMENT_OPTIONS.md` + `LOCAL_TESTING.md` |
+| 2026-07-16 | Phase A3 P0: `/api/v1` project CRUD + tag rename (`PATCH`) |
