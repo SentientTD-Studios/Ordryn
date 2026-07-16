@@ -158,6 +158,75 @@ paths:
         "400":
           description: Pending, denied, expired, or invalid (OAuth-style error body)
 
+  /api/v1/auth/device/status:
+    get:
+      tags: [Device Auth]
+      summary: Look up a pending device authorization by user_code
+      security: []
+      parameters:
+        - name: user_code
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Device auth status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/auth/device/approve:
+    post:
+      tags: [Device Auth]
+      summary: Approve a pending device authorization
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_code]
+              properties:
+                user_code:
+                  type: string
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+
+  /api/v1/auth/device/deny:
+    post:
+      tags: [Device Auth]
+      summary: Deny a pending device authorization
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_code]
+              properties:
+                user_code:
+                  type: string
+      responses:
+        "200":
+          description: Denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+
   /api/v1/me:
     get:
       tags: [Profile]
@@ -772,6 +841,217 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Aggregate task stats for the current user
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /api/v1/calendar:
+    get:
+      tags: [Calendar]
+      summary: Get or create the ICS feed token and URL
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Calendar token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarInfo"
+
+  /api/v1/calendar/regenerate:
+    post:
+      tags: [Calendar]
+      summary: Rotate the ICS feed token
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: New calendar token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarInfo"
+
+  /api/v1/export:
+    get:
+      tags: [Export]
+      summary: Export tasks as JSON or CSV
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        "200":
+          description: Export payload
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+            text/csv:
+              schema:
+                type: string
+
+  /api/v1/invites:
+    get:
+      tags: [Invites]
+      summary: List invites
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invite"
+    post:
+      tags: [Invites]
+      summary: Create an invite
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+
+  /api/v1/invites/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      tags: [Invites]
+      summary: Delete an unused invite
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+
+  /api/v1/admin/settings:
+    get:
+      tags: [Admin]
+      summary: Get site settings
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSettings"
+    patch:
+      tags: [Admin]
+      summary: Update site settings
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSettingsPatch"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSettings"
+
+  /api/v1/admin/users:
+    get:
+      tags: [Admin]
+      summary: List users
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUser"
+
+  /api/v1/admin/users/{id}/ban:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Ban a user
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Banned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+
+  /api/v1/admin/users/{id}/unban:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Unban a user
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Unbanned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1252,5 +1532,136 @@ components:
           type: string
         expires_in:
           type: integer
+
+    DeviceStatus:
+      type: object
+      properties:
+        user_code:
+          type: string
+        client_name:
+          type: string
+        status:
+          type: string
+
+    DashboardStats:
+      type: object
+      properties:
+        overdue_count:
+          type: integer
+        due_today_count:
+          type: integer
+        completed_this_week:
+          type: integer
+        completed_this_month:
+          type: integer
+        streak_days:
+          type: integer
+        by_project:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              count:
+                type: integer
+        by_priority:
+          type: array
+          items:
+            type: object
+            properties:
+              priority:
+                type: integer
+              label:
+                type: string
+              count:
+                type: integer
+        completions_last_7_days:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              count:
+                type: integer
+
+    CalendarInfo:
+      type: object
+      properties:
+        token:
+          type: string
+        feed_url:
+          type: string
+
+    Invite:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        token:
+          type: string
+        used:
+          type: boolean
+
+    AdminSettings:
+      type: object
+      properties:
+        site_name:
+          type: string
+        default_timezone:
+          type: string
+        show_changelog:
+          type: boolean
+        site_version:
+          type: string
+        enable_registration:
+          type: boolean
+        invite_only:
+          type: boolean
+        meta_description:
+          type: string
+        enable_global_announcement:
+          type: boolean
+        global_announcement_text:
+          type: string
+        enable_api:
+          type: boolean
+
+    AdminSettingsPatch:
+      type: object
+      properties:
+        site_name:
+          type: string
+        default_timezone:
+          type: string
+        show_changelog:
+          type: boolean
+        enable_registration:
+          type: boolean
+        invite_only:
+          type: boolean
+        meta_description:
+          type: string
+        enable_global_announcement:
+          type: boolean
+        global_announcement_text:
+          type: string
+        enable_api:
+          type: boolean
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        user_name:
+          type: string
+        is_banned:
+          type: boolean
         interval:
           type: integer

@@ -1,4 +1,19 @@
-import type { Project, Tag, Task, TaskList, User } from './types'
+import type {
+  AdminSettings,
+  AdminUser,
+  APIKey,
+  CalendarInfo,
+  DashboardStats,
+  DeviceStatus,
+  Invite,
+  Project,
+  SavedView,
+  SavedViewFilter,
+  Tag,
+  Task,
+  TaskList,
+  User,
+} from './types'
 import { APIError, type APIErrorBody } from './types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -37,6 +52,30 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return data as T
+}
+
+async function download(path: string, fallbackName: string): Promise<void> {
+  const res = await fetch(path, { credentials: 'include' })
+  if (!res.ok) {
+    let message = res.statusText || 'Download failed'
+    try {
+      const body = (await res.json()) as APIErrorBody
+      message = body.message || message
+    } catch {
+      /* ignore */
+    }
+    throw new APIError(res.status, 'request_failed', message)
+  }
+  const blob = await res.blob()
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const match = /filename="([^"]+)"/.exec(disposition)
+  const filename = match?.[1] || fallbackName
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export const api = {
@@ -79,6 +118,32 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
+  },
+
+  changePassword(payload: {
+    current_password: string
+    new_password: string
+    confirm_password: string
+  }) {
+    return request<{ ok: boolean }>('/api/v1/me/password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listAPIKeys() {
+    return request<APIKey[]>('/api/v1/api-keys')
+  },
+
+  createAPIKey(name: string) {
+    return request<APIKey & { key: string }>('/api/v1/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  },
+
+  revokeAPIKey(id: number) {
+    return request<void>(`/api/v1/api-keys/${id}`, { method: 'DELETE' })
   },
 
   listTasks(params: Record<string, string | number | undefined> = {}) {
@@ -142,6 +207,20 @@ export const api = {
     })
   },
 
+  bulkTasks(payload: {
+    action: string
+    task_ids: number[]
+    project_id?: number | null
+    tag_id?: number
+    priority?: number
+    due_date?: string
+  }) {
+    return request<{ ok: boolean; affected: number; undo_token?: string }>('/api/v1/tasks/bulk', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   listProjects() {
     return request<Project[]>('/api/v1/projects')
   },
@@ -166,5 +245,111 @@ export const api = {
 
   listTags() {
     return request<Tag[]>('/api/v1/tags')
+  },
+
+  createTag(name: string) {
+    return request<Tag>('/api/v1/tags', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  },
+
+  renameTag(id: number, name: string) {
+    return request<Tag>(`/api/v1/tags/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    })
+  },
+
+  deleteTag(id: number) {
+    return request<void>(`/api/v1/tags/${id}`, { method: 'DELETE' })
+  },
+
+  dashboard() {
+    return request<DashboardStats>('/api/v1/dashboard')
+  },
+
+  getCalendar() {
+    return request<CalendarInfo>('/api/v1/calendar')
+  },
+
+  regenerateCalendar() {
+    return request<CalendarInfo>('/api/v1/calendar/regenerate', { method: 'POST' })
+  },
+
+  downloadExport(format: 'json' | 'csv' = 'json') {
+    return download(`/api/v1/export?format=${format}`, `gotodo-export.${format}`)
+  },
+
+  listSavedViews() {
+    return request<SavedView[]>('/api/v1/saved-views')
+  },
+
+  createSavedView(payload: { name: string; filter: SavedViewFilter; sort_order?: number }) {
+    return request<SavedView>('/api/v1/saved-views', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteSavedView(id: number) {
+    return request<void>(`/api/v1/saved-views/${id}`, { method: 'DELETE' })
+  },
+
+  deviceStatus(userCode: string) {
+    const qs = new URLSearchParams({ user_code: userCode })
+    return request<DeviceStatus>(`/api/v1/auth/device/status?${qs}`)
+  },
+
+  deviceApprove(userCode: string) {
+    return request<{ ok: boolean; status: string }>('/api/v1/auth/device/approve', {
+      method: 'POST',
+      body: JSON.stringify({ user_code: userCode }),
+    })
+  },
+
+  deviceDeny(userCode: string) {
+    return request<{ ok: boolean; status: string }>('/api/v1/auth/device/deny', {
+      method: 'POST',
+      body: JSON.stringify({ user_code: userCode }),
+    })
+  },
+
+  getAdminSettings() {
+    return request<AdminSettings>('/api/v1/admin/settings')
+  },
+
+  patchAdminSettings(payload: Partial<AdminSettings>) {
+    return request<AdminSettings>('/api/v1/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listAdminUsers() {
+    return request<AdminUser[]>('/api/v1/admin/users')
+  },
+
+  banUser(id: number) {
+    return request<{ ok: boolean }>(`/api/v1/admin/users/${id}/ban`, { method: 'POST' })
+  },
+
+  unbanUser(id: number) {
+    return request<{ ok: boolean }>(`/api/v1/admin/users/${id}/unban`, { method: 'POST' })
+  },
+
+  listInvites() {
+    return request<Invite[]>('/api/v1/invites')
+  },
+
+  createInvite(email: string) {
+    return request<Invite>('/api/v1/invites', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  },
+
+  deleteInvite(id: number) {
+    return request<void>(`/api/v1/invites/${id}`, { method: 'DELETE' })
   },
 }

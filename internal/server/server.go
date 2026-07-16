@@ -101,6 +101,9 @@ func registerAPIV1Routes() {
 	devicePublic := handlers.DeviceAuthPublicChain
 	handleBoth("/api/v1/auth/device/code", devicePublic(handlers.APIDeviceCode))
 	handleBoth("/api/v1/auth/device/token", devicePublic(handlers.APIDeviceToken))
+	handleBoth("/api/v1/auth/device/status", utils.RequireAPIEnabled(utils.RequireAPIRedis(handlers.APIV1DeviceStatus)))
+	handleBoth("/api/v1/auth/device/approve", utils.AuthSessionChain(handlers.APIV1DeviceApprove))
+	handleBoth("/api/v1/auth/device/deny", utils.AuthSessionChain(handlers.APIV1DeviceDeny))
 
 	v1 := utils.APIChain
 	handleBoth("/api/v1/tasks", v1(handlers.APIV1TasksRouter))
@@ -111,6 +114,15 @@ func registerAPIV1Routes() {
 	handleBoth("/api/v1/tags/", v1(handlers.APIV1TagsRouter))
 	handleBoth("/api/v1/saved-views", v1(handlers.APIV1SavedViewsRouter))
 	handleBoth("/api/v1/saved-views/", v1(handlers.APIV1SavedViewsRouter))
+	handleBoth("/api/v1/dashboard", v1(handlers.APIV1Dashboard))
+	handleBoth("/api/v1/calendar", v1(handlers.APIV1CalendarRouter))
+	handleBoth("/api/v1/calendar/", v1(handlers.APIV1CalendarRouter))
+	handleBoth("/api/v1/export", v1(handlers.APIV1Export))
+	handleBoth("/api/v1/invites", utils.InviteAPIChain(handlers.APIV1InvitesRouter))
+	handleBoth("/api/v1/invites/", utils.InviteAPIChain(handlers.APIV1InvitesRouter))
+	handleBoth("/api/v1/admin/settings", utils.AdminAPIChain(handlers.APIV1AdminSettings))
+	handleBoth("/api/v1/admin/users", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
+	handleBoth("/api/v1/admin/users/", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
 
 	// Tokenized ICS feed does not require the HTML UI.
 	handleBoth("/cal/", handlers.CalendarFeedHandler)
@@ -155,7 +167,11 @@ func registerStaticAndWebRoutes() {
 	handleBoth("/admin/", utils.RequirePermission("admin", handlers.AdminPageHandler))
 	handleBoth("/forgot-password", handlers.ForgotPasswordPage)
 	handleBoth("/password-reset", handlers.PasswordResetPage)
-	handleBoth("/auth/device", handlers.DeviceAuthPageHandler)
+	if utils.GetRuntimeUI() == utils.UISPA {
+		handleBoth("/auth/device", spaDeviceAuthRedirect)
+	} else {
+		handleBoth("/auth/device", handlers.DeviceAuthPageHandler)
+	}
 	handleBoth("/changelog/page", handlers.ChangelogPageHandler)
 }
 

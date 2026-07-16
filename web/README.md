@@ -7,7 +7,7 @@ Vue 3 + TypeScript + Vite client for `/api/v1`.
 Terminal 1 — API (API must be enabled + Redis):
 
 ```bash
-GOTODO_MODE=full GOTODO_UI=htmx go run .
+GOTODO_MODE=full GOTODO_UI=spa go run .
 ```
 
 Terminal 2 — Vite (proxies `/api` → `:8080`):
@@ -31,8 +31,18 @@ npm run build
 Output lands in `web/dist`. The Go server serves it at `/app/` in `full` mode.
 
 ```bash
-GOTODO_UI=spa go run .   # "/" redirects to /app/
+GOTODO_UI=spa go run .   # default; "/" redirects to /app/
+GOTODO_UI=htmx go run .  # legacy HTMX UI
 ```
+
+## Surfaces
+
+- Auth: login / register (session cookie)
+- Tasks: create, complete, delete, undo, bulk
+- Projects, tags, saved views, dashboard
+- Settings: profile, password, calendar feed token, export, API keys
+- Device approve: `/app/auth/device` (also via `/auth/device` redirect)
+- Admin + invites (permission-gated)
 
 ## Auth
 

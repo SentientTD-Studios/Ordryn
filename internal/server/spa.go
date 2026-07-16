@@ -44,6 +44,18 @@ func spaRootRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }
 
+func spaDeviceAuthRedirect(w http.ResponseWriter, r *http.Request) {
+	base := strings.TrimSuffix(utils.GetBasePath(), "/")
+	target := "/app/auth/device"
+	if base != "" && base != "/" {
+		target = base + "/app/auth/device"
+	}
+	if q := r.URL.RawQuery; q != "" {
+		target += "?" + q
+	}
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+}
+
 func serveSPA(w http.ResponseWriter, r *http.Request, mount string, fileServer http.Handler) {
 	rel := strings.TrimPrefix(r.URL.Path, mount)
 	rel = strings.TrimPrefix(rel, "/")

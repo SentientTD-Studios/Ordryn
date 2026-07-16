@@ -18,6 +18,9 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/auth/logout",
 	"/api/v1/auth/device/code",
 	"/api/v1/auth/device/token",
+	"/api/v1/auth/device/status",
+	"/api/v1/auth/device/approve",
+	"/api/v1/auth/device/deny",
 	"/api/v1/me",
 	"/api/v1/me/password",
 	"/api/v1/api-keys",
@@ -34,6 +37,16 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/tags/{id}",
 	"/api/v1/saved-views",
 	"/api/v1/saved-views/{id}",
+	"/api/v1/dashboard",
+	"/api/v1/calendar",
+	"/api/v1/calendar/regenerate",
+	"/api/v1/export",
+	"/api/v1/invites",
+	"/api/v1/invites/{id}",
+	"/api/v1/admin/settings",
+	"/api/v1/admin/users",
+	"/api/v1/admin/users/{id}/ban",
+	"/api/v1/admin/users/{id}/unban",
 }
 
 func moduleRoot(t *testing.T) string {

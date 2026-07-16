@@ -35,10 +35,40 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('@/views/DashboardView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/views',
+      name: 'views',
+      component: () => import('@/views/SavedViewsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue'),
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/auth/device',
+      name: 'device-auth',
+      component: () => import('@/views/DeviceAuthView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminView.vue'),
+      meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
+      path: '/invites',
+      name: 'invites',
+      component: () => import('@/views/InvitesView.vue'),
+      meta: { requiresAuth: true, permission: 'createinvites' },
     },
   ],
 })
@@ -52,6 +82,10 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.meta.guest && auth.isAuthenticated.value) {
+    return { name: 'tasks' }
+  }
+  const permission = to.meta.permission as string | undefined
+  if (permission && !auth.hasPermission(permission)) {
     return { name: 'tasks' }
   }
   return true

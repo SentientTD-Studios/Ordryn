@@ -119,7 +119,7 @@ No Ordryn code changes required.
 2. Point the app at `http://<your-lan-ip>:8080` (not `localhost` on the phone’s own loopback).
 3. Auth options:
    - Paste Bearer API key (from bootstrap or Profile), or
-   - Device SSO: `POST /api/v1/auth/device/code` → open verification URL in a browser → approve (approve UI needs **full** mode or a future SPA route).
+   - Device SSO: `POST /api/v1/auth/device/code` → open verification URL → approve in SPA at `/app/auth/device` (`GOTODO_UI=spa`).
 
 Minimum server checks before app testing:
 
@@ -183,6 +183,7 @@ go test ./internal/server/ -run 'TestOpenAPI|TestServerAPIV1' -count=1
 - [ ] Bearer project create/rename/delete and tag create/rename/delete
 - [ ] `PATCH /api/v1/me`, `POST /api/v1/me/password`, API key list/create/revoke
 - [ ] `POST /api/v1/tasks/bulk`, delete → `undo_token` → `POST /api/v1/tasks/undo`, `GET .../events`
+- [ ] SPA (`GOTODO_UI=spa`): dashboard, saved views, settings export/calendar, device approve, admin/invites (with perms)
 - [ ] (Optional) Android or HTTP client against LAN URL
 
 ---
@@ -190,7 +191,7 @@ go test ./internal/server/ -run 'TestOpenAPI|TestServerAPIV1' -count=1
 ## What you do *not* need for this testing
 
 - A separate **gotodo-server** clone — this repo *is* the server
-- A **gotodo-web** repo — SPA is not scaffolded yet (Phase B); HTMX is still the built-in UI
+- A **gotodo-web** repo — SPA lives in `web/` and is served at `/app/`
 - An Android repo — only needed if you are testing the mobile app specifically
 
 See [`DEPLOYMENT_OPTIONS.md`](./DEPLOYMENT_OPTIONS.md) for the user-facing model.
