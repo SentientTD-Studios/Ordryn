@@ -130,6 +130,27 @@ curl -s http://HOST:8080/api/v1/health
 
 ---
 
+## Option D — Vue SPA (`/app`)
+
+```bash
+# Terminal 1: API + HTMX still available
+GOTODO_MODE=full go run .
+
+# Terminal 2: Vite
+npm run dev:web
+# → http://localhost:5173/app/
+```
+
+Production-style (built assets served by Go):
+
+```bash
+npm run build:web
+GOTODO_UI=spa go run .
+# → http://localhost:8080/ redirects to /app/
+```
+
+Requires API enabled + Redis (same as other `/api/v1` flows).
+
 ## Automated tests (no Postgres UI)
 
 ```bash

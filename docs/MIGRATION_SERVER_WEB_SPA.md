@@ -49,7 +49,7 @@ flowchart LR
 | D4 | Android stays in a **separate repository**; this repo owns the API contract (+ optional SPA) | **LOCKED** |
 | D5 | API-first sequencing: complete `/api/v1` (+ auth/bootstrap) **before** SPA feature work | **LOCKED** |
 | D6 | Server must be hostable **without** shipping or booting the web UI | **LOCKED** |
-| D7 | SPA stack default: **React + TypeScript + Vite** (override only by revising this doc) | **LOCKED** |
+| D7 | SPA stack default: **Vue 3 + TypeScript + Vite** (revised from React; override only by revising this doc) | **LOCKED** |
 | D8 | Web auth: JSON login/register issuing **httpOnly session cookie** (same-origin SPA). Android keeps **Bearer API key** + device SSO | **LOCKED** |
 | D9 | Breaking API changes → new version (`/api/v2`); v1 stays additive | **LOCKED** |
 | D10 | OpenAPI (`openapi.yaml`) lives in **this** repo as the machine-readable contract | **LOCKED** |
@@ -77,7 +77,7 @@ flowchart TB
       Boot --> Domain
     end
     subgraph web [web SPA]
-      SPA[React + Vite app]
+      SPA[Vue + Vite app]
       Static[built static assets]
       SPA --> Static
     end
@@ -149,7 +149,7 @@ GoTodo/
 │   ├── config/
 │   ├── sessionstore/
 │   └── version/
-├── web/                        # NEW: React + TS + Vite SPA (source)
+├── web/                        # NEW: Vue 3 + TS + Vite SPA (source)
 │   ├── package.json
 │   ├── src/
 │   └── dist/                   # build output ( Pan or CI-built)
@@ -280,13 +280,13 @@ Priority order for SPA MVP:
 
 **Goal:** New `web/` app authenticates and manages tasks via v1 only.
 
-- [ ] Scaffold `web/` (React + TS + Vite)
-- [ ] API client generated or hand-written from OpenAPI
-- [ ] Routes: login, register, home task list, task detail/edit, projects, settings/profile
-- [ ] Auth cookie handling + error toasts + basic responsive shell
-- [ ] Dev proxy to Go API
-- [ ] Production build output served by Go `full` mode (or nginx example)
-- [ ] Feature flag / path: e.g. `/app/*` SPA while HTMX remains on `/` **or** env `GOTODO_UI=spa|htmx`
+- [x] Scaffold `web/` (Vue 3 + TS + Vite)
+- [x] API client hand-written from OpenAPI shapes (`web/src/api`)
+- [x] Routes: login, register, home task list, task detail/edit, projects, settings/profile
+- [x] Auth cookie handling + error toasts + basic responsive shell
+- [x] Dev proxy to Go API (`web/vite.config.ts`)
+- [x] Production build output served by Go `full` mode at `/app/`
+- [x] Feature flag: `GOTODO_UI=htmx|spa` (`spa` redirects `/` → `/app/`)
 
 **Exit criteria:** User can register/login and complete core task workflows in SPA against a `dev` API without HTMX.
 
@@ -370,7 +370,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase B:** scaffold `web/` (React + TypeScript + Vite) SPA against `/api/v1` + OpenAPI; cookie auth; serve `web/dist` from `full` mode.
+**Phase C:** SPA parity (admin, invites, import/export, calendar, dashboard, saved views, device approve) and default `GOTODO_UI=spa`.
 
 ---
 
@@ -412,3 +412,5 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Phase A3 P0: `/api/v1` project CRUD + tag rename (`PATCH`) |
 | 2026-07-16 | Phase A3 P1: profile/password, api-keys, bulk, events, undo_token; session-or-Bearer on APIChain |
 | 2026-07-16 | Phase A4: `openapi.yaml` + OpenAPI path coverage tests/CI |
+| 2026-07-16 | D7 revised: SPA stack is **Vue 3 + TypeScript + Vite** (was React) |
+| 2026-07-16 | Phase B: Vue SPA under `web/`, served at `/app/`, `GOTODO_UI` flag |

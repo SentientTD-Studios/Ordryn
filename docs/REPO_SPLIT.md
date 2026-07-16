@@ -60,7 +60,7 @@ Keep as the canonical server. Same as today.
 
 | Include | Exclude |
 |---------|---------|
-| React + Vite `web/` source | Go, SQL, migrations |
+| Vue 3 + Vite `web/` source | Go, SQL, migrations |
 | Client generated from server OpenAPI | Redis/Postgres config |
 
 Self-hosters can still use Ordryn `full` mode serving `web/dist` without cloning gotodo-web.
@@ -81,7 +81,7 @@ Self-hosters can still use Ordryn `full` mode serving `web/dist` without cloning
 - [x] `GOTODO_MODE=api|full`
 - [x] Bootstrap + `/api/v1/health` + session JSON auth
 - [x] `openapi.yaml` (Phase A4)
-- [ ] SPA under `web/` (Phase B)
+- [x] SPA under `web/` (Phase B, Vue 3)
 
 ### B. Create gotodo-web (only after SPA MVP)
 

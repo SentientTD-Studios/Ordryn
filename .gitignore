@@ -16,3 +16,5 @@ docs/*
 # Node/npm
 node_modules/
 npm-debug.log
+web/dist/
+web/node_modules/

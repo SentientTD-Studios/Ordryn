@@ -23,3 +23,13 @@ jobs:
 
       - name: OpenAPI path coverage
         run: go test ./internal/server/ -run 'TestOpenAPI|TestServerAPIV1' -count=1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Vue SPA
+        run: npm --prefix web ci && npm --prefix web run build

@@ -26,8 +26,9 @@ This is **not** three mandatory products. Android (and a future SPA repo) are op
 
 | Option | Env / flag | Who it’s for | UI |
 |--------|------------|--------------|-----|
-| **Full** (default) | `GOTODO_MODE=full` or omit | Normal self-host | Yes — HTMX today |
+| **Full** (default) | `GOTODO_MODE=full` or omit | Normal self-host | Yes — HTMX today; Vue SPA at `/app/` when built |
 | **API only** | `GOTODO_MODE=api` or `--mode=api` | Headless / app clients / “server without frontend” | No HTML UI |
+| **SPA preferred** | `GOTODO_UI=spa` (with `full`) | Dogfood Vue client | `/` redirects to `/app/` |
 
 Both modes share the same database, migrations, `/api/v1`, bootstrap, and Redis requirements for the REST API.
 
