@@ -86,6 +86,12 @@ func StartServer() error {
 func registerAPIV1Routes() {
 	handleBoth("/api/v1/health", handlers.APIV1Health)
 
+	authPublic := utils.AuthPublicChain
+	handleBoth("/api/v1/auth/register", authPublic(handlers.APIV1AuthRegister))
+	handleBoth("/api/v1/auth/login", authPublic(handlers.APIV1AuthLogin))
+	handleBoth("/api/v1/auth/logout", utils.RequireAPIEnabled(handlers.APIV1AuthLogout))
+	handleBoth("/api/v1/me", utils.AuthSessionChain(handlers.APIV1Me))
+
 	devicePublic := handlers.DeviceAuthPublicChain
 	handleBoth("/api/v1/auth/device/code", devicePublic(handlers.APIDeviceCode))
 	handleBoth("/api/v1/auth/device/token", devicePublic(handlers.APIDeviceToken))

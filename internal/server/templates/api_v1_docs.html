@@ -54,6 +54,7 @@
                         <ul class="list-inline mb-0">
                             <li class="list-inline-item"><a href="#overview">Overview</a></li>
                             <li class="list-inline-item"><a href="#authentication">Authentication</a></li>
+                            <li class="list-inline-item"><a href="#session-auth">Session auth (SPA)</a></li>
                             <li class="list-inline-item"><a href="#device-auth">Device authorization</a></li>
                             <li class="list-inline-item"><a href="#errors">Errors</a></li>
                             <li class="list-inline-item"><a href="#rate-limits">Rate limits</a></li>
@@ -79,6 +80,11 @@
                             </tr>
                         </thead>
                         <tbody>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/health</code></td><td>Public health probe</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/register</code></td><td>Register (session cookie)</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/login</code></td><td>Login (session cookie)</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/logout</code></td><td>Clear session cookie</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/me</code></td><td>Current user (session or API key)</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/tasks</code></td><td>List tasks (with filters and pagination)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/tasks</code></td><td>Create a task</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/tasks/{id}</code></td><td>Get one task</td></tr>
@@ -105,6 +111,39 @@
                     <p class="text-muted small mb-0">
                         Keys are created on the profile page and shown in full only once at creation.
                         Revoked keys stop working immediately. The API requires Redis for key validation and rate limiting.
+                    </p>
+
+                    <h2 id="session-auth" class="h4 mt-4">Session auth (SPA)</h2>
+                    <p>
+                        Browser / SPA clients can register and log in with JSON and receive an httpOnly session cookie
+                        (same cookie store as the legacy web UI). <code>GET /api/v1/me</code> accepts either that cookie
+                        or a Bearer API key. Task routes under <code>/api/v1/tasks</code> still require a Bearer key today.
+                    </p>
+                    <table class="table table-sm api-docs-table">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Path</th>
+                                <th>Auth</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/register</code></td><td>Public (API enabled + Redis)</td><td>Create account; respects invite-only settings; sets session cookie; returns user JSON</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/login</code></td><td>Public (API enabled + Redis)</td><td>Email/password login; sets session cookie; returns user JSON</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/logout</code></td><td>API enabled</td><td>Clears session cookie</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/me</code></td><td>Session cookie or Bearer</td><td>Current user profile</td></tr>
+                        </tbody>
+                    </table>
+                    <pre class="api-docs-pre"><code>POST {{basePath}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "email": "you@example.com", "password": "secret" }
+
+→ 200 { "id", "email", "user_name", "timezone", "items_per_page", "permissions" }
+   (+ Set-Cookie: session=…)</code></pre>
+                    <p class="text-muted small">
+                        Password-reset JSON endpoints are deferred (use the web forgot-password flow until Phase C).
                     </p>
 
                     <h2 id="device-auth" class="h4 mt-4">Device authorization</h2>

@@ -174,6 +174,54 @@ func APIChain(handler http.HandlerFunc) http.HandlerFunc {
 	return chain
 }
 
+// AuthPublicChain wraps JSON login/register (API enabled + Redis + IP rate limit; no API key).
+func AuthPublicChain(handler http.HandlerFunc) http.HandlerFunc {
+	return RequireAPIEnabled(
+		RequireAPIRedis(
+			RateLimitMiddleware(10, 1.0, 60, KeyByIP)(handler),
+		),
+	)
+}
+
+// RequireSessionOrAPIKey accepts either a session cookie or Bearer API key and sets API user id.
+func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := extractBearerToken(r)
+		if token != "" {
+			if !RedisAvailable() {
+				APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable",
+					"The REST API requires Redis for authentication and rate limiting.")
+				return
+			}
+			userID, err := storage.LookupAPIKeyUserID(token)
+			if err != nil {
+				APIJSONError(w, http.StatusUnauthorized, "unauthorized",
+					"Invalid or revoked API key.")
+				return
+			}
+			*r = *SetAPIUserID(r, userID)
+			next(w, r)
+			return
+		}
+
+		if uid := GetSessionUserID(r); uid != nil {
+			*r = *SetAPIUserID(r, *uid)
+			next(w, r)
+			return
+		}
+
+		APIJSONError(w, http.StatusUnauthorized, "unauthorized",
+			"Not authenticated. Send a session cookie or Authorization: Bearer <api_key>.")
+	}
+}
+
+// AuthSessionChain wraps endpoints that need a logged-in SPA session or API key.
+func AuthSessionChain(handler http.HandlerFunc) http.HandlerFunc {
+	return RequireAPIEnabled(
+		RequireSessionOrAPIKey(handler),
+	)
+}
+
 // ParseAPIV1Subpath returns the path segment after /api/v1/<resource>/.
 func ParseAPIV1Subpath(r *http.Request, resource string) string {
 	base := strings.TrimSuffix(GetBasePath(), "/")
