@@ -84,6 +84,16 @@ curl -s -H "Authorization: Bearer $KEY" \
   -d '{"title":"API-only smoke task"}' \
   http://localhost:8080/api/v1/tasks | jq .
 
+# Projects + tags (A3 P0)
+curl -s -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke project"}' \
+  http://localhost:8080/api/v1/projects | jq .
+curl -s -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-tag"}' \
+  http://localhost:8080/api/v1/tags | jq .
+
 # Confirm UI routes are not registered
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/
 # Expect 404 (no HomeHandler in api mode)
@@ -143,6 +153,7 @@ go test ./internal/domain/ ./internal/server/handlers/ ./internal/server/utils/ 
 - [ ] `GET /api/v1/health` reports `mode`, `api_enabled`, `redis_ok`
 - [ ] `POST /api/v1/auth/login` + `GET /api/v1/me` (cookie)
 - [ ] Bearer `GET /api/v1/tasks` and `POST /api/v1/tasks`
+- [ ] Bearer project create/rename/delete and tag create/rename/delete
 - [ ] (Optional) Android or HTTP client against LAN URL
 
 ---

@@ -97,8 +97,12 @@
                             <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/saved-views/{id}</code></td><td>Replace or update a saved view</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/saved-views/{id}</code></td><td>Delete a saved view</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/projects</code></td><td>List projects</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/projects</code></td><td>Create a project</td></tr>
+                            <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/projects/{id}</code></td><td>Rename a project</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/projects/{id}</code></td><td>Delete a project</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/tags</code></td><td>List tags</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/tags</code></td><td>Create a tag</td></tr>
+                            <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/tags/{id}</code></td><td>Rename a tag</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/tags/{id}</code></td><td>Delete a tag</td></tr>
                         </tbody>
                     </table>
@@ -443,14 +447,36 @@ Content-Type: application/json
                     </p>
 
                     <h2 id="projects" class="h4 mt-4">Projects</h2>
+
+                    <h3 class="h5 mt-3">List projects</h3>
                     <p><span class="badge bg-success">GET</span> <code>/api/v1/projects</code></p>
                     <p>Returns a JSON array of project objects:</p>
                     <pre class="api-docs-pre"><code>[
   { "id": 1, "name": "Work" },
   { "id": 2, "name": "Personal" }
 ]</code></pre>
-                    <p class="text-muted small mb-0">
-                        Projects are managed through the web UI. Use project IDs when creating or updating tasks.
+
+                    <h3 class="h5 mt-3">Create project</h3>
+                    <p><span class="badge bg-primary">POST</span> <code>/api/v1/projects</code></p>
+                    <p>JSON body:</p>
+                    <pre class="api-docs-pre"><code>{
+  "name": "Work"    // required, max 50 characters
+}</code></pre>
+                    <p>Returns <code>201 Created</code> with the project object.</p>
+
+                    <h3 class="h5 mt-3">Rename project</h3>
+                    <p><span class="badge bg-warning text-dark">PATCH</span> <code>/api/v1/projects/{id}</code></p>
+                    <p>JSON body:</p>
+                    <pre class="api-docs-pre"><code>{
+  "name": "Renamed"
+}</code></pre>
+                    <p>Returns the updated project object. Missing ids return <code>404 not_found</code>.</p>
+
+                    <h3 class="h5 mt-3">Delete project</h3>
+                    <p><span class="badge bg-danger">DELETE</span> <code>/api/v1/projects/{id}</code></p>
+                    <p>Returns <code>204 No Content</code> on success. Tasks keep their data; project association is cleared by the database rules.</p>
+                    <p class="text-muted small">
+                        Use project IDs when creating or updating tasks.
                     </p>
 
                     <h2 id="tags" class="h4 mt-4">Tags</h2>
@@ -473,6 +499,14 @@ Content-Type: application/json
                         Returns <code>201 Created</code> with the tag object.
                         Names are unique per user (case-insensitive); if a tag with the same name already exists, that tag is returned.
                     </p>
+
+                    <h3 class="h5 mt-3">Rename tag</h3>
+                    <p><span class="badge bg-warning text-dark">PATCH</span> <code>/api/v1/tags/{id}</code></p>
+                    <p>JSON body:</p>
+                    <pre class="api-docs-pre"><code>{
+  "name": "renamed"
+}</code></pre>
+                    <p>Returns the updated tag object. Duplicate names return <code>400 invalid_request</code>.</p>
 
                     <h3 class="h5 mt-3">Delete tag</h3>
                     <p><span class="badge bg-danger">DELETE</span> <code>/api/v1/tags/{id}</code></p>

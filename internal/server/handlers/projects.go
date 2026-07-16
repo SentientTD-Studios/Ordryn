@@ -5,13 +5,14 @@ import (
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-const MaxProjectNameLength = 50
+const MaxProjectNameLength = domain.MaxProjectNameLength
 
 // ProjectsPageHandler shows the user's projects and a simple create form.
 func ProjectsPageHandler(w http.ResponseWriter, r *http.Request) {
@@ -243,7 +244,11 @@ func APIUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := domain.RenameProject(r.Context(), *uidPtr, id, name); err != nil {
+	if _, err := domain.RenameProject(r.Context(), *uidPtr, id, name); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			http.Error(w, "Project not found.", http.StatusNotFound)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Failed to update project: %v", err), http.StatusInternalServerError)
 		return
 	}

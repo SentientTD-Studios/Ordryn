@@ -86,6 +86,18 @@ type apiTagCreateRequest struct {
 	Name string `json:"name"`
 }
 
+type apiTagPatchRequest struct {
+	Name string `json:"name"`
+}
+
+type apiProjectCreateRequest struct {
+	Name string `json:"name"`
+}
+
+type apiProjectPatchRequest struct {
+	Name string `json:"name"`
+}
+
 func tagToAPIJSON(t storage.Tag) apiTagJSON {
 	return apiTagJSON{ID: t.ID, Name: t.Name, Color: t.Color}
 }
@@ -390,12 +402,41 @@ func apiV1ReorderTasks(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(apiReorderOKResponse{OK: true})
 }
 
-// APIV1Projects returns the user's projects.
-func APIV1Projects(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+// APIV1ProjectsRouter handles /api/v1/projects and /api/v1/projects/{id}.
+func APIV1ProjectsRouter(w http.ResponseWriter, r *http.Request) {
+	sub := utils.ParseAPIV1Subpath(r, "projects")
+	if sub == "" {
+		switch r.Method {
+		case http.MethodGet:
+			apiV1ListProjects(w, r)
+		case http.MethodPost:
+			apiV1CreateProject(w, r)
+		default:
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		}
 		return
 	}
+	id, err := strconv.Atoi(sub)
+	if err != nil || id <= 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid project id.")
+		return
+	}
+	switch r.Method {
+	case http.MethodPatch:
+		apiV1PatchProject(w, r, id)
+	case http.MethodDelete:
+		apiV1DeleteProject(w, r, id)
+	default:
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+	}
+}
+
+// APIV1Projects is kept as an alias for list-only callers/tests.
+func APIV1Projects(w http.ResponseWriter, r *http.Request) {
+	APIV1ProjectsRouter(w, r)
+}
+
+func apiV1ListProjects(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
 		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
@@ -412,6 +453,76 @@ func APIV1Projects(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(out)
+}
+
+func apiV1CreateProject(w http.ResponseWriter, r *http.Request) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	var req apiProjectCreateRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	project, err := domain.CreateProject(r.Context(), userID, req.Name)
+	if err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to create project.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(apiProjectJSON{ID: project.ID, Name: project.Name})
+}
+
+func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	var req apiProjectPatchRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	project, err := domain.RenameProject(r.Context(), userID, projectID, req.Name)
+	if err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update project.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(apiProjectJSON{ID: project.ID, Name: project.Name})
+}
+
+func apiV1DeleteProject(w http.ResponseWriter, r *http.Request, projectID int) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	if err := domain.DeleteProject(r.Context(), userID, projectID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to delete project.")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // APIV1TagsRouter handles /api/v1/tags and /api/v1/tags/{id}.
@@ -434,6 +545,8 @@ func APIV1TagsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodPatch:
+		apiV1PatchTag(w, r, id)
 	case http.MethodDelete:
 		apiV1DeleteTag(w, r, id)
 	default:
@@ -485,6 +598,34 @@ func apiV1CreateTag(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tagToAPIJSON(*tag))
 }
 
+func apiV1PatchTag(w http.ResponseWriter, r *http.Request, tagID int) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	var req apiTagPatchRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	tag, err := domain.RenameTag(r.Context(), userID, tagID, req.Name)
+	if err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Tag not found.")
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(tagToAPIJSON(*tag))
+}
+
 func apiV1DeleteTag(w http.ResponseWriter, r *http.Request, tagID int) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -492,7 +633,11 @@ func apiV1DeleteTag(w http.ResponseWriter, r *http.Request, tagID int) {
 		return
 	}
 	if err := domain.DeleteTag(r.Context(), userID, tagID); err != nil {
-		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Tag not found.")
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Tag not found.")
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag.")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

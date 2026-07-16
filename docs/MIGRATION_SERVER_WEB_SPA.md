@@ -245,8 +245,8 @@ Priority order for SPA MVP:
 |----------|------------|-----------|-------|
 | P0 | Auth register/login/me/health | A1 + Phase 0 | Unblocks SPA + API-only |
 | P0 | Tasks CRUD + reorder + filters | mostly exists | Ensure filter query parity with web |
-| P0 | Projects CRUD | add POST/PATCH/DELETE | List exists |
-| P0 | Tags CRUD | add PATCH/rename if needed | Create/delete exist |
+| P0 | Projects CRUD | add POST/PATCH/DELETE | **Done** — list/create/rename/delete |
+| P0 | Tags CRUD | add PATCH/rename if needed | **Done** — list/create/rename/delete |
 | P1 | Profile update / change password / timezone / items_per_page | `/api/v1/me` PATCH + password endpoint | |
 | P1 | API key list/create/revoke | `/api/v1/api-keys` | Session **or** admin bootstrap; needed by SPA settings |
 | P1 | Bulk actions | `POST /api/v1/tasks/bulk` | |
@@ -262,7 +262,8 @@ Priority order for SPA MVP:
 | P3 | Announcements dismiss | minor | |
 | P3 | Duplicate task | `POST /api/v1/tasks/{id}/duplicate` | |
 
-- [ ] Check off each row in implementation PRs
+- [x] P0 projects + tags write endpoints on `/api/v1`
+- [ ] Remaining P1/P2/P3 rows in implementation PRs
 - [ ] Keep `/documentation/api/v1` **or** replace with generated docs from OpenAPI (prefer OpenAPI as source)
 
 #### A4 — OpenAPI
@@ -368,7 +369,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase A3 (P0 leftovers):** project write endpoints on `/api/v1`, tag rename on v1, then remaining resource parity.
+**Phase A3 P1:** profile update / change password, API key list/create/revoke, bulk actions, task events, undo delete. Then **A4 OpenAPI**.
 
 ---
 
@@ -407,3 +408,4 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Phase A1: JSON register/login/logout + `/api/v1/me`; password-reset deferred to C |
 | 2026-07-16 | Phase A2: `internal/domain` task/project/tag writes shared by HTMX + `/api/v1` |
 | 2026-07-16 | Clarified one-product deploy model; added `DEPLOYMENT_OPTIONS.md` + `LOCAL_TESTING.md` |
+| 2026-07-16 | Phase A3 P0: `/api/v1` project CRUD + tag rename (`PATCH`) |

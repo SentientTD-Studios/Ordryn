@@ -99,7 +99,8 @@ func registerAPIV1Routes() {
 	v1 := utils.APIChain
 	handleBoth("/api/v1/tasks", v1(handlers.APIV1TasksRouter))
 	handleBoth("/api/v1/tasks/", v1(handlers.APIV1TasksRouter))
-	handleBoth("/api/v1/projects", v1(handlers.APIV1Projects))
+	handleBoth("/api/v1/projects", v1(handlers.APIV1ProjectsRouter))
+	handleBoth("/api/v1/projects/", v1(handlers.APIV1ProjectsRouter))
 	handleBoth("/api/v1/tags", v1(handlers.APIV1TagsRouter))
 	handleBoth("/api/v1/tags/", v1(handlers.APIV1TagsRouter))
 	handleBoth("/api/v1/saved-views", v1(handlers.APIV1SavedViewsRouter))
