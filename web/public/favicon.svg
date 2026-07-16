@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="GoTodo">
+  <rect width="32" height="32" rx="6" fill="#198754"/>
+  <path fill="#fff" d="M8 10h16v2H8zm0 6h16v2H8zm0 6h10v2H8z"/>
+  <path fill="#fff" d="M22 22l4 4-1.5 1.5-4-4z"/>
+</svg>

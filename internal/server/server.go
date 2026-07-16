@@ -36,7 +36,9 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 
 func StartServer() error {
 	mode := utils.ResolveMode(os.Args[1:])
+	ui := utils.ResolveUI(os.Args[1:])
 	utils.SetRuntimeMode(mode)
+	utils.SetRuntimeUI(ui)
 	utils.LoadRuntimeConfig()
 
 	if mode == utils.ModeFull {
@@ -74,11 +76,12 @@ func StartServer() error {
 		if err := handlers.PreloadChangelog(); err != nil {
 			fmt.Printf("Warning: Preloading changelog failed: %v\n", err)
 		}
+		registerSPARoutes()
 		registerStaticAndWebRoutes()
 		registerHTMXAPIRoutes()
 	}
 
-	fmt.Printf("Starting server on %s (mode=%s)\n", addr, mode)
+	fmt.Printf("Starting server on %s (mode=%s ui=%s)\n", addr, mode, ui)
 	return http.ListenAndServe(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux))
 }
 
@@ -128,7 +131,11 @@ func registerStaticAndWebRoutes() {
 		})))
 	}
 
-	handleBoth("/", handlers.HomeHandler)
+	if utils.GetRuntimeUI() == utils.UISPA {
+		handleBoth("/", spaRootRedirect)
+	} else {
+		handleBoth("/", handlers.HomeHandler)
+	}
 	handleBoth("/p/", handlers.ProjectFilterHandler)
 	handleBoth("/favicon.ico", serveFavicon)
 	handleBoth("/signup", handlers.SignupPageHandler)
