@@ -297,11 +297,11 @@ Priority order for SPA MVP:
 
 **Goal:** SPA replaces HTMX for all supported product surfaces.
 
-- [x] Admin, invites, export, calendar, dashboard, saved views, device approve (`/app/auth/device`; `/auth/device` redirects when `GOTODO_UI=spa`)
+- [x] Admin, invites, export, calendar, dashboard, saved views, device approve (`/app/auth/device`; legacy paths redirect to `/app/*`)
 - [x] Bulk + undo parity on SPA tasks (keyboard shortcuts deferred)
-- [x] Default `GOTODO_UI=spa` (`/` → `/app/`; HTMX via `GOTODO_UI=htmx`)
-- [x] HTMX UI available only behind explicit legacy flag (temporary)
-- [ ] Multipart import UI in SPA (still HTMX `/import` for now)
+- [x] Multipart import UI in SPA (`/app/import`)
+- [x] Password reset flows in SPA (`/app/forgot-password`, `/app/reset-password`)
+- [x] Calendar ICS sync in settings
 
 **Exit criteria:** Maintainer dogfoods SPA as default; no P0/P1 feature requires HTMX.
 
@@ -311,12 +311,12 @@ Priority order for SPA MVP:
 
 **Goal:** Delete the old web stack.
 
-- [ ] Remove `internal/server/templates/**` (except anything still required — prefer zero)
-- [ ] Remove HTMX `/api/*` fragment handlers and `RequireHTMX`
-- [ ] Remove vendored htmx and obsolete JS modules under `internal/server/public/js`
-- [ ] Collapse `internal/server/handlers` → `internal/api` (+ static SPA host)
-- [ ] Update README: GoTodo is API + SPA; HTMX no longer mentioned as architecture
-- [ ] CI: `api` mode test + SPA build test
+- [x] Remove `internal/server/templates/**`
+- [x] Remove HTMX `/api/*` fragment handlers and `RequireHTMX`
+- [x] Remove vendored htmx and obsolete JS modules under `internal/server/public/js`
+- [ ] Collapse `internal/server/handlers` → `internal/api` (+ static SPA host) — deferred (large rename)
+- [x] Update README: Ordryn is API + SPA; HTMX no longer mentioned as architecture
+- [x] CI: `api` mode test + SPA build test
 
 **Exit criteria:** Repo has no HTMX dependency; `api` and `full` modes both green in CI.
 
@@ -335,13 +335,12 @@ Tracked primarily in the Android repo; server checklist only:
 
 ## 7. Cutover flags (implement once, reuse)
 
-| Variable / flag | Values | Default during migration |
-|-----------------|--------|---------------------------|
+| Variable / flag | Values | Default |
+|-----------------|--------|---------|
 | `GOTODO_MODE` | `full`, `api` | `full` |
-| `GOTODO_UI` | `htmx`, `spa` | `htmx` until Phase C, then `spa` |
 | `GOTODO_BOOTSTRAP_*` | see §5 | unset |
 
-When `GOTODO_UI=spa`, Go serves `web/dist` for non-API routes (SPA fallback to `index.html`).  
+In `full` mode, Go serves the built Vue SPA at `/app/` (with `/` redirecting there).  
 When `GOTODO_MODE=api`, HTML/SPA routes are not registered.
 
 ---

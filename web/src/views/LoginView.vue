@@ -50,6 +50,8 @@ async function onSubmit() {
     <p class="muted">
       No account?
       <RouterLink to="/register">Create one</RouterLink>
+      ·
+      <RouterLink to="/forgot-password">Forgot password?</RouterLink>
     </p>
   </section>
 </template>

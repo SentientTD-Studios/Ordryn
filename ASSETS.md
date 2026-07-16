@@ -1,31 +1,20 @@
-# Asset build (JS/CSS minification)
+# Frontend build (Vue SPA)
 
-This project uses `esbuild` to minify and bundle the frontend assets.
+The browser UI is a Vue 3 + Vite app under `web/`.
 
-Install dev dependencies:
+Build for production (output: `web/dist/`):
 
-```powershell
-npm install
+```bash
+npm run build:web
 ```
 
-Build assets (outputs `.min` files next to sources):
+Develop with hot reload (proxies `/api` to the Go server on `:8080`):
 
-```powershell
-npm run build:assets
+```bash
+npm run dev:web
 ```
 
-Notes:
+CI: `.github/workflows/build-assets.yml` builds the SPA on pushes/PRs to `main`.  
+Go tests also build the SPA in `.github/workflows/go-test.yml`.
 
-- Scripts now write `internal/server/public/js/site.min.js` and `internal/server/public/css/site.min.css` next to the source files.
-- Bump `ASSET_VERSION` (or set via env/CI) to force client cache refresh.
-
-CI integration:
-
-- A GitHub Actions workflow is included at `.github/workflows/build-assets.yml`. On pushes to `main` it will build assets, compute an `ASSET_VERSION` timestamp, write `internal/server/public/.asset_version`, and commit the built assets + `.asset_version` back to the repository.
-- Ensure branch protection or permissions allow the workflow to push; the default `GITHUB_TOKEN` should be sufficient for simple repos.
-
-File location:
-
-- The asset version file is written to `internal/server/public/.asset_version` and is read by the server at runtime. This keeps asset versioning next to the built assets and avoids committing secrets in `.env`.
-
-If you prefer using a git SHA instead of a timestamp, edit the workflow step that computes `ASSET_VERSION`.
+See [`web/README.md`](web/README.md) for route list and auth notes.

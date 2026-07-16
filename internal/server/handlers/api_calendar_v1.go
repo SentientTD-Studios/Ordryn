@@ -16,6 +16,8 @@ func APIV1CalendarRouter(w http.ResponseWriter, r *http.Request) {
 		apiV1GetCalendar(w, r)
 	case sub == "regenerate" && r.Method == http.MethodPost:
 		apiV1RegenerateCalendar(w, r)
+	case sub == "sync" && r.Method == http.MethodPost:
+		apiV1CalendarSync(w, r)
 	default:
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 	}

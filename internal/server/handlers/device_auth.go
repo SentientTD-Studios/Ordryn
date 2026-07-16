@@ -1,13 +1,12 @@
 package handlers
 
 import (
-	"GoTodo/internal/server/utils"
-	"GoTodo/internal/storage"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"GoTodo/internal/server/utils"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -57,8 +56,8 @@ func APIDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verificationURI := utils.AbsoluteURLForRequest(r, "/auth/device")
-	verificationURIComplete := utils.AbsoluteURLForRequest(r, "/auth/device?user_code="+record.UserCode)
+	verificationURI := utils.AbsoluteURLForRequest(r, "/app/auth/device")
+	verificationURIComplete := utils.AbsoluteURLForRequest(r, "/app/auth/device?user_code="+record.UserCode)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -125,157 +124,4 @@ func APIDeviceToken(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeDeviceOAuthError(w, http.StatusBadRequest, "expired_token")
 	}
-}
-
-// DeviceAuthPageHandler renders the browser approval page for a device authorization request.
-func DeviceAuthPageHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userCode := strings.TrimSpace(r.URL.Query().Get("user_code"))
-	email, _, permissions, loggedIn := utils.GetSessionUser(r)
-
-	context := map[string]interface{}{
-		"LoggedIn":    loggedIn,
-		"UserEmail":   email,
-		"Permissions": permissions,
-		"Title":       "Authorize device",
-		"UserCode":    userCode,
-		"ReturnTo":    utils.SafeDeviceReturnTo(r.URL.RequestURI()),
-	}
-
-	if userCode == "" {
-		context["State"] = "missing"
-		utils.RenderTemplate(w, r, "device_auth.html", context)
-		return
-	}
-
-	record, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode)
-	if err != nil {
-		if err == redis.Nil {
-			context["State"] = "expired"
-		} else {
-			context["State"] = "error"
-		}
-		utils.RenderTemplate(w, r, "device_auth.html", context)
-		return
-	}
-
-	context["ClientName"] = record.ClientName
-	context["UserCode"] = record.UserCode
-
-	switch record.Status {
-	case utils.DeviceAuthPending:
-		if loggedIn {
-			context["State"] = "pending"
-			csrfToken, _ := utils.EnsureCSRFToken(r, w)
-			context["CSRFToken"] = csrfToken
-		} else {
-			context["State"] = "login"
-			if context["ReturnTo"] == "" {
-				basePath := utils.GetBasePath()
-				context["ReturnTo"] = basePath + "/auth/device?user_code=" + record.UserCode
-			}
-		}
-	case utils.DeviceAuthApproved:
-		context["State"] = "approved"
-	case utils.DeviceAuthDenied:
-		context["State"] = "denied"
-	default:
-		context["State"] = "error"
-	}
-
-	utils.RenderTemplate(w, r, "device_auth.html", context)
-}
-
-// APIDeviceApprove approves a pending device authorization and stages the API key for polling.
-func APIDeviceApprove(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	uid := utils.GetSessionUserID(r)
-	if uid == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	userCode := strings.TrimSpace(r.FormValue("user_code"))
-	if userCode == "" {
-		http.Error(w, "Missing user code", http.StatusBadRequest)
-		return
-	}
-
-	record, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode)
-	if err != nil {
-		if err == redis.Nil {
-			http.Error(w, "Authorization request expired", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, "Failed to load authorization request", http.StatusInternalServerError)
-		return
-	}
-	if record.Status != utils.DeviceAuthPending {
-		http.Error(w, "Authorization request is no longer pending", http.StatusBadRequest)
-		return
-	}
-
-	clientName := utils.NormalizeClientName(record.ClientName)
-	plaintext, keyRecord, err := storage.CreateOrRotateAPIKey(*uid, clientName)
-	if err != nil {
-		http.Error(w, "Failed to create API key", http.StatusInternalServerError)
-		return
-	}
-
-	if err := utils.ApproveDeviceAuth(r.Context(), userCode, *uid, plaintext, keyRecord.KeyPrefix, keyRecord.Name); err != nil {
-		http.Error(w, "Failed to approve authorization request", http.StatusInternalServerError)
-		return
-	}
-
-	basePath := utils.GetBasePath()
-	w.Header().Set("HX-Redirect", basePath+"/auth/device?user_code="+record.UserCode)
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, " ")
-}
-
-// APIDeviceDeny denies a pending device authorization request.
-func APIDeviceDeny(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if utils.GetSessionUserID(r) == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	userCode := strings.TrimSpace(r.FormValue("user_code"))
-	if userCode == "" {
-		http.Error(w, "Missing user code", http.StatusBadRequest)
-		return
-	}
-
-	record, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode)
-	if err != nil {
-		if err == redis.Nil {
-			http.Error(w, "Authorization request expired", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, "Failed to load authorization request", http.StatusInternalServerError)
-		return
-	}
-
-	if err := utils.DenyDeviceAuth(r.Context(), userCode); err != nil {
-		http.Error(w, "Failed to deny authorization request", http.StatusInternalServerError)
-		return
-	}
-
-	basePath := utils.GetBasePath()
-	w.Header().Set("HX-Redirect", basePath+"/auth/device?user_code="+record.UserCode)
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, " ")
 }

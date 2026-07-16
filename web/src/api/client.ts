@@ -78,6 +78,30 @@ async function download(path: string, fallbackName: string): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
+async function upload<T>(path: string, field: string, file: File): Promise<T> {
+  const fd = new FormData()
+  fd.append(field, file)
+  const res = await fetch(path, { method: 'POST', body: fd, credentials: 'include' })
+  const text = await res.text()
+  let data: unknown = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
+  }
+  if (!res.ok) {
+    const body = data as APIErrorBody | null
+    throw new APIError(
+      res.status,
+      body?.error || 'request_failed',
+      body?.message || res.statusText || 'Request failed',
+    )
+  }
+  return data as T
+}
+
 export const api = {
   health() {
     return request<{ version: string; api_enabled: boolean; redis_ok: boolean; mode: string }>(
@@ -351,5 +375,54 @@ export const api = {
 
   deleteInvite(id: number) {
     return request<void>(`/api/v1/invites/${id}`, { method: 'DELETE' })
+  },
+
+  forgotPassword(email: string, confirmEmail: string) {
+    return request<{ ok: boolean }>('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, confirm_email: confirmEmail }),
+    })
+  },
+
+  validateResetToken(token: string, id: string) {
+    const qs = new URLSearchParams({ token, id })
+    return request<{ valid: boolean; email: string }>(`/api/v1/auth/reset-password?${qs}`)
+  },
+
+  resetPassword(payload: {
+    id: string
+    token: string
+    new_password: string
+    confirm_password: string
+  }) {
+    return request<{ ok: boolean }>('/api/v1/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  importPreview(file: File) {
+    return upload<{
+      preview: { title: string; project: string; due_date: string; tags: string }[]
+      would_import: number
+      would_skip: number
+      total_rows: number
+    }>('/api/v1/import/preview', 'file', file)
+  },
+
+  importConfirm() {
+    return request<{ imported: number; skipped: number }>('/api/v1/import/confirm', { method: 'POST' })
+  },
+
+  importCancel() {
+    return request<{ ok: boolean }>('/api/v1/import/cancel', { method: 'POST' })
+  },
+
+  syncCalendar(file: File) {
+    return upload<{ updated: number }>('/api/v1/calendar/sync', 'ics_file', file)
+  },
+
+  dismissAnnouncement() {
+    return request<{ ok: boolean }>('/api/v1/announcements/dismiss', { method: 'POST' })
   },
 }

@@ -233,17 +233,30 @@ func SafeDeviceReturnTo(returnTo string) string {
 
 	base := strings.TrimSuffix(GetBasePath(), "/")
 	if base == "" || base == "/" {
-		if returnTo == "/auth/device" || strings.HasPrefix(returnTo, "/auth/device?") || strings.HasPrefix(returnTo, "/auth/device/") {
+		if isDeviceAuthReturnPath(returnTo) {
 			return returnTo
 		}
 		return ""
 	}
 
-	if returnTo == base+"/auth/device" || strings.HasPrefix(returnTo, base+"/auth/device?") || strings.HasPrefix(returnTo, base+"/auth/device/") {
-		return returnTo
-	}
-	if returnTo == "/auth/device" || strings.HasPrefix(returnTo, "/auth/device?") || strings.HasPrefix(returnTo, "/auth/device/") {
-		return base + returnTo
+	if isDeviceAuthReturnPath(strings.TrimPrefix(returnTo, base)) || isDeviceAuthReturnPath(returnTo) {
+		if strings.HasPrefix(returnTo, base) {
+			return returnTo
+		}
+		if isDeviceAuthReturnPath(returnTo) {
+			return base + returnTo
+		}
 	}
 	return ""
+}
+
+func isDeviceAuthReturnPath(path string) bool {
+	if path == "/app/auth/device" || strings.HasPrefix(path, "/app/auth/device?") || strings.HasPrefix(path, "/app/auth/device/") {
+		return true
+	}
+	// Legacy paths still accepted for redirects.
+	if path == "/auth/device" || strings.HasPrefix(path, "/auth/device?") || strings.HasPrefix(path, "/auth/device/") {
+		return true
+	}
+	return false
 }

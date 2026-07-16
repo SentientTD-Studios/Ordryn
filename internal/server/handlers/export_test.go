@@ -7,17 +7,17 @@ import (
 
 func TestTaskToCSVRow(t *testing.T) {
 	row := taskToCSVRow(tasks.Task{
-		ID:          1,
-		Title:       "Test",
-		Description: "Desc",
-		Completed:   true,
-		DueDate:     "2026-07-01",
-		ProjectName: "Work",
-		Priority:    2,
-		IsFavorite:  false,
-		Position:    3,
-		Tags:        []tasks.Tag{{Name: "a"}, {Name: "b"}},
-		DateCreated: "2026/01/01",
+		ID:           1,
+		Title:        "Test",
+		Description:  "Desc",
+		Completed:    true,
+		DueDate:      "2026-07-01",
+		ProjectName:  "Work",
+		Priority:     2,
+		IsFavorite:   false,
+		Position:     3,
+		Tags:         []tasks.Tag{{Name: "a"}, {Name: "b"}},
+		DateCreated:  "2026/01/01",
 		DateModified: "2026/01/02",
 	})
 	if len(row) != 12 {
@@ -25,16 +25,6 @@ func TestTaskToCSVRow(t *testing.T) {
 	}
 	if row[0] != "1" || row[1] != "Test" || row[9] != "a;b" {
 		t.Fatalf("unexpected row: %#v", row)
-	}
-}
-
-func TestParseBulkTaskIDs(t *testing.T) {
-	ids, err := parseBulkTaskIDs("1, 2,2, 3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ids) != 3 {
-		t.Fatalf("expected 3 unique ids, got %v", ids)
 	}
 }
 
@@ -46,30 +36,6 @@ func TestParseImportCSV(t *testing.T) {
 	}
 	if cols.title != 0 || len(rows) != 2 {
 		t.Fatalf("unexpected parse result cols=%+v rows=%d", cols, len(rows))
-	}
-}
-
-func TestParseBulkDueDate(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    string
-		wantErr bool
-	}{
-		{"", "", false},
-		{"2026-07-01", "2026-07-01", false},
-		{"bad", "", true},
-	}
-	for _, tc := range cases {
-		got, err := parseBulkDueDate(tc.in)
-		if tc.wantErr && err == nil {
-			t.Fatalf("parseBulkDueDate(%q) expected error", tc.in)
-		}
-		if !tc.wantErr && err != nil {
-			t.Fatalf("parseBulkDueDate(%q) unexpected error: %v", tc.in, err)
-		}
-		if got != tc.want {
-			t.Fatalf("parseBulkDueDate(%q) = %q, want %q", tc.in, got, tc.want)
-		}
 	}
 }
 

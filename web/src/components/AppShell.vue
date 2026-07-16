@@ -28,6 +28,7 @@ async function onLogout() {
         <RouterLink to="/dashboard">Dashboard</RouterLink>
         <RouterLink to="/projects">Projects</RouterLink>
         <RouterLink to="/views">Views</RouterLink>
+        <RouterLink to="/import">Import</RouterLink>
         <RouterLink to="/settings">Settings</RouterLink>
         <RouterLink v-if="hasPermission('createinvites')" to="/invites">Invites</RouterLink>
         <RouterLink v-if="hasPermission('admin')" to="/admin">Admin</RouterLink>

@@ -1,6 +1,6 @@
 # GoTodo
 
-GoTodo is a self-hosted task manager built with Go, PostgreSQL, and HTMX. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, a responsive UI, and in-place HTMX interactions.
+GoTodo (Ordryn) is a self-hosted task manager built with Go, PostgreSQL, and a Vue 3 SPA. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, and a JSON `/api/v1` for web and mobile clients.
 
 **Current version:** v0.17.0-beta
 
@@ -26,7 +26,7 @@ GoTodo is a self-hosted task manager built with Go, PostgreSQL, and HTMX. It foc
 - Invite-only registration and role-based permissions (admin, create invites)
 - Admin panel: site settings, user management, global announcements
 - Dark and light themes
-- HTMX for partial page updates without full reloads
+- Vue 3 SPA at `/app/` over `/api/v1` (session cookie auth)
 
 ## Quick start
 
@@ -49,11 +49,10 @@ BASE_PATH=/         # optional
 ASSET_VERSION=20251130  # optional; bump to force client cache refresh
 ```
 
-2. Install frontend dependencies and build assets:
+2. Build the Vue SPA (required for full mode UI):
 
 ```bash
-npm ci
-npm run build:assets
+npm run build:web
 ```
 
 3. Build and run:
@@ -69,18 +68,19 @@ Or run directly:
 go run main.go
 ```
 
-Open the app in your browser (default: http://localhost:8080).
+Open the app in your browser (default: http://localhost:8080 → `/app/`).
 
-## Frontend Assets
+## Frontend (Vue SPA)
 
-Pre-built minified CSS/JS are included (`internal/server/public/css/site.min.css`, `internal/server/public/js/site.min.js`) so a fresh clone works immediately.
+Source lives in `web/`. Build output is `web/dist/`, served by Go in `full` mode.
 
-After modifying frontend source:
+After modifying the SPA:
 
 ```bash
-npm ci
-npm run build:assets
+npm run build:web
 ```
+
+See [`web/README.md`](web/README.md) for Vite dev proxy setup.
 
 ## Database
 
@@ -90,8 +90,8 @@ The app uses `github.com/jackc/pgx/v5/pgxpool`. Migrations run automatically on 
 
 - Routes: `internal/server/server.go`
 - Handlers: `internal/server/handlers`
-- Templates: `internal/server/templates`
-- Static assets: `internal/server/public`
+- SPA: `web/`
+- Static: `web/dist` (built), `internal/server/public/favicon.svg`
 
 Run tests:
 
@@ -112,7 +112,7 @@ Ordryn is **one binary**. Operators choose UI+API or API-only; separate web/Andr
 | Doc | Purpose |
 |-----|---------|
 | [`openapi.yaml`](openapi.yaml) | Machine-readable `/api/v1` contract (OpenAPI 3) |
-| [`web/README.md`](web/README.md) | Vue 3 SPA (`/app/`), Vite proxy, `GOTODO_UI` |
+| [`web/README.md`](web/README.md) | Vue 3 SPA (`/app/`), Vite proxy |
 | [`docs/DEPLOYMENT_OPTIONS.md`](docs/DEPLOYMENT_OPTIONS.md) | `full` vs `api`, what users run |
 | [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md) | Local smoke tests (UI, API-only, Android against LAN) |
 | [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md) | Server Split plan (branch `cursor/server-split-f103`) |
@@ -120,7 +120,7 @@ Ordryn is **one binary**. Operators choose UI+API or API-only; separate web/Andr
 
 ## API-only mode (no web UI)
 
-Run the JSON API without loading HTMX templates or static UI assets. Full walkthrough: [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md).
+Run the JSON API without serving the SPA. Full walkthrough: [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md).
 
 ```bash
 export GOTODO_MODE=api   # or: go run . --mode=api

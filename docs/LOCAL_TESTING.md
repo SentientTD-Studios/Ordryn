@@ -7,7 +7,7 @@ Use this to verify Ordryn after Server Split changes **on one machine**, without
 - Go 1.24+
 - PostgreSQL
 - Redis (required for `/api/v1`)
-- Node/npm only if you change HTMX assets (`npm run build:assets`)
+- Node/npm only if you change the Vue SPA (`npm run build:web`)
 
 Copy `.env.example` → `.env` and set at least:
 
@@ -33,12 +33,12 @@ Default self-host path.
 go run .
 ```
 
-Open `http://localhost:8080`.
+Open `http://localhost:8080` (redirects to `/app/`).
 
 **Smoke checks**
 
 1. Sign up / log in (invite-only may apply — use admin UI or disable invite-only in admin after first SQL/admin bootstrap).
-2. Create a task in the HTMX UI.
+2. Create a task in the SPA.
 3. Profile → enable REST API (if not bootstrapped) → create an API key.
 4. `curl -s http://localhost:8080/api/v1/health`
 5. `curl -s -H "Authorization: Bearer YOUR_KEY" http://localhost:8080/api/v1/tasks`
@@ -119,7 +119,7 @@ No Ordryn code changes required.
 2. Point the app at `http://<your-lan-ip>:8080` (not `localhost` on the phone’s own loopback).
 3. Auth options:
    - Paste Bearer API key (from bootstrap or Profile), or
-   - Device SSO: `POST /api/v1/auth/device/code` → open verification URL → approve in SPA at `/app/auth/device` (`GOTODO_UI=spa`).
+   - Device SSO: `POST /api/v1/auth/device/code` → open verification URL → approve in SPA at `/app/auth/device`.
 
 Minimum server checks before app testing:
 
@@ -133,7 +133,7 @@ curl -s http://HOST:8080/api/v1/health
 ## Option D — Vue SPA (`/app`)
 
 ```bash
-# Terminal 1: API + HTMX still available
+# Terminal 1: API
 GOTODO_MODE=full go run .
 
 # Terminal 2: Vite
@@ -145,7 +145,7 @@ Production-style (built assets served by Go):
 
 ```bash
 npm run build:web
-GOTODO_UI=spa go run .
+GOTODO_MODE=full go run .
 # → http://localhost:8080/ redirects to /app/
 ```
 
@@ -175,7 +175,7 @@ go test ./internal/server/ -run 'TestOpenAPI|TestServerAPIV1' -count=1
 
 - [ ] `go test ./...` passes
 - [ ] **Full mode:** browser login + task CRUD
-- [ ] **API mode:** process starts without templates; `/` is not the HTMX app
+- [ ] **API mode:** process starts without SPA routes; `/` is not the web app
 - [ ] Bootstrap creates admin + prints key once; second boot does not reprint the same key
 - [ ] `GET /api/v1/health` reports `mode`, `api_enabled`, `redis_ok`
 - [ ] `POST /api/v1/auth/login` + `GET /api/v1/me` (cookie)
@@ -183,7 +183,7 @@ go test ./internal/server/ -run 'TestOpenAPI|TestServerAPIV1' -count=1
 - [ ] Bearer project create/rename/delete and tag create/rename/delete
 - [ ] `PATCH /api/v1/me`, `POST /api/v1/me/password`, API key list/create/revoke
 - [ ] `POST /api/v1/tasks/bulk`, delete → `undo_token` → `POST /api/v1/tasks/undo`, `GET .../events`
-- [ ] SPA (`GOTODO_UI=spa`): dashboard, saved views, settings export/calendar, device approve, admin/invites (with perms)
+- [ ] SPA: dashboard, saved views, import, settings export/calendar/sync, device approve, admin/invites (with perms), forgot/reset password
 - [ ] (Optional) Android or HTTP client against LAN URL
 
 ---

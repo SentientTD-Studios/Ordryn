@@ -102,6 +102,100 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password reset email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, confirm_email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                confirm_email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Request accepted (always returns ok when valid)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/auth/reset-password:
+    get:
+      tags: [Auth]
+      summary: Validate a password reset token
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  email:
+                    type: string
+                    format: email
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [Auth]
+      summary: Set a new password using a reset token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, token, new_password, confirm_password]
+              properties:
+                id:
+                  type: string
+                token:
+                  type: string
+                new_password:
+                  type: string
+                  format: password
+                confirm_password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
   /api/v1/auth/device/code:
     post:
       tags: [Device Auth]
@@ -886,6 +980,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/CalendarInfo"
 
+  /api/v1/calendar/sync:
+    post:
+      tags: [Calendar]
+      summary: Import due dates from an ICS export back into tasks
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [ics_file]
+              properties:
+                ics_file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+
   /api/v1/export:
     get:
       tags: [Export]
@@ -912,6 +1035,80 @@ paths:
             text/csv:
               schema:
                 type: string
+
+  /api/v1/import/preview:
+    post:
+      tags: [Import]
+      summary: Upload a CSV and preview import counts
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Staged import preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportPreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/import/confirm:
+    post:
+      tags: [Import]
+      summary: Confirm the staged CSV import
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Import completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/import/cancel:
+    post:
+      tags: [Import]
+      summary: Discard the staged CSV import
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Staging cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+
+  /api/v1/announcements/dismiss:
+    post:
+      tags: [Announcements]
+      summary: Dismiss the global announcement banner for this session
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Dismissed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
 
   /api/v1/invites:
     get:
@@ -1430,6 +1627,37 @@ components:
         undo_token:
           type: string
         expires_in:
+          type: integer
+
+    ImportPreview:
+      type: object
+      properties:
+        preview:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              project:
+                type: string
+              due_date:
+                type: string
+              tags:
+                type: string
+        would_import:
+          type: integer
+        would_skip:
+          type: integer
+        total_rows:
+          type: integer
+
+    ImportResult:
+      type: object
+      properties:
+        imported:
+          type: integer
+        skipped:
           type: integer
 
     DeleteResult:

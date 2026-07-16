@@ -15,10 +15,8 @@ const spaDistDir = "web/dist"
 func registerSPARoutes() {
 	info, err := os.Stat(spaDistDir)
 	if err != nil || !info.IsDir() {
-		if utils.GetRuntimeUI() == utils.UISPA {
-			http.HandleFunc("/app", spaMissingHandler)
-			http.HandleFunc("/app/", spaMissingHandler)
-		}
+		http.HandleFunc("/app", spaMissingHandler)
+		http.HandleFunc("/app/", spaMissingHandler)
 		return
 	}
 
@@ -40,18 +38,6 @@ func spaRootRedirect(w http.ResponseWriter, r *http.Request) {
 	target := "/app/"
 	if base != "" && base != "/" {
 		target = base + "/app/"
-	}
-	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
-}
-
-func spaDeviceAuthRedirect(w http.ResponseWriter, r *http.Request) {
-	base := strings.TrimSuffix(utils.GetBasePath(), "/")
-	target := "/app/auth/device"
-	if base != "" && base != "/" {
-		target = base + "/app/auth/device"
-	}
-	if q := r.URL.RawQuery; q != "" {
-		target += "?" + q
 	}
 	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }

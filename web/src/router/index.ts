@@ -11,6 +11,18 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('@/views/ForgotPasswordView.vue'),
+      meta: { guest: true },
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('@/views/ResetPasswordView.vue'),
+      meta: { guest: true },
+    },
+    {
       path: '/register',
       name: 'register',
       component: () => import('@/views/RegisterView.vue'),
@@ -50,6 +62,12 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/import',
+      name: 'import',
+      component: () => import('@/views/ImportView.vue'),
       meta: { requiresAuth: true },
     },
     {

@@ -44,24 +44,7 @@ func APIV1Export(w http.ResponseWriter, r *http.Request) {
 	if format == "json" {
 		out := make([]exportTaskJSON, 0, len(taskList))
 		for _, t := range taskList {
-			tags := make([]exportTagJSON, 0, len(t.Tags))
-			for _, tg := range t.Tags {
-				tags = append(tags, exportTagJSON{ID: tg.ID, Name: tg.Name, Color: tg.Color})
-			}
-			out = append(out, exportTaskJSON{
-				ID:          t.ID,
-				Title:       t.Title,
-				Description: t.Description,
-				Completed:   t.Completed,
-				DueDate:     t.DueDate,
-				Project:     t.ProjectName,
-				Priority:    t.Priority,
-				Favorite:    t.IsFavorite,
-				Position:    t.Position,
-				Tags:        tags,
-				CreatedAt:   t.DateCreated,
-				ModifiedAt:  t.DateModified,
-			})
+			out = append(out, taskToExportJSON(t))
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="gotodo-export-%s.json"`, stamp))

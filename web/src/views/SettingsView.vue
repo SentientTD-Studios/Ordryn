@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/api/client'
@@ -25,6 +26,7 @@ const renameTagId = ref<number | null>(null)
 const renameTagValue = ref('')
 
 const calendar = ref<CalendarInfo | null>(null)
+const icsFile = ref<File | null>(null)
 const keys = ref<APIKey[]>([])
 const keyName = ref('')
 const mintedKey = ref('')
@@ -132,6 +134,22 @@ async function regenerateCalendar() {
     push('Calendar token regenerated', 'success')
   } catch (err) {
     push(err instanceof APIError ? err.message : 'Regenerate failed', 'error')
+  }
+}
+
+function onIcsFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  icsFile.value = input.files?.[0] ?? null
+}
+
+async function syncCalendar() {
+  if (!icsFile.value) return
+  try {
+    const result = await api.syncCalendar(icsFile.value)
+    push(`Updated ${result.updated} task due dates`, 'success')
+    icsFile.value = null
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Calendar sync failed', 'error')
   }
 }
 
@@ -253,14 +271,22 @@ onMounted(loadExtras)
       <div class="actions">
         <button type="button" class="ghost" @click="regenerateCalendar">Regenerate token</button>
       </div>
+      <form class="stack" @submit.prevent="syncCalendar">
+        <label>
+          Sync due dates from ICS export
+          <input type="file" accept=".ics,text/calendar" @change="onIcsFileChange" />
+        </label>
+        <button type="submit" class="ghost" :disabled="!icsFile">Sync calendar</button>
+      </form>
     </div>
 
     <div class="stack">
-      <h2>Export</h2>
-      <p class="muted">Download your tasks. Import stays on the HTMX UI for now.</p>
+      <h2>Export &amp; import</h2>
+      <p class="muted">Download your tasks or import from CSV on the import page.</p>
       <div class="actions">
         <button type="button" class="primary" @click="exportTasks('json')">Export JSON</button>
         <button type="button" class="ghost" @click="exportTasks('csv')">Export CSV</button>
+        <RouterLink to="/import">Import CSV</RouterLink>
       </div>
     </div>
 

@@ -7,7 +7,7 @@ import (
 	"GoTodo/internal/config"
 )
 
-// ModeFull serves the HTMX web UI plus API routes.
+// ModeFull serves the Vue SPA plus API routes.
 const ModeFull = "full"
 
 // ModeAPI serves JSON API routes only (no templates or static UI).
@@ -15,6 +15,14 @@ const ModeAPI = "api"
 
 // activeMode is set once at process start via SetRuntimeMode.
 var activeMode = ModeFull
+
+// BasePath is the HTTP path prefix (e.g. /gotodo) from config.
+var BasePath string
+
+// GetBasePath returns the configured path prefix.
+func GetBasePath() string {
+	return BasePath
+}
 
 // SetRuntimeMode records the process mode for health/diagnostics.
 func SetRuntimeMode(mode string) {

@@ -5,12 +5,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
-
-	"GoTodo/internal/server/utils"
 )
 
 func TestSpaRootRedirect(t *testing.T) {
-	utils.SetRuntimeUI(utils.UISPA)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	spaRootRedirect(rec, req)
