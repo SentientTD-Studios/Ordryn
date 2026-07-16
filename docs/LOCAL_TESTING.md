@@ -142,6 +142,12 @@ Package-focused:
 go test ./internal/domain/ ./internal/server/handlers/ ./internal/server/utils/ ./internal/tasks/
 ```
 
+OpenAPI contract (paths in `openapi.yaml` cover server registrations):
+
+```bash
+go test ./internal/server/ -run 'TestOpenAPI|TestServerAPIV1' -count=1
+```
+
 ---
 
 ## Checklist before calling Server Split “locally verified”

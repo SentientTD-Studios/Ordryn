@@ -20,3 +20,6 @@ jobs:
 
       - name: Run tests
         run: go test ./...
+
+      - name: OpenAPI path coverage
+        run: go test ./internal/server/ -run 'TestOpenAPI|TestServerAPIV1' -count=1

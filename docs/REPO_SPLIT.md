@@ -80,7 +80,7 @@ Self-hosters can still use Ordryn `full` mode serving `web/dist` without cloning
 
 - [x] `GOTODO_MODE=api|full`
 - [x] Bootstrap + `/api/v1/health` + session JSON auth
-- [ ] `openapi.yaml` (Phase A4)
+- [x] `openapi.yaml` (Phase A4)
 - [ ] SPA under `web/` (Phase B)
 
 ### B. Create gotodo-web (only after SPA MVP)

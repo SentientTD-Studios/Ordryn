@@ -111,6 +111,7 @@ Ordryn is **one binary**. Operators choose UI+API or API-only; separate web/Andr
 
 | Doc | Purpose |
 |-----|---------|
+| [`openapi.yaml`](openapi.yaml) | Machine-readable `/api/v1` contract (OpenAPI 3) |
 | [`docs/DEPLOYMENT_OPTIONS.md`](docs/DEPLOYMENT_OPTIONS.md) | `full` vs `api`, what users run |
 | [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md) | Local smoke tests (UI, API-only, Android against LAN) |
 | [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md) | Server Split plan (branch `cursor/server-split-f103`) |

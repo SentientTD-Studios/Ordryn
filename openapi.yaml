@@ -1,0 +1,1256 @@
+openapi: 3.0.3
+info:
+  title: Ordryn / GoTodo API
+  description: |
+    JSON API for Ordryn (GoTodo). Self-host with `GOTODO_MODE=full` (UI + API) or
+    `GOTODO_MODE=api` (API only). Redis is required for `/api/v1` authentication and rate limiting.
+
+    Auth: session cookie (SPA login/register) or `Authorization: Bearer <api_key>`.
+  version: 0.18.1-beta
+  license:
+    name: See LICENSE in repository
+
+servers:
+  - url: /
+    description: Same-origin (BASE_PATH may prefix these paths)
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Profile
+  - name: API Keys
+  - name: Tasks
+  - name: Projects
+  - name: Tags
+  - name: Saved Views
+  - name: Device Auth
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Public health probe
+      security: []
+      responses:
+        "200":
+          description: Health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register and start a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created; Set-Cookie session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/APIError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and start a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated; Set-Cookie session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Clear session cookie
+      security: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+
+  /api/v1/auth/device/code:
+    post:
+      tags: [Device Auth]
+      summary: Start device authorization (Android SSO)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_name:
+                  type: string
+      responses:
+        "200":
+          description: Device codes issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCodeResponse"
+
+  /api/v1/auth/device/token:
+    post:
+      tags: [Device Auth]
+      summary: Poll device authorization for API key
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_code, grant_type]
+              properties:
+                device_code:
+                  type: string
+                grant_type:
+                  type: string
+                  description: Must be urn:ietf:params:oauth:grant-type:device_code
+      responses:
+        "200":
+          description: Approved; returns api_key once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    type: string
+                  key_prefix:
+                    type: string
+                  key_name:
+                    type: string
+        "400":
+          description: Pending, denied, expired, or invalid (OAuth-style error body)
+
+  /api/v1/me:
+    get:
+      tags: [Profile]
+      summary: Current user profile
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Profile]
+      summary: Update profile fields
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserPatch"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me/password:
+    post:
+      tags: [Profile]
+      summary: Change password
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/api-keys:
+    get:
+      tags: [API Keys]
+      summary: List active API keys (no plaintext)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Key metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/APIKey"
+    post:
+      tags: [API Keys]
+      summary: Create or rotate a named API key
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 80
+      responses:
+        "201":
+          description: Key created; plaintext shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/APIError"
+
+  /api/v1/api-keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      tags: [API Keys]
+      summary: Revoke an API key
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Revoked
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tasks:
+    get:
+      tags: [Tasks]
+      summary: List tasks
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: project
+          in: query
+          schema:
+            type: string
+          description: Project id, or none/0 for no project
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: due
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: completed
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated task list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskList"
+    post:
+      tags: [Tasks]
+      summary: Create a task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/tasks/reorder:
+    post:
+      tags: [Tasks]
+      summary: Reorder tasks within a favorite group
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskReorder"
+      responses:
+        "200":
+          description: Reordered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/tasks/bulk:
+    post:
+      tags: [Tasks]
+      summary: Apply a bulk action to tasks
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskBulk"
+      responses:
+        "200":
+          description: Action applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/tasks/undo:
+    post:
+      tags: [Tasks]
+      summary: Restore deleted tasks via undo_token (or session undo buffer)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                undo_token:
+                  type: string
+      responses:
+        "200":
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  restored:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/tasks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Tasks]
+      summary: Get one task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Tasks]
+      summary: Update a task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskPatch"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Delete a task (returns undo_token)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Deleted with undo token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tasks/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Tasks]
+      summary: Task activity timeline
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Events newest-first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskEvent"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects:
+    get:
+      tags: [Projects]
+      summary: List projects
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      tags: [Projects]
+      summary: Create a project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/projects/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Projects]
+      summary: Rename a project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Projects]
+      summary: Delete a project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tags:
+    get:
+      tags: [Tags]
+      summary: List tags
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tag"
+    post:
+      tags: [Tags]
+      summary: Create a tag (or return existing by name)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameBody"
+      responses:
+        "201":
+          description: Created or existing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/tags/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Tags]
+      summary: Rename a tag
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tags]
+      summary: Delete a tag
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/saved-views:
+    get:
+      tags: [Saved Views]
+      summary: List saved views
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Saved views
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SavedView"
+    post:
+      tags: [Saved Views]
+      summary: Create a saved view
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedViewCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedView"
+        "409":
+          $ref: "#/components/responses/APIError"
+
+  /api/v1/saved-views/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Saved Views]
+      summary: Get one saved view
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Saved view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedView"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Saved Views]
+      summary: Replace a saved view
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedViewCreate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedView"
+    patch:
+      tags: [Saved Views]
+      summary: Partially update a saved view
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedViewPatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedView"
+    delete:
+      tags: [Saved Views]
+      summary: Delete a saved view
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: API key from profile, bootstrap, or device auth
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: httpOnly session cookie from /api/v1/auth/login or register
+
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Not authenticated
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    APIError:
+      description: API error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Machine-readable code (e.g. invalid_request)
+        message:
+          type: string
+
+    OK:
+      type: object
+      properties:
+        ok:
+          type: boolean
+
+    Health:
+      type: object
+      properties:
+        version:
+          type: string
+        api_enabled:
+          type: boolean
+        redis_ok:
+          type: boolean
+        mode:
+          type: string
+          enum: [full, api]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        user_name:
+          type: string
+        timezone:
+          type: string
+        items_per_page:
+          type: integer
+        permissions:
+          type: array
+          items:
+            type: string
+        digest_enabled:
+          type: boolean
+        digest_hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+
+    UserPatch:
+      type: object
+      properties:
+        user_name:
+          type: string
+        timezone:
+          type: string
+        items_per_page:
+          type: integer
+          enum: [10, 15, 25, 50]
+        digest_enabled:
+          type: boolean
+        digest_hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+
+    RegisterRequest:
+      type: object
+      required: [email, password, confirm_password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+          minLength: 8
+        confirm_password:
+          type: string
+        timezone:
+          type: string
+        invite_token:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password, confirm_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+        confirm_password:
+          type: string
+
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        key_prefix:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    APIKeyCreated:
+      allOf:
+        - $ref: "#/components/schemas/APIKey"
+        - type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+              description: Plaintext key; shown only once
+
+    Tag:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        color:
+          type: string
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    NameBody:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 50
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        completed:
+          type: boolean
+        due_date:
+          type: string
+        project_id:
+          type: integer
+          nullable: true
+        project:
+          type: string
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+        favorite:
+          type: boolean
+        position:
+          type: integer
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+        created_at:
+          type: string
+        modified_at:
+          type: string
+
+    TaskList:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total_pages:
+          type: integer
+
+    TaskCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        due_date:
+          type: string
+        project_id:
+          type: integer
+          nullable: true
+        priority:
+          type: integer
+        completed:
+          type: boolean
+        favorite:
+          type: boolean
+        tag_ids:
+          type: array
+          items:
+            type: integer
+
+    TaskPatch:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        due_date:
+          type: string
+        clear_due_date:
+          type: boolean
+        project_id:
+          type: integer
+          nullable: true
+        priority:
+          type: integer
+        completed:
+          type: boolean
+        favorite:
+          type: boolean
+        tag_ids:
+          type: array
+          items:
+            type: integer
+
+    TaskReorder:
+      type: object
+      required: [task_ids, favorite]
+      properties:
+        task_ids:
+          type: array
+          items:
+            type: integer
+        favorite:
+          type: boolean
+        page:
+          type: integer
+        per_page:
+          type: integer
+        project:
+          type: string
+
+    TaskBulk:
+      type: object
+      required: [action, task_ids]
+      properties:
+        action:
+          type: string
+          enum:
+            - complete
+            - incomplete
+            - delete
+            - move_project
+            - add_tag
+            - remove_tag
+            - set_priority
+            - set_due_date
+        task_ids:
+          type: array
+          items:
+            type: integer
+          maxItems: 100
+        project_id:
+          type: integer
+          nullable: true
+        tag_id:
+          type: integer
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+        due_date:
+          type: string
+          description: YYYY-MM-DD; empty string clears
+
+    BulkResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        affected:
+          type: integer
+        action:
+          type: string
+        undo_token:
+          type: string
+        expires_in:
+          type: integer
+
+    DeleteResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        undo_token:
+          type: string
+        expires_in:
+          type: integer
+
+    TaskEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        event_type:
+          type: string
+        label:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    SavedViewFilter:
+      type: object
+      properties:
+        project:
+          type: string
+        status:
+          type: string
+        due:
+          type: string
+        completed:
+          type: string
+        priority:
+          type: string
+        tag:
+          type: string
+        sort:
+          type: string
+        search:
+          type: string
+
+    SavedView:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        filter:
+          $ref: "#/components/schemas/SavedViewFilter"
+        sort_order:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SavedViewCreate:
+      type: object
+      required: [name, filter]
+      properties:
+        name:
+          type: string
+        filter:
+          $ref: "#/components/schemas/SavedViewFilter"
+        sort_order:
+          type: integer
+
+    SavedViewPatch:
+      type: object
+      properties:
+        name:
+          type: string
+        filter:
+          $ref: "#/components/schemas/SavedViewFilter"
+        sort_order:
+          type: integer
+
+    DeviceCodeResponse:
+      type: object
+      properties:
+        device_code:
+          type: string
+        user_code:
+          type: string
+        verification_uri:
+          type: string
+        verification_uri_complete:
+          type: string
+        expires_in:
+          type: integer
+        interval:
+          type: integer

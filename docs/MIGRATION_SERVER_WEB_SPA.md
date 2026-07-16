@@ -269,8 +269,8 @@ Priority order for SPA MVP:
 
 #### A4 — OpenAPI
 
-- [ ] Add `openapi.yaml` covering all implemented v1 routes
-- [ ] CI check: routes registered ⊆ OpenAPI (lightweight grep/test is enough initially)
+- [x] Add `openapi.yaml` covering all implemented v1 routes
+- [x] CI check: routes registered ⊆ OpenAPI (`internal/server/openapi_coverage_test.go` + workflow step)
 
 **Exit criteria:** SPA MVP and Android P1 can be built without calling any `RequireHTMX` route. API-only host can register (if enabled) or bootstrap admin.
 
@@ -370,7 +370,7 @@ Any agent picking this up should:
 
 ### Next implementation slice
 
-**Phase A4:** add `openapi.yaml` covering implemented `/api/v1` routes + lightweight CI check. Then Phase B SPA scaffold under `web/`.
+**Phase B:** scaffold `web/` (React + TypeScript + Vite) SPA against `/api/v1` + OpenAPI; cookie auth; serve `web/dist` from `full` mode.
 
 ---
 
@@ -411,3 +411,4 @@ Resolve by editing this section; promote to §1 when decided.
 | 2026-07-16 | Clarified one-product deploy model; added `DEPLOYMENT_OPTIONS.md` + `LOCAL_TESTING.md` |
 | 2026-07-16 | Phase A3 P0: `/api/v1` project CRUD + tag rename (`PATCH`) |
 | 2026-07-16 | Phase A3 P1: profile/password, api-keys, bulk, events, undo_token; session-or-Bearer on APIChain |
+| 2026-07-16 | Phase A4: `openapi.yaml` + OpenAPI path coverage tests/CI |
