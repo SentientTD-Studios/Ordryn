@@ -13,6 +13,7 @@
         </script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
         {{if .MetaDescription}}<meta name="description" content="{{.MetaDescription}}" />{{end}}
         <title>Admin - {{.SiteName}}</title>
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
@@ -22,7 +23,7 @@
     <body class="admin-page">
         {{template "navbar.html" .}}
 
-        <main>
+        <main data-page="admin">
         {{if .Flashes}}
         {{range .Flashes}}
         <div
@@ -36,10 +37,8 @@
         {{end}}
         {{end}}
 
-        <div class="container mt-5">
-            <div class="row justify-content-center">
-                <div class="col-md-8">
-                    <div class="card">
+        <div class="container mt-3">
+            <div class="card">
                         <div class="card-header">
                             <h2 class="card-title mb-0">Admin Settings</h2>
                         </div>
@@ -91,6 +90,19 @@
                                     <input class="form-check-input" type="checkbox" id="enableGlobalAnnouncement" name="enable_global_announcement" {{if .EnableGlobalAnnouncement}}checked{{end}} />
                                     <label class="form-check-label" for="enableGlobalAnnouncement">Enable global announcement</label>
                                 </div>
+                                <div class="mb-3 p-3 border rounded">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="enableAPI" name="enable_api" {{if .EnableAPI}}checked{{end}} {{if not .RedisAvailable}}disabled{{end}} />
+                                        <label class="form-check-label" for="enableAPI">Enable REST API (v1)</label>
+                                    </div>
+                                    <p class="text-muted small mb-0">
+                                        {{if .RedisAvailable}}
+                                        <i class="bi bi-check-circle text-success"></i> Redis is connected. Users can create API keys on their profile when enabled.
+                                        {{else}}
+                                        <i class="bi bi-exclamation-triangle text-warning"></i> Redis is not configured. Set <code>REDIS_URL</code> or <code>REDIS_ADDR</code> before enabling the API.
+                                        {{end}}
+                                    </p>
+                                </div>
                                 <div class="mb-3">
                                     <label for="global_announcement_text" class="form-label">Global Announcement Text</label>
                                     <textarea class="form-control" id="global_announcement_text" name="global_announcement_text" rows="3" maxlength="500" placeholder="Enter a site-wide announcement message (max 500 characters)">{{.GlobalAnnouncementText}}</textarea>
@@ -120,8 +132,6 @@
                                 {{template "users_table.html" .}}
                             </div>
                         </div>
-                    </div>
-                </div>
             </div>
         </div>
         </main>

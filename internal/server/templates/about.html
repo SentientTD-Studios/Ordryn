@@ -13,6 +13,7 @@
         </script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
         {{if .MetaDescription}}<meta name="description" content="{{.MetaDescription}}" />{{end}}
         <title>{{.Title}}</title>
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
@@ -22,7 +23,7 @@
     <body>
         {{template "navbar.html" .}}
 
-        <main>
+        <main data-page="about">
         <div class="container mt-3">
             <div class="card">
                 <div class="card-body">
@@ -34,7 +35,7 @@
 
                     <h2 class="h5 mt-4">Features</h2>
                     <ul>
-                        <li>Per-user tasks with projects, tags, due dates, favorites, priority levels, drag-and-drop ordering, bulk actions, and CSV/JSON export-import</li>
+                        <li>Per-user tasks with projects, tags, due dates, favorites, priority levels, drag-and-drop ordering, bulk actions, undo delete, calendar ICS feed, CSV import with preview, and CSV/JSON export</li>
                         <li>Search, project filters, tag filters, status filters (all / incomplete / complete), and due-date quick filters (today, overdue, this week, no date)</li>
                         <li>Markdown task descriptions with truncated list view and expand-in-place</li>
                         <li>Starred tasks appear in a pinned section on page 1 and are excluded from pagination counts</li>
@@ -42,7 +43,7 @@
                         <li>User profiles with timezone and pagination preferences</li>
                         <li>Invite-only registration and role-based permissions</li>
                         <li>Dark and light themes</li>
-                        <li>Keyboard shortcuts for power users (<kbd>?</kbd> for help)</li>
+                        <li>Keyboard shortcuts for power users (<kbd>?</kbd> for help); undo toast after deleting tasks</li>
                         <li>Task activity timeline in the edit sidebar</li>
                         <li>Dashboard with overdue/today counts, completion charts, and streak tracking</li>
                     </ul>

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// APIUpdateProfile updates the user's name and timezone
+// APIUpdateProfile updates the user's name, timezone, and pagination preference.
 func APIUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -25,36 +25,60 @@ func APIUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-
-	userName := r.FormValue("user_name")
-	timezone := r.FormValue("timezone")
-	itemsPerPageStr := r.FormValue("items_per_page")
-	var itemsPerPage int
-	if itemsPerPageStr != "" {
-		if v, err := strconv.Atoi(itemsPerPageStr); err == nil {
-			itemsPerPage = v
-		}
+	if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
+		w.WriteHeader(http.StatusForbidden)
+		return
 	}
+
+	userName := strings.TrimSpace(r.FormValue("user_name"))
+	timezone := strings.TrimSpace(r.FormValue("timezone"))
+	itemsPerPageStr := r.FormValue("items_per_page")
+	digestEnabled := r.FormValue("digest_enabled") == "on" || r.FormValue("digest_enabled") == "true"
+	digestHourStr := r.FormValue("digest_hour")
+
 	if userName == "" {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
 	}
-	if timezone == "" {
-		http.Error(w, "Timezone is required", http.StatusBadRequest)
+	if !utils.IsValidTimezone(timezone) {
+		http.Error(w, "Invalid timezone", http.StatusBadRequest)
 		return
 	}
 
-	db, err := storage.OpenDatabase()
+	itemsPerPage := 0
+	if itemsPerPageStr != "" {
+		v, err := strconv.Atoi(itemsPerPageStr)
+		if err != nil || !utils.ValidItemsPerPage(v) {
+			http.Error(w, "Invalid items per page", http.StatusBadRequest)
+			return
+		}
+		itemsPerPage = v
+	}
+
+	digestHour := 8
+	if digestHourStr != "" {
+		if v, err := strconv.Atoi(digestHourStr); err == nil && v >= 0 && v <= 23 {
+			digestHour = v
+		}
+	}
+
+	pool, err := storage.OpenDatabase()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(pool)
 
+	ctx := context.Background()
 	if itemsPerPage > 0 {
-		_, err = db.Exec(context.Background(), "UPDATE users SET user_name = $1, timezone = $2, items_per_page = $3 WHERE email = $4", userName, timezone, itemsPerPage, email)
+		_, err = pool.Exec(ctx,
+			`UPDATE users SET user_name = $1, timezone = $2, items_per_page = $3,
+			 digest_enabled = $4, digest_hour = $5 WHERE email = $6`,
+			userName, timezone, itemsPerPage, digestEnabled, digestHour, email)
 	} else {
-		_, err = db.Exec(context.Background(), "UPDATE users SET user_name = $1, timezone = $2 WHERE email = $3", userName, timezone, email)
+		_, err = pool.Exec(ctx,
+			`UPDATE users SET user_name = $1, timezone = $2, digest_enabled = $3, digest_hour = $4 WHERE email = $5`,
+			userName, timezone, digestEnabled, digestHour, email)
 	}
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -65,8 +89,7 @@ func APIUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if strings.Contains(err.Error(), "securecookie: expired timestamp") {
 			sessionstore.ClearSessionCookie(w, r)
-			// Require re-login when session cookie was expired
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			http.Redirect(w, r, utils.GetBasePath()+"/login", http.StatusSeeOther)
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
@@ -77,8 +100,7 @@ func APIUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if itemsPerPage > 0 {
 		session.Values["items_per_page"] = itemsPerPage
 	}
-	err = session.Save(r, w)
-	if err != nil {
+	if err := session.Save(r, w); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -86,6 +108,7 @@ func APIUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// ProfilePage renders the user profile page.
 func ProfilePage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -94,32 +117,70 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 
 	email, _, permissions, timezone, loggedIn, user_name := utils.GetSessionUserWithTimezone(r)
 	if !loggedIn {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, utils.GetBasePath()+"/", http.StatusSeeOther)
 		return
 	}
 
 	status := r.URL.Query().Get("status")
 	var statusMsg string
 	if status == "success" {
-		statusMsg = "Timezone updated successfully!"
+		statusMsg = "Profile updated successfully!"
 	}
 
-	// fetch user to get items_per_page
-	user, _ := storage.GetUserByEmail(email)
+	user, userErr := storage.GetUserByEmail(email)
 	itemsPerPage := 15
+	digestEnabled := false
+	digestHour := 8
+	userID := utils.GetSessionUserID(r)
+	calendarFeedURL := ""
+	calendarTokenErr := ""
 	if user != nil && user.ItemsPerPage > 0 {
 		itemsPerPage = user.ItemsPerPage
 	}
+	if userID != nil {
+		if token, err := storage.GetOrCreateCalendarToken(*userID); err == nil {
+			calendarFeedURL = calendarFeedURLForRequest(r, token)
+		} else {
+			calendarTokenErr = "Could not create calendar link. Try saving your profile or use Regenerate link below."
+		}
+	}
+	if userErr != nil {
+		calendarTokenErr = "Could not load profile data. Try again later."
+	}
+
+	pool, _ := storage.OpenDatabase()
+	if pool != nil && userID != nil {
+		_ = pool.QueryRow(context.Background(),
+			`SELECT COALESCE(digest_enabled, false), COALESCE(digest_hour, 8) FROM users WHERE id = $1`,
+			*userID).Scan(&digestEnabled, &digestHour)
+	}
+
+	csrfToken, _ := utils.EnsureCSRFToken(r, w)
+
+	enableAPI := utils.IsAPIEnabled()
+	apiKeys := []map[string]interface{}{}
+	if enableAPI && userID != nil {
+		apiKeys = ListAPIKeysForProfilePage(*userID)
+	}
 
 	context := map[string]interface{}{
-		"UserEmail":    email,
-		"Email":        email,
-		"Timezone":     timezone,
-		"Status":       statusMsg,
-		"Name":         user_name,
-		"ItemsPerPage": itemsPerPage,
-		"LoggedIn":     loggedIn,
-		"Permissions":  permissions,
+		"UserEmail":         email,
+		"Email":             email,
+		"Timezone":          timezone,
+		"Status":            statusMsg,
+		"Name":              user_name,
+		"ItemsPerPage":      itemsPerPage,
+		"DigestEnabled":     digestEnabled,
+		"DigestHour":        digestHour,
+		"LoggedIn":          loggedIn,
+		"Permissions":       permissions,
+		"CalendarFeedURL":   calendarFeedURL,
+		"CalendarTokenErr":  calendarTokenErr,
+		"CSRFToken":         csrfToken,
+		"AllowedTimezones":  utils.AllowedTimezones,
+		"EnableAPI":         enableAPI,
+		"APIKeys":           apiKeys,
+		"RedisAvailable":    utils.RedisAvailable(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -128,61 +189,7 @@ func ProfilePage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func APIUpdateTimezone(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
-	}
-
-	email, _, _, _, loggedIn, _ := utils.GetSessionUserWithTimezone(r)
-	if !loggedIn {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
-	timezone := r.FormValue("timezone")
-	if timezone == "" {
-		http.Error(w, "Timezone is required", http.StatusBadRequest)
-		return
-	}
-
-	db, err := storage.OpenDatabase()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
-
-	_, err = db.Exec(context.Background(), "UPDATE users SET timezone = $1 WHERE email = $2", timezone, email)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	session, err := sessionstore.Store.Get(r, "session")
-	if err != nil {
-		if strings.Contains(err.Error(), "securecookie: expired timestamp") {
-			sessionstore.ClearSessionCookie(w, r)
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	session.Values["timezone"] = timezone
-	err = session.Save(r, w)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	basePath := utils.GetBasePath()
-
-	http.Redirect(w, r, basePath+"/profile?status=success", http.StatusSeeOther)
-}
-
-// APIChangePassword allows a user to change their password
+// APIChangePassword allows a user to change their password.
 func APIChangePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -191,7 +198,11 @@ func APIChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	email, _, _, _, loggedIn, _ := utils.GetSessionUserWithTimezone(r)
 	if !loggedIn {
-		w.WriteHeader(http.StatusUnauthorized)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -199,69 +210,50 @@ func APIChangePassword(w http.ResponseWriter, r *http.Request) {
 	newPassword := r.FormValue("new_password")
 	confirmPassword := r.FormValue("confirm_password")
 
-	// Validate all fields are provided
 	if currentPassword == "" || newPassword == "" || confirmPassword == "" {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "All password fields are required")
+		http.Error(w, "All password fields are required", http.StatusBadRequest)
 		return
 	}
-
-	// Validate new passwords match
 	if newPassword != confirmPassword {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "New passwords do not match")
+		http.Error(w, "New passwords do not match", http.StatusBadRequest)
 		return
 	}
-
-	// Validate new password length
 	if len(newPassword) < 8 {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "New password must be at least 8 characters long")
+		http.Error(w, "New password must be at least 8 characters long", http.StatusBadRequest)
 		return
 	}
 
-	db, err := storage.OpenDatabase()
+	pool, err := storage.OpenDatabase()
 	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Internal server error")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(pool)
 
-	// Get user's current password hash
 	var currentHashedPassword string
-	err = db.QueryRow(context.Background(), "SELECT password FROM users WHERE email = $1", email).Scan(&currentHashedPassword)
+	err = pool.QueryRow(context.Background(), "SELECT password FROM users WHERE email = $1", email).Scan(&currentHashedPassword)
 	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Internal server error")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Verify current password is correct
-	err = bcrypt.CompareHashAndPassword([]byte(currentHashedPassword), []byte(currentPassword))
-	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Current password is incorrect")
+	if err = bcrypt.CompareHashAndPassword([]byte(currentHashedPassword), []byte(currentPassword)); err != nil {
+		http.Error(w, "Current password is incorrect", http.StatusBadRequest)
 		return
 	}
 
-	// Hash the new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Internal server error")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Update password in database
-	_, err = db.Exec(context.Background(), "UPDATE users SET password = $1 WHERE email = $2", string(hashedPassword), email)
+	_, err = pool.Exec(context.Background(), "UPDATE users SET password = $1 WHERE email = $2", string(hashedPassword), email)
 	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Internal server error")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Send password changed email
 	siteName := "GoTodo"
 	if settings, err := storage.GetSiteSettings(); err == nil && settings != nil && settings.SiteName != "" {
 		siteName = settings.SiteName
@@ -276,10 +268,8 @@ If you did not request this, please reach out to support.
 This email cannot receive replies. Please do not reply to this email.
 `, siteName)
 
-	err = utils.SendEmail(subject, body, email)
-	if err != nil {
+	if err = utils.SendEmail(subject, body, email); err != nil {
 		fmt.Printf("Warning: Failed to send password changed email to %s: %v\n", email, err)
-		// Continue anyway - password was updated successfully
 	}
 
 	w.WriteHeader(http.StatusOK)

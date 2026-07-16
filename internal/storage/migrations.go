@@ -49,6 +49,14 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateUsersAddIsBanned failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateUsersAddCalendarToken(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddCalendarToken failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateUsersAddDigestSettings(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddDigestSettings failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateTasksAddIsFavorite(); err != nil {
 		fmt.Printf("migration: MigrateTasksAddIsFavorite failed: %v\n", err)
 		errCount++
@@ -84,6 +92,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateTaskEventsTable failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateSavedViewsTable(); err != nil {
+		fmt.Printf("migration: CreateSavedViewsTable failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure site_settings table exists
 	if err := CreateSiteSettingsTable(); err != nil {
@@ -100,6 +112,21 @@ func RunMigrations() error {
 	}
 	if err := MigrateSiteSettingsAddGlobalAnnouncement(); err != nil {
 		fmt.Printf("migration: MigrateSiteSettingsAddGlobalAnnouncement failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreateSavedViewsTable(); err != nil {
+		fmt.Printf("migration: CreateSavedViewsTable failed: %v\n", err)
+		errCount++
+	}
+
+	if err := MigrateSiteSettingsAddEnableAPI(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddEnableAPI failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreateAPIKeysTable(); err != nil {
+		fmt.Printf("migration: CreateAPIKeysTable failed: %v\n", err)
 		errCount++
 	}
 

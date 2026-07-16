@@ -18,46 +18,22 @@
         </script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
         {{if .MetaDescription}}<meta name="description" content="{{.MetaDescription}}" />{{end}}
         <title>{{.Title}}</title>
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
         <link rel="stylesheet" href="{{basePath}}/public/css/{{if .UseMinifiedAssets}}site.min.css{{else}}site.css{{end}}?v={{.AssetVersion}}" />
         <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
-        <!-- Font Awesome removed to avoid loading problematic webfonts; using Bootstrap Icons -->
-        <style>
-            /* Sidebar Pop-Out Styling */
-            #sidebar {
-                position: fixed;
-                top: 0;
-                right: -400px; /* Hidden off-screen by default */
-                height: 100%;
-                width: 400px;
-                transition: right 0.3s ease;
-                z-index: 1040;
-                overflow-y: auto;
-            }
-            #sidebar.active {
-                right: 0; /* Slide into view when active */
-            }
-            #sidebar .sidebar-header {
-                padding: 1.5rem;
-                border-bottom: 1px solid #ddd;
-            }
-            #sidebar .sidebar-body {
-                padding: 1rem;
-            }
-
-            /* Pagination Button Styling */
-            .btn[disabled] {
-                cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='none' stroke='%23dc3545' stroke-width='2'/%3E%3Cline x1='4' y1='4' x2='20' y2='20' stroke='%23dc3545' stroke-width='2'/%3E%3C/svg%3E") 12 12, not-allowed !important;
-                pointer-events: all !important;
-            }
-        </style>
     </head>
     <body>
+        <div id="htmx-loading-bar" aria-hidden="true"></div>
+        <div id="htmx-loading-indicator" class="htmx-indicator" aria-hidden="true" aria-live="polite">
+            <span class="spinner-border spinner-border-sm" role="status"></span>
+            <span>Loading…</span>
+        </div>
         {{template "navbar.html" .}}
 
-        <main>
+        <main data-page="home" data-project-filter="{{.ProjectFilter}}">
         {{if .Flashes}}
         {{range .Flashes}}
         <div
@@ -115,9 +91,10 @@
                         id="search-form"
                         class="d-flex gap-2"
                         hx-post="{{basePath}}/search"
-                        hx-include="#status-filter-select, #status-filter, #due-filter, #sort-filter, #priority-filter, #tag-filter"
+                        hx-include="#status-filter-select, #status-filter, #due-filter, #sort-filter, #priority-filter, #tag-filter-toolbar, #project-filter"
                         hx-target="#task-container"
                         hx-swap="innerHTML"
+                        hx-indicator="#htmx-loading-indicator"
                     >
                         <input
                             type="search"
@@ -146,12 +123,12 @@
         </div>
 
         <!-- Toolbar: filters and quick-actions -->
-        <div class="container mb-3">
+        <div class="container mb-3 filter-toolbar-wrapper">
             {{if .LoggedIn}}
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                 <div>
                     {{if .Projects}}
-                    <select id="project-filter" name="project" class="form-select w-auto" style="width:220px;" hx-get="{{basePath}}/api/fetch-tasks" hx-trigger="change" hx-include="#status-filter-select, #status-filter, #due-filter, #sort-filter, #priority-filter, #tag-filter" hx-target="#task-container" hx-swap="innerHTML">
+                    <select id="project-filter" name="project" class="form-select w-auto" style="width:220px;" hx-get="{{basePath}}/api/fetch-tasks" hx-trigger="change" hx-include="#status-filter-select, #status-filter, #due-filter, #sort-filter, #priority-filter, #tag-filter" hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">
                         <option value="" {{if eq .ProjectFilter ""}}selected{{end}}>All projects</option>
                         <option value="0" {{if or (eq .ProjectFilter "0") (eq .ProjectFilter "none")}}selected{{end}}>No project</option>
                         {{range .Projects}}
@@ -160,11 +137,30 @@
                     </select>
                     {{end}}
                 </div>
-                <div class="d-flex flex-wrap align-items-center gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm filter-toggle-btn" id="filter-toggle-btn" aria-controls="filter-toolbar-panel" aria-expanded="true">
+                    <i class="bi bi-funnel"></i> Filters
+                </button>
+                <div class="dropdown" id="saved-views-dropdown">
+                    <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" id="saved-views-btn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Saved views">
+                        <i class="bi bi-bookmark"></i> Views
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" id="saved-views-menu" aria-labelledby="saved-views-btn">
+                        <li><span class="dropdown-item-text text-muted small">Loading views…</span></li>
+                    </ul>
+                </div>
+            </div>
+            <div id="filter-active-chips" class="filter-active-chips" aria-live="polite"></div>
+            <div class="d-flex justify-content-end mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="filter-clear-all">
+                    <i class="bi bi-x-circle"></i> Clear all filters
+                </button>
+            </div>
+            <div id="filter-toolbar-panel" class="filter-toolbar-panel">
+                <div class="d-flex flex-wrap align-items-center gap-2 filter-toolbar-inner">
                     <select id="status-filter-select" name="status" class="form-select form-select-sm w-auto" aria-label="Filter by status"
                         hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-trigger="change"
                         hx-include="#project-filter, #due-filter, #sort-filter, #priority-filter, #tag-filter, #search"
-                        hx-target="#task-container" hx-swap="innerHTML">
+                        hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">
                         <option value="" {{if eq .StatusFilter ""}}selected{{end}}>All statuses</option>
                         <option value="incomplete" {{if eq .StatusFilter "incomplete"}}selected{{end}}>Incomplete</option>
                         <option value="complete" {{if eq .StatusFilter "complete"}}selected{{end}}>Complete</option>
@@ -173,7 +169,7 @@
                     <select id="tag-filter-toolbar" name="tag" class="form-select form-select-sm w-auto" aria-label="Filter by tag"
                         hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-trigger="change"
                         hx-include="#project-filter, #status-filter-select, #due-filter, #sort-filter, #priority-filter, #search"
-                        hx-target="#task-container" hx-swap="innerHTML">
+                        hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">
                         <option value="" {{if eq .TagFilter ""}}selected{{end}}>All tags</option>
                         {{range .Tags}}
                         <option value="{{.ID}}" {{if .Selected}}selected{{end}}>{{.Name}}</option>
@@ -183,24 +179,24 @@
                     <div class="btn-group btn-group-sm" role="group" aria-label="Due date filters">
                         <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter ""}}due-filter-active{{end}}" data-due="" aria-pressed="{{if eq .DueFilter ""}}true{{else}}false{{end}}"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": ""}' hx-include="#project-filter, #status-filter-select, #sort-filter, #priority-filter, #tag-filter-toolbar, #search"
-                            hx-target="#task-container" hx-swap="innerHTML">All</button>
+                            hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">All</button>
                         <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "today"}}due-filter-active{{end}}" data-due="today" aria-pressed="{{if eq .DueFilter "today"}}true{{else}}false{{end}}"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "today"}' hx-include="#project-filter, #status-filter-select, #sort-filter, #priority-filter, #tag-filter-toolbar, #search"
-                            hx-target="#task-container" hx-swap="innerHTML">Today</button>
+                            hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">Today</button>
                         <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "overdue"}}due-filter-active{{end}}" data-due="overdue" aria-pressed="{{if eq .DueFilter "overdue"}}true{{else}}false{{end}}"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "overdue"}' hx-include="#project-filter, #status-filter-select, #sort-filter, #priority-filter, #tag-filter-toolbar, #search"
-                            hx-target="#task-container" hx-swap="innerHTML">Overdue</button>
+                            hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">Overdue</button>
                         <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "week"}}due-filter-active{{end}}" data-due="week" aria-pressed="{{if eq .DueFilter "week"}}true{{else}}false{{end}}"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "week"}' hx-include="#project-filter, #status-filter-select, #sort-filter, #priority-filter, #tag-filter-toolbar, #search"
-                            hx-target="#task-container" hx-swap="innerHTML">This Week</button>
+                            hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">This Week</button>
                         <button type="button" class="btn btn-outline-secondary due-filter-btn {{if eq .DueFilter "none"}}due-filter-active{{end}}" data-due="none" aria-pressed="{{if eq .DueFilter "none"}}true{{else}}false{{end}}"
                             hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-vals='{"due": "none"}' hx-include="#project-filter, #status-filter-select, #sort-filter, #priority-filter, #tag-filter-toolbar, #search"
-                            hx-target="#task-container" hx-swap="innerHTML">No Date</button>
+                            hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">No Date</button>
                     </div>
                     <select id="priority-filter-toolbar" name="priority" class="form-select form-select-sm w-auto" aria-label="Filter by priority"
                         hx-get="{{basePath}}/api/fetch-tasks?page=1" hx-trigger="change"
                         hx-include="#project-filter, #status-filter-select, #due-filter, #sort-filter, #tag-filter-toolbar, #search"
-                        hx-target="#task-container" hx-swap="innerHTML">
+                        hx-target="#task-container" hx-swap="innerHTML" hx-indicator="#htmx-loading-indicator">
                         <option value="" {{if eq .PriorityFilter ""}}selected{{end}}>All priorities</option>
                         <option value="1" {{if eq .PriorityFilter "1"}}selected{{end}}>Low</option>
                         <option value="2" {{if eq .PriorityFilter "2"}}selected{{end}}>Medium</option>
@@ -219,56 +215,65 @@
         {{if .LoggedIn}}
         <div id="bulk-bar" class="bulk-action-bar d-none container mb-2" aria-hidden="true" role="region" aria-label="Bulk actions">
             <div class="d-flex flex-wrap align-items-center gap-2 py-2 px-3">
-                <span id="bulk-count" class="fw-semibold me-2">0 selected</span>
+                <span id="bulk-count" class="fw-semibold me-2" aria-live="polite">0 selected</span>
                 <button type="button" class="btn btn-sm btn-success" data-bulk-action="complete">Complete</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="incomplete">Mark incomplete</button>
                 <button type="button" class="btn btn-sm btn-danger" data-bulk-action="delete">Delete</button>
-                {{if .Projects}}
-                <select id="bulk-project" class="form-select form-select-sm w-auto" aria-label="Move to project">
-                    <option value="">Move to project…</option>
-                    <option value="0">No project</option>
-                    {{range .Projects}}
-                    <option value="{{.ID}}">{{.Name}}</option>
-                    {{end}}
-                </select>
-                <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="move_project">Move</button>
-                {{end}}
-                {{if .Tags}}
-                <select id="bulk-tag" class="form-select form-select-sm w-auto" aria-label="Tag for bulk action">
-                    <option value="">Select tag…</option>
-                    {{range .Tags}}
-                    <option value="{{.ID}}">{{.Name}}</option>
-                    {{end}}
-                </select>
-                <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="add_tag">Add tag</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="remove_tag">Remove tag</button>
-                {{end}}
-                <select id="bulk-priority" class="form-select form-select-sm w-auto" aria-label="Set priority">
-                    <option value="0">Priority: None</option>
-                    <option value="1">Low</option>
-                    <option value="2">Medium</option>
-                    <option value="3">High</option>
-                </select>
-                <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="set_priority">Set priority</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="bulk-clear-selection">Clear</button>
+                <div class="dropdown">
+                    <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        More actions
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end p-3 bulk-more-menu">
+                        {{if .Projects}}
+                        <div class="mb-2 d-flex flex-wrap gap-2 align-items-center">
+                            <select id="bulk-project" class="form-select form-select-sm" aria-label="Move to project">
+                                <option value="">Move to project…</option>
+                                <option value="0">No project</option>
+                                {{range .Projects}}
+                                <option value="{{.ID}}">{{.Name}}</option>
+                                {{end}}
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="move_project">Move</button>
+                        </div>
+                        {{end}}
+                        {{if .Tags}}
+                        <div class="mb-2 d-flex flex-wrap gap-2 align-items-center">
+                            <select id="bulk-tag" class="form-select form-select-sm" aria-label="Tag for bulk action">
+                                <option value="">Select tag…</option>
+                                {{range .Tags}}
+                                <option value="{{.ID}}">{{.Name}}</option>
+                                {{end}}
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="add_tag">Add tag</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="remove_tag">Remove tag</button>
+                        </div>
+                        {{end}}
+                        <div class="mb-2 d-flex flex-wrap gap-2 align-items-center">
+                            <select id="bulk-priority" class="form-select form-select-sm" aria-label="Set priority">
+                                <option value="0">Priority: None</option>
+                                <option value="1">Low</option>
+                                <option value="2">Medium</option>
+                                <option value="3">High</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="set_priority">Set priority</button>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Due date presets">
+                                <button type="button" class="btn btn-outline-secondary" data-bulk-due-preset="today">Today</button>
+                                <button type="button" class="btn btn-outline-secondary" data-bulk-due-preset="tomorrow">Tomorrow</button>
+                                <button type="button" class="btn btn-outline-secondary" data-bulk-due-preset="week">+1 week</button>
+                                <button type="button" class="btn btn-outline-secondary" data-bulk-due-preset="clear">Clear</button>
+                            </div>
+                            <input type="date" id="bulk-due-date" class="form-control form-control-sm" aria-label="Set due date" />
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="set_due_date">Set due</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="clear_due_date">Clear due</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         {{end}}
-
-        <script nonce="{{.CSPNonce}}">
-            // Ensure the project filter select reflects the server-side filter on full page load.
-            // This overrides browser form-value restoration so the dropdown doesn't persist an old selection.
-            document.addEventListener('DOMContentLoaded', function() {
-                try {
-                    var pf = "{{.ProjectFilter}}";
-                    var sel = document.getElementById('project-filter');
-                    if (sel) {
-                        sel.value = pf;
-                    }
-                } catch (e) {
-                    // ignore
-                }
-            });
-        </script>
 
         <div id="task-container" class="container" aria-live="polite" aria-atomic="false">
             {{template "pagination.html" .}}
@@ -282,6 +287,7 @@
             </div>
         </div>
         {{template "sidebar.html" .}}
+        <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
         {{end}}
         <div id="loginmodal" class="modal fade" tabindex="-1" role="dialog">
             <div class="modal-dialog" role="document">
@@ -304,44 +310,5 @@
         <script src="{{basePath}}/public/vendor/sortable/Sortable.min.js" defer></script>
 
         {{template "site_script.html" .}}
-        <script src="{{basePath}}/public/js/site.extra.js?v={{.AssetVersion}}" defer></script>
-
-        <script nonce="{{.CSPNonce}}">
-            // Fade out feedback messages after 5 seconds
-            document.body.addEventListener("htmx:afterSwap", (event) => {
-                if (event.target.id === "status") {
-                    setTimeout(() => {
-                        event.target.style.display = "none";
-                    }, 5000);
-                }
-            });
-
-            // Clear form after submitting
-            document.body.addEventListener("task-added", (event) => {
-                document.getElementById("title").value = "";
-                document.getElementById("description").value = "";
-            });
-
-            // Remove logged_out query parameter from URL after showing message
-                (function() {
-                const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('logged_out') === 'true' || urlParams.get('account_created') === 'true') {
-                    // Remove the parameter(s) from URL without reloading
-                    urlParams.delete('logged_out');
-                    urlParams.delete('account_created');
-                    const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
-                    window.history.replaceState({}, '', newUrl);
-                    
-                    // Auto-dismiss the alert after 5 seconds
-                    setTimeout(() => {
-                        const alert = document.querySelector('#status');
-                        if (alert) {
-                            const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
-                            bsAlert.close();
-                        }
-                    }, 5000);
-                }
-            })();
-        </script>
     </body>
 </html>

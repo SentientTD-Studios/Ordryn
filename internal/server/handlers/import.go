@@ -6,6 +6,7 @@ import (
 	"GoTodo/internal/storage"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +33,31 @@ type importColumnMap struct {
 	tags        int
 }
 
+type stagedImportCols struct {
+	Title       int `json:"title"`
+	Description int `json:"description"`
+	Completed   int `json:"completed"`
+	DueDate     int `json:"due_date"`
+	Project     int `json:"project"`
+	Priority    int `json:"priority"`
+	Favorite    int `json:"favorite"`
+	Tags        int `json:"tags"`
+}
+
+type stagedImport struct {
+	Cols stagedImportCols `json:"cols"`
+	Rows [][]string       `json:"rows"`
+}
+
+type importPreviewRow struct {
+	Title   string
+	Project string
+	DueDate string
+	Tags    string
+}
+
+const importStagingSessionKey = "import_staging"
+
 // ImportPageHandler renders the CSV import page.
 func ImportPageHandler(w http.ResponseWriter, r *http.Request) {
 	email, _, permissions, loggedIn := utils.GetSessionUser(r)
@@ -49,68 +75,70 @@ func ImportPageHandler(w http.ResponseWriter, r *http.Request) {
 	utils.RenderTemplate(w, r, "import.html", ctx)
 }
 
-// APIImportTasks handles CSV file upload and imports tasks for the user.
-func APIImportTasks(w http.ResponseWriter, r *http.Request) {
+// APIImportPreview parses CSV, stores staging in session, and returns a preview partial.
+func APIImportPreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	email, _, _, loggedIn := utils.GetSessionUser(r)
-	if !loggedIn {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
-		sessionstore.ClearSessionCookie(w, r)
-		http.Redirect(w, r, utils.GetBasePath()+"/", http.StatusSeeOther)
-		return
-	}
-
-	userID := utils.GetSessionUserID(r)
-	if userID == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	if err := r.ParseMultipartForm(importMaxFileBytes); err != nil {
-		http.Error(w, "File too large (max 5MB)", http.StatusBadRequest)
-		return
-	}
-
-	file, _, err := r.FormFile("file")
+	userID, email, err := importAuthUser(r, w)
 	if err != nil {
-		http.Error(w, "Missing file upload", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	_ = email
 
-	data, err := io.ReadAll(io.LimitReader(file, importMaxFileBytes+1))
-	if err != nil {
-		http.Error(w, "Failed to read file", http.StatusBadRequest)
-		return
-	}
-	if len(data) > importMaxFileBytes {
-		http.Error(w, "File too large (max 5MB)", http.StatusBadRequest)
-		return
-	}
-
-	cols, rows, err := parseImportCSV(data)
+	cols, rows, err := readImportUpload(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if len(rows) == 0 {
-		http.Error(w, "No data rows found in CSV", http.StatusBadRequest)
-		return
-	}
-	if len(rows) > importMaxRows {
-		http.Error(w, fmt.Sprintf("Too many rows (max %d)", importMaxRows), http.StatusBadRequest)
+
+	wouldImport, wouldSkip, err := dryRunImportCounts(*userID, cols, rows)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	imported, skipped, importErr := importTasksFromCSV(*userID, cols, rows)
+	if err := saveImportStaging(r, w, cols, rows); err != nil {
+		http.Error(w, "Failed to stage import", http.StatusInternalServerError)
+		return
+	}
+
+	previewRows := buildImportPreviewRows(cols, rows, 10)
+	ctx := map[string]interface{}{
+		"PreviewRows":  previewRows,
+		"WouldImport": wouldImport,
+		"WouldSkip":   wouldSkip,
+		"TotalRows":   len(rows),
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := utils.RenderTemplate(w, r, "partials/import_preview.html", ctx); err != nil {
+		http.Error(w, "Error rendering preview: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// APIImportConfirm imports staged CSV rows from session.
+func APIImportConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, _, err := importAuthUser(r, w)
+	if err != nil {
+		return
+	}
+
+	staging, err := loadImportStaging(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cols := stagingColsToMap(staging.Cols)
+	imported, skipped, importErr := importTasksFromCSV(*userID, cols, staging.Rows)
+	_ = clearImportStaging(r, w)
 	if importErr != nil {
 		http.Error(w, importErr.Error(), http.StatusInternalServerError)
 		return
@@ -118,7 +146,230 @@ func APIImportTasks(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("HX-Trigger", "import-complete")
-	fmt.Fprintf(w, `<div class="alert alert-success" role="alert"><i class="bi bi-check-circle"></i> Imported %d tasks, %d skipped (duplicate title + due date).</div>`, imported, skipped)
+	base := utils.GetBasePath()
+	fmt.Fprintf(w, `<div class="alert alert-success" role="alert"><i class="bi bi-check-circle"></i> Imported %d tasks, %d skipped (duplicate title + due date). <a href="%s/" class="alert-link">View tasks</a></div>`, imported, skipped, base)
+}
+
+// APIImportCancel clears staged import data from session.
+func APIImportCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	_, _, err := importAuthUser(r, w)
+	if err != nil {
+		return
+	}
+	_ = clearImportStaging(r, w)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte{})
+}
+
+func importAuthUser(r *http.Request, w http.ResponseWriter) (*int, string, error) {
+	email, _, _, loggedIn := utils.GetSessionUser(r)
+	if !loggedIn {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return nil, "", fmt.Errorf("unauthorized")
+	}
+
+	if isBanned, err := storage.IsUserBanned(email); err == nil && isBanned {
+		sessionstore.ClearSessionCookie(w, r)
+		http.Redirect(w, r, utils.GetBasePath()+"/", http.StatusSeeOther)
+		return nil, "", fmt.Errorf("banned")
+	}
+
+	userID := utils.GetSessionUserID(r)
+	if userID == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return nil, "", fmt.Errorf("unauthorized")
+	}
+	return userID, email, nil
+}
+
+func readImportUpload(r *http.Request) (importColumnMap, [][]string, error) {
+	if err := r.ParseMultipartForm(importMaxFileBytes); err != nil {
+		return importColumnMap{}, nil, fmt.Errorf("file too large (max 5MB)")
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		return importColumnMap{}, nil, fmt.Errorf("missing file upload")
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, importMaxFileBytes+1))
+	if err != nil {
+		return importColumnMap{}, nil, fmt.Errorf("failed to read file")
+	}
+	if len(data) > importMaxFileBytes {
+		return importColumnMap{}, nil, fmt.Errorf("file too large (max 5MB)")
+	}
+
+	cols, rows, err := parseImportCSV(data)
+	if err != nil {
+		return importColumnMap{}, nil, err
+	}
+	if len(rows) == 0 {
+		return importColumnMap{}, nil, fmt.Errorf("no data rows found in CSV")
+	}
+	if len(rows) > importMaxRows {
+		return importColumnMap{}, nil, fmt.Errorf("too many rows (max %d)", importMaxRows)
+	}
+	return cols, rows, nil
+}
+
+func stagingColsFromMap(cols importColumnMap) stagedImportCols {
+	return stagedImportCols{
+		Title:       cols.title,
+		Description: cols.description,
+		Completed:   cols.completed,
+		DueDate:     cols.dueDate,
+		Project:     cols.project,
+		Priority:    cols.priority,
+		Favorite:    cols.favorite,
+		Tags:        cols.tags,
+	}
+}
+
+func stagingColsToMap(cols stagedImportCols) importColumnMap {
+	return importColumnMap{
+		title:       cols.Title,
+		description: cols.Description,
+		completed:   cols.Completed,
+		dueDate:     cols.DueDate,
+		project:     cols.Project,
+		priority:    cols.Priority,
+		favorite:    cols.Favorite,
+		tags:        cols.Tags,
+	}
+}
+
+func saveImportStaging(r *http.Request, w http.ResponseWriter, cols importColumnMap, rows [][]string) error {
+	sess, err := sessionstore.Store.Get(r, "session")
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(stagedImport{
+		Cols: stagingColsFromMap(cols),
+		Rows: rows,
+	})
+	if err != nil {
+		return err
+	}
+	sess.Values[importStagingSessionKey] = string(payload)
+	return sess.Save(r, w)
+}
+
+func loadImportStaging(r *http.Request) (*stagedImport, error) {
+	sess, err := sessionstore.Store.Get(r, "session")
+	if err != nil {
+		return nil, err
+	}
+	raw, ok := sess.Values[importStagingSessionKey]
+	if !ok || raw == nil {
+		return nil, fmt.Errorf("no import preview to confirm")
+	}
+	var staging stagedImport
+	switch v := raw.(type) {
+	case string:
+		if err := json.Unmarshal([]byte(v), &staging); err != nil {
+			return nil, fmt.Errorf("invalid import staging")
+		}
+	default:
+		return nil, fmt.Errorf("invalid import staging")
+	}
+	if len(staging.Rows) == 0 {
+		return nil, fmt.Errorf("no import preview to confirm")
+	}
+	return &staging, nil
+}
+
+func clearImportStaging(r *http.Request, w http.ResponseWriter) error {
+	sess, err := sessionstore.Store.Get(r, "session")
+	if err != nil {
+		return err
+	}
+	delete(sess.Values, importStagingSessionKey)
+	return sess.Save(r, w)
+}
+
+func buildImportPreviewRows(cols importColumnMap, rows [][]string, limit int) []importPreviewRow {
+	if limit <= 0 || limit > len(rows) {
+		limit = len(rows)
+	}
+	out := make([]importPreviewRow, 0, limit)
+	for i := 0; i < limit && i < len(rows); i++ {
+		row := rows[i]
+		out = append(out, importPreviewRow{
+			Title:   cellValue(row, cols.title),
+			Project: cellValue(row, cols.project),
+			DueDate: cellValue(row, cols.dueDate),
+			Tags:    cellValue(row, cols.tags),
+		})
+	}
+	return out
+}
+
+// dryRunImportCounts returns how many rows would import vs skip as duplicates.
+func dryRunImportCounts(userID int, cols importColumnMap, rows [][]string) (wouldImport, wouldSkip int, err error) {
+	candidateRows := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		title := cellValue(row, cols.title)
+		if title == "" {
+			wouldSkip++
+			continue
+		}
+		candidateRows = append(candidateRows, row)
+	}
+	if len(candidateRows) == 0 {
+		return wouldImport, wouldSkip, nil
+	}
+
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer storage.CloseDatabase(pool)
+
+	ctx := context.Background()
+	for _, row := range candidateRows {
+		title := cellValue(row, cols.title)
+		dueDate := cellValue(row, cols.dueDate)
+		exists, err := importRowIsDuplicate(ctx, pool, userID, title, dueDate)
+		if err != nil {
+			return wouldImport, wouldSkip, err
+		}
+		if exists {
+			wouldSkip++
+		} else {
+			wouldImport++
+		}
+	}
+	return wouldImport, wouldSkip, nil
+}
+
+func importRowIsDuplicate(ctx context.Context, pool interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}, userID int, title, dueDate string) (bool, error) {
+	var exists bool
+	dupArgs := []interface{}{userID, title}
+	dupQuery := "SELECT EXISTS(SELECT 1 FROM tasks WHERE user_id = $1 AND title = $2"
+	if dueDate != "" {
+		dupQuery += " AND due_date = $3::date"
+		dupArgs = append(dupArgs, dueDate)
+	} else {
+		dupQuery += " AND due_date IS NULL"
+	}
+	dupQuery += ")"
+	if err := pool.QueryRow(ctx, dupQuery, dupArgs...).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+// APIImportTasks is kept for backward compatibility; redirects to confirm flow.
+func APIImportTasks(w http.ResponseWriter, r *http.Request) {
+	APIImportConfirm(w, r)
 }
 
 func parseImportCSV(data []byte) (importColumnMap, [][]string, error) {
@@ -253,16 +504,8 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 		isFavorite := parseBoolCell(cellValue(row, cols.favorite))
 
 		var exists bool
-		dupArgs := []interface{}{userID, title}
-		dupQuery := "SELECT EXISTS(SELECT 1 FROM tasks WHERE user_id = $1 AND title = $2"
-		if dueDate != "" {
-			dupQuery += " AND due_date = $3::date"
-			dupArgs = append(dupArgs, dueDate)
-		} else {
-			dupQuery += " AND due_date IS NULL"
-		}
-		dupQuery += ")"
-		if err := tx.QueryRow(ctx, dupQuery, dupArgs...).Scan(&exists); err != nil {
+		exists, err = importRowIsDuplicate(ctx, tx, userID, title, dueDate)
+		if err != nil {
 			return imported, skipped, err
 		}
 		if exists {

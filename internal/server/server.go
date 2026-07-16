@@ -1,6 +1,7 @@
 package server
 
 import (
+	"GoTodo/internal/server/digest"
 	"GoTodo/internal/server/handlers"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
@@ -13,6 +14,24 @@ import (
 // Literally just used to prevent favicon.ico from being requested
 func serveFavicon(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "internal/server/public/favicon.svg")
+}
+
+func routePaths() []string {
+	base := strings.TrimSuffix(utils.GetBasePath(), "/")
+	if base == "" || base == "/" {
+		return []string{""}
+	}
+	return []string{"", base}
+}
+
+func handle(path string, fn http.HandlerFunc) {
+	http.HandleFunc(path, fn)
+}
+
+func handleBoth(suffix string, fn http.HandlerFunc) {
+	for _, prefix := range routePaths() {
+		handle(prefix+suffix, fn)
+	}
 }
 
 func StartServer() error {
@@ -29,114 +48,139 @@ func StartServer() error {
 
 	addr := fmt.Sprintf(":%s", port)
 
-	// Initialize Redis client for rate limiting (optional)
 	if err := utils.InitRedis(); err != nil {
 		fmt.Printf("Warning: Redis init failed: %v\n", err)
 	}
 
-	// Run DB migrations (create tables / add columns as needed)
 	if err := storage.RunMigrations(); err != nil {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
 	}
 
-	// Preload changelog from GitHub at startup to avoid runtime API calls
 	if err := handlers.PreloadChangelog(); err != nil {
 		fmt.Printf("Warning: Preloading changelog failed: %v\n", err)
 	}
 
+	digest.StartDigestWorker()
+
 	fs := http.FileServer(http.Dir("internal/server/public"))
-	publicHandler := http.StripPrefix("/public/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	for _, prefix := range routePaths() {
+		publicPath := prefix + "/public/"
+		p := publicPath
+		http.Handle(publicPath, http.StripPrefix(p, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Has("v") || strings.HasPrefix(r.URL.Path, "vendor/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+			}
+			fs.ServeHTTP(w, r)
+		})))
+	}
 
-		if r.URL.Query().Has("v") || strings.HasPrefix(r.URL.Path, "vendor/") {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
-			w.Header().Set("Cache-Control", "public, max-age=3600")
-		}
-		fs.ServeHTTP(w, r)
-	}))
-	http.Handle("/public/", publicHandler)
+	// Regular page handlers
+	handleBoth("/", handlers.HomeHandler)
+	handleBoth("/p/", handlers.ProjectFilterHandler)
+	handleBoth("/favicon.ico", serveFavicon)
+	handleBoth("/signup", handlers.SignupPageHandler)
+	handleBoth("/register", handlers.RegisterHandler)
+	handleBoth("/about", handlers.AboutHandler)
+	handleBoth("/documentation", handlers.DocumentationHomeHandler)
+	handleBoth("/documentation/api/v1", handlers.APIDocsV1Handler)
+	handleBoth("/changelog", handlers.ChangelogHandler)
+	handleBoth("/search", handlers.SearchHandler)
+	handleBoth("/profile", utils.RequireAuth(handlers.ProfilePage))
+	handleBoth("/projects", utils.RequireAuth(handlers.ProjectsPageHandler))
+	handleBoth("/dashboard", utils.RequireAuth(handlers.DashboardPageHandler))
+	handleBoth("/calendar", utils.RequireAuth(handlers.CalendarPageHandler))
+	handleBoth("/import", utils.RequireAuth(handlers.ImportPageHandler))
+	handleBoth("/createinvite", utils.RequirePermission("createinvites", handlers.CreateInvitePageHandler))
+	handleBoth("/admin", utils.RequirePermission("admin", handlers.AdminPageHandler))
+	handleBoth("/admin/", utils.RequirePermission("admin", handlers.AdminPageHandler))
+	handleBoth("/forgot-password", handlers.ForgotPasswordPage)
+	handleBoth("/password-reset", handlers.PasswordResetPage)
 
-	// Regular page handlers (no HTMX requirement)
-	http.HandleFunc("/", handlers.HomeHandler)
-	http.HandleFunc("/favicon.ico", serveFavicon)
-	http.HandleFunc("/signup", handlers.SignupPageHandler)
-	http.HandleFunc("/register", handlers.RegisterHandler)
-	http.HandleFunc("/about", handlers.AboutHandler)
-	http.HandleFunc("/changelog", handlers.ChangelogHandler)
-	http.HandleFunc("/search", handlers.SearchHandler)
-	http.HandleFunc("/profile", handlers.ProfilePage)
-	http.HandleFunc("/projects", utils.RequireAuth(handlers.ProjectsPageHandler))
-	http.HandleFunc("/dashboard", utils.RequireAuth(handlers.DashboardPageHandler))
-	http.HandleFunc("/import", utils.RequireAuth(handlers.ImportPageHandler))
-	http.HandleFunc("/createinvite", utils.RequirePermission("createinvites", handlers.CreateInvitePageHandler))
-	http.HandleFunc("/admin", utils.RequirePermission("admin", handlers.AdminPageHandler))
-	http.HandleFunc("/admin/", utils.RequirePermission("admin", handlers.AdminPageHandler))
-	http.HandleFunc("/forgot-password", handlers.ForgotPasswordPage)
-	http.HandleFunc("/password-reset", handlers.PasswordResetPage)
+	// API endpoints
+	handleBoth("/api/signup", utils.RequireHTMX(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APISignup)))
+	handleBoth("/api/login", utils.RequireHTMX(utils.RateLimitMiddleware(10, 1.0, 60, utils.KeyByIP)(handlers.APILogin)))
+	handleBoth("/api/logout", utils.RequireHTMX(handlers.APILogout))
+	handleBoth("/api/forgot-password", utils.RequireHTMX(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIForgotPassword)))
+	handleBoth("/api/reset-password", utils.RequireHTMX(handlers.APIResetPassword))
 
-	// API endpoints - all require HTMX header
-	// Auth endpoints with rate limiting
-	http.HandleFunc("/api/signup", utils.RequireHTMX(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APISignup)))
-	http.HandleFunc("/api/login", utils.RequireHTMX(utils.RateLimitMiddleware(10, 1.0, 60, utils.KeyByIP)(handlers.APILogin)))
-	http.HandleFunc("/api/logout", utils.RequireHTMX(handlers.APILogout))
-	http.HandleFunc("/api/forgot-password", utils.RequireHTMX(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIForgotPassword)))
-	http.HandleFunc("/api/reset-password", utils.RequireHTMX(handlers.APIResetPassword))
+	handleBoth("/api/fetch-tasks", utils.RequireHTMX(handlers.APIReturnTasks))
+	handleBoth("/api/add-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIAddTask)))
+	handleBoth("/api/edit", utils.RequireHTMX(handlers.APIEditTaskForm))
+	handleBoth("/api/edit-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIEditTask)))
+	handleBoth("/api/confirm", utils.RequireHTMX(handlers.APIConfirmDelete))
+	handleBoth("/api/delete-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIDeleteTask)))
+	handleBoth("/api/update-status", utils.RequireHTMX(handlers.APIUpdateTaskStatus))
+	handleBoth("/api/toggle-favorite", utils.RequireHTMX(handlers.APIToggleFavorite))
+	handleBoth("/api/reorder-tasks", utils.RequireHTMX(handlers.APIReorderTasks))
 
-	// Task endpoints
-	http.HandleFunc("/api/fetch-tasks", utils.RequireHTMX(handlers.APIReturnTasks))
-	http.HandleFunc("/api/add-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIAddTask)))
-	http.HandleFunc("/api/edit", utils.RequireHTMX(handlers.APIEditTaskForm))
-	http.HandleFunc("/api/edit-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIEditTask)))
-	http.HandleFunc("/api/confirm", utils.RequireHTMX(handlers.APIConfirmDelete))
-	http.HandleFunc("/api/delete-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIDeleteTask)))
-	http.HandleFunc("/api/update-status", utils.RequireHTMX(handlers.APIUpdateTaskStatus))
-	http.HandleFunc("/api/toggle-favorite", utils.RequireHTMX(handlers.APIToggleFavorite))
-	http.HandleFunc("/api/reorder-tasks", utils.RequireHTMX(handlers.APIReorderTasks))
+	handleBoth("/partials/login", utils.RequireHTMX(handlers.APIGetLoginPartial))
+	handleBoth("/changelog/page", handlers.ChangelogPageHandler)
 
-	// Partials
-	http.HandleFunc("/partials/login", utils.RequireHTMX(handlers.APIGetLoginPartial))
+	handleBoth("/api/projects/create", utils.RequireHTMX(utils.RequireAuth(handlers.APICreateProject)))
+	handleBoth("/api/projects/update", utils.RequireHTMX(utils.RequireAuth(handlers.APIUpdateProject)))
+	handleBoth("/api/projects/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteProject)))
+	handleBoth("/api/projects/json", utils.RequireHTMX(utils.RequireAuth(handlers.APIProjectsJSON)))
+	handleBoth("/api/bulk-update", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIBulkUpdate)))
+	handleBoth("/api/undo-delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIUndoDelete)))
+	handleBoth("/api/task-events", utils.RequireHTMX(utils.RequireAuth(handlers.APITaskEvents)))
+	handleBoth("/api/users", utils.RequireHTMX(utils.RequirePermission("admin", handlers.APIGetUsers)))
+	handleBoth("/api/export", utils.RequireAuth(handlers.APIExportTasks))
+	handleBoth("/api/import/preview", utils.RequireHTMX(utils.RequireAuth(handlers.APIImportPreview)))
+	handleBoth("/api/import/confirm", utils.RequireHTMX(utils.RequireAuth(handlers.APIImportConfirm)))
+	handleBoth("/api/import/cancel", utils.RequireHTMX(utils.RequireAuth(handlers.APIImportCancel)))
+	handleBoth("/api/validate-description", utils.RequireHTMX(handlers.ValidateDescription))
+	handleBoth("/api/tags/json", utils.RequireAuth(handlers.APITagsJSON))
+	handleBoth("/api/tags/update", utils.RequireHTMX(utils.RequireAuth(handlers.APIUpdateTag)))
+	handleBoth("/api/tags/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteTag)))
+	handleBoth("/api/duplicate-task", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIDuplicateTask)))
 
-	// Changelog pagination
-	http.HandleFunc("/changelog/page", handlers.ChangelogPageHandler)
+	handleBoth("/api/saved-views/json", utils.RequireAuth(handlers.APISavedViewsJSON))
+	handleBoth("/api/saved-views/save", utils.RequireHTMX(utils.RequireAuth(handlers.APISavedViewsSave)))
+	handleBoth("/api/saved-views/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APISavedViewsDelete)))
 
-	// Projects API endpoints
-	http.HandleFunc("/api/projects/create", utils.RequireHTMX(utils.RequireAuth(handlers.APICreateProject)))
-	http.HandleFunc("/api/projects/update", utils.RequireHTMX(utils.RequireAuth(handlers.APIUpdateProject)))
-	http.HandleFunc("/api/projects/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteProject)))
-	http.HandleFunc("/api/projects/json", utils.RequireHTMX(utils.RequireAuth(handlers.APIProjectsJSON)))
-	http.HandleFunc("/api/bulk-update", utils.RequireHTMX(utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByUser)(handlers.APIBulkUpdate)))
-	http.HandleFunc("/api/task-events", utils.RequireHTMX(utils.RequireAuth(handlers.APITaskEvents)))
-	http.HandleFunc("/api/users", utils.RequireHTMX(utils.RequirePermission("admin", handlers.APIGetUsers)))
-	http.HandleFunc("/api/export", utils.RequireAuth(handlers.APIExportTasks))
-	http.HandleFunc("/api/import", utils.RequireHTMX(utils.RequireAuth(handlers.APIImportTasks)))
-	http.HandleFunc("/api/tags/delete", utils.RequireHTMX(utils.RequireAuth(handlers.APIDeleteTag)))
+	handleBoth("/api/profile/api-keys/json", utils.RequireAuth(handlers.APIProfileKeysJSON))
+	handleBoth("/api/profile/api-keys/create", utils.RequireHTMX(utils.RequireAuth(handlers.APICreateAPIKey)))
+	handleBoth("/api/profile/api-keys/revoke", utils.RequireHTMX(utils.RequireAuth(handlers.APIRevokeAPIKey)))
 
-	// Profile API endpoints
-	http.HandleFunc("/api/update-timezone", utils.RequireHTMX(handlers.APIUpdateTimezone))
-	http.HandleFunc("/api/update-profile", utils.RequireHTMX(handlers.APIUpdateProfile))
-	http.HandleFunc("/api/change-password", utils.RequireHTMX(handlers.APIChangePassword))
+	devicePublic := handlers.DeviceAuthPublicChain
+	handleBoth("/api/v1/auth/device/code", devicePublic(handlers.APIDeviceCode))
+	handleBoth("/api/v1/auth/device/token", devicePublic(handlers.APIDeviceToken))
+	handleBoth("/auth/device", handlers.DeviceAuthPageHandler)
+	handleBoth("/api/auth/device/approve", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIDeviceApprove))))
+	handleBoth("/api/auth/device/deny", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIDeviceDeny))))
 
-	// Invite API endpoints
-	http.HandleFunc("/api/create-invite", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APICreateInvite)))
-	http.HandleFunc("/api/invites", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APIGetInvites)))
-	http.HandleFunc("/api/confirm-invite-delete", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APIConfirmDeleteInvite)))
+	v1 := utils.APIChain
+	handleBoth("/api/v1/tasks", v1(handlers.APIV1TasksRouter))
+	handleBoth("/api/v1/tasks/", v1(handlers.APIV1TasksRouter))
+	handleBoth("/api/v1/projects", v1(handlers.APIV1Projects))
+	handleBoth("/api/v1/tags", v1(handlers.APIV1TagsRouter))
+	handleBoth("/api/v1/tags/", v1(handlers.APIV1TagsRouter))
+	handleBoth("/api/v1/saved-views", v1(handlers.APIV1SavedViewsRouter))
+	handleBoth("/api/v1/saved-views/", v1(handlers.APIV1SavedViewsRouter))
 
-	// Ban/unban user actions (admin only)
-	http.HandleFunc("/api/ban-user", utils.RequireHTMX(utils.RequirePermission("admin", handlers.APIBanUser)))
-	http.HandleFunc("/api/unban-user", utils.RequireHTMX(utils.RequirePermission("admin", handlers.APIUnbanUser)))
+	handleBoth("/api/update-profile", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIUpdateProfile))))
+	handleBoth("/api/change-password", utils.RequireHTMX(utils.RequireAuth(utils.RequireCSRF(handlers.APIChangePassword))))
+	handleBoth("/api/calendar/regenerate-token", utils.RequireHTMX(utils.RequireAuth(handlers.APICalendarRegenerateToken)))
+	handleBoth("/api/calendar/sync-due-dates", utils.RequireHTMX(utils.RequireAuth(handlers.APICalendarSyncDueDates)))
 
-	// Admin API endpoints
-	http.HandleFunc("/api/admin/update-settings", utils.RequirePermission("admin", handlers.APIUpdateSiteSettings))
+	handleBoth("/cal/", handlers.CalendarFeedHandler)
 
-	// Handle PUT and DELETE for invites with path parameters
-	http.HandleFunc("/api/invite/", func(w http.ResponseWriter, r *http.Request) {
-		// Check HTMX header first
+	handleBoth("/api/create-invite", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APICreateInvite)))
+	handleBoth("/api/invites", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APIGetInvites)))
+	handleBoth("/api/confirm-invite-delete", utils.RequireHTMX(utils.RequirePermission("createinvites", handlers.APIConfirmDeleteInvite)))
+	handleBoth("/api/ban-user", utils.RequireHTMX(utils.RequirePermission("admin", handlers.APIBanUser)))
+	handleBoth("/api/unban-user", utils.RequireHTMX(utils.RequirePermission("admin", handlers.APIUnbanUser)))
+	handleBoth("/api/admin/update-settings", utils.RequirePermission("admin", handlers.APIUpdateSiteSettings))
+	handleBoth("/api/dismiss-announcement", handlers.APIDismissAnnouncement)
+
+	handleBoth("/api/invite/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("HX-Request") != "true" {
 			basePath := utils.GetBasePath()
 			http.Redirect(w, r, basePath+"/", http.StatusSeeOther)
 			return
 		}
-
 		switch r.Method {
 		case http.MethodPut:
 			utils.RequirePermission("createinvites", handlers.APIUpdateInvite)(w, r)
@@ -146,9 +190,6 @@ func StartServer() error {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-
-	// Dismiss announcement endpoint
-	http.HandleFunc("/api/dismiss-announcement", handlers.APIDismissAnnouncement)
 
 	fmt.Printf("Starting server on %s\n", addr)
 	return http.ListenAndServe(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux))

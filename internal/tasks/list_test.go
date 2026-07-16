@@ -34,6 +34,16 @@ func TestMain(m *testing.M) {
 
 	_, err = pool.Exec(context.Background(), `
 		CREATE TABLE users (id SERIAL PRIMARY KEY, email TEXT);
+		CREATE TABLE saved_views (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			filter_json JSONB NOT NULL DEFAULT '{}',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (user_id, name)
+		);
 		CREATE TABLE projects (id SERIAL PRIMARY KEY, user_id INT, name TEXT);
 		CREATE TABLE tags (
 			id SERIAL PRIMARY KEY,
@@ -62,7 +72,17 @@ func TestMain(m *testing.M) {
 			tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
 			PRIMARY KEY (task_id, tag_id)
 		);
-		INSERT INTO users (id, email) VALUES (1, 'user@example.com');
+		CREATE TABLE task_events (
+			id SERIAL PRIMARY KEY,
+			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL,
+			event_type VARCHAR(32) NOT NULL,
+			metadata JSONB DEFAULT '{}',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		INSERT INTO users (id, email) VALUES
+			(1, 'user@example.com'),
+			(2, 'other@example.com');
 		INSERT INTO tags (id, user_id, name, color) VALUES (1, 1, 'work', '#0d6efd'), (2, 1, 'personal', '#198754');
 		INSERT INTO tasks (title, description, user_id, completed, is_favorite, position, priority, project_id, due_date) VALUES
 		 ('Favorite task', 'fav desc', 1, false, true, 1, 2, NULL, CURRENT_DATE),
@@ -119,6 +139,17 @@ func TestReturnPaginationForUserWithFilters(t *testing.T) {
 func TestSearchTasksForUserWithFilters(t *testing.T) {
 	userID := 1
 	timezone := "America/New_York"
+
+	favoriteResults, favoriteTotal, err := tasks.SearchTasksForUserWithFilters(1, 10, "Favorite", &userID, timezone, tasks.ListFilters{})
+	if err != nil {
+		t.Fatalf("favorite search: %v", err)
+	}
+	if favoriteTotal != 1 || len(favoriteResults) != 1 {
+		t.Fatalf("expected one favorite search result, got total %d and %d tasks", favoriteTotal, len(favoriteResults))
+	}
+	if !favoriteResults[0].IsFavorite {
+		t.Fatalf("expected search result %q to preserve favorite status", favoriteResults[0].Title)
+	}
 
 	_, total, err := tasks.SearchTasksForUserWithFilters(1, 10, "task", &userID, timezone, tasks.ListFilters{StatusFilter: "incomplete"})
 	if err != nil {

@@ -46,7 +46,7 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Error opening database")
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	// Determine user ID (prefer session value)
 	var userID int
@@ -68,11 +68,13 @@ func APIDeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := deleteTasksForUser(context.Background(), db, []int{tid}, userID); err != nil {
+	if err := deleteTasksForUser(context.Background(), db, r, w, []int{tid}, userID); err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "Task not found or you don't have permission to delete it")
 		return
 	}
+
+	triggerTaskDeletedHeader(w, 1)
 
 	// Determine active project filter
 	// Determine active filters from the request

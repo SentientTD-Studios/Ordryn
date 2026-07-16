@@ -55,7 +55,7 @@ func APILogin(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Internal server error.")
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	var hashedPassword string
 	var roleID int
@@ -155,8 +155,13 @@ func APILogin(w http.ResponseWriter, r *http.Request) {
 
 	basePath := utils.GetBasePath()
 
+	redirect := basePath
+	if returnTo := utils.SafeDeviceReturnTo(r.FormValue("return_to")); returnTo != "" {
+		redirect = returnTo
+	}
+
 	w.Header().Set("HX-Trigger", "login-success")
-	w.Header().Set("HX-Redirect", basePath)
+	w.Header().Set("HX-Redirect", redirect)
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, " ")
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -71,7 +72,7 @@ func APIBulkUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	ctx := context.Background()
 	if err := verifyTasksOwnedByUser(ctx, db, ids, *userID); err != nil {
@@ -84,8 +85,6 @@ func APIBulkUpdate(w http.ResponseWriter, r *http.Request) {
 		err = bulkSetCompleted(ctx, db, ids, *userID, true)
 	case "incomplete":
 		err = bulkSetCompleted(ctx, db, ids, *userID, false)
-	case "delete":
-		err = deleteTasksForUser(ctx, db, ids, *userID)
 	case "move_project":
 		err = bulkMoveProject(ctx, db, ids, *userID, strings.TrimSpace(r.FormValue("project_id")))
 	case "add_tag":
@@ -109,6 +108,15 @@ func APIBulkUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err = bulkSetPriority(ctx, db, ids, *userID, priority)
+	case "set_due_date":
+		dueDate, derr := parseBulkDueDate(r.FormValue("due_date"))
+		if derr != nil {
+			http.Error(w, derr.Error(), http.StatusBadRequest)
+			return
+		}
+		err = bulkSetDueDate(ctx, db, ids, *userID, dueDate)
+	case "delete":
+		err = deleteTasksForUser(ctx, db, r, w, ids, *userID)
 	default:
 		http.Error(w, "Unknown bulk action", http.StatusBadRequest)
 		return
@@ -144,6 +152,9 @@ func APIBulkUpdate(w http.ResponseWriter, r *http.Request) {
 
 	fc := filterContextFromRequest(r)
 	fc.Page = currentPage
+	if action == "delete" {
+		triggerTaskDeletedHeader(w, len(ids))
+	}
 	if err := renderFilteredTaskListPartial(w, r, currentPage, pageSize, fc, userID, timezone, loggedIn); err != nil {
 		http.Error(w, "Error rendering tasks: "+err.Error(), http.StatusInternalServerError)
 	}
@@ -187,7 +198,14 @@ func verifyTasksOwnedByUser(ctx context.Context, db *pgxpool.Pool, ids []int, us
 	return nil
 }
 
-func deleteTasksForUser(ctx context.Context, db *pgxpool.Pool, ids []int, userID int) error {
+func deleteTasksForUser(ctx context.Context, db *pgxpool.Pool, r *http.Request, w http.ResponseWriter, ids []int, userID int) error {
+	snapshots, err := snapshotTasksForUndo(ctx, db, ids, userID)
+	if err != nil {
+		return err
+	}
+	if err := savePendingUndo(r, w, snapshots); err != nil {
+		return err
+	}
 	for _, id := range ids {
 		logTaskEvent(id, userID, "deleted", nil)
 		tag, err := db.Exec(ctx, "DELETE FROM tasks WHERE id = $1 AND user_id = $2", id, userID)
@@ -221,6 +239,36 @@ func bulkSetPriority(ctx context.Context, db *pgxpool.Pool, ids []int, userID in
 			return err
 		}
 		logTaskEvent(id, userID, "priority_changed", map[string]interface{}{"to": priorityLabel(priority)})
+	}
+	return nil
+}
+
+var bulkDueDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// parseBulkDueDate validates YYYY-MM-DD or returns empty string to clear the due date.
+func parseBulkDueDate(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if !bulkDueDatePattern.MatchString(raw) {
+		return "", fmt.Errorf("invalid due date format")
+	}
+	return raw, nil
+}
+
+func bulkSetDueDate(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, dueDate string) error {
+	for _, id := range ids {
+		if dueDate == "" {
+			if _, err := db.Exec(ctx, "UPDATE tasks SET due_date = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1 AND user_id = $2", id, userID); err != nil {
+				return err
+			}
+		} else {
+			if _, err := db.Exec(ctx, "UPDATE tasks SET due_date = $1::date, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2 AND user_id = $3", dueDate, id, userID); err != nil {
+				return err
+			}
+		}
+		logTaskEvent(id, userID, "edited", map[string]interface{}{"fields": []string{"due_date"}})
 	}
 	return nil
 }

@@ -68,7 +68,7 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
+	defer storage.CloseDatabase(db)
 
 	// Get user ID from session (fallback to querying by email if not present)
 	email, _, _, timezone, loggedIn, _ := utils.GetSessionUserWithTimezone(r)
@@ -157,7 +157,11 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 	}
 	logTaskEvent(newTaskID, userID, "created", nil)
 
-	// After successful insertion, determine the correct page to display
+	if isCalendarReturn(r) {
+		respondCalendarRedirect(w, r, calendarMonthFromRequest(r, timezone), timezone)
+		return
+	}
+
 	pageSize := utils.AppConstants.PageSize
 	if sess, err := sessionstore.Store.Get(r, "session"); err == nil && sess != nil {
 		if val, ok := sess.Values["items_per_page"]; ok {
@@ -182,282 +186,75 @@ func APIAddTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Open a new DB connection to count total tasks (or reuse db if possible)
-	// Determine active project filter (from form or query) so we can decide whether to refresh the current view
 	fc := filterContextFromRequest(r)
 	activeProject := fc.Project
 	activeStatus := fc.Status
 	projectFilterPtr := parseProjectFilter(activeProject)
 	listFilters := fc.ToListFilters()
 
-	var totalTasks int
-	// Count tasks scoped to project if filter is active, otherwise count all
-	statusCond := ""
-	if activeStatus == "complete" {
-		statusCond = " AND completed = true"
-	} else if activeStatus == "incomplete" {
-		statusCond = " AND (completed IS NULL OR completed = false)"
-	}
-
-	if projectFilterPtr == nil {
-		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+statusCond, userID).Scan(&totalTasks)
-	} else {
-		projectCond := ""
-		args := []interface{}{userID}
-		if *projectFilterPtr == 0 {
-			projectCond = " AND project_id IS NULL"
-		} else {
-			projectCond = " AND project_id = $2"
-			args = append(args, *projectFilterPtr)
-		}
-		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+projectCond+statusCond, args...).Scan(&totalTasks)
-	}
+	_, totalTasks, err := tasks.ReturnPaginationForUserWithFilters(1, pageSize, &userID, timezone, listFilters)
 	if err != nil {
 		http.Error(w, "Error counting tasks after add: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Calculate the new last page
 	lastPage := (totalTasks + pageSize - 1) / pageSize
 	if lastPage < 1 {
 		lastPage = 1
 	}
-
-	// If the new task caused a new page, go to the last page
 	if page < lastPage {
 		page = lastPage
 	}
 
-	var taskList []tasks.Task
-	taskList, totalTasks, err = tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, listFilters)
-	if err != nil {
-		http.Error(w, "Error fetching tasks after add: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Calculate pagination button states based on new totalTasks
-	prevDisabled := ""
-	if page == 1 {
-		prevDisabled = "disabled"
-	}
-
-	nextDisabled := ""
-	if page*pageSize >= totalTasks {
-		nextDisabled = "disabled"
-	}
-
-	prevPage := page - 1
-	if prevPage < 1 {
-		prevPage = 1
-	}
-
-	nextPage := page + 1
-
-	// Split into favorites and non-favorites for rendering and allow separate sortable containers
-	favs := make([]tasks.Task, 0)
-	nonFavs := make([]tasks.Task, 0)
-	for i := range taskList {
-		taskList[i].Page = page
-		if taskList[i].IsFavorite {
-			favs = append(favs, taskList[i])
-		} else {
-			nonFavs = append(nonFavs, taskList[i])
-		}
-	}
-
-	// Decide whether to refresh the current view: only refresh if we're on All projects OR
-	// the new task's project matches the active project filter.
 	shouldRefresh := false
 	if projectFilterPtr == nil {
-		// viewing All projects -> always refresh
 		shouldRefresh = true
-	} else {
-		// viewing a specific project or 'No project'
-		if *projectFilterPtr == 0 {
-			// viewing No project; refresh only if new task has no project
-			if newTaskProject == nil {
-				shouldRefresh = true
-			}
-		} else if newTaskProject != nil && *newTaskProject == *projectFilterPtr {
+	} else if *projectFilterPtr == 0 {
+		if newTaskProject == nil {
 			shouldRefresh = true
 		}
+	} else if newTaskProject != nil && *newTaskProject == *projectFilterPtr {
+		shouldRefresh = true
 	}
 	if !taskStatusMatchesFilter(activeStatus, false) {
 		shouldRefresh = false
 	}
 
-	// The new task belongs to a different project than the current filter.
-	// Instead of returning nothing, render the view for the project the task was added to
-	// and instruct the client to set the toolbar filter to that project.
-	// Determine the target filter (new task's project or "No project")
-	var targetFilterPtr *int
+	w.Header().Set("HX-Trigger", "task-added")
+
+	if shouldRefresh {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := renderFilteredTaskListPartial(w, r, page, pageSize, fc, &userID, timezone, true); err != nil {
+			http.Error(w, "Error rendering tasks after add: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
 	var targetFilterParam string
 	if newTaskProject == nil {
-		zero := 0
-		targetFilterPtr = &zero
 		targetFilterParam = "0"
 	} else {
-		targetFilterPtr = newTaskProject
 		targetFilterParam = strconv.Itoa(*newTaskProject)
 	}
 
-	// Count tasks scoped to target project
-	var totalTasksTarget int
-	projectCond := ""
-	args := []interface{}{userID}
-	if *targetFilterPtr == 0 {
-		projectCond = " AND project_id IS NULL"
-	} else {
-		projectCond = " AND project_id = $2"
-		args = append(args, *targetFilterPtr)
-	}
-	if err := db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1"+projectCond+statusCond, args...).Scan(&totalTasksTarget); err != nil {
+	targetFC := fc
+	targetFC.Project = targetFilterParam
+
+	_, totalTasksTarget, err := tasks.ReturnPaginationForUserWithFilters(1, pageSize, &userID, timezone, targetFC.ToListFilters())
+	if err != nil {
 		http.Error(w, "Error counting tasks for new project: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Recalculate page for target list
 	lastPageTarget := (totalTasksTarget + pageSize - 1) / pageSize
 	if lastPageTarget < 1 {
 		lastPageTarget = 1
 	}
-	if page > lastPageTarget {
-		page = lastPageTarget
-	}
+	page = lastPageTarget
 
-	// Fetch projects and mark selected for toolbar
-	projectsList := make([]map[string]interface{}, 0)
-	if projs, perr := storage.GetProjectsForUser(userID); perr == nil {
-		for _, p := range projs {
-			sel := false
-			if targetFilterPtr != nil && *targetFilterPtr == p.ID {
-				sel = true
-			}
-			projectsList = append(projectsList, map[string]interface{}{"ID": p.ID, "Name": p.Name, "Selected": sel})
-		}
-	}
-	tagsList := tagsListForFilter(userID, fc.Tag)
-
-	completedCount, incompleteCount := completedIncompleteCounts(&userID, projectFilterPtr)
-
-	// Create a context for rendering pagination.html
-	tmplCtx := map[string]interface{}{
-		"FavoriteTasks":    favs,
-		"Tasks":            nonFavs,
-		"PreviousPage":     prevPage,
-		"NextPage":         nextPage,
-		"CurrentPage":      page,
-		"PrevDisabled":     prevDisabled,
-		"NextDisabled":     nextDisabled,
-		"TotalTasks":       totalTasks,
-		"LoggedIn":         true,
-		"TotalPages":       (totalTasks + pageSize - 1) / pageSize,
-		"Pages":            utils.GetPaginationData(page, pageSize, totalTasks, userID).Pages,
-		"HasRightEllipsis": utils.GetPaginationData(page, pageSize, totalTasks, userID).HasRightEllipsis,
-		"CompletedTasks":   completedCount,
-		"IncompleteTasks":  incompleteCount,
-		"PerPage":          pageSize,
-		"Projects":         projectsList,
-		"Tags":             tagsList,
-		"ProjectFilter":    activeProject,
-		"StatusFilter":     activeStatus,
-		"Timezone":         timezone,
-	}
-	for k, v := range fc.TemplateFields() {
-		tmplCtx[k] = v
-	}
-
-	// Set headers for successful addition
-	w.Header().Set("HX-Trigger", "task-added") // Signal JS to close sidebar and clear form
-
-	if shouldRefresh {
-		// Render the updated task list into the main task-container
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := utils.RenderTemplate(w, r, "pagination.html", tmplCtx); err != nil {
-			http.Error(w, "Error rendering tasks after add: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		return
-	}
-
-	// Fetch tasks for the target project and page
-	targetFC := fc
-	targetFC.Project = targetFilterParam
-	taskListTarget, totalTasksTarget, err := tasks.ReturnPaginationForUserWithFilters(page, pageSize, &userID, timezone, targetFC.ToListFilters())
-	if err != nil {
-		http.Error(w, "Error fetching tasks for new project: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Build pagination state for target
-	prevDisabledT := ""
-	if page == 1 {
-		prevDisabledT = "disabled"
-	}
-	nextDisabledT := ""
-	if page*pageSize >= totalTasksTarget {
-		nextDisabledT = "disabled"
-	}
-	prevPageT := page - 1
-	if prevPageT < 1 {
-		prevPageT = 1
-	}
-	nextPageT := page + 1
-
-	favsT := make([]tasks.Task, 0)
-	nonFavsT := make([]tasks.Task, 0)
-	for i := range taskListTarget {
-		taskListTarget[i].Page = page
-		if taskListTarget[i].IsFavorite {
-			favsT = append(favsT, taskListTarget[i])
-		} else {
-			nonFavsT = append(nonFavsT, taskListTarget[i])
-		}
-	}
-
-	// Compute completed/incomplete counts for target
-	completedCountT := 0
-	incompleteCountT := 0
-	if db != nil {
-		if err := db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true"+projectCond, args...).Scan(&completedCountT); err != nil {
-			completedCountT = 0
-		}
-		if err := db.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)"+projectCond, args...).Scan(&incompleteCountT); err != nil {
-			incompleteCountT = 0
-		}
-	}
-
-	ctxT := map[string]interface{}{
-		"FavoriteTasks":    favsT,
-		"Tasks":            nonFavsT,
-		"PreviousPage":     prevPageT,
-		"NextPage":         nextPageT,
-		"CurrentPage":      page,
-		"PrevDisabled":     prevDisabledT,
-		"NextDisabled":     nextDisabledT,
-		"TotalTasks":       totalTasksTarget,
-		"LoggedIn":         true,
-		"TotalPages":       (totalTasksTarget + pageSize - 1) / pageSize,
-		"Pages":            utils.GetPaginationData(page, pageSize, totalTasksTarget, userID).Pages,
-		"HasRightEllipsis": utils.GetPaginationData(page, pageSize, totalTasksTarget, userID).HasRightEllipsis,
-		"CompletedTasks":   completedCountT,
-		"IncompleteTasks":  incompleteCountT,
-		"PerPage":          pageSize,
-		"Projects":         projectsList,
-		"Tags":             tagsList,
-		"ProjectFilter":    targetFilterParam,
-		"StatusFilter":     activeStatus,
-		"Timezone":         timezone,
-	}
-	for k, v := range targetFC.TemplateFields() {
-		ctxT[k] = v
-	}
-
-	// Instruct client to set toolbar filter to target project
 	w.Header().Set("HX-Trigger", "task-added set-project-filter:"+targetFilterParam)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := utils.RenderTemplate(w, r, "pagination.html", ctxT); err != nil {
+	if err := renderFilteredTaskListPartial(w, r, page, pageSize, targetFC, &userID, timezone, true); err != nil {
 		http.Error(w, "Error rendering tasks after add: "+err.Error(), http.StatusInternalServerError)
-		return
 	}
 }

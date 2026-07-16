@@ -7,12 +7,13 @@ import (
 
 // ListFilters holds query filters for task list and search endpoints.
 type ListFilters struct {
-	ProjectFilter  *int
-	StatusFilter   string
-	DueFilter      string
-	PriorityFilter *int
-	TagFilter      *int
-	Sort           string
+	ProjectFilter   *int
+	StatusFilter    string
+	DueFilter       string
+	CompletedFilter string
+	PriorityFilter  *int
+	TagFilter       *int
+	Sort            string
 }
 
 func (f ListFilters) projectCondition(tablePrefix string) string {

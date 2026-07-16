@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en" {{if .Theme}}data-theme="{{.Theme}}"{{end}}>
+    <head>
+        <script nonce="{{.CSPNonce}}">
+            (function () {
+                try {
+                    if (!document.documentElement.getAttribute('data-theme')) {
+                        var theme = localStorage.getItem('theme');
+                        if (theme) document.documentElement.setAttribute('data-theme', theme);
+                    }
+                } catch (e) {}
+            })();
+        </script>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
+        <meta name="description" content="Authorize a device or app to access {{.SiteName}} with your account." />
+        <title>{{.Title}}</title>
+        <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
+        <link rel="stylesheet" href="{{basePath}}/public/css/{{if .UseMinifiedAssets}}site.min.css{{else}}site.css{{end}}?v={{.AssetVersion}}" />
+        <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
+    </head>
+    <body>
+        {{template "navbar.html" .}}
+
+        <main>
+        <div class="container mt-5">
+            <div class="row justify-content-center">
+                <div class="col-md-7">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title mb-0">Authorize device</h2>
+                        </div>
+                        <div class="card-body">
+                            {{if eq .State "missing"}}
+                            <div class="alert alert-warning" role="alert">
+                                Missing authorization code. Open the link from your app or enter the code shown on your device.
+                            </div>
+                            {{else if eq .State "expired"}}
+                            <div class="alert alert-warning" role="alert">
+                                This authorization request has expired. Return to your app and start sign-in again.
+                            </div>
+                            {{else if eq .State "error"}}
+                            <div class="alert alert-danger" role="alert">
+                                Unable to load this authorization request. Try again from your app.
+                            </div>
+                            {{else if eq .State "login"}}
+                            <p class="text-muted">
+                                Sign in to approve access for <strong>{{.ClientName}}</strong>.
+                            </p>
+                            <form hx-post="{{basePath}}/api/login" hx-target="#device-login-error" hx-swap="innerHTML" method="post" autocomplete="off">
+                                <input type="hidden" name="return_to" value="{{.ReturnTo}}" />
+                                <div class="mb-3">
+                                    <label for="device-login-email" class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="device-login-email" name="email" required autocomplete="email" />
+                                </div>
+                                <div class="mb-3">
+                                    <label for="device-login-password" class="form-label">Password</label>
+                                    <input type="password" class="form-control" id="device-login-password" name="password" required autocomplete="current-password" />
+                                </div>
+                                <div id="device-login-error" class="text-danger mb-3"></div>
+                                <button type="submit" class="btn btn-primary">Sign in</button>
+                            </form>
+                            {{else if eq .State "pending"}}
+                            <p>
+                                <strong>{{.ClientName}}</strong> is requesting access to your {{.SiteName}} account.
+                            </p>
+                            <p class="text-muted small mb-4">
+                                Code: <code>{{.UserCode}}</code>
+                            </p>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <form hx-post="{{basePath}}/api/auth/device/approve" hx-swap="none">
+                                    <input type="hidden" name="user_code" value="{{.UserCode}}" />
+                                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="bi bi-check-lg"></i> Approve
+                                    </button>
+                                </form>
+                                <form hx-post="{{basePath}}/api/auth/device/deny" hx-swap="none">
+                                    <input type="hidden" name="user_code" value="{{.UserCode}}" />
+                                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+                                    <button type="submit" class="btn btn-outline-danger">
+                                        <i class="bi bi-x-lg"></i> Deny
+                                    </button>
+                                </form>
+                            </div>
+                            {{else if eq .State "approved"}}
+                            <div class="alert alert-success" role="alert">
+                                <strong>Approved.</strong> You can close this tab and return to your app.
+                            </div>
+                            {{else if eq .State "denied"}}
+                            <div class="alert alert-secondary" role="alert">
+                                Access was denied. Return to your app if you want to try again.
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </main>
+
+        {{template "footer.html" .}}
+
+        <script src="{{basePath}}/public/vendor/popper/popper.min.js" defer></script>
+        <script src="{{basePath}}/public/vendor/bootstrap/js/bootstrap.min.js" defer></script>
+        <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
+        {{template "site_script.html" .}}
+    </body>
+</html>

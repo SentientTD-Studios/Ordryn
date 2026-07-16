@@ -426,6 +426,7 @@ func APIBanUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error banning user", http.StatusInternalServerError)
 		return
 	}
+	_ = storage.ClearCalendarTokenByEmail(email)
 	if r.URL.Query().Get("source") == "admin" {
 		renderUsersTablePartial(w)
 		return

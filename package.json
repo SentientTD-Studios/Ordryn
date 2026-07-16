@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build:js": "esbuild internal/server/public/js/site.js --bundle --minify --outfile=internal/server/public/js/site.min.js --allow-overwrite",
+    "build:js": "esbuild internal/server/public/js/site.js --bundle --minify --outfile=internal/server/public/js/site.min.js --allow-overwrite && esbuild internal/server/public/js/profile-entry.js --bundle --minify --outfile=internal/server/public/js/profile.min.js --allow-overwrite",
     "build:css": "esbuild internal/server/public/css/site.css --bundle --minify --outfile=internal/server/public/css/site.min.css --allow-overwrite",
-    "build:assets": "npm run build:js && npm run build:css"
+    "build:assets": "npm run build:js && npm run build:css && date +%Y%m%d%H%M%S > internal/server/public/.asset_version"
   },
   "devDependencies": {
     "esbuild": "^0.19.0"

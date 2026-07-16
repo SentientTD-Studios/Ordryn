@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" {{if .Theme}}data-theme="{{.Theme}}"{{end}}>
+    <head>
+        <script nonce="{{.CSPNonce}}">
+            (function () {
+                try {
+                    if (!document.documentElement.getAttribute('data-theme')) {
+                        var theme = localStorage.getItem('theme');
+                        if (theme) document.documentElement.setAttribute('data-theme', theme);
+                    }
+                } catch (e) {}
+            })();
+        </script>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {{template "htmx_config.html" .}}
+        <meta name="description" content="Documentation for {{.SiteName}}." />
+        <title>{{.Title}}</title>
+        <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap/css/bootstrap.min.css" />
+        <link rel="stylesheet" href="{{basePath}}/public/css/{{if .UseMinifiedAssets}}site.min.css{{else}}site.css{{end}}?v={{.AssetVersion}}" />
+        <link rel="stylesheet" href="{{basePath}}/public/vendor/bootstrap-icons/bootstrap-icons.css" />
+    </head>
+    <body class="api-docs-page">
+        {{template "navbar.html" .}}
+
+        <main data-page="documentation">
+        <div class="container mt-3">
+            <div class="card">
+                <div class="card-body">
+                    <h1 class="card-title">Documentation</h1>
+                    <p class="lead">
+                        Guides and references for using {{.SiteName}}.
+                    </p>
+
+                    <div class="docs-index-list">
+                        <a href="{{basePath}}/documentation/api/v1" class="docs-index-item" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">
+                            <div class="docs-index-item-icon" aria-hidden="true">
+                                <i class="bi bi-braces"></i>
+                            </div>
+                            <div class="docs-index-item-body">
+                                <h2 class="h5 mb-1">REST API v1</h2>
+                                <p class="text-muted small mb-0">
+                                    JSON API for tasks, projects, and tags — authentication, endpoints, and examples.
+                                </p>
+                            </div>
+                            <div class="docs-index-item-arrow" aria-hidden="true">
+                                <i class="bi bi-chevron-right"></i>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="loginmodal" class="modal fade" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <!-- Modal content dynamically loaded -->
+                </div>
+            </div>
+        </div>
+        </main>
+
+        {{template "footer.html" .}}
+
+        <script src="{{basePath}}/public/vendor/popper/popper.min.js" defer></script>
+        <script src="{{basePath}}/public/vendor/bootstrap/js/bootstrap.min.js" defer></script>
+        <script src="{{basePath}}/public/vendor/htmx/htmx.min.js" defer></script>
+        {{template "site_script.html" .}}
+    </body>
+</html>

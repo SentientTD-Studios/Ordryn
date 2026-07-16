@@ -8,19 +8,27 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}">Home</a>
+                        <a class="nav-link" href="{{basePath}}" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Home</a>
                     </li>
                     {{if .LoggedIn}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/dashboard">Dashboard</a>
+                        <a class="nav-link" href="{{basePath}}/dashboard" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">
+                            Dashboard{{if .OverdueCount}} <span class="badge bg-danger ms-1" title="Overdue tasks">{{.OverdueCount}}</span>{{end}}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{basePath}}/calendar" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Calendar</a>
                     </li>
                     {{end}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/about">About</a>
+                        <a class="nav-link" href="{{basePath}}/about" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">About</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{basePath}}/documentation/api/v1" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">API</a>
                     </li>
                     {{if .LoggedIn}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/projects">Projects</a>
+                        <a class="nav-link" href="{{basePath}}/projects" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Projects</a>
                     </li>
                     {{end}}
                     {{if .ShowChangelog}}
@@ -30,30 +38,29 @@
                     {{end}}
                     {{if hasPermission .Permissions "admin"}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/admin">Admin</a>
+                        <a class="nav-link" href="{{basePath}}/admin" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Admin</a>
                     </li>
                     {{end}}
                     {{if and .LoggedIn (hasPermission .Permissions "createinvites")}}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{basePath}}/createinvite">Create Invite</a>
+                        <a class="nav-link" href="{{basePath}}/createinvite" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">Create Invite</a>
                     </li>
                     {{end}}
                 </ul>
                 <div class="d-flex align-items-center gap-3">
                     <span class="me-2"><i class="bi bi-sun-fill"></i></span>
-                    {{/* Render toggle with active class when server-provided theme is dark to avoid client flip */}}
                     {{if themeIs .Theme "dark"}}
-                    <span class="theme-toggle active" id="theme-toggle" role="button" aria-label="Toggle dark/light mode"></span>
+                    <button type="button" class="theme-toggle active" id="theme-toggle" aria-label="Toggle dark/light mode"></button>
                     {{else}}
-                    <span class="theme-toggle" id="theme-toggle" role="button" aria-label="Toggle dark/light mode"></span>
+                    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle dark/light mode"></button>
                     {{end}}
                     <span class="ms-2"><i class="bi bi-moon-fill"></i></span>
                     {{if .LoggedIn}}
-                    <span class="text-muted me-2">{{.UserEmail}}</span>
-                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="shortcuts-help-btn" data-bs-toggle="modal" data-bs-target="#shortcutsModal" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">
+                    <span class="text-muted me-2 navbar-user-email d-none d-md-inline">{{.UserEmail}}</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="shortcuts-help-btn" data-bs-toggle="modal" data-bs-target="#shortcutsModal" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
                         <i class="bi bi-question-circle"></i>
                     </button>
-                    <a href="{{basePath}}/profile" class="btn btn-outline-secondary btn-sm me-2">
+                    <a href="{{basePath}}/profile" class="btn btn-outline-secondary btn-sm me-2" title="Profile settings" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML show:top">
                         <i class="bi bi-person-circle"></i> Profile
                     </a>
                     <button class="btn btn-outline-danger btn-sm" id="logout-btn" hx-post="{{basePath}}/api/logout" hx-trigger="click">

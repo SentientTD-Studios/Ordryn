@@ -112,6 +112,74 @@ export function initializeProjectRenameHandlers() {
   });
 }
 
+export function initializeTagRenameHandlers() {
+  document.body.addEventListener("click", function (e) {
+    const editBtn = e.target.closest(".edit-tag-btn");
+    if (editBtn) {
+      const td = editBtn.closest("td");
+      if (!td) return;
+      td.querySelector(".tag-name-display")?.classList.add("d-none");
+      td.querySelector(".tag-rename-form")?.classList.remove("d-none");
+      editBtn.classList.add("d-none");
+      td.querySelector('.tag-rename-form input[name="name"]')?.focus();
+      return;
+    }
+
+    const cancelBtn = e.target.closest(".cancel-tag-rename-btn");
+    if (!cancelBtn) return;
+    const td = cancelBtn.closest("td");
+    if (!td) return;
+    td.querySelector(".tag-name-display")?.classList.remove("d-none");
+    td.querySelector(".tag-rename-form")?.classList.add("d-none");
+    td.querySelector(".edit-tag-btn")?.classList.remove("d-none");
+  });
+}
+
+function formatDateInput(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export { formatDateInput };
+
+export function bindDueDatePresets(form) {
+  if (!form || form.dataset.duePresetsBound === "true") return;
+  form.dataset.duePresetsBound = "true";
+
+  form.addEventListener("click", function (e) {
+    const btn = e.target.closest("[data-due-preset]");
+    if (!btn || !form.contains(btn)) return;
+
+    e.preventDefault();
+
+    const input = form.querySelector('[name="due_date"]');
+    if (!input) return;
+
+    const preset = btn.dataset.duePreset;
+    if (preset === "clear") {
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+
+    const date = new Date();
+    if (preset === "tomorrow") {
+      date.setDate(date.getDate() + 1);
+    } else if (preset === "week") {
+      date.setDate(date.getDate() + 7);
+    }
+    input.value = formatDateInput(date);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+export function initDueDatePresets() {
+  bindDueDatePresets(document.getElementById("newTaskForm"));
+}
+
 export function handleDescriptionInput(charCountElement) {
   const description = document.getElementById("description");
   if (!description || !charCountElement) return;

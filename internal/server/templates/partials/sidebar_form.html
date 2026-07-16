@@ -1,10 +1,9 @@
 <form
     hx-post="{{if .FormAction}}{{.FormAction}}{{else}}{{basePath}}/api/add-task{{end}}"
-    hx-include="#newTaskForm"
     method="post"
     id="newTaskForm"
-    hx-target="#task-container"
-    hx-swap="innerHTML"
+    hx-indicator="#htmx-loading-indicator"
+    {{if eq .ReturnTo "calendar"}}hx-target="body" hx-swap="none"{{else if .ID}}hx-target="#task-{{.ID}}" hx-swap="outerHTML"{{else}}hx-target="#task-container" hx-swap="innerHTML"{{end}}
     >
     <div class="form-group">
         <label for="title">Title:</label>
@@ -32,6 +31,7 @@
             hx-trigger="keyup changed delay:300ms"
             hx-target="#description-error"
             hx-swap="innerHTML"
+            hx-include="this"
         >{{.Description}}</textarea>
         <div class="d-flex justify-content-between align-items-center mt-1">
             <small class="form-hint">Max 1000 Characters</small>
@@ -68,8 +68,14 @@
             id="due_date"
             name="due_date"
             class="form-control"
-            value="{{.DueDate}}"
+            value="{{dueDateInputValue .DueDate}}"
         />
+        <div class="btn-group btn-group-sm mt-1" role="group" aria-label="Due date presets">
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="today">Today</button>
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="tomorrow">Tomorrow</button>
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="week">+1 week</button>
+            <button type="button" class="btn btn-outline-secondary" data-due-preset="clear">Clear</button>
+        </div>
     </div>
     {{if .Tags}}
     <div class="form-group mt-2">
@@ -96,16 +102,25 @@
     <input type="hidden" name="project" value="{{.ProjectFilter}}" />
     <input type="hidden" name="status" value="{{.StatusFilter}}" />
     <input type="hidden" name="due" value="{{.DueFilter}}" />
+    <input type="hidden" name="completed" value="{{.CompletedFilter}}" />
     <input type="hidden" name="sort" value="{{.SortFilter}}" />
     <input type="hidden" name="priority" value="{{.PriorityFilter}}" />
     <input type="hidden" name="tag" value="{{.TagFilter}}" />
+    {{if .ReturnTo}}<input type="hidden" name="return_to" value="{{.ReturnTo}}" />{{end}}
+    {{if .CalendarMonth}}<input type="hidden" name="calendar_month" value="{{.CalendarMonth}}" />{{end}}
     <button type="submit" class="btn btn-primary w-100 mt-3">
         {{if .SubmitText}}{{.SubmitText}}{{else}}Add Task{{end}}
     </button>
     {{if .ID}}
     <details class="task-timeline mt-3">
-        <summary class="mb-2">Activity</summary>
-        <div hx-get="{{basePath}}/api/task-events?id={{.ID}}" hx-trigger="toggle once" hx-swap="innerHTML">
+        <summary
+            class="mb-2"
+            hx-get="{{basePath}}/api/task-events?id={{.ID}}"
+            hx-trigger="click once"
+            hx-target="next"
+            hx-swap="innerHTML"
+        >Activity</summary>
+        <div class="task-timeline-body">
             <span class="text-muted small">Loading activity…</span>
         </div>
     </details>

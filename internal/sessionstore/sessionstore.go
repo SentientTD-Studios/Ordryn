@@ -4,12 +4,27 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gorilla/sessions"
 	"github.com/joho/godotenv"
 )
 
 var Store *sessions.CookieStore
+
+const testSessionKey = "test-session-key-for-unit-tests-32chars!!"
+
+func runningGoTest() bool {
+	if strings.HasSuffix(os.Args[0], ".test") {
+		return true
+	}
+	for _, arg := range os.Args {
+		if strings.HasPrefix(arg, "-test.") {
+			return true
+		}
+	}
+	return false
+}
 
 func init() {
 	// Load .env file
@@ -20,7 +35,11 @@ func init() {
 
 	sessionKey := os.Getenv("SESSION_KEY")
 	if sessionKey == "" {
-		log.Fatal("SESSION_KEY environment variable is not set")
+		if runningGoTest() {
+			sessionKey = testSessionKey
+		} else {
+			log.Fatal("SESSION_KEY environment variable is not set")
+		}
 	}
 	if len(sessionKey) < 32 {
 		log.Fatal("SESSION_KEY must be at least 32 characters long")

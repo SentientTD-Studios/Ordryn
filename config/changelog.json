@@ -1,5 +1,54 @@
 [
   {
+    "version": "0.17.0",
+    "date": "2026-07-06",
+    "title": "Calendar, digest, security hardening",
+    "notes": [
+      "In-app calendar view and ICS due-date import on Profile",
+      "Daily email digest (opt-in), completed-this-week filter, extended undo with ID restore",
+      "Calendar feed security: empty response for bad tokens, ban enforcement, RFC ICS improvements",
+      "Profile CSRF, validation, RequireAuth; shared DB pool; subpath routing; hx-boost nav; filter URL sync"
+    ]
+  },
+  {
+    "version": "0.16.1",
+    "date": "2026-07-06",
+    "title": "Profile calendar feed fixes",
+    "notes": [
+      "Fixed ICS subscribe URL duplicating the site URL when basePath is configured as a full URL",
+      "Fixed Copy button on Profile not copying the calendar feed URL (clipboard fallback for HTTP)"
+    ]
+  },
+  {
+    "version": "0.16.0",
+    "date": "2026-07-06",
+    "title": "UX consistency and guidance",
+    "notes": [
+      "Undo toast now matches 60-second server window",
+      "Bulk delete and undo re-bind HTMX so edit/toggle work without refresh",
+      "Edit form Activity panel fixed for CSP (no evalDisallowedError)",
+      "Global HTMX error toasts for failed requests and network errors",
+      "Filter chips on all screen sizes with click-to-remove and Clear all filters",
+      "Bulk delete uses same styled modal as single delete; project/tag delete requires confirmation",
+      "Empty states with Add Task, Clear search, and Reset filters actions",
+      "Dashboard stat cards link to filtered home views",
+      "Keyboard: Enter edits focused row; d opens delete",
+      "Bulk due-date presets (Today, Tomorrow, +1 week)",
+      "Import success shows View tasks link; tag filter refreshes after tag changes",
+      "Profile logic moved to profile.js module; loading indicators on projects and pagination"
+    ]
+  },
+  {
+    "version": "0.15.1",
+    "date": "2026-07-03",
+    "title": "Post-roadmap features and UX polish",
+    "notes": [
+      "Undo delete, ICS calendar feed, import preview, bulk due-date actions",
+      "Loading indicators, sidebar backdrop, sticky bulk bar, mobile filter collapse",
+      "Calendar sync discoverability and undo-aware delete messaging"
+    ]
+  },
+  {
     "version": "0.1.0",
     "date": "2026-01-16",
     "title": "Initial changelog",
