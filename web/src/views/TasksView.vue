@@ -110,6 +110,57 @@ const paginationWindow = computed(() => {
 const sortableEnabled = computed(() => currentSort.value !== 'priority' && !loading.value)
 const showFavoriteList = computed(() => page.value === 1 && favoriteTasks.value.length > 0)
 
+function currentPageParam(): number {
+  const q = route.query.page
+  if (typeof q === 'string' && q) {
+    const p = parseInt(q, 10)
+    if (p > 0) return p
+  }
+  return page.value > 0 ? page.value : 1
+}
+
+function taskMatchesCurrentFilters(task: Task): boolean {
+  if (!taskMatchesStatusFilter(task)) return false
+  if (currentProject.value === '0' && task.project_id != null) return false
+  if (currentProject.value && currentProject.value !== '0') {
+    const pid = parseInt(currentProject.value, 10)
+    if (!Number.isNaN(pid) && task.project_id !== pid) return false
+  }
+  if (currentPriority.value && String(task.priority) !== currentPriority.value) return false
+  if (currentTag.value) {
+    const tagId = parseInt(currentTag.value, 10)
+    if (!task.tags?.some((t) => t.id === tagId)) return false
+  }
+  if (isSearching.value) {
+    const q = (route.query.search as string).toLowerCase()
+    const hay = `${task.title} ${task.description}`.toLowerCase()
+    if (!hay.includes(q)) return false
+  }
+  return true
+}
+
+function registerTaskAdded(task: Task) {
+  total.value += 1
+  if (task.completed) completedCount.value += 1
+  else incompleteCount.value += 1
+  if (!taskMatchesCurrentFilters(task) || currentPageParam() !== 1) return
+  if (tasks.value.some((t) => t.id === task.id)) return
+  if (task.favorite) {
+    tasks.value = [task, ...tasks.value]
+  } else {
+    tasks.value = [...tasks.value, task]
+  }
+}
+
+function removeTaskLocally(task: Task) {
+  if (!tasks.value.some((t) => t.id === task.id)) return
+  tasks.value = tasks.value.filter((t) => t.id !== task.id)
+  total.value = Math.max(0, total.value - 1)
+  if (task.completed) completedCount.value = Math.max(0, completedCount.value - 1)
+  else incompleteCount.value = Math.max(0, incompleteCount.value - 1)
+  selected.value = selected.value.filter((id) => id !== task.id)
+}
+
 function taskMatchesStatusFilter(task: Task) {
   if (currentStatus.value === 'complete') return task.completed
   if (currentStatus.value === 'incomplete') return !task.completed
@@ -170,7 +221,7 @@ async function saveReorder(orderedIds: number[], favorite: boolean) {
     })
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not save task order', 'error')
-    await load({ silent: true })
+    await reloadCurrentPage()
   }
 }
 
@@ -203,10 +254,11 @@ async function load(opts?: { silent?: boolean }) {
     selected.value = []
   }
   try {
-    const list = await api.listTasks(filterParams.value)
+    const params = { ...filterParams.value, page: currentPageParam() }
+    const list = await api.listTasks(params)
     tasks.value = list.tasks
     total.value = list.total
-    page.value = list.page
+    page.value = currentPageParam()
     totalPages.value = list.total_pages
     completedCount.value = list.completed_count
     incompleteCount.value = list.incomplete_count
@@ -220,17 +272,34 @@ async function load(opts?: { silent?: boolean }) {
   }
 }
 
+async function reloadCurrentPage() {
+  const params = { ...filterParams.value, page: currentPageParam() }
+  try {
+    const list = await api.listTasks(params)
+    tasks.value = list.tasks
+    total.value = list.total
+    page.value = currentPageParam()
+    totalPages.value = list.total_pages
+    completedCount.value = list.completed_count
+    incompleteCount.value = list.incomplete_count
+    await nextTick()
+    refreshSortable()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Failed to load tasks', 'error')
+  }
+}
+
 watch(lastSavedTask, async (task) => {
   if (!task) return
   const exists = tasks.value.some((t) => t.id === task.id)
   if (exists) {
     applyTaskUpdate(task)
-    await nextTick()
-    refreshSortable()
   } else {
-    await load({ silent: true })
+    registerTaskAdded(task)
   }
   lastSavedTask.value = null
+  await nextTick()
+  refreshSortable()
 })
 
 async function toggleComplete(task: Task) {
@@ -258,8 +327,10 @@ async function removeTask(task: Task) {
   try {
     const res = await api.deleteTask(task.id)
     undoToken.value = res.undo_token || null
+    removeTaskLocally(task)
     toast.push(undoToken.value ? 'Task deleted — undo available' : 'Task deleted', 'info')
-    await load()
+    await nextTick()
+    refreshSortable()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Delete failed', 'error')
   }
@@ -271,7 +342,7 @@ async function undoDelete() {
     await api.undo(undoToken.value)
     undoToken.value = null
     toast.push('Restored', 'success')
-    await load()
+    await reloadCurrentPage()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Undo failed', 'error')
   }
@@ -291,11 +362,28 @@ function toggleSelectAll(checked: boolean) {
 
 async function bulk(action: string, extra: Record<string, unknown> = {}) {
   if (!selected.value.length) return
+  const affectedIds = [...selected.value]
   try {
-    const res = await api.bulkTasks({ action, task_ids: selected.value, ...extra })
+    const res = await api.bulkTasks({ action, task_ids: affectedIds, ...extra })
     if (res.undo_token) undoToken.value = res.undo_token
-    toast.push(`Bulk ${action}: ${res.affected ?? selected.value.length}`, 'success')
-    await load()
+    toast.push(`Bulk ${action}: ${res.affected ?? affectedIds.length}`, 'success')
+    if (action === 'delete') {
+      for (const id of affectedIds) {
+        const task = tasks.value.find((t) => t.id === id)
+        if (task) removeTaskLocally(task)
+      }
+      await nextTick()
+      refreshSortable()
+    } else if (action === 'complete' || action === 'incomplete') {
+      for (const id of affectedIds) {
+        const task = tasks.value.find((t) => t.id === id)
+        if (!task) continue
+        applyTaskUpdate({ ...task, completed: action === 'complete' })
+      }
+    } else {
+      await reloadCurrentPage()
+    }
+    selected.value = []
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Bulk action failed', 'error')
   }
