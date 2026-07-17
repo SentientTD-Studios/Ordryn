@@ -99,8 +99,9 @@ onMounted(load)
       </label>
       <label class="inline">
         <input v-model="settings.enable_api" type="checkbox" />
-        Enable REST API
+        Enable external REST API (API keys &amp; Android)
       </label>
+      <p class="muted">The web app always uses the JSON API with your session cookie. This toggle controls Bearer access for scripts and mobile clients.</p>
       <label class="inline">
         <input v-model="settings.enable_global_announcement" type="checkbox" />
         Global announcement

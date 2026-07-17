@@ -64,16 +64,23 @@ func extractBearerToken(r *http.Request) string {
 	return strings.TrimSpace(strings.TrimPrefix(auth, prefix))
 }
 
-// RequireAPIEnabled ensures the site has the REST API enabled.
+// RequireAPIEnabled ensures external REST API access is enabled (Bearer clients).
 func RequireAPIEnabled(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !IsAPIEnabled() {
-			APIJSONError(w, http.StatusForbidden, "api_disabled",
-				"The REST API is disabled. An administrator can enable it in site settings.")
+		if rejectExternalAPIIfDisabled(w) {
 			return
 		}
 		next(w, r)
 	}
+}
+
+func rejectExternalAPIIfDisabled(w http.ResponseWriter) bool {
+	if IsAPIEnabled() {
+		return false
+	}
+	APIJSONError(w, http.StatusForbidden, "api_disabled",
+		"The REST API is disabled. An administrator can enable it in site settings.")
+	return true
 }
 
 // RequireAPIRedis ensures Redis is available (fail closed for API).
@@ -91,6 +98,9 @@ func RequireAPIRedis(next http.HandlerFunc) http.HandlerFunc {
 // RequireAPIKey validates Bearer token and attaches user ID to context.
 func RequireAPIKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if rejectExternalAPIIfDisabled(w) {
+			return
+		}
 		token := extractBearerToken(r)
 		if token == "" {
 			APIJSONError(w, http.StatusUnauthorized, "unauthorized",
@@ -165,22 +175,18 @@ func isWriteMethod(method string) bool {
 // APIChain composes the standard /api/v1 middleware chain.
 // Accepts a session cookie (SPA) or Bearer API key; Redis is required for rate limiting.
 func APIChain(handler http.HandlerFunc) http.HandlerFunc {
-	chain := RequireAPIEnabled(
-		RequireAPIRedis(
-			RequireSessionOrAPIKey(
-				APIRateLimitMiddleware(120, 2.0, 60, 1.0, 120)(handler),
-			),
+	return RequireAPIRedis(
+		RequireSessionOrAPIKey(
+			APIRateLimitMiddleware(120, 2.0, 60, 1.0, 120)(handler),
 		),
 	)
-	return chain
 }
 
-// AuthPublicChain wraps JSON login/register (API enabled + Redis + IP rate limit; no API key).
+// AuthPublicChain wraps JSON login/register (Redis + IP rate limit; no API key).
+// SPA auth is not gated by site_settings.enable_api.
 func AuthPublicChain(handler http.HandlerFunc) http.HandlerFunc {
-	return RequireAPIEnabled(
-		RequireAPIRedis(
-			RateLimitMiddleware(10, 1.0, 60, KeyByIP)(handler),
-		),
+	return RequireAPIRedis(
+		RateLimitMiddleware(10, 1.0, 60, KeyByIP)(handler),
 	)
 }
 
@@ -189,6 +195,9 @@ func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
 		if token != "" {
+			if rejectExternalAPIIfDisabled(w) {
+				return
+			}
 			if !RedisAvailable() {
 				APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable",
 					"The REST API requires Redis for authentication and rate limiting.")
@@ -218,9 +227,7 @@ func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
 
 // AuthSessionChain wraps endpoints that need a logged-in SPA session or API key.
 func AuthSessionChain(handler http.HandlerFunc) http.HandlerFunc {
-	return RequireAPIEnabled(
-		RequireSessionOrAPIKey(handler),
-	)
+	return RequireSessionOrAPIKey(handler)
 }
 
 // ParseAPIV1Subpath returns the path segment after /api/v1/<resource>/.

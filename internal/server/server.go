@@ -77,7 +77,7 @@ func registerAPIV1Routes() {
 	authPublic := utils.AuthPublicChain
 	handleBoth("/api/v1/auth/register", authPublic(handlers.APIV1AuthRegister))
 	handleBoth("/api/v1/auth/login", authPublic(handlers.APIV1AuthLogin))
-	handleBoth("/api/v1/auth/logout", utils.RequireAPIEnabled(handlers.APIV1AuthLogout))
+	handleBoth("/api/v1/auth/logout", handlers.APIV1AuthLogout)
 	handleBoth("/api/v1/auth/forgot-password", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1ForgotPassword))
 	handleBoth("/api/v1/auth/reset-password", handlers.APIV1ResetPasswordRouter)
 	handleBoth("/api/v1/me", utils.AuthSessionChain(handlers.APIV1Me))
