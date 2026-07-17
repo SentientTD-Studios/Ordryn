@@ -1,6 +1,6 @@
 # Ordryn web SPA (Vue 3)
 
-Vue 3 + TypeScript + Vite client for `/api/v1`.
+Vue 3 + TypeScript + Vite client for `/api/v1`. The UI uses **Bootstrap 5**, **Bootstrap Icons**, and the original `site.css` theme (Fira Code, light/dark toggle) from the HTMX app.
 
 ## Develop
 
