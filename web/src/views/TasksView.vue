@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { Project, SavedView, Tag, Task } from '@/api/types'
 import { APIError } from '@/api/types'
+import TaskTableRow from '@/components/TaskTableRow.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useTaskSortable } from '@/composables/useTaskSortable'
 import { useToast } from '@/composables/useToast'
 
 const tasks = ref<Task[]>([])
@@ -31,6 +33,8 @@ const bulkPriority = ref('0')
 const bulkDueDate = ref('')
 const route = useRoute()
 const router = useRouter()
+const favoriteListEl = ref<HTMLElement | null>(null)
+const taskListEl = ref<HTMLElement | null>(null)
 
 const filterKeys = ['status', 'due', 'completed', 'priority', 'tag', 'sort', 'project', 'search'] as const
 
@@ -103,6 +107,81 @@ const paginationWindow = computed(() => {
   return { pages, hasRightEllipsis: end < last }
 })
 
+const sortableEnabled = computed(() => currentSort.value !== 'priority' && !loading.value)
+const showFavoriteList = computed(() => page.value === 1 && favoriteTasks.value.length > 0)
+
+function taskMatchesStatusFilter(task: Task) {
+  if (currentStatus.value === 'complete') return task.completed
+  if (currentStatus.value === 'incomplete') return !task.completed
+  return true
+}
+
+function adjustCompletionCounts(wasCompleted: boolean, isCompleted: boolean) {
+  if (wasCompleted === isCompleted) return
+  if (isCompleted) {
+    completedCount.value += 1
+    incompleteCount.value = Math.max(0, incompleteCount.value - 1)
+  } else {
+    completedCount.value = Math.max(0, completedCount.value - 1)
+    incompleteCount.value += 1
+  }
+}
+
+function applyTaskUpdate(updated: Task) {
+  const idx = tasks.value.findIndex((t) => t.id === updated.id)
+  const previous = idx >= 0 ? tasks.value[idx] : null
+
+  if (!taskMatchesStatusFilter(updated)) {
+    if (idx >= 0) {
+      tasks.value = tasks.value.filter((t) => t.id !== updated.id)
+      total.value = Math.max(0, total.value - 1)
+    }
+    if (previous) adjustCompletionCounts(previous.completed, updated.completed)
+    return
+  }
+
+  if (idx >= 0) {
+    adjustCompletionCounts(tasks.value[idx].completed, updated.completed)
+    tasks.value[idx] = updated
+    return
+  }
+
+  tasks.value = [...tasks.value, updated]
+}
+
+function reorderLocalTasks(orderedIds: number[], favorite: boolean) {
+  const reordered = orderedIds
+    .map((id) => tasks.value.find((t) => t.id === id))
+    .filter((t): t is Task => !!t)
+  if (favorite) {
+    tasks.value = [...reordered, ...tasks.value.filter((t) => !t.favorite)]
+  } else {
+    tasks.value = [...tasks.value.filter((t) => t.favorite), ...reordered]
+  }
+}
+
+async function saveReorder(orderedIds: number[], favorite: boolean) {
+  reorderLocalTasks(orderedIds, favorite)
+  try {
+    await api.reorderTasks({
+      task_ids: orderedIds,
+      favorite,
+      project: currentProject.value || undefined,
+    })
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not save task order', 'error')
+    await load({ silent: true })
+  }
+}
+
+const { refresh: refreshSortable } = useTaskSortable(
+  favoriteListEl,
+  taskListEl,
+  sortableEnabled,
+  showFavoriteList,
+  saveReorder,
+)
+
 async function loadMeta() {
   try {
     const [projs, tagList, views] = await Promise.all([
@@ -118,9 +197,11 @@ async function loadMeta() {
   }
 }
 
-async function load() {
-  loading.value = true
-  selected.value = []
+async function load(opts?: { silent?: boolean }) {
+  if (!opts?.silent) {
+    loading.value = true
+    selected.value = []
+  }
   try {
     const list = await api.listTasks(filterParams.value)
     tasks.value = list.tasks
@@ -134,6 +215,8 @@ async function load() {
     toast.push(err instanceof APIError ? err.message : 'Failed to load tasks', 'error')
   } finally {
     loading.value = false
+    await nextTick()
+    refreshSortable()
   }
 }
 
@@ -157,8 +240,8 @@ async function createTask() {
 
 async function toggleComplete(task: Task) {
   try {
-    await api.patchTask(task.id, { completed: !task.completed })
-    await load()
+    const updated = await api.patchTask(task.id, { completed: !task.completed })
+    applyTaskUpdate(updated)
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
   }
@@ -166,8 +249,10 @@ async function toggleComplete(task: Task) {
 
 async function toggleFavorite(task: Task) {
   try {
-    await api.patchTask(task.id, { favorite: !task.favorite })
-    await load()
+    const updated = await api.patchTask(task.id, { favorite: !task.favorite })
+    applyTaskUpdate(updated)
+    await nextTick()
+    refreshSortable()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
   }
@@ -339,20 +424,6 @@ async function exportTasks(format: 'json' | 'csv', filtered: boolean) {
   } catch {
     toast.push('Export failed', 'error')
   }
-}
-
-function priorityBadgeClass(priority: number) {
-  if (priority === 1) return 'bg-secondary'
-  if (priority === 2) return 'bg-warning text-dark'
-  if (priority === 3) return 'bg-danger'
-  return ''
-}
-
-function priorityLabel(priority: number) {
-  if (priority === 1) return 'Low'
-  if (priority === 2) return 'Med'
-  if (priority === 3) return 'High'
-  return ''
 }
 
 watch(
@@ -658,7 +729,7 @@ onMounted(async () => {
   </div>
 
   <div id="task-container" class="container" aria-live="polite" aria-atomic="false">
-    <p v-if="loading" class="text-muted">Loading…</p>
+    <p v-if="loading && !tasks.length" class="text-muted">Loading…</p>
 
     <div v-else-if="showTaskTable" class="row justify-content-center mb-5">
       <div>
@@ -723,100 +794,29 @@ onMounted(async () => {
                 </td>
               </tr>
             </tbody>
-            <tbody id="task-list">
-              <tr
-                v-for="task in [...favoriteTasks, ...regularTasks]"
-                :id="`task-${task.id}`"
+            <tbody v-if="showFavoriteList" id="favorite-task-list" ref="favoriteListEl">
+              <TaskTableRow
+                v-for="task in favoriteTasks"
                 :key="task.id"
-                class="task-row"
-              >
-                <td class="text-center align-middle select-column">
-                  <input
-                    type="checkbox"
-                    class="form-check-input task-select"
-                    :checked="selected.includes(task.id)"
-                    :aria-label="`Select task ${task.title}`"
-                    @change="toggleSelect(task.id, ($event.target as HTMLInputElement).checked)"
-                  />
-                </td>
-                <td class="text-center align-middle drag-column">
-                  <span class="drag-handle" style="cursor: move"><i class="bi bi-grip-vertical" /></span>
-                </td>
-                <td class="title-column">
-                  <div class="d-flex align-items-center flex-wrap">
-                    <button
-                      type="button"
-                      class="btn btn-link p-0 me-2 favorite-btn"
-                      style="text-decoration: none"
-                      :aria-label="task.favorite ? 'Unstar task' : 'Star task'"
-                      @click="toggleFavorite(task)"
-                    >
-                      <i
-                        :class="task.favorite ? 'bi bi-star-fill' : 'bi bi-star'"
-                        :style="task.favorite ? 'color: gold' : ''"
-                      />
-                    </button>
-                    <RouterLink :to="`/tasks/${task.id}`" class="btn btn-link p-0 task-toggle title-text text-start">
-                      {{ task.title }}
-                    </RouterLink>
-                    <span v-if="task.project" class="badge bg-secondary project-badge ms-1">{{ task.project }}</span>
-                    <span
-                      v-if="priorityLabel(task.priority)"
-                      class="badge priority-badge ms-1"
-                      :class="priorityBadgeClass(task.priority)"
-                    >{{ priorityLabel(task.priority) }}</span>
-                  </div>
-                </td>
-                <td class="tags-column">
-                  <div v-if="task.tags?.length" class="tag-list">
-                    <span
-                      v-for="tag in task.tags"
-                      :key="tag.id"
-                      class="tag-chip"
-                      :style="{ backgroundColor: tag.color || '#6c757d' }"
-                    >{{ tag.name }}</span>
-                  </div>
-                </td>
-                <td class="desc-column">
-                  <div v-if="task.description" class="desc-preview text-muted small">
-                    {{ task.description.length > 120 ? `${task.description.slice(0, 120)}…` : task.description }}
-                  </div>
-                </td>
-                <td class="date-added" data-label="Due Date">
-                  {{ task.due_date || '' }}
-                </td>
-                <td class="actions-column">
-                  <div class="d-flex align-items-center gap-2 justify-content-start">
-                    <button
-                      type="button"
-                      class="badge status-column"
-                      :class="task.completed ? 'bg-success' : 'bg-danger text-white'"
-                      style="cursor: pointer; border: none"
-                      @click="toggleComplete(task)"
-                    >
-                      <i :class="task.completed ? 'bi bi-toggle-on' : 'bi bi-toggle-off'" />
-                      {{ task.completed ? 'Complete' : 'Incomplete' }}
-                    </button>
-                    <RouterLink
-                      :to="`/tasks/${task.id}`"
-                      class="btn btn-link p-0 mx-2 edit-btn"
-                      style="text-decoration: none"
-                      aria-label="Edit task"
-                    >
-                      <i class="bi bi-pencil" />
-                    </RouterLink>
-                    <button
-                      type="button"
-                      class="btn btn-link p-0 delete-column"
-                      style="text-decoration: none"
-                      aria-label="Delete task"
-                      @click="removeTask(task)"
-                    >
-                      <i class="bi bi-trash text-danger" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
+                :task="task"
+                :selected="selected.includes(task.id)"
+                @toggle-select="toggleSelect(task.id, $event)"
+                @toggle-complete="toggleComplete(task)"
+                @toggle-favorite="toggleFavorite(task)"
+                @remove="removeTask(task)"
+              />
+            </tbody>
+            <tbody id="task-list" ref="taskListEl">
+              <TaskTableRow
+                v-for="task in regularTasks"
+                :key="task.id"
+                :task="task"
+                :selected="selected.includes(task.id)"
+                @toggle-select="toggleSelect(task.id, $event)"
+                @toggle-complete="toggleComplete(task)"
+                @toggle-favorite="toggleFavorite(task)"
+                @remove="removeTask(task)"
+              />
               <tr v-if="!tasks.length && hasActiveFilters">
                 <td colspan="7" class="text-center py-4">
                   <div class="empty-state-inline">

@@ -250,6 +250,13 @@ export const api = {
     })
   },
 
+  reorderTasks(payload: { task_ids: number[]; favorite: boolean; project?: string }) {
+    return request<{ ok: boolean }>('/api/v1/tasks/reorder', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   listProjects() {
     return request<Project[]>('/api/v1/projects')
   },
