@@ -1,3 +1,33 @@
+<template>
+  <div class="container mt-3">
+    <h1>Projects</h1>
+    <form class="row g-2 mb-4" @submit.prevent="create">
+      <div class="col-sm-8">
+        <input v-model="name" type="text" class="form-control" placeholder="New project name" required maxlength="50" />
+      </div>
+      <div class="col-sm-4">
+        <button type="submit" class="btn btn-primary w-100">Add project</button>
+      </div>
+    </form>
+
+    <ul class="list-group">
+      <li v-for="p in projects" :key="p.id" class="list-group-item d-flex flex-wrap gap-2 align-items-center">
+        <template v-if="renameId === p.id">
+          <input v-model="renameValue" type="text" class="form-control form-control-sm" maxlength="50" />
+          <button type="button" class="btn btn-sm btn-primary" @click="saveRename">Save</button>
+          <button type="button" class="btn btn-sm btn-secondary" @click="renameId = null">Cancel</button>
+        </template>
+        <template v-else>
+          <span class="flex-grow-1">{{ p.name }}</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" @click="beginRename(p)">Rename</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" @click="remove(p)">Delete</button>
+        </template>
+      </li>
+      <li v-if="!projects.length" class="list-group-item text-muted">No projects yet.</li>
+    </ul>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
@@ -60,35 +90,3 @@ async function remove(p: Project) {
 
 onMounted(load)
 </script>
-
-<template>
-  <section class="page">
-    <header class="page-head">
-      <div>
-        <h1>Projects</h1>
-        <p class="lede">Organize tasks without leaving the SPA.</p>
-      </div>
-    </header>
-
-    <form class="composer" @submit.prevent="create">
-      <input v-model="name" type="text" placeholder="New project name" required maxlength="50" />
-      <button class="primary" type="submit">Add project</button>
-    </form>
-
-    <ul class="plain-list">
-      <li v-for="p in projects" :key="p.id" class="row">
-        <template v-if="renameId === p.id">
-          <input v-model="renameValue" type="text" maxlength="50" />
-          <button type="button" class="primary" @click="saveRename">Save</button>
-          <button type="button" class="ghost" @click="renameId = null">Cancel</button>
-        </template>
-        <template v-else>
-          <span>{{ p.name }}</span>
-          <button type="button" class="ghost" @click="beginRename(p)">Rename</button>
-          <button type="button" class="ghost danger" @click="remove(p)">Delete</button>
-        </template>
-      </li>
-      <li v-if="!projects.length" class="muted empty">No projects yet.</li>
-    </ul>
-  </section>
-</template>

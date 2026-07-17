@@ -63,74 +63,74 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="page">
-    <header class="page-head">
-      <div>
-        <h1>Admin</h1>
-        <p class="lede">Site settings and user moderation.</p>
+  <div class="container mt-3">
+    <h1>Admin</h1>
+    <div class="card mb-4">
+      <div class="card-header"><h2 class="h5 mb-0">Site settings</h2></div>
+      <div class="card-body">
+        <form @submit.prevent="saveSettings">
+          <div class="mb-3">
+            <label class="form-label">Site name</label>
+            <input v-model="settings.site_name" type="text" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Default timezone</label>
+            <input v-model="settings.default_timezone" type="text" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Meta description</label>
+            <textarea v-model="settings.meta_description" class="form-control" rows="2" />
+          </div>
+          <div class="form-check mb-2">
+            <input id="admin-registration" v-model="settings.enable_registration" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-registration">Enable registration</label>
+          </div>
+          <div class="form-check mb-2">
+            <input id="admin-invite-only" v-model="settings.invite_only" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-invite-only">Invite only</label>
+          </div>
+          <div class="form-check mb-2">
+            <input id="admin-changelog" v-model="settings.show_changelog" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-changelog">Show changelog</label>
+          </div>
+          <div class="form-check mb-2">
+            <input id="admin-api" v-model="settings.enable_api" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-api">Enable external REST API (API keys &amp; Android)</label>
+          </div>
+          <p class="text-muted small">The web app always uses the JSON API with your session cookie. This toggle controls Bearer access for scripts and mobile clients.</p>
+          <div class="form-check mb-2">
+            <input id="admin-announcement" v-model="settings.enable_global_announcement" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-announcement">Global announcement</label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Announcement text</label>
+            <textarea v-model="settings.global_announcement_text" class="form-control" rows="2" maxlength="500" />
+          </div>
+          <p v-if="settings.site_version" class="text-muted">Binary version: {{ settings.site_version }}</p>
+          <button type="submit" class="btn btn-primary" :disabled="busy">
+            {{ busy ? 'Saving…' : 'Save settings' }}
+          </button>
+        </form>
       </div>
-    </header>
+    </div>
 
-    <form class="stack" @submit.prevent="saveSettings">
-      <h2>Site settings</h2>
-      <label>
-        Site name
-        <input v-model="settings.site_name" type="text" required />
-      </label>
-      <label>
-        Default timezone
-        <input v-model="settings.default_timezone" type="text" required />
-      </label>
-      <label>
-        Meta description
-        <textarea v-model="settings.meta_description" rows="2" />
-      </label>
-      <label class="inline">
-        <input v-model="settings.enable_registration" type="checkbox" />
-        Enable registration
-      </label>
-      <label class="inline">
-        <input v-model="settings.invite_only" type="checkbox" />
-        Invite only
-      </label>
-      <label class="inline">
-        <input v-model="settings.show_changelog" type="checkbox" />
-        Show changelog
-      </label>
-      <label class="inline">
-        <input v-model="settings.enable_api" type="checkbox" />
-        Enable external REST API (API keys &amp; Android)
-      </label>
-      <p class="muted">The web app always uses the JSON API with your session cookie. This toggle controls Bearer access for scripts and mobile clients.</p>
-      <label class="inline">
-        <input v-model="settings.enable_global_announcement" type="checkbox" />
-        Global announcement
-      </label>
-      <label>
-        Announcement text
-        <textarea v-model="settings.global_announcement_text" rows="2" maxlength="500" />
-      </label>
-      <p v-if="settings.site_version" class="muted">Binary version: {{ settings.site_version }}</p>
-      <button class="primary" type="submit" :disabled="busy">
-        {{ busy ? 'Saving…' : 'Save settings' }}
-      </button>
-    </form>
-
-    <h2>Users</h2>
-    <ul class="plain-list">
-      <li v-for="user in users" :key="user.id" class="row">
-        <div class="task-body">
-          <strong>{{ user.user_name || user.email }}</strong>
-          <p class="meta muted">
-            {{ user.email }}
-            <span v-if="user.is_banned">· banned</span>
-          </p>
-        </div>
-        <button type="button" class="ghost" :class="{ danger: !user.is_banned }" @click="toggleBan(user)">
-          {{ user.is_banned ? 'Unban' : 'Ban' }}
-        </button>
-      </li>
-      <li v-if="!users.length" class="muted empty">No users found.</li>
-    </ul>
-  </section>
+    <div class="card">
+      <div class="card-header"><h2 class="h5 mb-0">Users</h2></div>
+      <ul class="list-group list-group-flush">
+        <li v-for="user in users" :key="user.id" class="list-group-item d-flex justify-content-between align-items-center">
+          <div>
+            <strong>{{ user.user_name || user.email }}</strong>
+            <div class="text-muted small">
+              {{ user.email }}
+              <span v-if="user.is_banned">· banned</span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm" :class="user.is_banned ? 'btn-outline-secondary' : 'btn-outline-danger'" @click="toggleBan(user)">
+            {{ user.is_banned ? 'Unban' : 'Ban' }}
+          </button>
+        </li>
+        <li v-if="!users.length" class="list-group-item text-muted">No users found.</li>
+      </ul>
+    </div>
+  </div>
 </template>

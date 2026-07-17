@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
@@ -185,132 +185,159 @@ async function revokeKey(key: APIKey) {
   }
 }
 
-onMounted(loadExtras)
+onMounted(() => {
+  document.body.classList.add('profile-page')
+  void loadExtras()
+})
+
+onUnmounted(() => {
+  document.body.classList.remove('profile-page')
+})
 </script>
 
 <template>
-  <section class="page narrow">
-    <h1>Settings</h1>
-    <p class="lede">Profile, tags, calendar, export, and API keys.</p>
-
-    <form class="stack" @submit.prevent="save">
-      <h2>Profile</h2>
-      <label>
-        Display name
-        <input v-model="userName" type="text" required />
-      </label>
-      <label>
-        Timezone
-        <input v-model="timezone" type="text" required />
-      </label>
-      <label>
-        Tasks per page
-        <select v-model.number="itemsPerPage">
-          <option :value="10">10</option>
-          <option :value="15">15</option>
-          <option :value="25">25</option>
-          <option :value="50">50</option>
-        </select>
-      </label>
-      <label class="inline">
-        <input v-model="digestEnabled" type="checkbox" />
-        Daily email digest
-      </label>
-      <label>
-        Digest hour (0–23)
-        <input v-model.number="digestHour" type="number" min="0" max="23" />
-      </label>
-      <button class="primary" type="submit" :disabled="busy">
-        {{ busy ? 'Saving…' : 'Save settings' }}
-      </button>
-    </form>
-
-    <form class="stack" @submit.prevent="changePassword">
-      <h2>Password</h2>
-      <label>
-        Current password
-        <input v-model="currentPassword" type="password" required autocomplete="current-password" />
-      </label>
-      <label>
-        New password
-        <input v-model="newPassword" type="password" required autocomplete="new-password" />
-      </label>
-      <label>
-        Confirm new password
-        <input v-model="confirmPassword" type="password" required autocomplete="new-password" />
-      </label>
-      <button class="primary" type="submit">Change password</button>
-    </form>
-
-    <div class="stack">
-      <h2>Tags</h2>
-      <form class="composer" @submit.prevent="createTag">
-        <input v-model="tagName" type="text" placeholder="New tag" required maxlength="40" />
-        <button class="primary" type="submit">Add</button>
-      </form>
-      <ul class="plain-list">
-        <li v-for="tag in tags" :key="tag.id" class="row">
-          <template v-if="renameTagId === tag.id">
-            <input v-model="renameTagValue" type="text" maxlength="40" />
-            <button type="button" class="primary" @click="saveRenameTag">Save</button>
-            <button type="button" class="ghost" @click="renameTagId = null">Cancel</button>
-          </template>
-          <template v-else>
-            <span>{{ tag.name }}</span>
-            <button type="button" class="ghost" @click="beginRenameTag(tag)">Rename</button>
-            <button type="button" class="ghost danger" @click="removeTag(tag)">Delete</button>
-          </template>
-        </li>
-        <li v-if="!tags.length" class="muted empty">No tags yet.</li>
-      </ul>
-    </div>
-
-    <div class="stack">
-      <h2>Calendar feed</h2>
-      <p v-if="calendar" class="muted break">{{ calendar.feed_url }}</p>
-      <div class="actions">
-        <button type="button" class="ghost" @click="regenerateCalendar">Regenerate token</button>
+  <div class="container mt-3">
+    <div class="card mb-4">
+      <div class="card-header">
+        <h2 class="card-title mb-0">User Profile</h2>
       </div>
-      <form class="stack" @submit.prevent="syncCalendar">
-        <label>
-          Sync due dates from ICS export
-          <input type="file" accept=".ics,text/calendar" @change="onIcsFileChange" />
-        </label>
-        <button type="submit" class="ghost" :disabled="!icsFile">Sync calendar</button>
-      </form>
-    </div>
-
-    <div class="stack">
-      <h2>Export &amp; import</h2>
-      <p class="muted">Download your tasks or import from CSV on the import page.</p>
-      <div class="actions">
-        <button type="button" class="primary" @click="exportTasks('json')">Export JSON</button>
-        <button type="button" class="ghost" @click="exportTasks('csv')">Export CSV</button>
-        <RouterLink to="/import">Import CSV</RouterLink>
-      </div>
-    </div>
-
-    <div class="stack">
-      <h2>API keys</h2>
-      <form class="composer" @submit.prevent="createKey">
-        <input v-model="keyName" type="text" placeholder="Key name" required />
-        <button class="primary" type="submit">Create</button>
-      </form>
-      <p v-if="mintedKey" class="break">
-        New key (shown once): <code>{{ mintedKey }}</code>
-      </p>
-      <ul class="plain-list">
-        <li v-for="key in keys" :key="key.id" class="row">
-          <div class="task-body">
-            <strong>{{ key.name }}</strong>
-            <p class="meta muted">{{ key.key_prefix }}…</p>
+      <div class="card-body">
+        <form @submit.prevent="save">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Email</label>
+            <input type="text" class="form-control-plaintext" :value="user?.email || ''" readonly tabindex="-1" />
           </div>
-          <button type="button" class="ghost danger" @click="revokeKey(key)">Revoke</button>
-        </li>
-        <li v-if="!keys.length" class="muted empty">No API keys.</li>
-      </ul>
+          <div class="mb-3">
+            <label for="profile-name" class="form-label">Display name</label>
+            <input id="profile-name" v-model="userName" type="text" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label for="profile-timezone" class="form-label">Timezone</label>
+            <input id="profile-timezone" v-model="timezone" type="text" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label for="profile-per-page" class="form-label">Tasks per page</label>
+            <select id="profile-per-page" v-model.number="itemsPerPage" class="form-select">
+              <option :value="10">10</option>
+              <option :value="15">15</option>
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+            </select>
+          </div>
+          <div class="form-check mb-3">
+            <input id="profile-digest" v-model="digestEnabled" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="profile-digest">Daily email digest</label>
+          </div>
+          <div class="mb-3">
+            <label for="profile-digest-hour" class="form-label">Digest hour (0–23)</label>
+            <input id="profile-digest-hour" v-model.number="digestHour" type="number" class="form-control" min="0" max="23" />
+          </div>
+          <button type="submit" class="btn btn-primary" :disabled="busy">
+            {{ busy ? 'Saving…' : 'Save profile' }}
+          </button>
+        </form>
+      </div>
     </div>
 
-    <p v-if="user" class="muted">Signed in as {{ user.email }}</p>
-  </section>
+    <div class="card mb-4">
+      <div class="card-header"><h3 class="card-title mb-0">Change password</h3></div>
+      <div class="card-body">
+        <form @submit.prevent="changePassword">
+          <div class="mb-3">
+            <label class="form-label">Current password</label>
+            <input v-model="currentPassword" type="password" class="form-control" required autocomplete="current-password" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">New password</label>
+            <input v-model="newPassword" type="password" class="form-control" required autocomplete="new-password" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Confirm new password</label>
+            <input v-model="confirmPassword" type="password" class="form-control" required autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn btn-primary">Change password</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><h3 class="card-title mb-0">Tags</h3></div>
+      <div class="card-body">
+        <form class="row g-2 mb-3" @submit.prevent="createTag">
+          <div class="col-sm-8">
+            <input v-model="tagName" type="text" class="form-control" placeholder="New tag" required maxlength="40" />
+          </div>
+          <div class="col-sm-4">
+            <button type="submit" class="btn btn-primary w-100">Add tag</button>
+          </div>
+        </form>
+        <ul class="list-group">
+          <li v-for="tag in tags" :key="tag.id" class="list-group-item d-flex flex-wrap gap-2 align-items-center">
+            <template v-if="renameTagId === tag.id">
+              <input v-model="renameTagValue" type="text" class="form-control form-control-sm" maxlength="40" />
+              <button type="button" class="btn btn-sm btn-primary" @click="saveRenameTag">Save</button>
+              <button type="button" class="btn btn-sm btn-secondary" @click="renameTagId = null">Cancel</button>
+            </template>
+            <template v-else>
+              <span class="flex-grow-1">{{ tag.name }}</span>
+              <button type="button" class="btn btn-sm btn-outline-secondary" @click="beginRenameTag(tag)">Rename</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" @click="removeTag(tag)">Delete</button>
+            </template>
+          </li>
+          <li v-if="!tags.length" class="list-group-item text-muted">No tags yet.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><h3 class="card-title mb-0">Calendar feed</h3></div>
+      <div class="card-body">
+        <p v-if="calendar" class="text-break"><code>{{ calendar.feed_url }}</code></p>
+        <button type="button" class="btn btn-outline-secondary mb-3" @click="regenerateCalendar">Regenerate token</button>
+        <form @submit.prevent="syncCalendar">
+          <div class="mb-3">
+            <label class="form-label">Sync due dates from ICS export</label>
+            <input type="file" class="form-control" accept=".ics,text/calendar" @change="onIcsFileChange" />
+          </div>
+          <button type="submit" class="btn btn-outline-primary" :disabled="!icsFile">Sync calendar</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><h3 class="card-title mb-0">Export &amp; import</h3></div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary" @click="exportTasks('json')">Export JSON</button>
+          <button type="button" class="btn btn-outline-secondary" @click="exportTasks('csv')">Export CSV</button>
+          <RouterLink to="/import" class="btn btn-outline-primary">Import CSV</RouterLink>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><h3 class="card-title mb-0">API keys</h3></div>
+      <div class="card-body">
+        <form class="row g-2 mb-3" @submit.prevent="createKey">
+          <div class="col-sm-8">
+            <input v-model="keyName" type="text" class="form-control" placeholder="Key name" required />
+          </div>
+          <div class="col-sm-4">
+            <button type="submit" class="btn btn-primary w-100">Create key</button>
+          </div>
+        </form>
+        <p v-if="mintedKey" class="text-break">New key (shown once): <code>{{ mintedKey }}</code></p>
+        <ul class="list-group">
+          <li v-for="key in keys" :key="key.id" class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{{ key.name }}</strong>
+              <div class="text-muted small">{{ key.key_prefix }}…</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger" @click="revokeKey(key)">Revoke</button>
+          </li>
+          <li v-if="!keys.length" class="list-group-item text-muted">No API keys.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 </template>

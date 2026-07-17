@@ -1,3 +1,53 @@
+<template>
+  <div v-if="task" class="container mt-3">
+    <p class="mb-3"><RouterLink to="/">← Tasks</RouterLink></p>
+    <div class="card">
+      <div class="card-header">
+        <h1 class="h4 mb-0">Edit task</h1>
+      </div>
+      <div class="card-body">
+        <form @submit.prevent="save">
+          <div class="mb-3">
+            <label class="form-label">Title</label>
+            <input v-model="title" type="text" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea v-model="description" class="form-control" rows="5" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Due date</label>
+            <input v-model="dueDate" type="date" class="form-control" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Project</label>
+            <select v-model="projectId" class="form-select">
+              <option value="">No project</option>
+              <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Priority</label>
+            <select v-model.number="priority" class="form-select">
+              <option :value="0">None</option>
+              <option :value="1">Low</option>
+              <option :value="2">Medium</option>
+              <option :value="3">High</option>
+            </select>
+          </div>
+          <div class="form-check mb-3">
+            <input id="task-favorite" v-model="favorite" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="task-favorite">Favorite</label>
+          </div>
+          <button type="submit" class="btn btn-primary" :disabled="busy">
+            {{ busy ? 'Saving…' : 'Save' }}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
@@ -64,47 +114,3 @@ async function save() {
 
 onMounted(load)
 </script>
-
-<template>
-  <section v-if="task" class="page narrow">
-    <p class="muted"><RouterLink to="/">← Tasks</RouterLink></p>
-    <h1>Edit task</h1>
-    <form class="stack" @submit.prevent="save">
-      <label>
-        Title
-        <input v-model="title" type="text" required />
-      </label>
-      <label>
-        Description
-        <textarea v-model="description" rows="5" />
-      </label>
-      <label>
-        Due date
-        <input v-model="dueDate" type="date" />
-      </label>
-      <label>
-        Project
-        <select v-model="projectId">
-          <option value="">No project</option>
-          <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
-      </label>
-      <label>
-        Priority
-        <select v-model.number="priority">
-          <option :value="0">None</option>
-          <option :value="1">Low</option>
-          <option :value="2">Medium</option>
-          <option :value="3">High</option>
-        </select>
-      </label>
-      <label class="inline">
-        <input v-model="favorite" type="checkbox" />
-        Favorite
-      </label>
-      <button class="primary" type="submit" :disabled="busy">
-        {{ busy ? 'Saving…' : 'Save' }}
-      </button>
-    </form>
-  </section>
-</template>

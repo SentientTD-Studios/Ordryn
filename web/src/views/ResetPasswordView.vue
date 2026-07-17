@@ -17,7 +17,7 @@ const checking = ref(true)
 const newPassword = ref('')
 const confirmPassword = ref('')
 const busy = ref(false)
-const done = ref(false)
+const error = ref('')
 
 onMounted(async () => {
   const t = route.query.token
@@ -33,7 +33,7 @@ onMounted(async () => {
     valid.value = result.valid
     email.value = result.email
   } catch (err) {
-    push(err instanceof APIError ? err.message : 'Invalid or expired link', 'error')
+    error.value = err instanceof APIError ? err.message : 'Invalid or expired link'
   } finally {
     checking.value = false
   }
@@ -41,6 +41,7 @@ onMounted(async () => {
 
 async function onSubmit() {
   busy.value = true
+  error.value = ''
   try {
     await api.resetPassword({
       id: id.value,
@@ -48,11 +49,10 @@ async function onSubmit() {
       new_password: newPassword.value,
       confirm_password: confirmPassword.value,
     })
-    done.value = true
     push('Password updated', 'success')
     await router.replace({ name: 'login' })
   } catch (err) {
-    push(err instanceof APIError ? err.message : 'Reset failed', 'error')
+    error.value = err instanceof APIError ? err.message : 'Reset failed'
   } finally {
     busy.value = false
   }
@@ -60,37 +60,41 @@ async function onSubmit() {
 </script>
 
 <template>
-  <section class="auth-panel">
-    <p class="eyebrow">Ordryn</p>
-    <h1>Choose a new password</h1>
-
-    <p v-if="checking" class="muted">Validating reset link…</p>
-
-    <p v-else-if="!valid" class="muted">
-      This reset link is invalid or expired.
-      <RouterLink to="/forgot-password">Request a new one</RouterLink>
-    </p>
-
-    <p v-else-if="done" class="muted">
-      Password updated.
-      <RouterLink to="/login">Sign in</RouterLink>
-    </p>
-
-    <template v-else>
-      <p class="lede">Set a new password for {{ email }}.</p>
-      <form class="stack" @submit.prevent="onSubmit">
-        <label>
-          New password
-          <input v-model="newPassword" type="password" required minlength="8" autocomplete="new-password" />
-        </label>
-        <label>
-          Confirm password
-          <input v-model="confirmPassword" type="password" required minlength="8" autocomplete="new-password" />
-        </label>
-        <button class="primary" type="submit" :disabled="busy">
-          {{ busy ? 'Saving…' : 'Update password' }}
-        </button>
-      </form>
-    </template>
-  </section>
+  <div class="container mt-5">
+    <div class="row justify-content-center">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title mb-0">Choose a new password</h2>
+          </div>
+          <div class="card-body">
+            <p v-if="checking" class="text-muted">Validating reset link…</p>
+            <div v-else-if="!valid" class="alert alert-warning">
+              This reset link is invalid or expired.
+              <div class="mt-2">
+                <RouterLink to="/forgot-password">Request a new one</RouterLink>
+              </div>
+            </div>
+            <template v-else>
+              <p class="text-muted">Set a new password for {{ email }}.</p>
+              <form @submit.prevent="onSubmit">
+                <div class="mb-3">
+                  <label for="reset-password" class="form-label">New password</label>
+                  <input id="reset-password" v-model="newPassword" type="password" class="form-control" required minlength="8" autocomplete="new-password" />
+                </div>
+                <div class="mb-3">
+                  <label for="reset-confirm" class="form-label">Confirm password</label>
+                  <input id="reset-confirm" v-model="confirmPassword" type="password" class="form-control" required minlength="8" autocomplete="new-password" />
+                </div>
+                <div v-if="error" class="text-danger mb-3">{{ error }}</div>
+                <button type="submit" class="btn btn-primary" :disabled="busy">
+                  {{ busy ? 'Saving…' : 'Update password' }}
+                </button>
+              </form>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>

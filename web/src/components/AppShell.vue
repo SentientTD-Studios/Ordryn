@@ -1,12 +1,31 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/api/client'
 import ToastHost from '@/components/ToastHost.vue'
 
-const { isAuthenticated, logout, hasPermission } = useAuth()
+const { isAuthenticated, user, logout, hasPermission } = useAuth()
+const { theme, toggleTheme } = useTheme()
 const { push } = useToast()
 const router = useRouter()
+const overdueCount = ref(0)
+
+async function loadOverdue() {
+  if (!isAuthenticated.value) return
+  try {
+    const stats = await api.dashboard()
+    overdueCount.value = stats.overdue_count
+  } catch {
+    overdueCount.value = 0
+  }
+}
+
+onMounted(() => {
+  void loadOverdue()
+})
 
 async function onLogout() {
   try {
@@ -20,24 +39,93 @@ async function onLogout() {
 </script>
 
 <template>
-  <div class="shell">
-    <header class="topbar">
-      <RouterLink class="brand" to="/">Ordryn</RouterLink>
-      <nav v-if="isAuthenticated" class="nav">
-        <RouterLink to="/">Tasks</RouterLink>
-        <RouterLink to="/dashboard">Dashboard</RouterLink>
-        <RouterLink to="/projects">Projects</RouterLink>
-        <RouterLink to="/views">Views</RouterLink>
-        <RouterLink to="/import">Import</RouterLink>
-        <RouterLink to="/settings">Settings</RouterLink>
-        <RouterLink v-if="hasPermission('createinvites')" to="/invites">Invites</RouterLink>
-        <RouterLink v-if="hasPermission('admin')" to="/admin">Admin</RouterLink>
-        <button type="button" class="linkish" @click="onLogout">Sign out</button>
-      </nav>
-    </header>
-    <main class="main">
-      <RouterView />
-    </main>
-    <ToastHost />
-  </div>
+  <nav class="navbar navbar-expand-lg">
+    <div class="container">
+      <RouterLink class="navbar-brand" to="/">GoTodo</RouterLink>
+      <button
+        class="navbar-toggler"
+        type="button"
+        data-bs-toggle="collapse"
+        data-bs-target="#navbarNav"
+        aria-controls="navbarNav"
+        aria-expanded="false"
+        aria-label="Toggle navigation"
+      >
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div id="navbarNav" class="collapse navbar-collapse">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item">
+            <RouterLink class="nav-link" to="/">Home</RouterLink>
+          </li>
+          <template v-if="isAuthenticated">
+            <li class="nav-item">
+              <RouterLink class="nav-link" to="/dashboard">
+                Dashboard
+                <span
+                  v-if="overdueCount > 0"
+                  class="badge bg-danger ms-1"
+                  :title="`${overdueCount} overdue tasks`"
+                >{{ overdueCount }}</span>
+              </RouterLink>
+            </li>
+            <li class="nav-item">
+              <RouterLink class="nav-link" to="/settings">Calendar</RouterLink>
+            </li>
+          </template>
+          <li class="nav-item">
+            <a class="nav-link" href="/changelog" target="_blank" rel="noopener">About</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/documentation/api/v1" target="_blank" rel="noopener">API</a>
+          </li>
+          <template v-if="isAuthenticated">
+            <li class="nav-item">
+              <RouterLink class="nav-link" to="/projects">Projects</RouterLink>
+            </li>
+            <li v-if="hasPermission('admin')" class="nav-item">
+              <RouterLink class="nav-link" to="/admin">Admin</RouterLink>
+            </li>
+            <li v-if="hasPermission('createinvites')" class="nav-item">
+              <RouterLink class="nav-link" to="/invites">Create Invite</RouterLink>
+            </li>
+          </template>
+        </ul>
+        <div class="d-flex align-items-center gap-3">
+          <span class="me-2"><i class="bi bi-sun-fill"></i></span>
+          <button
+            type="button"
+            class="theme-toggle"
+            :class="{ active: theme === 'dark' }"
+            aria-label="Toggle dark/light mode"
+            @click="toggleTheme"
+          />
+          <span class="ms-2"><i class="bi bi-moon-fill"></i></span>
+          <template v-if="isAuthenticated">
+            <span class="text-muted me-2 navbar-user-email d-none d-md-inline">{{ user?.email }}</span>
+            <RouterLink to="/settings" class="btn btn-outline-secondary btn-sm me-2" title="Profile settings">
+              <i class="bi bi-person-circle"></i> Profile
+            </RouterLink>
+            <button type="button" class="btn btn-outline-danger btn-sm" @click="onLogout">
+              <i class="bi bi-box-arrow-right"></i> Logout
+            </button>
+          </template>
+          <template v-else>
+            <RouterLink to="/register" class="btn btn-outline-secondary btn-sm me-2">
+              <i class="bi bi-person-plus"></i> Sign Up
+            </RouterLink>
+            <RouterLink to="/login" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-box-arrow-in-right"></i> Login
+            </RouterLink>
+          </template>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="site-main" data-page="spa">
+    <RouterView />
+  </main>
+
+  <ToastHost />
 </template>

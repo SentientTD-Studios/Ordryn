@@ -2,19 +2,27 @@
 import { useToast } from '@/composables/useToast'
 
 const { toasts, dismiss } = useToast()
+
+function alertClass(tone: string) {
+  if (tone === 'success') return 'alert-success'
+  if (tone === 'error') return 'alert-danger'
+  return 'alert-info'
+}
 </script>
 
 <template>
-  <div class="toasts" aria-live="polite">
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080" aria-live="polite">
     <div
       v-for="t in toasts"
       :key="t.id"
-      class="toast"
-      :class="t.tone"
-      role="status"
+      class="alert mb-2 shadow"
+      :class="alertClass(t.tone)"
+      role="alert"
     >
-      <span>{{ t.message }}</span>
-      <button type="button" aria-label="Dismiss" @click="dismiss(t.id)">×</button>
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <span>{{ t.message }}</span>
+        <button type="button" class="btn-close" aria-label="Dismiss" @click="dismiss(t.id)" />
+      </div>
     </div>
   </div>
 </template>

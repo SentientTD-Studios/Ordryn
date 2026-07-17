@@ -68,44 +68,53 @@ async function cancelImport() {
 </script>
 
 <template>
-  <section class="page narrow">
-    <h1>Import tasks</h1>
-    <p class="lede">Upload a CSV export to add tasks in bulk. Preview before confirming.</p>
-
-    <form class="stack" @submit.prevent="runPreview">
-      <label>
-        CSV file
-        <input type="file" accept=".csv,text/csv" required @change="onFileChange" />
-      </label>
-      <p class="muted">Max 5 MB, 5000 rows. Use the same columns as export.</p>
-      <button class="primary" type="submit" :disabled="busy || !file">
-        {{ busy ? 'Previewing…' : 'Preview import' }}
-      </button>
-    </form>
-
-    <div v-if="staged" class="stack">
-      <h2>Preview</h2>
-      <p class="muted">
-        {{ totalRows }} rows — {{ wouldImport }} would import, {{ wouldSkip }} would skip
-      </p>
-      <ul v-if="preview.length" class="plain-list">
-        <li v-for="(row, i) in preview" :key="i" class="row">
-          <div class="task-body">
-            <strong>{{ row.title }}</strong>
-            <p class="meta muted">
-              {{ row.project || 'No project' }}
-              <span v-if="row.due_date"> · due {{ row.due_date }}</span>
-              <span v-if="row.tags"> · {{ row.tags }}</span>
-            </p>
+  <div class="container mt-3">
+    <div class="card">
+      <div class="card-header"><h1 class="h4 mb-0">Import tasks</h1></div>
+      <div class="card-body">
+        <p class="text-muted">Upload a CSV export to add tasks in bulk. Preview before confirming.</p>
+        <form @submit.prevent="runPreview">
+          <div class="mb-3">
+            <label class="form-label">CSV file</label>
+            <input type="file" class="form-control" accept=".csv,text/csv" required @change="onFileChange" />
           </div>
-        </li>
-      </ul>
-      <div class="actions">
-        <button class="primary" type="button" :disabled="busy" @click="confirmImport">
-          {{ busy ? 'Importing…' : 'Confirm import' }}
-        </button>
-        <button class="ghost" type="button" :disabled="busy" @click="cancelImport">Cancel</button>
+          <p class="text-muted small">Max 5 MB, 5000 rows. Use the same columns as export.</p>
+          <button type="submit" class="btn btn-primary" :disabled="busy || !file">
+            {{ busy ? 'Previewing…' : 'Preview import' }}
+          </button>
+        </form>
+
+        <div v-if="staged" class="mt-4">
+          <h2 class="h5">Preview</h2>
+          <p class="text-muted">
+            {{ totalRows }} rows — {{ wouldImport }} would import, {{ wouldSkip }} would skip
+          </p>
+          <table v-if="preview.length" class="table table-striped table-bordered">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Project</th>
+                <th>Due</th>
+                <th>Tags</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in preview" :key="i">
+                <td>{{ row.title }}</td>
+                <td>{{ row.project }}</td>
+                <td>{{ row.due_date }}</td>
+                <td>{{ row.tags }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary" :disabled="busy" @click="confirmImport">
+              {{ busy ? 'Importing…' : 'Confirm import' }}
+            </button>
+            <button type="button" class="btn btn-secondary" :disabled="busy" @click="cancelImport">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
 </template>
