@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
 import type { Task } from '@/api/types'
 
 defineProps<{
@@ -11,6 +10,7 @@ const emit = defineEmits<{
   'toggle-select': [checked: boolean]
   'toggle-complete': []
   'toggle-favorite': []
+  edit: []
   remove: []
 }>()
 
@@ -57,9 +57,13 @@ function priorityLabel(priority: number) {
             :style="task.favorite ? 'color: gold' : ''"
           />
         </button>
-        <RouterLink :to="`/tasks/${task.id}`" class="btn btn-link p-0 task-toggle title-text text-start">
+        <button
+          type="button"
+          class="btn btn-link p-0 task-toggle title-text text-start"
+          :title="task.created_at ? `Created: ${task.created_at}` : undefined"
+        >
           {{ task.title }}
-        </RouterLink>
+        </button>
         <span v-if="task.project" class="badge bg-secondary project-badge ms-1">{{ task.project }}</span>
         <span
           v-if="priorityLabel(task.priority)"
@@ -98,14 +102,15 @@ function priorityLabel(priority: number) {
           <i :class="task.completed ? 'bi bi-toggle-on' : 'bi bi-toggle-off'" />
           {{ task.completed ? 'Complete' : 'Incomplete' }}
         </button>
-        <RouterLink
-          :to="`/tasks/${task.id}`"
+        <button
+          type="button"
           class="btn btn-link p-0 mx-2 edit-btn"
           style="text-decoration: none"
           aria-label="Edit task"
+          @click="emit('edit')"
         >
           <i class="bi bi-pencil" />
-        </RouterLink>
+        </button>
         <button
           type="button"
           class="btn btn-link p-0 delete-column"

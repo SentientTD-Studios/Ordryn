@@ -36,6 +36,15 @@ export type Task = {
   modified_at: string
 }
 
+export type TaskEvent = {
+  id: number
+  task_id: number
+  event_type: string
+  label: string
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
 export type TaskList = {
   tasks: Task[]
   total: number

@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/api/client'
 import type { SiteInfo } from '@/api/types'
 import ToastHost from '@/components/ToastHost.vue'
+import TaskSidebar from '@/components/TaskSidebar.vue'
 
 const { isAuthenticated, user, logout, hasPermission } = useAuth()
 const { theme, toggleTheme } = useTheme()
@@ -173,4 +174,5 @@ async function onLogout() {
   </main>
 
   <ToastHost />
+  <TaskSidebar v-if="isAuthenticated" />
 </template>

@@ -6,8 +6,11 @@ import type { Project, SavedView, Tag, Task } from '@/api/types'
 import { APIError } from '@/api/types'
 import TaskTableRow from '@/components/TaskTableRow.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useTaskSortable } from '@/composables/useTaskSortable'
 import { useToast } from '@/composables/useToast'
+
+const { openAdd, openEdit, lastSavedTask } = useTaskSidebar()
 
 const tasks = ref<Task[]>([])
 const projects = ref<Project[]>([])
@@ -18,11 +21,8 @@ const page = ref(1)
 const totalPages = ref(1)
 const completedCount = ref(0)
 const incompleteCount = ref(0)
-const title = ref('')
-const projectId = ref<number | ''>('')
 const search = ref('')
 const loading = ref(true)
-const busy = ref(false)
 const toast = useToast()
 const { user } = useAuth()
 const undoToken = ref<string | null>(null)
@@ -220,23 +220,18 @@ async function load(opts?: { silent?: boolean }) {
   }
 }
 
-async function createTask() {
-  if (!title.value.trim()) return
-  busy.value = true
-  try {
-    await api.createTask({
-      title: title.value.trim(),
-      project_id: projectId.value === '' ? null : Number(projectId.value),
-    })
-    title.value = ''
-    toast.push('Task created', 'success')
-    await load()
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Create failed', 'error')
-  } finally {
-    busy.value = false
+watch(lastSavedTask, async (task) => {
+  if (!task) return
+  const exists = tasks.value.some((t) => t.id === task.id)
+  if (exists) {
+    applyTaskUpdate(task)
+    await nextTick()
+    refreshSortable()
+  } else {
+    await load({ silent: true })
   }
-}
+  lastSavedTask.value = null
+})
 
 async function toggleComplete(task: Task) {
   try {
@@ -507,13 +502,7 @@ onMounted(async () => {
             </li>
           </ul>
         </div>
-        <button
-          type="button"
-          class="btn btn-success"
-          id="openSidebar"
-          data-bs-toggle="modal"
-          data-bs-target="#addTaskModal"
-        >
+        <button type="button" class="btn btn-success" id="openSidebar" @click="openAdd">
           <i class="bi bi-plus-lg" /> Add Task
         </button>
         <button
@@ -803,6 +792,7 @@ onMounted(async () => {
                 @toggle-select="toggleSelect(task.id, $event)"
                 @toggle-complete="toggleComplete(task)"
                 @toggle-favorite="toggleFavorite(task)"
+                @edit="openEdit(task.id)"
                 @remove="removeTask(task)"
               />
             </tbody>
@@ -815,6 +805,7 @@ onMounted(async () => {
                 @toggle-select="toggleSelect(task.id, $event)"
                 @toggle-complete="toggleComplete(task)"
                 @toggle-favorite="toggleFavorite(task)"
+                @edit="openEdit(task.id)"
                 @remove="removeTask(task)"
               />
               <tr v-if="!tasks.length && hasActiveFilters">
@@ -900,39 +891,9 @@ onMounted(async () => {
         <i class="bi bi-clipboard-check empty-state-icon" aria-hidden="true" />
         <h3 class="mt-3">Add your first Todo!</h3>
         <p class="text-muted">Get started by creating a task.</p>
-        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+        <button type="button" class="btn btn-success" @click="openAdd">
           <i class="bi bi-plus-lg" /> Add Task
         </button>
-      </div>
-    </div>
-  </div>
-
-  <div id="addTaskModal" class="modal fade" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <form @submit.prevent="createTask">
-          <div class="modal-header">
-            <h5 class="modal-title">Add Task</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" />
-          </div>
-          <div class="modal-body">
-            <div class="mb-3">
-              <label class="form-label" for="new-task-title">Title</label>
-              <input id="new-task-title" v-model="title" type="text" class="form-control" required />
-            </div>
-            <div class="mb-3">
-              <label class="form-label" for="new-task-project">Project</label>
-              <select id="new-task-project" v-model="projectId" class="form-select">
-                <option value="">No project</option>
-                <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-              </select>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" class="btn btn-primary" :disabled="busy">Add Task</button>
-          </div>
-        </form>
       </div>
     </div>
   </div>

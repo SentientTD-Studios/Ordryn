@@ -12,6 +12,7 @@ import type {
   SiteInfo,
   Tag,
   Task,
+  TaskEvent,
   TaskList,
   User,
 } from './types'
@@ -186,6 +187,10 @@ export const api = {
 
   getTask(id: number) {
     return request<Task>(`/api/v1/tasks/${id}`)
+  },
+
+  listTaskEvents(id: number) {
+    return request<TaskEvent[]>(`/api/v1/tasks/${id}/events`)
   },
 
   createTask(payload: {
