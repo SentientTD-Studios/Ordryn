@@ -5,6 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/api/client'
+import type { SiteInfo } from '@/api/types'
 import ToastHost from '@/components/ToastHost.vue'
 
 const { isAuthenticated, user, logout, hasPermission } = useAuth()
@@ -12,6 +13,8 @@ const { theme, toggleTheme } = useTheme()
 const { push } = useToast()
 const router = useRouter()
 const overdueCount = ref(0)
+const siteInfo = ref<SiteInfo | null>(null)
+const showAnnouncement = ref(false)
 
 async function loadOverdue() {
   if (!isAuthenticated.value) return
@@ -23,8 +26,31 @@ async function loadOverdue() {
   }
 }
 
+async function loadSiteInfo() {
+  try {
+    siteInfo.value = await api.site()
+    showAnnouncement.value =
+      !!siteInfo.value.enable_global_announcement &&
+      !!siteInfo.value.global_announcement_text &&
+      !siteInfo.value.announcement_dismissed
+  } catch {
+    siteInfo.value = null
+    showAnnouncement.value = false
+  }
+}
+
+async function dismissAnnouncement() {
+  try {
+    await api.dismissAnnouncement()
+    showAnnouncement.value = false
+  } catch {
+    showAnnouncement.value = false
+  }
+}
+
 onMounted(() => {
   void loadOverdue()
+  void loadSiteInfo()
 })
 
 async function onLogout() {
@@ -122,6 +148,25 @@ async function onLogout() {
       </div>
     </div>
   </nav>
+
+  <div
+    v-if="showAnnouncement && siteInfo?.global_announcement_text"
+    id="global-announcement"
+    class="global-announcement-wrapper"
+  >
+    <div class="container">
+      <div class="alert alert-primary alert-dismissible fade show mb-0" role="alert">
+        <i class="bi bi-megaphone-fill me-2" />
+        <strong>{{ siteInfo.global_announcement_text }}</strong>
+        <button
+          type="button"
+          class="btn-close no-invert"
+          aria-label="Close"
+          @click="dismissAnnouncement"
+        />
+      </div>
+    </div>
+  </div>
 
   <main class="site-main" data-page="spa">
     <RouterView />

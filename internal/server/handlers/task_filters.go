@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"GoTodo/internal/server/utils"
+	"GoTodo/internal/storage"
 	"GoTodo/internal/tasks"
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -151,4 +154,38 @@ func fetchTasksForFilters(page, pageSize int, fc FilterContext, userID *int, tim
 		return tasks.SearchTasksForUserWithFilters(page, pageSize, fc.Search, userID, timezone, filters)
 	}
 	return tasks.ReturnPaginationForUserWithFilters(page, pageSize, userID, timezone, filters)
+}
+
+func completedIncompleteCounts(userID *int, projectFilter *int) (int, int) {
+	if userID == nil {
+		return 0, 0
+	}
+	if projectFilter == nil {
+		return utils.GetCompletedTasksCount(userID), utils.GetIncompleteTasksCount(userID)
+	}
+
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return 0, 0
+	}
+	defer storage.CloseDatabase(pool)
+
+	projectCond := ""
+	args := []interface{}{*userID}
+	if *projectFilter == 0 {
+		projectCond = " AND project_id IS NULL"
+	} else {
+		projectCond = " AND project_id = $2"
+		args = append(args, *projectFilter)
+	}
+
+	completedCount := 0
+	incompleteCount := 0
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true"+projectCond, args...).Scan(&completedCount); err != nil {
+		completedCount = 0
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)"+projectCond, args...).Scan(&incompleteCount); err != nil {
+		incompleteCount = 0
+	}
+	return completedCount, incompleteCount
 }

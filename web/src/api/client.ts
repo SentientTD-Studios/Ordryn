@@ -9,6 +9,7 @@ import type {
   Project,
   SavedView,
   SavedViewFilter,
+  SiteInfo,
   Tag,
   Task,
   TaskList,
@@ -107,6 +108,10 @@ export const api = {
     return request<{ version: string; api_enabled: boolean; redis_ok: boolean; mode: string }>(
       '/api/v1/health',
     )
+  },
+
+  site() {
+    return request<SiteInfo>('/api/v1/site')
   },
 
   me() {

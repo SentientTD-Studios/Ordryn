@@ -17,6 +17,7 @@ function readTheme(): 'light' | 'dark' {
 function applyTheme(next: 'light' | 'dark') {
   theme.value = next
   document.documentElement.setAttribute('data-theme', next)
+  document.documentElement.setAttribute('data-bs-theme', next)
   try {
     localStorage.setItem('theme', next)
     document.cookie = `theme=${next}; path=/; max-age=31536000; SameSite=Lax`

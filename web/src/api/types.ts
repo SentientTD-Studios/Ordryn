@@ -42,6 +42,15 @@ export type TaskList = {
   page: number
   per_page: number
   total_pages: number
+  completed_count: number
+  incomplete_count: number
+}
+
+export type SiteInfo = {
+  site_name: string
+  enable_global_announcement: boolean
+  global_announcement_text: string
+  announcement_dismissed: boolean
 }
 
 export type SavedViewFilter = {

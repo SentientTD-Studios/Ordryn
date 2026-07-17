@@ -37,11 +37,13 @@ type apiTaskJSON struct {
 }
 
 type apiTaskListResponse struct {
-	Tasks      []apiTaskJSON `json:"tasks"`
-	Total      int           `json:"total"`
-	Page       int           `json:"page"`
-	PerPage    int           `json:"per_page"`
-	TotalPages int           `json:"total_pages"`
+	Tasks            []apiTaskJSON `json:"tasks"`
+	Total            int           `json:"total"`
+	Page             int           `json:"page"`
+	PerPage          int           `json:"per_page"`
+	TotalPages       int           `json:"total_pages"`
+	CompletedCount   int           `json:"completed_count"`
+	IncompleteCount  int           `json:"incomplete_count"`
 }
 
 type apiTaskCreateRequest struct {
@@ -271,13 +273,17 @@ func apiV1ListTasks(w http.ResponseWriter, r *http.Request) {
 	for _, t := range taskList {
 		out = append(out, taskToAPIJSON(t))
 	}
+	projectFilter := parseProjectFilter(fc.Project)
+	completedCount, incompleteCount := completedIncompleteCounts(&userID, projectFilter)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(apiTaskListResponse{
-		Tasks:      out,
-		Total:      total,
-		Page:       page,
-		PerPage:    perPage,
-		TotalPages: totalPages,
+		Tasks:           out,
+		Total:           total,
+		Page:            page,
+		PerPage:         perPage,
+		TotalPages:      totalPages,
+		CompletedCount:  completedCount,
+		IncompleteCount: incompleteCount,
 	})
 }
 

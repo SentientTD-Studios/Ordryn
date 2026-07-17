@@ -73,6 +73,7 @@ func StartServer() error {
 
 func registerAPIV1Routes() {
 	handleBoth("/api/v1/health", handlers.APIV1Health)
+	handleBoth("/api/v1/site", handlers.APIV1Site)
 
 	authPublic := utils.AuthPublicChain
 	handleBoth("/api/v1/auth/register", authPublic(handlers.APIV1AuthRegister))

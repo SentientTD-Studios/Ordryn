@@ -39,6 +39,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
 
+  /api/v1/site:
+    get:
+      tags: [Health]
+      summary: Public site metadata for the SPA shell
+      security: []
+      responses:
+        "200":
+          description: Site metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteInfo"
+
   /api/v1/auth/register:
     post:
       tags: [Auth]
@@ -1333,6 +1346,18 @@ components:
           type: string
           enum: [full, api]
 
+    SiteInfo:
+      type: object
+      properties:
+        site_name:
+          type: string
+        enable_global_announcement:
+          type: boolean
+        global_announcement_text:
+          type: string
+        announcement_dismissed:
+          type: boolean
+
     User:
       type: object
       properties:
@@ -1514,6 +1539,10 @@ components:
         per_page:
           type: integer
         total_pages:
+          type: integer
+        completed_count:
+          type: integer
+        incomplete_count:
           type: integer
 
     TaskCreate:
