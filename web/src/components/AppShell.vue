@@ -1,24 +1,30 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { withBase } from '@/base'
 import { useAuth } from '@/composables/useAuth'
+import { useSite } from '@/composables/useSite'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/api/client'
-import type { SiteInfo } from '@/api/types'
 import ToastHost from '@/components/ToastHost.vue'
 import TaskSidebar from '@/components/TaskSidebar.vue'
 
 const changelogHref = withBase('/changelog')
 
 const { isAuthenticated, user, logout, hasPermission } = useAuth()
+const { siteInfo, siteName, refresh: refreshSite } = useSite()
 const { theme, toggleTheme } = useTheme()
 const { push } = useToast()
 const router = useRouter()
 const overdueCount = ref(0)
-const siteInfo = ref<SiteInfo | null>(null)
-const showAnnouncement = ref(false)
+
+const showAnnouncement = computed(
+  () =>
+    !!siteInfo.value?.enable_global_announcement &&
+    !!siteInfo.value?.global_announcement_text &&
+    !siteInfo.value?.announcement_dismissed,
+)
 
 async function loadOverdue() {
   if (!isAuthenticated.value) return
@@ -30,31 +36,22 @@ async function loadOverdue() {
   }
 }
 
-async function loadSiteInfo() {
-  try {
-    siteInfo.value = await api.site()
-    showAnnouncement.value =
-      !!siteInfo.value.enable_global_announcement &&
-      !!siteInfo.value.global_announcement_text &&
-      !siteInfo.value.announcement_dismissed
-  } catch {
-    siteInfo.value = null
-    showAnnouncement.value = false
-  }
-}
-
 async function dismissAnnouncement() {
   try {
     await api.dismissAnnouncement()
-    showAnnouncement.value = false
+    if (siteInfo.value) {
+      siteInfo.value = { ...siteInfo.value, announcement_dismissed: true }
+    }
   } catch {
-    showAnnouncement.value = false
+    if (siteInfo.value) {
+      siteInfo.value = { ...siteInfo.value, announcement_dismissed: true }
+    }
   }
 }
 
 onMounted(() => {
   void loadOverdue()
-  void loadSiteInfo()
+  void refreshSite()
 })
 
 async function onLogout() {
@@ -71,7 +68,7 @@ async function onLogout() {
 <template>
   <nav class="navbar navbar-expand-lg">
     <div class="container">
-      <RouterLink class="navbar-brand" to="/">GoTodo</RouterLink>
+      <RouterLink class="navbar-brand" to="/">{{ siteName }}</RouterLink>
       <button
         class="navbar-toggler"
         type="button"

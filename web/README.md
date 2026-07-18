@@ -55,7 +55,7 @@ location /gotodo/ {
 }
 ```
 
-Browser: `/gotodo/…` · Go receives: `/…` · SPA still knows the public prefix via `<meta name="gotodo-base">` and `<base href>` (needed so nested routes like `/auth/device` load `./assets` correctly).
+Browser: `/gotodo/…` · Go receives: `/…` · SPA still knows the public prefix via `<meta name="gotodo-base">`. The server rewrites Vite `./assets` URLs to absolute `/gotodo/assets/…` so nested routes work without a `<base href>` (which would break in-page `#` anchors).
 
 ## Surfaces
 

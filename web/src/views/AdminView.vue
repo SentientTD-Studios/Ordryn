@@ -3,9 +3,11 @@ import { onMounted, reactive, ref } from 'vue'
 import { api } from '@/api/client'
 import type { AdminSettings, AdminUser } from '@/api/types'
 import { APIError } from '@/api/types'
+import { useSite } from '@/composables/useSite'
 import { useToast } from '@/composables/useToast'
 
 const toast = useToast()
+const { refresh: refreshSite } = useSite()
 const users = ref<AdminUser[]>([])
 const busy = ref(false)
 const settings = reactive<AdminSettings>({
@@ -36,6 +38,7 @@ async function saveSettings() {
   try {
     const saved = await api.patchAdminSettings({ ...settings })
     Object.assign(settings, saved)
+    await refreshSite()
     toast.push('Settings saved', 'success')
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Save failed', 'error')

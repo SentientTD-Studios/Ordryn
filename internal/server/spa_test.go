@@ -69,7 +69,9 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 	if err := os.MkdirAll("web/dist/assets", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile("web/dist/index.html", []byte("<html><head></head><body>spa</body></html>"), 0o644); err != nil {
+	if err := os.WriteFile("web/dist/index.html", []byte(
+		`<html><head><script type="module" src="./assets/app.js"></script><link rel="stylesheet" href="./assets/app.css"></head><body>spa</body></html>`,
+	), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile("web/dist/assets/app.js", []byte("console.log(1)"), 0o644); err != nil {
@@ -95,8 +97,11 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 	if !strings.Contains(body, `name="gotodo-base" content="/gotodo/"`) {
 		t.Fatalf("missing base inject in %q", body)
 	}
-	if !strings.Contains(body, `<base href="/gotodo/">`) {
-		t.Fatalf("missing <base href> inject in %q", body)
+	if strings.Contains(body, `<base href=`) {
+		t.Fatalf("must not inject <base href> (breaks hash anchors): %q", body)
+	}
+	if !strings.Contains(body, `src="/gotodo/assets/app.js"`) || !strings.Contains(body, `href="/gotodo/assets/app.css"`) {
+		t.Fatalf("relative assets not absolutized: %q", body)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/gotodo/assets/app.js", nil)
@@ -118,5 +123,13 @@ func TestNonceInlineScripts(t *testing.T) {
 	}
 	if !strings.Contains(out, `<script type="module" src="/a.js"></script>`) {
 		t.Fatalf("external script should be unchanged: %q", out)
+	}
+}
+
+func TestAbsolutizeRelativeAssetURLs(t *testing.T) {
+	in := `<script src="./assets/a.js"></script><link href='./assets/a.css'><a href="#tasks">t</a>`
+	out := absolutizeRelativeAssetURLs(in, "/gotodo/")
+	if out != `<script src="/gotodo/assets/a.js"></script><link href='/gotodo/assets/a.css'><a href="#tasks">t</a>` {
+		t.Fatalf("got %q", out)
 	}
 }

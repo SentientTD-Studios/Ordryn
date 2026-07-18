@@ -130,22 +130,38 @@ func serveSPAIndex(w http.ResponseWriter, r *http.Request) {
 		injectBase = base + "/"
 	}
 	escaped := htmlAttrEscape(injectBase)
-	// Meta for JS pathPrefix; <base> so Vite relative ./assets resolve under nested
-	// routes like /auth/device (otherwise ./assets → /auth/assets and the SPA
-	// catch-all returns HTML instead of JS).
-	inject := fmt.Sprintf(
-		`<meta name="gotodo-base" content="%s"><base href="%s">`,
-		escaped, escaped,
-	)
+	// Meta for JS pathPrefix. Do NOT inject <base href>: it breaks in-page anchors
+	// (href="#x" → {BASE}/#x, dropping /docs/api/v1). Rewrite Vite's relative
+	// ./assets URLs to absolute paths under the public prefix instead.
+	inject := fmt.Sprintf(`<meta name="gotodo-base" content="%s">`, escaped)
 	html := string(raw)
 	if strings.Contains(html, "<head>") {
 		html = strings.Replace(html, "<head>", "<head>"+inject, 1)
 	} else {
 		html = inject + html
 	}
+	html = absolutizeRelativeAssetURLs(html, injectBase)
 	html = nonceInlineScripts(html, utils.GetCSPNonce(r))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
+}
+
+// absolutizeRelativeAssetURLs rewrites Vite "./…" asset refs so nested routes
+// (e.g. /auth/device, /docs/api/v1) still load JS/CSS from the SPA mount.
+func absolutizeRelativeAssetURLs(html, base string) string {
+	if base == "" {
+		base = "/"
+	}
+	if !strings.HasSuffix(base, "/") {
+		base += "/"
+	}
+	replacer := strings.NewReplacer(
+		`src="./`, `src="`+base,
+		`href="./`, `href="`+base,
+		`src='./`, `src='`+base,
+		`href='./`, `href='`+base,
+	)
+	return replacer.Replace(html)
 }
 
 func htmlAttrEscape(s string) string {

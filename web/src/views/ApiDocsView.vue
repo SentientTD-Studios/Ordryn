@@ -3,20 +3,15 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { pathPrefix } from '@/base'
 import { useAuth } from '@/composables/useAuth'
-import { api } from '@/api/client'
+import { useSite } from '@/composables/useSite'
 
 const { isAuthenticated } = useAuth()
-const siteName = ref('GoTodo')
+const { siteName, refresh: refreshSite } = useSite()
 const basePath = ref(pathPrefix())
 
-onMounted(async () => {
+onMounted(() => {
   document.body.classList.add('api-docs-page')
-  try {
-    const site = await api.site()
-    if (site.site_name) siteName.value = site.site_name
-  } catch {
-    /* public docs still render */
-  }
+  void refreshSite()
 })
 
 onUnmounted(() => {
