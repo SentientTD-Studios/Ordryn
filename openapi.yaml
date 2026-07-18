@@ -81,6 +81,11 @@ paths:
     post:
       tags: [Auth]
       summary: Login and start a session
+      description: |
+        On success returns the user and Set-Cookie. Application failures (bad
+        credentials, validation, rate limit) also use HTTP 200 with
+        `{error,message,status}` so reverse proxies that replace 4xx bodies with
+        HTML still deliver JSON to the SPA.
       security: []
       requestBody:
         required: true
@@ -90,17 +95,13 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Authenticated; Set-Cookie session
+          description: User on success, or `{error,message,status}` on failure
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+                oneOf:
+                  - $ref: "#/components/schemas/User"
+                  - $ref: "#/components/schemas/Error"
 
   /api/v1/auth/logout:
     post:
@@ -338,16 +339,22 @@ paths:
     get:
       tags: [Profile]
       summary: Current user profile
+      description: |
+        Unauthenticated session probes return HTTP 200 with a JSON `null` body
+        (not 401), so SPA bootstrap works behind proxies that rewrite 401 to HTML.
+        Invalid Bearer tokens still return 401.
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
         "200":
-          description: Profile
+          description: Profile, or null when no session
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                nullable: true
+                allOf:
+                  - $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
     patch:
@@ -1326,6 +1333,9 @@ components:
           description: Machine-readable code (e.g. invalid_request)
         message:
           type: string
+        status:
+          type: integer
+          description: Logical HTTP status when the wire status is 200 (proxy-safe auth errors)
 
     OK:
       type: object

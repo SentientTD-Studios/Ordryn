@@ -42,7 +42,10 @@ func APIV1Me(w http.ResponseWriter, r *http.Request) {
 func apiV1GetMe(w http.ResponseWriter, r *http.Request) {
 	userID, ok := utils.GetAPIUserID(r)
 	if !ok {
-		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		// 200 null so SPA session probes survive proxies that rewrite 401 → HTML.
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("null"))
 		return
 	}
 	profile, err := storage.GetUserProfileByID(userID)
