@@ -173,6 +173,17 @@ async function onLogout() {
     <RouterView />
   </main>
 
+  <footer class="container text-center mt-5 app-footer">
+    <hr>
+    <p class="text-muted">
+      Made with <i class="bi bi-heart-fill text-danger"></i> by xNifty |
+      <a href="https://github.com/xNifty/GoTodo" target="_blank" rel="noopener noreferrer">Source</a> |
+      <RouterLink to="/docs/api/v1">Documentation</RouterLink> |
+      <a href="https://github.com/xNifty/GoTodo/issues" target="_blank" rel="noopener noreferrer">Report a Bug</a> |
+      <a href="https://ordryn.com" target="_blank" rel="noopener noreferrer">Powered by Ordryn ©</a>
+    </p>
+  </footer>
+
   <ToastHost />
   <TaskSidebar v-if="isAuthenticated" />
 </template>
