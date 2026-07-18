@@ -92,7 +92,7 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 	if !strings.Contains(body, "spa") {
 		t.Fatalf("fallback body = %q", body)
 	}
-	if !strings.Contains(body, `window.__GOTODO_BASE__="/gotodo/"`) {
+	if !strings.Contains(body, `name="gotodo-base" content="/gotodo/"`) {
 		t.Fatalf("missing base inject in %q", body)
 	}
 
@@ -104,5 +104,16 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 	}
 	if got := rec.Body.String(); got != "console.log(1)" {
 		t.Fatalf("asset body = %q", got)
+	}
+}
+
+func TestNonceInlineScripts(t *testing.T) {
+	in := `<head><script>var x=1</script><script type="module" src="/a.js"></script></head>`
+	out := nonceInlineScripts(in, "abc123")
+	if !strings.Contains(out, `<script nonce="abc123">var x=1</script>`) {
+		t.Fatalf("inline script not nonced: %q", out)
+	}
+	if !strings.Contains(out, `<script type="module" src="/a.js"></script>`) {
+		t.Fatalf("external script should be unchanged: %q", out)
 	}
 }

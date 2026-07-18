@@ -36,9 +36,19 @@ GOTODO_MODE=full go run .   # UI at / (or BASE_PATH)
 
 ### Subpath deploys (`BASE_PATH=/gotodo`)
 
-1. Set `BASE_PATH=/gotodo` (env or `config/config.json`).
-2. Rebuild is optional for pathing — the Go server injects `window.__GOTODO_BASE__` into `index.html`.
-3. Proxy **without stripping** the prefix, e.g.:
+UI and API both live under **`/gotodo`** (not `/app`).
+
+1. Set `BASE_PATH=/gotodo` in `.env` or `config/config.json` on the host.
+2. Build the SPA **on that host** (do not copy `node_modules` from another machine):
+
+```bash
+cd /path/to/gotodo/web
+rm -rf node_modules
+npm ci
+npm run build
+```
+
+3. Proxy **without stripping** the prefix:
 
 ```nginx
 location /gotodo/ {
@@ -50,7 +60,7 @@ location /gotodo/ {
 ```
 
 UI: `https://domain/gotodo/` · API: `https://domain/gotodo/api/v1`  
-Legacy bookmarks under `/gotodo/app/...` redirect to `/gotodo/...`.
+The SPA build uses Vite 6 (Rollup) so Linux hosts do not need Rolldown native bindings.
 
 ## Surfaces
 

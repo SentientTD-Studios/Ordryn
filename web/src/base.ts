@@ -6,6 +6,11 @@ declare global {
 
 /** Trailing-slash SPA mount (e.g. "/" or "/gotodo/"). */
 export function appBase(): string {
+  const meta = document.querySelector('meta[name="gotodo-base"]')?.getAttribute('content')
+  if (meta && meta.length > 0) {
+    return meta.endsWith('/') ? meta : `${meta}/`
+  }
+  // Legacy fallback if an older server inject is present.
   const injected = window.__GOTODO_BASE__
   if (typeof injected === 'string' && injected.length > 0) {
     return injected.endsWith('/') ? injected : `${injected}/`

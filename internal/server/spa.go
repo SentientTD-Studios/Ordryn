@@ -114,15 +114,57 @@ func serveSPAIndex(w http.ResponseWriter, r *http.Request) {
 	if base != "" {
 		injectBase = base + "/"
 	}
-	inject := fmt.Sprintf(`<script>window.__GOTODO_BASE__=%q;</script>`, injectBase)
+	// Meta tag (not an inline script) so CSP script-src nonce policy stays intact.
+	inject := fmt.Sprintf(`<meta name="gotodo-base" content="%s">`, htmlAttrEscape(injectBase))
 	html := string(raw)
 	if strings.Contains(html, "<head>") {
 		html = strings.Replace(html, "<head>", "<head>"+inject, 1)
 	} else {
 		html = inject + html
 	}
+	html = nonceInlineScripts(html, utils.GetCSPNonce(r))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
+}
+
+func htmlAttrEscape(s string) string {
+	s = strings.ReplaceAll(s, `&`, "&amp;")
+	s = strings.ReplaceAll(s, `"`, "&quot;")
+	s = strings.ReplaceAll(s, `<`, "&lt;")
+	return s
+}
+
+// nonceInlineScripts adds the request CSP nonce to inline <script> tags (no src=).
+func nonceInlineScripts(html, nonce string) string {
+	if nonce == "" {
+		return html
+	}
+	var b strings.Builder
+	rest := html
+	for {
+		i := strings.Index(rest, "<script")
+		if i < 0 {
+			b.WriteString(rest)
+			break
+		}
+		b.WriteString(rest[:i])
+		rest = rest[i:]
+		end := strings.Index(rest, ">")
+		if end < 0 {
+			b.WriteString(rest)
+			break
+		}
+		open := rest[:end+1]
+		rest = rest[end+1:]
+		lower := strings.ToLower(open)
+		if strings.Contains(lower, "src=") || strings.Contains(lower, "nonce=") {
+			b.WriteString(open)
+			continue
+		}
+		b.WriteString(open[:len(open)-1])
+		fmt.Fprintf(&b, ` nonce="%s">`, nonce)
+	}
+	return b.String()
 }
 
 func spaMissingHandler(w http.ResponseWriter, r *http.Request) {
