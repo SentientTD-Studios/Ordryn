@@ -36,31 +36,26 @@ GOTODO_MODE=full go run .   # UI at / (or BASE_PATH)
 
 ### Subpath deploys (`BASE_PATH=/gotodo`)
 
-UI and API both live under **`/gotodo`** (not `/app`).
+Public URLs stay under **`/gotodo`**. The usual nginx pattern **strips** that prefix before Go (same as the old HTMX demo).
 
-1. Set `BASE_PATH=/gotodo` in `.env` or `config/config.json` on the host.
-2. Build the SPA **on that host** (do not copy `node_modules` from another machine):
-
-```bash
-cd /path/to/gotodo/web
-rm -rf node_modules
-npm ci
-npm run build
-```
-
-3. Proxy **without stripping** the prefix:
+1. Set `BASE_PATH=/gotodo` (path only) in `.env`.
+2. Build the SPA on the host: `cd web && rm -rf node_modules && npm ci && npm run build`
+3. Use a strip-prefix proxy (do **not** turn on `proxy_intercept_errors` here — it replaces API JSON 400/401 with HTML):
 
 ```nginx
 location /gotodo/ {
-    proxy_pass http://127.0.0.1:8080/gotodo/;
+    proxy_pass http://127.0.0.1:9000/;  # strip /gotodo
+    proxy_intercept_errors off;
+
+    proxy_http_version 1.1;
     proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
 
-UI: `https://domain/gotodo/` · API: `https://domain/gotodo/api/v1`  
-The SPA build uses Vite 6 (Rollup) so Linux hosts do not need Rolldown native bindings.
+Browser: `/gotodo/…` · Go receives: `/…` · SPA still knows the public prefix via `<meta name="gotodo-base">`.
 
 ## Surfaces
 

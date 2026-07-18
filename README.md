@@ -80,7 +80,7 @@ go build -o gotodo .
 ./gotodo
 ```
 
-Open http://localhost:8080/. For a subpath demo, set `BASE_PATH=/gotodo` and proxy `/gotodo/` to the backend **without stripping** the prefix (UI at `https://domain/gotodo/`, API at `https://domain/gotodo/api/v1`). Legacy `/app/...` URLs redirect to the same mount.
+Open http://localhost:8080/. For a subpath demo, set `BASE_PATH=/gotodo` and proxy `/gotodo/` to the backend (strip or preserve both work; the classic demo strips the prefix). Do not let nginx `error_page` / `proxy_intercept_errors` rewrite API JSON errors to HTML.
 
 ## Local SPA development (Vite)
 

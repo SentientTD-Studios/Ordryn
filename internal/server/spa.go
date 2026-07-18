@@ -12,33 +12,48 @@ import (
 
 const spaDistDir = "web/dist"
 
-// registerSPARoutes serves the Vue SPA from web/dist at the configured BASE_PATH
-// root (e.g. "/" or "/gotodo/"). Legacy "/app/" URLs redirect to the same mount.
+// spaServeMounts returns path prefixes where the SPA is attached on the Go server.
+// Always includes "" (site root) so nginx configs that strip BASE_PATH keep working
+// (browser /gotodo/ → backend /). Also includes PublicPathPrefix when set, for
+// proxies that preserve the prefix.
+func spaServeMounts() []string {
+	mounts := []string{""}
+	if p := utils.PublicPathPrefix(); p != "" {
+		mounts = append(mounts, p)
+	}
+	return mounts
+}
+
+// registerSPARoutes serves the Vue SPA from web/dist.
+// Public URLs still use BASE_PATH (injected into index.html); the listen paths
+// support both strip-prefix and preserve-prefix reverse proxies.
 func registerSPARoutes() {
-	mount := utils.PublicPathPrefix() // "" or "/gotodo"
-	mountSlash := "/"
-	if mount != "" {
-		mountSlash = mount + "/"
-	}
-
 	info, err := os.Stat(spaDistDir)
-	if err != nil || !info.IsDir() {
-		http.HandleFunc(mountSlash, spaMissingHandler)
-		if mount != "" {
-			http.HandleFunc(mount, spaMissingHandler)
-		}
-		registerLegacyAppRedirects()
-		return
-	}
+	missing := err != nil || !info.IsDir()
 
-	fileServer := http.StripPrefix(mountSlash, http.FileServer(http.Dir(spaDistDir)))
-	http.Handle(mountSlash, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		serveSPA(w, r, mount, fileServer)
-	}))
-	if mount != "" {
-		http.HandleFunc(mount, func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, mountSlash, http.StatusTemporaryRedirect)
-		})
+	for _, mount := range spaServeMounts() {
+		mountSlash := "/"
+		if mount != "" {
+			mountSlash = mount + "/"
+		}
+		if missing {
+			http.HandleFunc(mountSlash, spaMissingHandler)
+			if mount != "" {
+				http.HandleFunc(mount, spaMissingHandler)
+			}
+			continue
+		}
+
+		fileServer := http.StripPrefix(mountSlash, http.FileServer(http.Dir(spaDistDir)))
+		m := mount
+		http.Handle(mountSlash, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			serveSPA(w, r, m, fileServer)
+		}))
+		if mount != "" {
+			http.HandleFunc(mount, func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, mountSlash, http.StatusTemporaryRedirect)
+			})
+		}
 	}
 
 	registerLegacyAppRedirects()
@@ -52,7 +67,7 @@ func registerLegacyAppRedirects() {
 	}
 }
 
-// legacyAppRedirect sends /app/... (and {BASE_PATH}/app/...) to the SPA mount.
+// legacyAppRedirect sends /app/... (and {BASE_PATH}/app/...) to the public SPA path.
 func legacyAppRedirect(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	for _, prefix := range routePaths() {
