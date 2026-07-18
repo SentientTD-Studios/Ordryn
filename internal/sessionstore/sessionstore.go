@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"GoTodo/internal/config"
+
 	"github.com/gorilla/sessions"
 	"github.com/joho/godotenv"
 )
@@ -53,9 +55,19 @@ func init() {
 	Store.Options = &sessions.Options{
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Set to true in production with HTTPS
+		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   sessionMaxAge,
+	}
+}
+
+// ApplySecureCookieOptions sets Secure on the session cookie when USE_HTTPS is on.
+func ApplySecureCookieOptions(sess *sessions.Session) {
+	if sess == nil || sess.Options == nil {
+		return
+	}
+	if config.Cfg.UseHTTPS {
+		sess.Options.Secure = true
 	}
 }
 
@@ -72,5 +84,6 @@ func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Path:   "/",
 		MaxAge: -1,
 	}
+	ApplySecureCookieOptions(sess)
 	_ = sess.Save(r, w)
 }

@@ -45,13 +45,27 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
 
+  // Proxy-safe auth errors: HTTP 200 + {error,message,status} (see APIJSONBrowserError).
+  if (data && typeof data === 'object' && data !== null && 'error' in data && 'message' in data) {
+    const body = data as APIErrorBody & { status?: number }
+    if (typeof body.error === 'string' && typeof body.message === 'string' && !('id' in body) && !('ok' in body)) {
+      throw new APIError(
+        typeof body.status === 'number' ? body.status : res.status || 400,
+        body.error,
+        body.message,
+      )
+    }
+  }
+
   if (!res.ok) {
     const body = data as APIErrorBody | null
-    throw new APIError(
-      res.status,
-      body?.error || 'request_failed',
-      body?.message || res.statusText || 'Request failed',
-    )
+    const message =
+      body && typeof body === 'object' && typeof body.message === 'string'
+        ? body.message
+        : typeof data === 'string' && data.includes('<html')
+          ? 'Request failed (proxy returned an HTML error page).'
+          : res.statusText || 'Request failed'
+    throw new APIError(res.status, body?.error || 'request_failed', message)
   }
 
   return data as T
@@ -117,7 +131,7 @@ export const api = {
   },
 
   me() {
-    return request<User>('/api/v1/me')
+    return request<User | null>('/api/v1/me')
   },
 
   login(email: string, password: string) {

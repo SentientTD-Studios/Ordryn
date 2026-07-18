@@ -47,15 +47,19 @@ func TestAPIV1AuthLoginValidation(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			APIV1AuthLogin(rec, req)
-			if rec.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tt.wantStatus, rec.Body.String())
+			// Browser-safe: HTTP 200 with logical status in JSON body.
+			if rec.Code != http.StatusOK {
+				t.Fatalf("http status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 			}
-			var payload map[string]string
+			var payload map[string]interface{}
 			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("decode: %v body=%s", err, rec.Body.String())
 			}
 			if payload["error"] != tt.wantCode {
 				t.Fatalf("error = %q, want %q", payload["error"], tt.wantCode)
+			}
+			if int(payload["status"].(float64)) != tt.wantStatus {
+				t.Fatalf("logical status = %v, want %d", payload["status"], tt.wantStatus)
 			}
 		})
 	}
@@ -93,15 +97,18 @@ func TestAPIV1AuthRegisterValidation(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			APIV1AuthRegister(rec, req)
-			if rec.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tt.wantStatus, rec.Body.String())
+			if rec.Code != http.StatusOK {
+				t.Fatalf("http status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 			}
-			var payload map[string]string
+			var payload map[string]interface{}
 			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("decode: %v body=%s", err, rec.Body.String())
 			}
 			if payload["error"] != tt.wantCode {
 				t.Fatalf("error = %q, want %q", payload["error"], tt.wantCode)
+			}
+			if int(payload["status"].(float64)) != tt.wantStatus {
+				t.Fatalf("logical status = %v, want %d", payload["status"], tt.wantStatus)
 			}
 		})
 	}
@@ -111,17 +118,27 @@ func TestAPIV1AuthLogoutMethod(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/logout", nil)
 	rec := httptest.NewRecorder()
 	APIV1AuthLogout(rec, req)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["error"] != "method_not_allowed" {
+		t.Fatalf("error = %q", payload["error"])
 	}
 }
 
-func TestAPIV1MeUnauthorizedWithoutContext(t *testing.T) {
+func TestAPIV1MeUnauthenticatedReturnsNull(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	rec := httptest.NewRecorder()
 	APIV1Me(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Body.String() != "null" {
+		t.Fatalf("body = %q, want null", rec.Body.String())
 	}
 }
 

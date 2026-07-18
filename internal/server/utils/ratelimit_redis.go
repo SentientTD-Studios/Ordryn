@@ -88,8 +88,18 @@ func RateLimitMiddleware(capacity int, refillRate float64, ttlSeconds int, keyFu
 				return
 			}
 			if !allowed {
-				// If this is an HTMX request, return 200 so HTMX will swap the response
-				// into the target element. Provide a friendlier message for the login endpoint.
+				// SPA/JSON auth: return 200 JSON so proxies with error_page do not
+				// replace the body with HTML (same idea as the old HTMX 200 path).
+				if strings.Contains(r.URL.Path, "/api/v1/") {
+					msg := "Too many requests; please try again later."
+					if strings.Contains(r.URL.Path, "/auth/login") || strings.Contains(r.URL.Path, "/auth/register") {
+						msg = "Too many login attempts; please try again later."
+					}
+					APIJSONBrowserError(w, http.StatusTooManyRequests, "rate_limit_exceeded", msg)
+					return
+				}
+
+				// Legacy HTMX: return 200 so HTMX will swap the response.
 				if r.Header.Get("HX-Request") == "true" {
 					msg := "Too many requests"
 					if strings.HasSuffix(r.URL.Path, "/api/login") {

@@ -1,7 +1,6 @@
 import { computed, ref } from 'vue'
 import { api } from '@/api/client'
 import type { User } from '@/api/types'
-import { APIError } from '@/api/types'
 
 const user = ref<User | null>(null)
 const loading = ref(false)
@@ -14,12 +13,8 @@ export function useAuth() {
     loading.value = true
     try {
       user.value = await api.me()
-    } catch (err) {
-      if (err instanceof APIError && (err.status === 401 || err.status === 403)) {
-        user.value = null
-      } else {
-        user.value = null
-      }
+    } catch {
+      user.value = null
     } finally {
       loading.value = false
       bootstrapped.value = true
