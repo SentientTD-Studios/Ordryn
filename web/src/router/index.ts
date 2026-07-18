@@ -3,7 +3,23 @@ import { useAuth } from '@/composables/useAuth'
 
 const router = createRouter({
   history: createWebHistory('/app/'),
+  scrollBehavior(to, _from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.hash) {
+      return {
+        el: to.hash,
+        behavior: 'smooth',
+        top: 80,
+      }
+    }
+    return { top: 0 }
+  },
   routes: [
+    {
+      path: '/docs/api/v1',
+      name: 'api-docs',
+      component: () => import('@/views/ApiDocsView.vue'),
+    },
     {
       path: '/login',
       name: 'login',

@@ -123,7 +123,7 @@ func registerFullModeRoutes() {
 	handleBoth("/favicon.ico", serveFavicon)
 	handleBoth("/changelog", handlers.ChangelogHandler)
 	handleBoth("/openapi.yaml", handlers.OpenAPISpecHandler)
-	handleBoth("/documentation/api/v1", handlers.OpenAPISpecHandler)
+	handleBoth("/documentation/api/v1", documentationAPIV1Redirect)
 
 	spaLegacyPaths := []string{
 		"/import",
@@ -161,4 +161,22 @@ func spaLegacyRedirect(path string) http.HandlerFunc {
 		}
 		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 	}
+}
+
+// documentationAPIV1Redirect sends the legacy docs URL to the SPA API reference page.
+// The OpenAPI contract remains at /openapi.yaml.
+func documentationAPIV1Redirect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	base := strings.TrimSuffix(utils.GetBasePath(), "/")
+	target := "/app/docs/api/v1"
+	if base != "" && base != "/" {
+		target = base + target
+	}
+	if q := r.URL.RawQuery; q != "" {
+		target += "?" + q
+	}
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }

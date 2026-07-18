@@ -18,6 +18,14 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      '/openapi.yaml': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/documentation': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
   build: {

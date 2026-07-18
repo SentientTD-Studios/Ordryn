@@ -104,7 +104,7 @@ async function onLogout() {
             <a class="nav-link" href="/changelog" target="_blank" rel="noopener">About</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="/documentation/api/v1" target="_blank" rel="noopener">API</a>
+            <RouterLink class="nav-link" to="/docs/api/v1">API</RouterLink>
           </li>
           <template v-if="isAuthenticated">
             <li class="nav-item">

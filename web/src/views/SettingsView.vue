@@ -315,7 +315,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="card mb-4">
+    <div id="api-keys-section" class="card mb-4">
       <div class="card-header"><h3 class="card-title mb-0">API keys</h3></div>
       <div class="card-body">
         <form class="row g-2 mb-3" @submit.prevent="createKey">

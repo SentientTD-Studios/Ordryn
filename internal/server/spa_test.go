@@ -19,6 +19,18 @@ func TestSpaRootRedirect(t *testing.T) {
 	}
 }
 
+func TestDocumentationAPIV1Redirect(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/documentation/api/v1", nil)
+	rec := httptest.NewRecorder()
+	documentationAPIV1Redirect(rec, req)
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/app/docs/api/v1" {
+		t.Fatalf("Location = %q", loc)
+	}
+}
+
 func TestServeSPAFallbackToIndex(t *testing.T) {
 	dir := t.TempDir()
 	old, err := os.Getwd()
