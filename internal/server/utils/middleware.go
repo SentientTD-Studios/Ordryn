@@ -58,15 +58,17 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 			cspNonce = "'nonce-" + nonce + "' "
 		}
 
-		// CSP with local vendor files
+		// style-src/font-src allow Google Fonts for Fira Code (web/index.html).
+		// Do not put a nonce in style-src: browsers then ignore 'unsafe-inline',
+		// which Bootstrap/Vue still need. External stylesheets use host allowlists.
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
 				"base-uri 'self'; "+
 				"frame-ancestors 'none'; "+
 				"script-src 'self' "+cspNonce+"; "+
-				"style-src 'self' 'unsafe-inline'; "+
+				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
 				"img-src 'self' data:; "+
-				"font-src 'self' data:; "+
+				"font-src 'self' data: https://fonts.gstatic.com; "+
 				"connect-src 'self'; "+
 				"object-src 'none'",
 		)
