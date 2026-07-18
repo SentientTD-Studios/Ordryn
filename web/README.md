@@ -18,7 +18,7 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:5173/app/
+Open http://localhost:5173/
 
 ## Production build
 
@@ -28,11 +28,29 @@ npm ci
 npm run build
 ```
 
-Output lands in `web/dist`. The Go server serves it at `/app/` in `full` mode.
+Output lands in `web/dist`. Production assets use a relative Vite `base` so the same build works at `/` or under a subpath such as `/gotodo/`.
 
 ```bash
-GOTODO_MODE=full go run .   # "/" redirects to /app/
+GOTODO_MODE=full go run .   # UI at / (or BASE_PATH)
 ```
+
+### Subpath deploys (`BASE_PATH=/gotodo`)
+
+1. Set `BASE_PATH=/gotodo` (env or `config/config.json`).
+2. Rebuild is optional for pathing — the Go server injects `window.__GOTODO_BASE__` into `index.html`.
+3. Proxy **without stripping** the prefix, e.g.:
+
+```nginx
+location /gotodo/ {
+    proxy_pass http://127.0.0.1:8080/gotodo/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+UI: `https://domain/gotodo/` · API: `https://domain/gotodo/api/v1`  
+Legacy bookmarks under `/gotodo/app/...` redirect to `/gotodo/...`.
 
 ## Surfaces
 
@@ -41,7 +59,7 @@ GOTODO_MODE=full go run .   # "/" redirects to /app/
 - Projects, tags, saved views, dashboard
 - Import: CSV preview + confirm
 - Settings: profile, password, calendar feed + ICS sync, export, API keys
-- Device approve: `/app/auth/device` (legacy `/auth/device` redirects)
+- Device approve: `/auth/device` (legacy `/app/auth/device` redirects)
 - Admin + invites (permission-gated)
 
 ## Auth

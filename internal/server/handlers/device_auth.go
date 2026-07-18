@@ -56,8 +56,8 @@ func APIDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verificationURI := utils.AbsoluteURLForRequest(r, "/app/auth/device")
-	verificationURIComplete := utils.AbsoluteURLForRequest(r, "/app/auth/device?user_code="+record.UserCode)
+	verificationURI := utils.AbsoluteURLForRequest(r, "/auth/device")
+	verificationURIComplete := utils.AbsoluteURLForRequest(r, "/auth/device?user_code="+record.UserCode)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{

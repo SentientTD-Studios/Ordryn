@@ -23,9 +23,9 @@ func TestSafeDeviceReturnTo(t *testing.T) {
 		want  string
 	}{
 		{name: "empty", input: "", want: ""},
-		{name: "device path", input: "/app/auth/device?user_code=ABCD-EFGH", want: "/app/auth/device?user_code=ABCD-EFGH"},
-		{name: "device root", input: "/app/auth/device", want: "/app/auth/device"},
-		{name: "legacy device path", input: "/auth/device?user_code=ABCD-EFGH", want: "/auth/device?user_code=ABCD-EFGH"},
+		{name: "device path", input: "/auth/device?user_code=ABCD-EFGH", want: "/auth/device?user_code=ABCD-EFGH"},
+		{name: "device root", input: "/auth/device", want: "/auth/device"},
+		{name: "legacy app device path", input: "/app/auth/device?user_code=ABCD-EFGH", want: "/auth/device?user_code=ABCD-EFGH"},
 		{name: "external url", input: "https://evil.example/auth/device", want: ""},
 		{name: "protocol relative", input: "//evil.example/auth/device", want: ""},
 		{name: "home redirect", input: "/dashboard", want: ""},
@@ -42,11 +42,14 @@ func TestSafeDeviceReturnTo(t *testing.T) {
 
 	t.Run("with base path", func(t *testing.T) {
 		utils.BasePath = "/gotodo"
-		if got := utils.SafeDeviceReturnTo("/gotodo/app/auth/device?user_code=ABCD-EFGH"); got != "/gotodo/app/auth/device?user_code=ABCD-EFGH" {
+		if got := utils.SafeDeviceReturnTo("/gotodo/auth/device?user_code=ABCD-EFGH"); got != "/gotodo/auth/device?user_code=ABCD-EFGH" {
 			t.Fatalf("base path match = %q", got)
 		}
-		if got := utils.SafeDeviceReturnTo("/app/auth/device?user_code=ABCD-EFGH"); got != "/gotodo/app/auth/device?user_code=ABCD-EFGH" {
+		if got := utils.SafeDeviceReturnTo("/auth/device?user_code=ABCD-EFGH"); got != "/gotodo/auth/device?user_code=ABCD-EFGH" {
 			t.Fatalf("base path prefix = %q", got)
+		}
+		if got := utils.SafeDeviceReturnTo("/gotodo/app/auth/device?user_code=ABCD-EFGH"); got != "/gotodo/auth/device?user_code=ABCD-EFGH" {
+			t.Fatalf("legacy app path = %q", got)
 		}
 	})
 }
@@ -105,8 +108,8 @@ func TestAPIDeviceCodeVerificationURLWithFullBasePath(t *testing.T) {
 	// Handler-only test: skip Redis by not going through middleware.
 	// We only assert URL shape from a mocked record by testing AbsoluteURLForRequest
 	// in utils; here verify APIDeviceCode doesn't double-prefix when URLs are built.
-	got := utils.AbsoluteURLForRequest(req, "/app/auth/device?user_code=ABCD-EFGH")
-	want := "https://demo.ryanmalacina.com/gotodo/app/auth/device?user_code=ABCD-EFGH"
+	got := utils.AbsoluteURLForRequest(req, "/auth/device?user_code=ABCD-EFGH")
+	want := "https://demo.ryanmalacina.com/gotodo/auth/device?user_code=ABCD-EFGH"
 	if got != want {
 		t.Fatalf("verification URL = %q, want %q", got, want)
 	}

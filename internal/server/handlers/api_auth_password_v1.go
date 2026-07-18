@@ -54,7 +54,7 @@ func APIV1ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		resetToken, err := storage.GenerateResetToken(email)
 		if err == nil {
 			resetLink := utils.AbsoluteURLForRequest(r,
-				fmt.Sprintf("/app/reset-password?token=%s&id=%s", resetToken.Token, resetToken.ID))
+				fmt.Sprintf("/reset-password?token=%s&id=%s", resetToken.Token, resetToken.ID))
 
 			siteName := "GoTodo"
 			if settings, err := storage.GetSiteSettings(); err == nil && settings != nil && settings.SiteName != "" {

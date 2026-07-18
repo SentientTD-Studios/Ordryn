@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { pathPrefix } from '@/base'
 import { useAuth } from '@/composables/useAuth'
 import { api } from '@/api/client'
 
 const { isAuthenticated } = useAuth()
 const siteName = ref('GoTodo')
-const basePath = ref('')
+const basePath = ref(pathPrefix())
 
 onMounted(async () => {
   document.body.classList.add('api-docs-page')
-  const configured = (import.meta.env.BASE_URL || '/app/').replace(/\/app\/?$/, '').replace(/\/$/, '')
-  basePath.value = !configured || configured === '/' ? '' : configured
   try {
     const site = await api.site()
     if (site.site_name) siteName.value = site.site_name

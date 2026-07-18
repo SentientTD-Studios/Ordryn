@@ -1,3 +1,4 @@
+import { withBase } from '@/base'
 import type {
   AdminSettings,
   AdminUser,
@@ -24,7 +25,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const res = await fetch(path, {
+  const res = await fetch(withBase(path), {
     ...init,
     headers,
     credentials: 'include',
@@ -57,7 +58,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 async function download(path: string, fallbackName: string): Promise<void> {
-  const res = await fetch(path, { credentials: 'include' })
+  const res = await fetch(withBase(path), { credentials: 'include' })
   if (!res.ok) {
     let message = res.statusText || 'Download failed'
     try {
@@ -83,7 +84,7 @@ async function download(path: string, fallbackName: string): Promise<void> {
 async function upload<T>(path: string, field: string, file: File): Promise<T> {
   const fd = new FormData()
   fd.append(field, file)
-  const res = await fetch(path, { method: 'POST', body: fd, credentials: 'include' })
+  const res = await fetch(withBase(path), { method: 'POST', body: fd, credentials: 'include' })
   const text = await res.text()
   let data: unknown = null
   if (text) {

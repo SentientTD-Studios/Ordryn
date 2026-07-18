@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { withBase } from '@/base'
 import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
@@ -8,6 +9,8 @@ import { api } from '@/api/client'
 import type { SiteInfo } from '@/api/types'
 import ToastHost from '@/components/ToastHost.vue'
 import TaskSidebar from '@/components/TaskSidebar.vue'
+
+const changelogHref = withBase('/changelog')
 
 const { isAuthenticated, user, logout, hasPermission } = useAuth()
 const { theme, toggleTheme } = useTheme()
@@ -101,7 +104,7 @@ async function onLogout() {
             </li>
           </template>
           <li class="nav-item">
-            <a class="nav-link" href="/changelog" target="_blank" rel="noopener">About</a>
+            <a class="nav-link" :href="changelogHref" target="_blank" rel="noopener">About</a>
           </li>
           <li class="nav-item">
             <RouterLink class="nav-link" to="/docs/api/v1">API</RouterLink>

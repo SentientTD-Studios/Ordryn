@@ -26,7 +26,7 @@ GoTodo (Ordryn) is a self-hosted task manager built with Go, PostgreSQL, Redis, 
 - Invite-only registration and role-based permissions (admin, create invites)
 - Admin panel: site settings, user management, global announcements
 - Dark and light themes
-- Vue 3 SPA at `/app/` over `/api/v1` (session cookie auth)
+- Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v1` (session cookie auth)
 
 ## Requirements
 
@@ -37,7 +37,7 @@ GoTodo (Ordryn) is a self-hosted task manager built with Go, PostgreSQL, Redis, 
 
 ## Quick start (full mode: server + SPA)
 
-Default self-host path: one binary serves `/api/v1` and the Vue UI at `/app/`.
+Default self-host path: one binary serves `/api/v1` and the Vue UI at `/` (or under `BASE_PATH`, e.g. `/gotodo/`).
 
 1. Copy the example env file and edit values:
 
@@ -61,7 +61,7 @@ GOTODO_MODE=full
 
 Optional: `BASE_PATH` (subpath deploy), `USE_HTTPS` (calendar URLs behind a proxy), `MAILGUN_*` (email), and `GOTODO_BOOTSTRAP_*` (first-boot admin / API key). See [`.env.example`](.env.example).
 
-2. Build the Vue SPA (required for the UI; without `web/dist`, `/app/` returns 503):
+2. Build the Vue SPA (required for the UI; without `web/dist`, the UI path returns 503):
 
 ```bash
 npm run build:web
@@ -80,7 +80,7 @@ go build -o gotodo .
 ./gotodo
 ```
 
-Open http://localhost:8080 (redirects to `/app/`).
+Open http://localhost:8080/. For a subpath demo, set `BASE_PATH=/gotodo` and proxy `/gotodo/` to the backend **without stripping** the prefix (UI at `https://domain/gotodo/`, API at `https://domain/gotodo/api/v1`). Legacy `/app/...` URLs redirect to the same mount.
 
 ## Local SPA development (Vite)
 
@@ -94,7 +94,7 @@ GOTODO_MODE=full go run .
 npm run dev:web
 ```
 
-Open http://localhost:5173/app/
+Open http://localhost:5173/
 
 Details: [`web/README.md`](web/README.md), [`ASSETS.md`](ASSETS.md).
 
@@ -161,13 +161,13 @@ Ordryn is **one binary**. Operators choose UI+API or API-only; separate web/Andr
 
 | Mode | Flag / env | Serves SPA? | Use case |
 |------|------------|-------------|----------|
-| `full` (default) | `GOTODO_MODE=full` or omit | Yes (`web/dist` at `/app/`) | Normal self-host |
+| `full` (default) | `GOTODO_MODE=full` or omit | Yes (`web/dist` at `/` or `BASE_PATH`) | Normal self-host |
 | `api` | `GOTODO_MODE=api` or `--mode=api` | No | Headless / app-only hosts |
 
 | Doc | Purpose |
 |-----|---------|
 | [`openapi.yaml`](openapi.yaml) | Machine-readable `/api/v1` contract (OpenAPI 3) |
-| [`web/README.md`](web/README.md) | Vue SPA (`/app/`), Vite proxy |
+| [`web/README.md`](web/README.md) | Vue SPA, Vite proxy, subpath notes |
 | [`ASSETS.md`](ASSETS.md) | Root `build:web` / `dev:web` scripts |
 | [`docs/DEPLOYMENT_OPTIONS.md`](docs/DEPLOYMENT_OPTIONS.md) | `full` vs `api`, what users run |
 | [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md) | Local smoke tests (UI, API-only, Vite, Android against LAN) |

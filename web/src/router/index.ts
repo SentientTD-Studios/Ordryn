@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { appBase } from '@/base'
 import { useAuth } from '@/composables/useAuth'
 
 const router = createRouter({
-  history: createWebHistory('/app/'),
+  history: createWebHistory(appBase()),
   scrollBehavior(to, _from, savedPosition) {
     if (savedPosition) return savedPosition
     if (to.hash) {

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 )
 
 func serveFavicon(w http.ResponseWriter, r *http.Request) {
@@ -16,8 +15,8 @@ func serveFavicon(w http.ResponseWriter, r *http.Request) {
 }
 
 func routePaths() []string {
-	base := strings.TrimSuffix(utils.GetBasePath(), "/")
-	if base == "" || base == "/" {
+	base := utils.PublicPathPrefix()
+	if base == "" {
 		return []string{""}
 	}
 	return []string{"", base}
@@ -34,6 +33,8 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 }
 
 func StartServer() error {
+	utils.LoadRuntimeConfig()
+
 	mode := utils.ResolveMode(os.Args[1:])
 	utils.SetRuntimeMode(mode)
 
@@ -119,43 +120,26 @@ func registerAPIV1Routes() {
 }
 
 func registerFullModeRoutes() {
-	handleBoth("/", spaRootRedirect)
 	handleBoth("/favicon.ico", serveFavicon)
 	handleBoth("/changelog", handlers.ChangelogHandler)
 	handleBoth("/openapi.yaml", handlers.OpenAPISpecHandler)
 	handleBoth("/documentation/api/v1", documentationAPIV1Redirect)
 
-	spaLegacyPaths := []string{
-		"/import",
-		"/forgot-password",
-		"/password-reset",
-		"/reset-password",
-		"/auth/device",
-		"/dashboard",
-		"/projects",
-		"/settings",
-		"/profile",
-		"/calendar",
-		"/admin",
-		"/createinvite",
-		"/invites",
-		"/login",
-		"/register",
-		"/signup",
+	// Aliases that are not Vue routes (SPA catch-all serves real routes directly).
+	for from, to := range map[string]string{
+		"/signup":          "/register",
+		"/profile":         "/settings",
+		"/password-reset":  "/reset-password",
+		"/createinvite":    "/invites",
+		"/calendar":        "/settings",
+	} {
+		handleBoth(from, spaAliasRedirect(to))
 	}
-	for _, p := range spaLegacyPaths {
-		handleBoth(p, spaLegacyRedirect(p))
-	}
-	handleBoth("/admin/", spaLegacyRedirect("/admin"))
 }
 
-func spaLegacyRedirect(path string) http.HandlerFunc {
+func spaAliasRedirect(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		base := strings.TrimSuffix(utils.GetBasePath(), "/")
-		target := "/app" + path
-		if base != "" && base != "/" {
-			target = base + "/app" + path
-		}
+		target := utils.PublicPath(path)
 		if q := r.URL.RawQuery; q != "" {
 			target += "?" + q
 		}
@@ -170,11 +154,7 @@ func documentationAPIV1Redirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	base := strings.TrimSuffix(utils.GetBasePath(), "/")
-	target := "/app/docs/api/v1"
-	if base != "" && base != "/" {
-		target = base + target
-	}
+	target := utils.PublicPath("/docs/api/v1")
 	if q := r.URL.RawQuery; q != "" {
 		target += "?" + q
 	}

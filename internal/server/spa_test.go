@@ -4,29 +4,53 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+
+	"GoTodo/internal/server/utils"
 )
 
-func TestSpaRootRedirect(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	spaRootRedirect(rec, req)
-	if rec.Code != http.StatusTemporaryRedirect {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if loc := rec.Header().Get("Location"); loc != "/app/" {
-		t.Fatalf("Location = %q", loc)
-	}
-}
-
 func TestDocumentationAPIV1Redirect(t *testing.T) {
+	orig := utils.BasePath
+	t.Cleanup(func() { utils.BasePath = orig })
+	utils.BasePath = "/"
+
 	req := httptest.NewRequest(http.MethodGet, "/documentation/api/v1", nil)
 	rec := httptest.NewRecorder()
 	documentationAPIV1Redirect(rec, req)
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if loc := rec.Header().Get("Location"); loc != "/app/docs/api/v1" {
+	if loc := rec.Header().Get("Location"); loc != "/docs/api/v1" {
+		t.Fatalf("Location = %q", loc)
+	}
+}
+
+func TestDocumentationAPIV1RedirectWithBasePath(t *testing.T) {
+	orig := utils.BasePath
+	t.Cleanup(func() { utils.BasePath = orig })
+	utils.BasePath = "/gotodo"
+
+	req := httptest.NewRequest(http.MethodGet, "/gotodo/documentation/api/v1", nil)
+	rec := httptest.NewRecorder()
+	documentationAPIV1Redirect(rec, req)
+	if loc := rec.Header().Get("Location"); loc != "/gotodo/docs/api/v1" {
+		t.Fatalf("Location = %q", loc)
+	}
+}
+
+func TestLegacyAppRedirect(t *testing.T) {
+	orig := utils.BasePath
+	t.Cleanup(func() { utils.BasePath = orig })
+	utils.BasePath = "/gotodo"
+
+	req := httptest.NewRequest(http.MethodGet, "/gotodo/app/login", nil)
+	rec := httptest.NewRecorder()
+	legacyAppRedirect(rec, req)
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/gotodo/login" {
 		t.Fatalf("Location = %q", loc)
 	}
 }
@@ -45,32 +69,40 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 	if err := os.MkdirAll("web/dist/assets", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile("web/dist/index.html", []byte("<html>spa</html>"), 0o644); err != nil {
+	if err := os.WriteFile("web/dist/index.html", []byte("<html><head></head><body>spa</body></html>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile("web/dist/assets/app.js", []byte("console.log(1)"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	fs := http.StripPrefix("/app/", http.FileServer(http.Dir("web/dist")))
+	orig := utils.BasePath
+	t.Cleanup(func() { utils.BasePath = orig })
+	utils.BasePath = "/gotodo"
 
-	req := httptest.NewRequest(http.MethodGet, "/app/tasks/1", nil)
+	fs := http.StripPrefix("/gotodo/", http.FileServer(http.Dir("web/dist")))
+
+	req := httptest.NewRequest(http.MethodGet, "/gotodo/tasks/1", nil)
 	rec := httptest.NewRecorder()
-	serveSPA(rec, req, "/app", fs)
+	serveSPA(rec, req, "/gotodo", fs)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("fallback status = %d", rec.Code)
 	}
-	if body := rec.Body.String(); body != "<html>spa</html>" {
+	body := rec.Body.String()
+	if !strings.Contains(body, "spa") {
 		t.Fatalf("fallback body = %q", body)
 	}
+	if !strings.Contains(body, `window.__GOTODO_BASE__="/gotodo/"`) {
+		t.Fatalf("missing base inject in %q", body)
+	}
 
-	req = httptest.NewRequest(http.MethodGet, "/app/assets/app.js", nil)
+	req = httptest.NewRequest(http.MethodGet, "/gotodo/assets/app.js", nil)
 	rec = httptest.NewRecorder()
-	serveSPA(rec, req, "/app", fs)
+	serveSPA(rec, req, "/gotodo", fs)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("asset status = %d", rec.Code)
 	}
-	if body := rec.Body.String(); body != "console.log(1)" {
-		t.Fatalf("asset body = %q", body)
+	if got := rec.Body.String(); got != "console.log(1)" {
+		t.Fatalf("asset body = %q", got)
 	}
 }

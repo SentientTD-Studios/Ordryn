@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"net/url"
 	"os"
 	"strings"
 
@@ -22,6 +23,41 @@ var BasePath string
 // GetBasePath returns the configured path prefix.
 func GetBasePath() string {
 	return BasePath
+}
+
+// PublicPathPrefix returns the HTTP path prefix for the site (no trailing slash).
+// Examples: "" (site root), "/gotodo". Full-URL BASE_PATH values contribute only their path.
+func PublicPathPrefix() string {
+	base := strings.TrimSpace(BasePath)
+	if base == "" || base == "/" {
+		return ""
+	}
+	if strings.Contains(base, "://") {
+		u, err := url.Parse(base)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSuffix(u.Path, "/")
+	}
+	return strings.TrimSuffix(base, "/")
+}
+
+// PublicPath joins an app-relative path (e.g. "/login") with PublicPathPrefix.
+func PublicPath(path string) string {
+	if path == "" {
+		path = "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	prefix := PublicPathPrefix()
+	if prefix == "" {
+		return path
+	}
+	if path == "/" {
+		return prefix + "/"
+	}
+	return prefix + path
 }
 
 // SetRuntimeMode records the process mode for health/diagnostics.
