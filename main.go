@@ -4,6 +4,7 @@ import (
 	"GoTodo/internal/server"
 	"GoTodo/internal/storage"
 	"fmt"
+	"os"
 )
 
 func main() {
@@ -16,5 +17,6 @@ func main() {
 	err := server.StartServer()
 	if err != nil {
 		fmt.Printf("Server error: %v\n", err)
+		os.Exit(1)
 	}
 }

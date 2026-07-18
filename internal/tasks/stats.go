@@ -12,30 +12,30 @@ import (
 
 // DashboardStats holds aggregate metrics for the dashboard page.
 type DashboardStats struct {
-	OverdueCount         int
-	DueTodayCount        int
-	CompletedThisWeek    int
-	CompletedThisMonth   int
-	StreakDays           int
-	ByProject            []NameCount
-	ByPriority           []PriorityCount
-	CompletionsLast7Days []DayCount
+	OverdueCount         int             `json:"overdue_count"`
+	DueTodayCount        int             `json:"due_today_count"`
+	CompletedThisWeek    int             `json:"completed_this_week"`
+	CompletedThisMonth   int             `json:"completed_this_month"`
+	StreakDays           int             `json:"streak_days"`
+	ByProject            []NameCount     `json:"by_project"`
+	ByPriority           []PriorityCount `json:"by_priority"`
+	CompletionsLast7Days []DayCount      `json:"completions_last_7_days"`
 }
 
 type NameCount struct {
-	Name  string
-	Count int
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
 type PriorityCount struct {
-	Priority int
-	Label    string
-	Count    int
+	Priority int    `json:"priority"`
+	Label    string `json:"label"`
+	Count    int    `json:"count"`
 }
 
 type DayCount struct {
-	Date  string
-	Count int
+	Date  string `json:"date"`
+	Count int    `json:"count"`
 }
 
 // GetOverdueCount returns the number of incomplete overdue tasks for a user.

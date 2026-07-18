@@ -8,12 +8,13 @@ import (
 	"reflect"
 	"testing"
 
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 )
 
 func TestApplyRelativeReorder(t *testing.T) {
 	all := []int{1, 2, 3, 4, 5, 6}
-	got, err := applyRelativeReorder(all, []int{3, 1, 2})
+	got, err := domain.ApplyRelativeReorder(all, []int{3, 1, 2})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -24,7 +25,7 @@ func TestApplyRelativeReorder(t *testing.T) {
 
 	// Filtered subset (e.g. incomplete-only): keep completed slots, reorder subset.
 	all = []int{10, 20, 30, 40, 50} // 10,40 completed; 20,30,50 incomplete
-	got, err = applyRelativeReorder(all, []int{50, 20, 30})
+	got, err = domain.ApplyRelativeReorder(all, []int{50, 20, 30})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -33,7 +34,7 @@ func TestApplyRelativeReorder(t *testing.T) {
 		t.Fatalf("subset = %v, want %v", got, want)
 	}
 
-	got, err = applyRelativeReorder(all, nil)
+	got, err = domain.ApplyRelativeReorder(all, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

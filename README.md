@@ -1,8 +1,8 @@
 # GoTodo
 
-GoTodo is a self-hosted task manager built with Go, PostgreSQL, and HTMX. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, a responsive UI, and in-place HTMX interactions.
+GoTodo (Ordryn) is a self-hosted task manager built with Go, PostgreSQL, Redis, and a Vue 3 SPA. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, and a JSON `/api/v1` for web and mobile clients.
 
-**Current version:** v0.17.0-beta
+**Current version:** v1.0.0
 
 ## Features
 
@@ -26,17 +26,26 @@ GoTodo is a self-hosted task manager built with Go, PostgreSQL, and HTMX. It foc
 - Invite-only registration and role-based permissions (admin, create invites)
 - Admin panel: site settings, user management, global announcements
 - Dark and light themes
-- HTMX for partial page updates without full reloads
+- Vue 3 SPA at `/app/` over `/api/v1` (session cookie auth)
 
-## Quick start
-
-Requirements:
+## Requirements
 
 - Go 1.24+
 - PostgreSQL
-- Node.js + npm (for frontend asset builds)
+- Redis (required for `/api/v1` auth, rate limits, and device SSO)
+- Node.js + npm (to build or develop the Vue SPA)
 
-1. Copy the example env file to `.env` and edit values:
+## Quick start (full mode: server + SPA)
+
+Default self-host path: one binary serves `/api/v1` and the Vue UI at `/app/`.
+
+1. Copy the example env file and edit values:
+
+```bash
+cp .env.example .env
+```
+
+Minimum `.env` values:
 
 ```
 DB_HOST=localhost
@@ -45,41 +54,78 @@ DB_USER=youruser
 DB_PASSWORD=yourpassword
 DB_NAME=gotodo
 SESSION_KEY=your-32-char-or-longer-secret-key!!
-BASE_PATH=/         # optional
-ASSET_VERSION=20251130  # optional; bump to force client cache refresh
+REDIS_URL=redis://localhost:6379/0
+PORT=8080
+GOTODO_MODE=full
 ```
 
-2. Install frontend dependencies and build assets:
+Optional: `BASE_PATH` (subpath deploy), `USE_HTTPS` (calendar URLs behind a proxy), `MAILGUN_*` (email), and `GOTODO_BOOTSTRAP_*` (first-boot admin / API key). See [`.env.example`](.env.example).
+
+2. Build the Vue SPA (required for the UI; without `web/dist`, `/app/` returns 503):
 
 ```bash
-npm ci
-npm run build:assets
+npm run build:web
 ```
 
-3. Build and run:
+3. Run the server:
 
 ```bash
-go build -o gotodo main.go
+go run .
+```
+
+Or build a binary:
+
+```bash
+go build -o gotodo .
 ./gotodo
 ```
 
-Or run directly:
+Open http://localhost:8080 (redirects to `/app/`).
+
+## Local SPA development (Vite)
+
+Hot-reload the UI while the Go API runs locally:
 
 ```bash
-go run main.go
+# Terminal 1 — API (Redis required; API must be enabled)
+GOTODO_MODE=full go run .
+
+# Terminal 2 — Vite (proxies /api → :8080)
+npm run dev:web
 ```
 
-Open the app in your browser (default: http://localhost:8080).
+Open http://localhost:5173/app/
 
-## Frontend Assets
+Details: [`web/README.md`](web/README.md), [`ASSETS.md`](ASSETS.md).
 
-Pre-built minified CSS/JS are included (`internal/server/public/css/site.min.css`, `internal/server/public/js/site.min.js`) so a fresh clone works immediately.
+## API-only mode (server alone)
 
-After modifying frontend source:
+Run the JSON API without serving the SPA. Full walkthrough: [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md).
 
 ```bash
-npm ci
-npm run build:assets
+export GOTODO_MODE=api   # or: go run . --mode=api
+export GOTODO_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+export GOTODO_BOOTSTRAP_ADMIN_PASSWORD='choose-a-strong-password'
+export GOTODO_BOOTSTRAP_ENABLE_API=true
+export GOTODO_BOOTSTRAP_CREATE_API_KEY=true
+# Also set DB_*, SESSION_KEY, REDIS_URL
+
+go run . --mode=api
+curl -s http://localhost:8080/api/v1/health
+```
+
+On first boot, bootstrap may print a one-time API key named `bootstrap`. Use:
+
+`Authorization: Bearer <key>` against `/api/v1/tasks` and other v1 routes.
+
+## Frontend (Vue SPA)
+
+Source lives in `web/`. Build output is `web/dist/`, served by Go in `full` mode.
+
+After modifying the SPA for production-style serving:
+
+```bash
+npm run build:web
 ```
 
 ## Database
@@ -88,10 +134,18 @@ The app uses `github.com/jackc/pgx/v5/pgxpool`. Migrations run automatically on 
 
 ## Development
 
-- Routes: `internal/server/server.go`
-- Handlers: `internal/server/handlers`
-- Templates: `internal/server/templates`
-- Static assets: `internal/server/public`
+| Path | Role |
+|------|------|
+| `main.go` | Process entry |
+| `internal/domain` | Shared write use-cases (tasks, projects, tags, profile) |
+| `internal/storage` | Postgres pool, migrations, models |
+| `internal/tasks` | List/filter/stats/export helpers |
+| `internal/server` | HTTP wiring, SPA host (`spa.go`) |
+| `internal/server/handlers` | `/api/v1` handlers |
+| `internal/server/utils` | Auth chains, Redis, CSRF, runtime mode |
+| `internal/sessionstore` | Sessions |
+| `web/` | Vue 3 + TypeScript + Vite SPA |
+| `openapi.yaml` | `/api/v1` contract |
 
 Run tests:
 
@@ -100,6 +154,25 @@ go test ./...
 ```
 
 No `.env` file is required for tests; a test session key is used automatically under `go test`.
+
+## Architecture & deployment
+
+Ordryn is **one binary**. Operators choose UI+API or API-only; separate web/Android repos are optional clients, not required to self-host.
+
+| Mode | Flag / env | Serves SPA? | Use case |
+|------|------------|-------------|----------|
+| `full` (default) | `GOTODO_MODE=full` or omit | Yes (`web/dist` at `/app/`) | Normal self-host |
+| `api` | `GOTODO_MODE=api` or `--mode=api` | No | Headless / app-only hosts |
+
+| Doc | Purpose |
+|-----|---------|
+| [`openapi.yaml`](openapi.yaml) | Machine-readable `/api/v1` contract (OpenAPI 3) |
+| [`web/README.md`](web/README.md) | Vue SPA (`/app/`), Vite proxy |
+| [`ASSETS.md`](ASSETS.md) | Root `build:web` / `dev:web` scripts |
+| [`docs/DEPLOYMENT_OPTIONS.md`](docs/DEPLOYMENT_OPTIONS.md) | `full` vs `api`, what users run |
+| [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md) | Local smoke tests (UI, API-only, Vite, Android against LAN) |
+| [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md) | Server Split plan (phases 0–D landed on `dev`; cleanup items remain) |
+| [`docs/REPO_SPLIT.md`](docs/REPO_SPLIT.md) | Logical ownership; optional future extracts |
 
 ## License
 

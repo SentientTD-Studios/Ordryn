@@ -58,6 +58,24 @@ func CreateTagsTables() error {
 	return nil
 }
 
+// GetTagByID returns a tag by id for the given user.
+func GetTagByID(id, userID int) (*Tag, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	var t Tag
+	err = pool.QueryRow(context.Background(),
+		"SELECT id, user_id, name, COALESCE(color, '#6c757d') FROM tags WHERE id = $1 AND user_id = $2",
+		id, userID).Scan(&t.ID, &t.UserID, &t.Name, &t.Color)
+	if err != nil {
+		return nil, fmt.Errorf("tag not found")
+	}
+	return &t, nil
+}
+
 // GetTagsForUser returns all tags for a user ordered by name.
 func GetTagsForUser(userID int) ([]Tag, error) {
 	pool, err := OpenDatabase()
@@ -127,9 +145,12 @@ func DeleteTag(id, userID int) error {
 	}
 	defer CloseDatabase(pool)
 
-	_, err = pool.Exec(context.Background(), "DELETE FROM tags WHERE id = $1 AND user_id = $2", id, userID)
+	tag, err := pool.Exec(context.Background(), "DELETE FROM tags WHERE id = $1 AND user_id = $2", id, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete tag: %v", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("tag not found")
 	}
 	return nil
 }

@@ -14,7 +14,11 @@ import (
 func TestMain(m *testing.M) {
 	os.Setenv("SESSION_KEY", "test-session-key-for-unit-tests-32chars!!")
 	port := uint32(5438)
-	db := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().Port(port).Database("gotodo_test"))
+	// Pin a Maven-published binary version (DefaultConfig alone can drift and 404).
+	db := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
+		Version(embeddedpostgres.V16).
+		Port(port).
+		Database("gotodo_test"))
 	if err := db.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "start postgres: %v\n", err)
 		os.Exit(1)

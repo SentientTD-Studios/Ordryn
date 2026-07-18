@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.0",
+    "date": "2026-07-18",
+    "title": "Stable SPA release — Vue UI, JSON API, HTMX removed",
+    "notes": [
+      "First stable release: Vue 3 SPA at /app/ over JSON /api/v1; HTMX stack removed",
+      "Full and API-only deploy modes; OpenAPI contract and SPA API docs",
+      "Task board parity restored: sidebar edit, drag reorder, infinite scroll, filters, saved views",
+      "Device authorization for Android SSO; footer restored with Ordryn credit"
+    ]
+  },
+  {
     "version": "0.17.0",
     "date": "2026-07-06",
     "title": "Calendar, digest, security hardening",

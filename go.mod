@@ -12,7 +12,7 @@ require (
 )
 
 require (
-	github.com/fergusstrange/embedded-postgres v1.30.0
+	github.com/fergusstrange/embedded-postgres v1.34.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	golang.org/x/mod v0.32.0
 )
