@@ -87,13 +87,13 @@ func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserPro
 // APIV1AuthRegister handles POST /api/v1/auth/register.
 func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.APIJSONBrowserError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
 	}
 
 	var req apiAuthRegisterRequest
 	if err := decodeJSONBody(r, &req); err != nil {
-		utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
 	email := strings.TrimSpace(req.Email)
@@ -101,15 +101,15 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimSpace(req.InviteToken)
 
 	if email == "" || req.Password == "" || req.ConfirmPassword == "" || timezone == "" {
-		utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_request", "All fields are required.")
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "All fields are required.")
 		return
 	}
 	if req.Password != req.ConfirmPassword {
-		utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_request", "Passwords do not match.")
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Passwords do not match.")
 		return
 	}
 	if !utils.IsValidTimezone(timezone) {
-		utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_request", "Invalid timezone.")
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid timezone.")
 		return
 	}
 
@@ -120,26 +120,26 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		inviteOnly = settings.InviteOnly
 	}
 	if !enableRegistration {
-		utils.APIJSONBrowserError(w, http.StatusForbidden, "registration_disabled",
+		utils.APIJSONError(w, http.StatusForbidden, "registration_disabled",
 			"This site is currently not accepting new signups.")
 		return
 	}
 	if inviteOnly && token == "" {
-		utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_request", "Invite token is required.")
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invite token is required.")
 		return
 	}
 
 	exists, err := storage.UserExistsByEmail(email)
 	if err != nil {
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
 	if exists {
 		if inviteOnly {
-			utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_invite",
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_invite",
 				"Invalid email or invite token; please double check and try again.")
 		} else {
-			utils.APIJSONBrowserError(w, http.StatusConflict, "email_taken", "An account with this email already exists.")
+			utils.APIJSONError(w, http.StatusConflict, "email_taken", "An account with this email already exists.")
 		}
 		return
 	}
@@ -149,15 +149,15 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		id, used, invErr := storage.LookupInvite(email, token)
 		if invErr != nil {
 			if errors.Is(invErr, pgx.ErrNoRows) {
-				utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_invite",
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_invite",
 					"Invalid email or invite token; please double check and try again.")
 				return
 			}
-			utils.APIJSONBrowserError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 			return
 		}
 		if used {
-			utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_invite",
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_invite",
 				"Invalid email or invite token; please double check and try again.")
 			return
 		}
@@ -166,29 +166,29 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 
 	roleID, err := storage.GetDefaultRoleID()
 	if err != nil {
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
 
 	userID, err := storage.RegisterUser(email, string(hashed), timezone, roleID, inviteID)
 	if err != nil {
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
 
 	profile, err := storage.GetUserProfileByID(userID)
 	if err != nil {
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
 	if err := establishSession(w, r, profile); err != nil {
 		fmt.Printf("APIV1AuthRegister session: %v\n", err)
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "session_error", "Failed to create session.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "session_error", "Failed to create session.")
 		return
 	}
 	writeAPIUserJSON(w, http.StatusCreated, profile)
@@ -197,18 +197,18 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 // APIV1AuthLogin handles POST /api/v1/auth/login.
 func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.APIJSONBrowserError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
 	}
 
 	var req apiAuthLoginRequest
 	if err := decodeJSONBody(r, &req); err != nil {
-		utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
 	email := strings.TrimSpace(req.Email)
 	if email == "" || req.Password == "" {
-		utils.APIJSONBrowserError(w, http.StatusBadRequest, "invalid_request", "Email and password are required.")
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Email and password are required.")
 		return
 	}
 
@@ -217,7 +217,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("APIV1AuthLogin block check: %v\n", err)
 	}
 	if blocked {
-		utils.APIJSONBrowserError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
 			"Too many login attempts; please try again later.")
 		return
 	}
@@ -227,25 +227,25 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
 			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)
 		}
-		utils.APIJSONBrowserError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
+		utils.APIJSONError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(req.Password)) != nil {
 		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
 			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)
 		}
-		utils.APIJSONBrowserError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
+		utils.APIJSONError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
 		return
 	}
 
 	if banned, banErr := storage.IsUserBanned(email); banErr == nil && banned {
-		utils.APIJSONBrowserError(w, http.StatusForbidden, "banned", "This account has been banned.")
+		utils.APIJSONError(w, http.StatusForbidden, "banned", "This account has been banned.")
 		return
 	}
 
 	user, err := storage.GetUserByEmail(email)
 	if err != nil || user == nil {
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
 	permissions, err := storage.GetPermissionsByRoleID(roleID)
@@ -263,7 +263,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := establishSession(w, r, profile); err != nil {
 		fmt.Printf("APIV1AuthLogin session: %v\n", err)
-		utils.APIJSONBrowserError(w, http.StatusInternalServerError, "session_error", "Failed to create session.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "session_error", "Failed to create session.")
 		return
 	}
 	if clearErr := utils.ClearFailedLogin(r.Context(), email); clearErr != nil {
@@ -275,7 +275,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 // APIV1AuthLogout handles POST /api/v1/auth/logout.
 func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.APIJSONBrowserError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
 	}
 	if sessionstore.Store != nil {

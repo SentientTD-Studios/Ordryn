@@ -70,5 +70,4 @@ Browser: `/gotodo/…` · Go receives: `/…` · SPA still knows the public pref
 ## Auth
 
 Login/register use JSON endpoints and the httpOnly session cookie (`credentials: 'include'`).
-
-Auth failures and anonymous `GET /api/v1/me` use HTTP 200 with JSON (`{error,message,status}` or `null`) so reverse proxies that rewrite 4xx bodies into HTML do not break the SPA — same idea as the old HTMX login returning 200 for form errors.
+Anonymous `GET /api/v1/me` returns HTTP 200 with JSON `null` when there is no session.

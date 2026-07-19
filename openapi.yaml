@@ -81,11 +81,6 @@ paths:
     post:
       tags: [Auth]
       summary: Login and start a session
-      description: |
-        On success returns the user and Set-Cookie. Application failures (bad
-        credentials, validation, rate limit) also use HTTP 200 with
-        `{error,message,status}` so reverse proxies that replace 4xx bodies with
-        HTML still deliver JSON to the SPA.
       security: []
       requestBody:
         required: true
@@ -95,13 +90,17 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: User on success, or `{error,message,status}` on failure
+          description: Authenticated; Set-Cookie session
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/User"
-                  - $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /api/v1/auth/logout:
     post:
@@ -1333,9 +1332,6 @@ components:
           description: Machine-readable code (e.g. invalid_request)
         message:
           type: string
-        status:
-          type: integer
-          description: Logical HTTP status when the wire status is 200 (proxy-safe auth errors)
 
     OK:
       type: object

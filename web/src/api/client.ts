@@ -45,18 +45,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
 
-  // Proxy-safe auth errors: HTTP 200 + {error,message,status} (see APIJSONBrowserError).
-  if (data && typeof data === 'object' && data !== null && 'error' in data && 'message' in data) {
-    const body = data as APIErrorBody & { status?: number }
-    if (typeof body.error === 'string' && typeof body.message === 'string' && !('id' in body) && !('ok' in body)) {
-      throw new APIError(
-        typeof body.status === 'number' ? body.status : res.status || 400,
-        body.error,
-        body.message,
-      )
-    }
-  }
-
   if (!res.ok) {
     const body = data as APIErrorBody | null
     const message =

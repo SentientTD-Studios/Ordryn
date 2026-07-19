@@ -22,23 +22,6 @@ func APIJSONError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-// APIJSONBrowserError writes an application error as HTTP 200 JSON.
-//
-// Many reverse proxies (nginx error_page + proxy_intercept_errors) replace
-// upstream 4xx/5xx bodies with HTML. The HTMX UI avoided that by returning
-// 200 for form errors; the SPA needs the same for JSON auth. Clients must
-// treat a body with "error" as failure even when the status is 200.
-func APIJSONBrowserError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("X-GoTodo-Error", code)
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"error":   code,
-		"message": message,
-		"status":  status,
-	})
-}
-
 // IsAPIEnabled returns whether the REST API is enabled in site settings.
 func IsAPIEnabled() bool {
 	s, err := storage.GetSiteSettings()
@@ -201,16 +184,10 @@ func APIChain(handler http.HandlerFunc) http.HandlerFunc {
 
 // AuthPublicChain wraps JSON login/register (Redis + IP rate limit; no API key).
 // SPA auth is not gated by site_settings.enable_api.
-// Errors use APIJSONBrowserError so nginx error_page cannot replace JSON with HTML.
 func AuthPublicChain(handler http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !RedisAvailable() {
-			APIJSONBrowserError(w, http.StatusServiceUnavailable, "api_unavailable",
-				"The REST API requires Redis for authentication and rate limiting.")
-			return
-		}
-		RateLimitMiddleware(10, 1.0, 60, KeyByIP)(handler)(w, r)
-	}
+	return RequireAPIRedis(
+		RateLimitMiddleware(10, 1.0, 60, KeyByIP)(handler),
+	)
 }
 
 // AuthMeChain allows unauthenticated GET /me (SPA session probe → 200 null).
