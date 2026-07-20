@@ -3,17 +3,20 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 )
 
-// APIV1CalendarRouter handles calendar feed token endpoints.
+// APIV1CalendarRouter handles calendar feed token and month view endpoints.
 func APIV1CalendarRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "calendar")
 	switch {
 	case sub == "" && r.Method == http.MethodGet:
 		apiV1GetCalendar(w, r)
+	case sub == "month" && r.Method == http.MethodGet:
+		apiV1CalendarMonth(w, r)
 	case sub == "regenerate" && r.Method == http.MethodPost:
 		apiV1RegenerateCalendar(w, r)
 	case sub == "sync" && r.Method == http.MethodPost:
@@ -21,6 +24,29 @@ func APIV1CalendarRouter(w http.ResponseWriter, r *http.Request) {
 	default:
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 	}
+}
+
+func apiV1CalendarMonth(w http.ResponseWriter, r *http.Request) {
+	userID, ok := utils.GetAPIUserID(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	timezone := "UTC"
+	if profile, err := storage.GetUserProfileByID(userID); err == nil && profile != nil && strings.TrimSpace(profile.Timezone) != "" {
+		timezone = profile.Timezone
+	}
+	month := strings.TrimSpace(r.URL.Query().Get("month"))
+	if month == "" {
+		month = currentYearMonth(timezone)
+	}
+	if !isValidYearMonth(month) {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "month must be YYYY-MM.")
+		return
+	}
+	view := buildCalendarMonthJSON(userID, timezone, month)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(view)
 }
 
 func apiV1GetCalendar(w http.ResponseWriter, r *http.Request) {

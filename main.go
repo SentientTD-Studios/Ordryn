@@ -1,6 +1,7 @@
 package main
 
 import (
+	"GoTodo/internal/config"
 	"GoTodo/internal/server"
 	"GoTodo/internal/storage"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 
 func main() {
 	fmt.Println("Application main function started.")
+	config.MustLoad()
+
 	storage.CreateDatabase()
 	if err := storage.RunMigrations(); err != nil {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)

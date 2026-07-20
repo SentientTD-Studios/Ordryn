@@ -76,6 +76,16 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/calendar',
+      name: 'calendar',
+      component: () => import('@/views/CalendarView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/calendar/:month(\\d{4}-\\d{2})',
+      redirect: (to) => ({ name: 'calendar', query: { month: String(to.params.month) } }),
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue'),

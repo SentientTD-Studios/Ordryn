@@ -42,15 +42,15 @@ func RemoveColumns() (bool, error) {
 
 func CreateDatabase() {
 	pool, err := OpenDatabase()
+	if err != nil {
+		log.Fatalf("Unable to connect to database: %v\n", err)
+	}
 	defer CloseDatabase(pool)
 
-	err = CreateTasksTable()
-
-	if err != nil {
+	if err := CreateTasksTable(); err != nil {
 		log.Fatalf("Unable to create table: %v\n", err)
-	} else {
-		fmt.Println("Database connection appears to be " + GREEN + "successful" + RESET + ".")
 	}
+	fmt.Println("Database connection appears to be " + GREEN + "successful" + RESET + ".")
 }
 
 func GetNextID() int {

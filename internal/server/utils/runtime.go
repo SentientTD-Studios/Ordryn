@@ -96,10 +96,14 @@ func normalizeMode(v string) string {
 	}
 }
 
-// LoadRuntimeConfig loads config.json/env and applies BasePath without parsing templates.
-func LoadRuntimeConfig() {
-	config.Load()
+// LoadRuntimeConfig loads .env (required), validates vars, merges optional
+// config.json under env-first precedence, and applies BasePath.
+func LoadRuntimeConfig() error {
+	if err := config.Load(); err != nil {
+		return err
+	}
 	ApplyBasePathFromConfig()
+	return nil
 }
 
 // ApplyBasePathFromConfig sets utils.BasePath from config.Cfg.

@@ -1,10 +1,10 @@
 {
   "basePath": "/",
   "useHttps": false,
-  "assetVersion": "20251212v2"
-  ,"from_email": "no-reply@example.com"
-  ,"showChangelog": true
-  ,"siteName": "GoTodo"
-  ,"defaultTimezone": "America/New_York"
-  ,"siteVersion": "v0.0.0"
+  "assetVersion": "20251212v2",
+  "from_email": "no-reply@example.com",
+  "showChangelog": true,
+  "siteName": "GoTodo",
+  "defaultTimezone": "America/New_York",
+  "siteVersion": "v0.0.0"
 }

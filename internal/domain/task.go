@@ -168,6 +168,8 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		return nil, err
 	}
 
+	oldCompleted := completed
+
 	result := &UpdateResult{
 		OldPriority:  priority,
 		OldProjectID: nullInt(projectID),
@@ -233,6 +235,14 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	if in.TagIDs != nil {
 		if err := storage.SetTaskTags(taskID, userID, *in.TagIDs); err != nil {
 			return nil, fmt.Errorf("%w: %s", ErrValidation, err.Error())
+		}
+	}
+
+	if in.Completed != nil && oldCompleted != completed {
+		if completed {
+			_ = storage.LogTaskEvent(taskID, userID, "completed", nil)
+		} else {
+			_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 		}
 	}
 

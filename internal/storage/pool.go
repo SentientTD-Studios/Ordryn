@@ -3,12 +3,10 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
 )
 
 var (
@@ -19,14 +17,12 @@ var (
 )
 
 func openDatabaseConn() (*pgxpool.Pool, error) {
-	_ = godotenv.Load()
-
 	required := []string{"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
 	config := make(map[string]string)
 	for _, key := range required {
 		val := os.Getenv(key)
 		if val == "" {
-			log.Fatalf("missing env variables: %v", key)
+			return nil, fmt.Errorf("missing env variable: %s", key)
 		}
 		config[key] = val
 	}

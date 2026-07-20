@@ -103,6 +103,33 @@ export type DashboardStats = {
   completions_last_7_days: { date: string; count: number }[]
 }
 
+export type CalendarMonthTask = {
+  id: number
+  title: string
+  due: string
+  priority: number
+  project_name: string
+  completed: boolean
+}
+
+export type CalendarMonthCell = {
+  date: string
+  day: number
+  in_month: boolean
+  is_today: boolean
+  tasks: CalendarMonthTask[]
+}
+
+export type CalendarMonth = {
+  year_month: string
+  month_label: string
+  prev_month: string
+  next_month: string
+  today_month: string
+  year: number
+  weeks: CalendarMonthCell[][]
+}
+
 export type CalendarInfo = {
   token: string
   feed_url: string

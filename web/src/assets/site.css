@@ -2816,18 +2816,40 @@ button.theme-toggle:focus-visible {
     font-weight: 600;
 }
 
+/* Incomplete: empty circle. Completed: filled check (only when task.completed). */
 .calendar-task-complete {
     flex-shrink: 0;
     border: none;
     background: transparent;
     padding: 0;
-    color: var(--bs-success);
+    color: var(--text-muted, #6c757d);
     line-height: 1;
-    opacity: 0.85;
+    opacity: 0.9;
 }
 
 .calendar-task-complete:hover {
+    color: var(--bs-success);
     opacity: 1;
+}
+
+.calendar-task-complete--done {
+    color: var(--bs-success);
+}
+
+.calendar-task-item.calendar-task--completed {
+    background: transparent;
+    opacity: 0.72;
+}
+
+.calendar-task-item.calendar-task--completed .calendar-task-title {
+    color: var(--text-muted, #6c757d);
+    font-weight: normal;
+    text-decoration: line-through;
+}
+
+.calendar-legend-completed {
+    color: var(--bs-success);
+    font-size: 0.65rem;
 }
 
 .calendar-task-title {

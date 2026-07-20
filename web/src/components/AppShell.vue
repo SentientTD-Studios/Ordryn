@@ -97,7 +97,7 @@ async function onLogout() {
               </RouterLink>
             </li>
             <li class="nav-item">
-              <RouterLink class="nav-link" to="/settings">Calendar</RouterLink>
+              <RouterLink class="nav-link" to="/calendar">Calendar</RouterLink>
             </li>
           </template>
           <li v-if="showChangelog" class="nav-item">

@@ -6,7 +6,7 @@ import { APIError } from '@/api/types'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useToast } from '@/composables/useToast'
 
-const { open, mode, taskId, close, notifySaved } = useTaskSidebar()
+const { open, mode, taskId, defaultDueDate, close, notifySaved } = useTaskSidebar()
 const toast = useToast()
 
 const loading = ref(false)
@@ -186,14 +186,15 @@ async function loadEvents() {
 watch(description, validateDescription)
 
 watch(
-  () => ({ isOpen: open.value, m: mode.value, id: taskId.value }),
-  async ({ isOpen, m, id }) => {
+  () => ({ isOpen: open.value, m: mode.value, id: taskId.value, due: defaultDueDate.value }),
+  async ({ isOpen, m, id, due }) => {
     if (!isOpen) return
     await loadMeta()
     if (m === 'edit' && id) {
       await loadTask(id)
     } else {
       resetForm()
+      if (due) dueDate.value = due
     }
   },
   { immediate: true },

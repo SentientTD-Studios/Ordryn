@@ -502,7 +502,7 @@ onMounted(async () => {
             </li>
           </ul>
         </div>
-        <button type="button" class="btn btn-success" id="openSidebar" @click="openAdd">
+        <button type="button" class="btn btn-success" id="openSidebar" @click="() => openAdd()">
           <i class="bi bi-plus-lg" /> Add Task
         </button>
         <button
@@ -849,7 +849,7 @@ onMounted(async () => {
         <i class="bi bi-clipboard-check empty-state-icon" aria-hidden="true" />
         <h3 class="mt-3">Add your first Todo!</h3>
         <p class="text-muted">Get started by creating a task.</p>
-        <button type="button" class="btn btn-success" @click="openAdd">
+        <button type="button" class="btn btn-success" @click="() => openAdd()">
           <i class="bi bi-plus-lg" /> Add Task
         </button>
       </div>

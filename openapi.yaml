@@ -979,6 +979,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/DashboardStats"
 
+  /api/v1/calendar/month:
+    get:
+      tags: [Calendar]
+      summary: Month grid of tasks with due dates (open and completed)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+          description: Year-month to display (YYYY-MM). Defaults to the current month in the user timezone.
+      responses:
+        "200":
+          description: Calendar month grid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarMonth"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/v1/calendar:
     get:
       tags: [Calendar]
@@ -1890,6 +1917,60 @@ components:
           type: string
         feed_url:
           type: string
+
+    CalendarMonthTask:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        due:
+          type: string
+        priority:
+          type: integer
+        project_name:
+          type: string
+        completed:
+          type: boolean
+
+    CalendarMonthCell:
+      type: object
+      properties:
+        date:
+          type: string
+        day:
+          type: integer
+        in_month:
+          type: boolean
+        is_today:
+          type: boolean
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarMonthTask"
+
+    CalendarMonth:
+      type: object
+      properties:
+        year_month:
+          type: string
+        month_label:
+          type: string
+        prev_month:
+          type: string
+        next_month:
+          type: string
+        today_month:
+          type: string
+        year:
+          type: integer
+        weeks:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: "#/components/schemas/CalendarMonthCell"
 
     Invite:
       type: object

@@ -45,7 +45,9 @@ Default self-host path: one binary serves `/api/v1` and the Vue UI at `/` (or un
 cp .env.example .env
 ```
 
-Minimum `.env` values:
+**`.env` is required.** The process exits on startup if the file is missing from the working directory, or if any required variable is empty/invalid.
+
+Required `.env` values:
 
 ```
 DB_HOST=localhost
@@ -55,11 +57,11 @@ DB_PASSWORD=yourpassword
 DB_NAME=gotodo
 SESSION_KEY=your-32-char-or-longer-secret-key!!
 REDIS_URL=redis://localhost:6379/0
-PORT=8080
-GOTODO_MODE=full
 ```
 
-Optional: `BASE_PATH` (subpath deploy), `USE_HTTPS` (calendar URLs behind a proxy), `MAILGUN_*` (email), and `GOTODO_BOOTSTRAP_*` (first-boot admin / API key). See [`.env.example`](.env.example).
+Optional (defaults apply if unset): `PORT` (8080), `GOTODO_MODE` (full), `BASE_PATH` (`/`), `USE_HTTPS`, `MAILGUN_*` / `FROM_EMAIL`, and `GOTODO_BOOTSTRAP_*`. See [`.env.example`](.env.example).
+
+`config/config.json` is an optional site overlay (see [`config/config.json.example`](config/config.json.example)). **Environment variables always win** over JSON for overlapping keys (including `BASE_PATH` / `USE_HTTPS`).
 
 2. Build the Vue SPA (required for the UI; without `web/dist`, the UI path returns 503):
 

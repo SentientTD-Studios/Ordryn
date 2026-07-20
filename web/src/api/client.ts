@@ -4,6 +4,7 @@ import type {
   AdminUser,
   APIKey,
   CalendarInfo,
+  CalendarMonth,
   ChangelogEntry,
   DashboardStats,
   DeviceDecisionResult,
@@ -321,6 +322,11 @@ export const api = {
 
   getCalendar() {
     return request<CalendarInfo>('/api/v1/calendar')
+  },
+
+  calendarMonth(month?: string) {
+    const qs = month ? `?month=${encodeURIComponent(month)}` : ''
+    return request<CalendarMonth>(`/api/v1/calendar/month${qs}`)
   },
 
   regenerateCalendar() {

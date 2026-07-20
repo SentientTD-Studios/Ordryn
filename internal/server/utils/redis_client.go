@@ -6,7 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/joho/godotenv"
+	"GoTodo/internal/config"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -16,12 +17,8 @@ var RedisClient *redis.Client
 // InitRedis initializes Redis client from environment variables.
 // It prefers REDIS_URL (redis:// or rediss://). If REDIS_URL is
 // not provided, it falls back to REDIS_ADDR + REDIS_PASSWORD.
-// If no configuration is found, RedisClient stays nil and Redis-based limiting is skipped.
+// Outside tests, Redis configuration is required (validated in config.Load).
 func InitRedis() error {
-	// Load .env for local development (ignore errors)
-	_ = godotenv.Load()
-
-	// Prefer full URL which may include TLS (rediss://)
 	if u := os.Getenv("REDIS_URL"); u != "" {
 		opt, err := redis.ParseURL(u)
 		if err != nil {
@@ -39,7 +36,10 @@ func InitRedis() error {
 
 	addr := os.Getenv("REDIS_ADDR")
 	if addr == "" {
-		return nil
+		if config.RunningGoTest() {
+			return nil
+		}
+		return fmt.Errorf("REDIS_URL or REDIS_ADDR is required")
 	}
 	password := os.Getenv("REDIS_PASSWORD")
 	opt := &redis.Options{Addr: addr, Password: password}

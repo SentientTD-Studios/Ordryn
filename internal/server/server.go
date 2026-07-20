@@ -33,7 +33,9 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 }
 
 func StartServer() error {
-	utils.LoadRuntimeConfig()
+	if err := utils.LoadRuntimeConfig(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 
 	mode := utils.ResolveMode(os.Args[1:])
 	utils.SetRuntimeMode(mode)
@@ -45,7 +47,7 @@ func StartServer() error {
 	addr := fmt.Sprintf(":%s", port)
 
 	if err := utils.InitRedis(); err != nil {
-		fmt.Printf("Warning: Redis init failed: %v\n", err)
+		return fmt.Errorf("redis: %w", err)
 	}
 
 	if err := storage.RunMigrations(); err != nil {
@@ -127,11 +129,10 @@ func registerFullModeRoutes() {
 
 	// Aliases that are not Vue routes (SPA catch-all serves real routes directly).
 	for from, to := range map[string]string{
-		"/signup":          "/register",
-		"/profile":         "/settings",
-		"/password-reset":  "/reset-password",
-		"/createinvite":    "/invites",
-		"/calendar":        "/settings",
+		"/signup":         "/register",
+		"/profile":        "/settings",
+		"/password-reset": "/reset-password",
+		"/createinvite":   "/invites",
 	} {
 		handleBoth(from, spaAliasRedirect(to))
 	}
