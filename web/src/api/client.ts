@@ -4,7 +4,9 @@ import type {
   AdminUser,
   APIKey,
   CalendarInfo,
+  ChangelogEntry,
   DashboardStats,
+  DeviceDecisionResult,
   DeviceStatus,
   Invite,
   Project,
@@ -116,6 +118,10 @@ export const api = {
 
   site() {
     return request<SiteInfo>('/api/v1/site')
+  },
+
+  changelog() {
+    return request<ChangelogEntry[]>('/changelog')
   },
 
   me() {
@@ -346,14 +352,14 @@ export const api = {
   },
 
   deviceApprove(userCode: string) {
-    return request<{ ok: boolean; status: string }>('/api/v1/auth/device/approve', {
+    return request<DeviceDecisionResult>('/api/v1/auth/device/approve', {
       method: 'POST',
       body: JSON.stringify({ user_code: userCode }),
     })
   },
 
   deviceDeny(userCode: string) {
-    return request<{ ok: boolean; status: string }>('/api/v1/auth/device/deny', {
+    return request<DeviceDecisionResult>('/api/v1/auth/device/deny', {
       method: 'POST',
       body: JSON.stringify({ user_code: userCode }),
     })

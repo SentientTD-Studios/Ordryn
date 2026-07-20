@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
-import { withBase } from '@/base'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { useTheme } from '@/composables/useTheme'
@@ -9,8 +8,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/api/client'
 import ToastHost from '@/components/ToastHost.vue'
 import TaskSidebar from '@/components/TaskSidebar.vue'
-
-const changelogHref = withBase('/changelog')
+import ChangelogModal from '@/components/ChangelogModal.vue'
 
 const { isAuthenticated, user, logout, hasPermission } = useAuth()
 const { siteInfo, siteName, refresh: refreshSite } = useSite()
@@ -25,6 +23,8 @@ const showAnnouncement = computed(
     !!siteInfo.value?.global_announcement_text &&
     !siteInfo.value?.announcement_dismissed,
 )
+
+const showChangelog = computed(() => siteInfo.value?.show_changelog !== false)
 
 async function loadOverdue() {
   if (!isAuthenticated.value) return
@@ -100,8 +100,14 @@ async function onLogout() {
               <RouterLink class="nav-link" to="/settings">Calendar</RouterLink>
             </li>
           </template>
-          <li class="nav-item">
-            <a class="nav-link" :href="changelogHref" target="_blank" rel="noopener">About</a>
+          <li v-if="showChangelog" class="nav-item">
+            <a
+              class="nav-link"
+              href="#changelogModal"
+              data-bs-toggle="modal"
+              data-bs-target="#changelogModal"
+              role="button"
+            >Changelog</a>
           </li>
           <li class="nav-item">
             <RouterLink class="nav-link" to="/docs/api/v1">API</RouterLink>
@@ -186,4 +192,5 @@ async function onLogout() {
 
   <ToastHost />
   <TaskSidebar v-if="isAuthenticated" />
+  <ChangelogModal v-if="showChangelog" />
 </template>

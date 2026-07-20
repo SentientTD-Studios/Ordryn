@@ -57,9 +57,19 @@ export type TaskList = {
 
 export type SiteInfo = {
   site_name: string
+  show_changelog: boolean
   enable_global_announcement: boolean
   global_announcement_text: string
   announcement_dismissed: boolean
+}
+
+export type ChangelogEntry = {
+  version: string
+  date: string
+  title: string
+  notes: string[]
+  html?: string
+  prerelease?: boolean
 }
 
 export type SavedViewFilter = {
@@ -137,6 +147,13 @@ export type DeviceStatus = {
   user_code: string
   client_name: string
   status: string
+  redirect_uri?: string
+}
+
+export type DeviceDecisionResult = {
+  ok: boolean
+  status: string
+  redirect_uri?: string
 }
 
 export type APIErrorBody = {

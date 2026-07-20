@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -28,15 +29,23 @@ const (
 
 // DeviceAuthRecord is stored in Redis while a device authorization is active.
 type DeviceAuthRecord struct {
-	DeviceCode string           `json:"device_code"`
-	UserCode   string           `json:"user_code"`
-	ClientName string           `json:"client_name"`
-	Status     DeviceAuthStatus `json:"status"`
-	APIKey     string           `json:"api_key,omitempty"`
-	KeyPrefix  string           `json:"key_prefix,omitempty"`
-	KeyName    string           `json:"key_name,omitempty"`
-	UserID     int              `json:"user_id,omitempty"`
+	DeviceCode  string           `json:"device_code"`
+	UserCode    string           `json:"user_code"`
+	ClientName  string           `json:"client_name"`
+	RedirectURI string           `json:"redirect_uri,omitempty"`
+	Status      DeviceAuthStatus `json:"status"`
+	APIKey      string           `json:"api_key,omitempty"`
+	KeyPrefix   string           `json:"key_prefix,omitempty"`
+	KeyName     string           `json:"key_name,omitempty"`
+	UserID      int              `json:"user_id,omitempty"`
 }
+
+// Allowed device deep-link scheme/host for post-approval return to native apps.
+const (
+	deviceRedirectScheme = "ordryn"
+	deviceRedirectHost   = "auth-complete"
+	maxDeviceRedirectLen = 512
+)
 
 const deviceAuthUserCodeAlphabet = "BCDFGHJKMNPQRSTVWXYZ23456789"
 
@@ -140,8 +149,70 @@ func loadDeviceAuthByUserCode(ctx context.Context, userCode string) (*DeviceAuth
 	return loadDeviceAuthByDeviceCode(ctx, deviceCode)
 }
 
+// SafeDeviceRedirectURI validates an optional native-app deep link for post-approval
+// browser return (e.g. ordryn://auth-complete). Empty input is allowed (no redirect).
+// This is intentionally separate from SafeDeviceReturnTo (same-origin SPA paths only).
+func SafeDeviceRedirectURI(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if len(raw) > maxDeviceRedirectLen {
+		return "", fmt.Errorf("redirect_uri too long")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid redirect_uri")
+	}
+	if !strings.EqualFold(u.Scheme, deviceRedirectScheme) {
+		return "", fmt.Errorf("unsupported redirect_uri scheme")
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("redirect_uri must not include userinfo")
+	}
+	if strings.ToLower(u.Host) != deviceRedirectHost {
+		return "", fmt.Errorf("unsupported redirect_uri host")
+	}
+	path := u.EscapedPath()
+	if path != "" && path != "/" {
+		return "", fmt.Errorf("unsupported redirect_uri path")
+	}
+	// Canonical form; drop query/fragment from client input (server adds status later).
+	return (&url.URL{
+		Scheme: deviceRedirectScheme,
+		Host:   deviceRedirectHost,
+	}).String(), nil
+}
+
+// DeviceDecisionRedirectURI returns the deep link to open after approve/deny.
+func DeviceDecisionRedirectURI(base string, approved bool) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme == "" {
+		return ""
+	}
+	q := u.Query()
+	if approved {
+		q.Set("status", "approved")
+		q.Del("error")
+	} else {
+		q.Set("error", "access_denied")
+		q.Del("status")
+	}
+	u.RawQuery = q.Encode()
+	u.Fragment = ""
+	return u.String()
+}
+
 // CreateDeviceAuthRequest stores a new pending device authorization request.
-func CreateDeviceAuthRequest(ctx context.Context, clientName string) (*DeviceAuthRecord, error) {
+func CreateDeviceAuthRequest(ctx context.Context, clientName, redirectURI string) (*DeviceAuthRecord, error) {
+	safeRedirect, err := SafeDeviceRedirectURI(redirectURI)
+	if err != nil {
+		return nil, err
+	}
 	deviceCode, err := generateDeviceCode()
 	if err != nil {
 		return nil, err
@@ -151,10 +222,11 @@ func CreateDeviceAuthRequest(ctx context.Context, clientName string) (*DeviceAut
 		return nil, err
 	}
 	record := &DeviceAuthRecord{
-		DeviceCode: deviceCode,
-		UserCode:   FormatUserCode(rawUserCode),
-		ClientName: NormalizeClientName(clientName),
-		Status:     DeviceAuthPending,
+		DeviceCode:  deviceCode,
+		UserCode:    FormatUserCode(rawUserCode),
+		ClientName:  NormalizeClientName(clientName),
+		RedirectURI: safeRedirect,
+		Status:      DeviceAuthPending,
 	}
 	if err := saveDeviceAuthRecord(ctx, record); err != nil {
 		return nil, err

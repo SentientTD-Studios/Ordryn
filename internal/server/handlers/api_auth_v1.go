@@ -63,15 +63,9 @@ func writeAPIUserJSON(w http.ResponseWriter, status int, p *storage.UserProfile)
 }
 
 func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserProfile) error {
-	session, err := sessionstore.Store.Get(r, "session")
+	session, err := sessionstore.GetSession(r)
 	if err != nil {
-		if strings.Contains(err.Error(), "securecookie: expired timestamp") {
-			sessionstore.ClearSessionCookie(w, r)
-			session, err = sessionstore.Store.Get(r, "session")
-		}
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	session.Values["user_id"] = p.ID
 	session.Values["email"] = p.Email
@@ -278,20 +272,7 @@ func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
 	}
-	if sessionstore.Store != nil {
-		sess, err := sessionstore.Store.Get(r, "session")
-		if err != nil {
-			if strings.Contains(err.Error(), "securecookie: expired timestamp") {
-				sessionstore.ClearSessionCookie(w, r)
-				sess, err = sessionstore.Store.Get(r, "session")
-			}
-		}
-		if err == nil && sess != nil {
-			sess.Values = make(map[interface{}]interface{})
-			sess.Options.MaxAge = -1
-			_ = sess.Save(r, w)
-		}
-	}
+	sessionstore.ClearSessionCookie(w, r)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})

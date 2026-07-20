@@ -14,7 +14,8 @@ import (
 const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
 type deviceCodeRequest struct {
-	ClientName string `json:"client_name"`
+	ClientName  string `json:"client_name"`
+	RedirectURI string `json:"redirect_uri"`
 }
 
 type deviceTokenRequest struct {
@@ -50,7 +51,14 @@ func APIDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := utils.CreateDeviceAuthRequest(r.Context(), req.ClientName)
+	redirectURI, err := utils.SafeDeviceRedirectURI(req.RedirectURI)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request",
+			"Invalid redirect_uri. Allowed example: ordryn://auth-complete")
+		return
+	}
+
+	record, err := utils.CreateDeviceAuthRequest(r.Context(), req.ClientName, redirectURI)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to create device authorization request.")
 		return
@@ -59,15 +67,20 @@ func APIDeviceCode(w http.ResponseWriter, r *http.Request) {
 	verificationURI := utils.AbsoluteURLForRequest(r, "/auth/device")
 	verificationURIComplete := utils.AbsoluteURLForRequest(r, "/auth/device?user_code="+record.UserCode)
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"device_code":               record.DeviceCode,
 		"user_code":                 record.UserCode,
 		"verification_uri":          verificationURI,
 		"verification_uri_complete": verificationURIComplete,
 		"expires_in":                utils.DeviceAuthTTLSeconds,
 		"interval":                  utils.DeviceAuthInterval,
-	})
+	}
+	if record.RedirectURI != "" {
+		resp["redirect_uri"] = record.RedirectURI
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // APIDeviceToken polls for an approved device authorization and returns the API key once.

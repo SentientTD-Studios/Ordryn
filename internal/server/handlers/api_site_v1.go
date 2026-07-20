@@ -10,6 +10,7 @@ import (
 
 type apiSiteResponse struct {
 	SiteName                 string `json:"site_name"`
+	ShowChangelog            bool   `json:"show_changelog"`
 	EnableGlobalAnnouncement bool   `json:"enable_global_announcement"`
 	GlobalAnnouncementText   string `json:"global_announcement_text"`
 	AnnouncementDismissed    bool   `json:"announcement_dismissed"`
@@ -36,6 +37,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(apiSiteResponse{
 		SiteName:                 settings.SiteName,
+		ShowChangelog:            settings.ShowChangelog,
 		EnableGlobalAnnouncement: settings.EnableGlobalAnnouncement,
 		GlobalAnnouncementText:   settings.GlobalAnnouncementText,
 		AnnouncementDismissed:    dismissed,

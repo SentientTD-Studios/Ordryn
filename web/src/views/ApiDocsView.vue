@@ -168,15 +168,22 @@ Content-Type: application/json
                         <tbody>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/device/code</code></td><td>Public (API enabled + Redis)</td><td>Start device authorization; returns <code>device_code</code>, <code>user_code</code>, and verification URLs</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/device/token</code></td><td>Public (API enabled + Redis)</td><td>Poll for approval; returns <code>api_key</code> once when approved</td></tr>
-                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/auth/device?user_code=…</code></td><td>Browser session (optional)</td><td>Approve or deny the request in the browser</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/auth/device?user_code=…</code></td><td>Browser session (optional)</td><td>Approve or deny the request in the browser; returns to the app via <code>redirect_uri</code> when set</td></tr>
                         </tbody>
                     </table>
                     <h3 class="h5 mt-3">Start authorization</h3>
                     <pre class="api-docs-pre"><code>POST {{ basePath }}/api/v1/auth/device/code
 Content-Type: application/json
 
-{"client_name": "Android app"}</code></pre>
-                    <p class="text-muted small">Response includes <code>verification_uri_complete</code> (open in a browser), <code>expires_in</code> (600 seconds), and <code>interval</code> (poll every 5 seconds).</p>
+{
+  "client_name": "Android app",
+  "redirect_uri": "ordryn://auth-complete"
+}</code></pre>
+                    <p class="text-muted small">
+                        Response includes <code>verification_uri_complete</code> (open in a browser), <code>expires_in</code> (600 seconds), and <code>interval</code> (poll every 5 seconds).
+                        Optional <code>redirect_uri</code> must be <code>ordryn://auth-complete</code>; after approve/deny the browser opens
+                        <code>ordryn://auth-complete?status=approved</code> or <code>ordryn://auth-complete?error=access_denied</code>.
+                    </p>
                     <h3 class="h5 mt-3">Poll for token</h3>
                     <pre class="api-docs-pre"><code>POST {{ basePath }}/api/v1/auth/device/token
 Content-Type: application/json

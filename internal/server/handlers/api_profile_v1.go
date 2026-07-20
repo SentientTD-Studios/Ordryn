@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
@@ -164,18 +163,13 @@ func refreshSessionProfile(w http.ResponseWriter, r *http.Request, p *storage.Us
 	if utils.GetSessionUserID(r) == nil {
 		return
 	}
-	session, err := sessionstore.Store.Get(r, "session")
+	session, err := sessionstore.GetSession(r)
 	if err != nil {
-		if strings.Contains(err.Error(), "securecookie: expired timestamp") {
-			sessionstore.ClearSessionCookie(w, r)
-			session, err = sessionstore.Store.Get(r, "session")
-		}
-		if err != nil {
-			return
-		}
+		return
 	}
 	session.Values["user_name"] = p.UserName
 	session.Values["timezone"] = p.Timezone
 	session.Values["items_per_page"] = p.ItemsPerPage
+	sessionstore.ApplySecureCookieOptions(session)
 	_ = session.Save(r, w)
 }
