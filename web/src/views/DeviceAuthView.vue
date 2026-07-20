@@ -12,11 +12,30 @@ const codeInput = ref('')
 const status = ref<DeviceStatus | null>(null)
 const busy = ref(false)
 const error = ref('')
+const returningToApp = ref(false)
 
 const userCode = computed(() => {
   const q = route.query.user_code
   return typeof q === 'string' ? q.trim() : codeInput.value.trim()
 })
+
+/** Only follow server-issued Ordryn deep links (never arbitrary URLs). */
+function isSafeAppRedirect(uri: string | undefined): uri is string {
+  if (!uri) return false
+  try {
+    const parsed = new URL(uri)
+    return parsed.protocol === 'ordryn:' && parsed.hostname === 'auth-complete'
+  } catch {
+    return false
+  }
+}
+
+function returnToApp(uri: string | undefined) {
+  if (!isSafeAppRedirect(uri)) return false
+  returningToApp.value = true
+  window.location.assign(uri)
+  return true
+}
 
 async function loadStatus() {
   error.value = ''
@@ -35,8 +54,9 @@ async function loadStatus() {
 async function approve() {
   busy.value = true
   try {
-    await api.deviceApprove(userCode.value)
+    const result = await api.deviceApprove(userCode.value)
     toast.push('Device approved', 'success')
+    if (returnToApp(result.redirect_uri)) return
     await loadStatus()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Approve failed', 'error')
@@ -48,8 +68,9 @@ async function approve() {
 async function deny() {
   busy.value = true
   try {
-    await api.deviceDeny(userCode.value)
+    const result = await api.deviceDeny(userCode.value)
     toast.push('Device denied', 'info')
+    if (returnToApp(result.redirect_uri)) return
     await loadStatus()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Deny failed', 'error')
@@ -85,8 +106,9 @@ onMounted(() => {
     </form>
 
     <p v-if="error" class="muted danger">{{ error }}</p>
+    <p v-if="returningToApp" class="muted">Returning to the app…</p>
 
-    <div v-if="status" class="stack">
+    <div v-if="status && !returningToApp" class="stack">
       <p>
         Client <strong>{{ status.client_name || 'Unknown' }}</strong>
         is <strong>{{ status.status }}</strong>.
@@ -95,6 +117,9 @@ onMounted(() => {
         <button type="button" class="primary" :disabled="busy" @click="approve">Approve</button>
         <button type="button" class="ghost danger" :disabled="busy" @click="deny">Deny</button>
       </div>
+      <p v-else-if="status.redirect_uri" class="muted">
+        You can close this window and return to the app.
+      </p>
     </div>
   </section>
 </template>

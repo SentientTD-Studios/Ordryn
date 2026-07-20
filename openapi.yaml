@@ -213,6 +213,10 @@ paths:
     post:
       tags: [Device Auth]
       summary: Start device authorization (Android SSO)
+      description: |
+        Optional `redirect_uri` binds a native deep link (allowlisted `ordryn://auth-complete`)
+        to this authorization. After the user approves or denies in the browser, the SPA
+        navigates to that URI so the Android app can resume.
       security: []
       requestBody:
         content:
@@ -222,6 +226,10 @@ paths:
               properties:
                 client_name:
                   type: string
+                redirect_uri:
+                  type: string
+                  description: Optional native deep link; must be ordryn://auth-complete
+                  example: ordryn://auth-complete
       responses:
         "200":
           description: Device codes issued
@@ -229,6 +237,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceCodeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 
   /api/v1/auth/device/token:
     post:
@@ -304,11 +314,11 @@ paths:
                   type: string
       responses:
         "200":
-          description: Approved
+          description: Approved; includes redirect_uri when the device requested one
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OK"
+                $ref: "#/components/schemas/DeviceDecisionResponse"
 
   /api/v1/auth/device/deny:
     post:
@@ -328,11 +338,11 @@ paths:
                   type: string
       responses:
         "200":
-          description: Denied
+          description: Denied; includes redirect_uri when the device requested one
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OK"
+                $ref: "#/components/schemas/DeviceDecisionResponse"
 
   /api/v1/me:
     get:
@@ -1357,6 +1367,8 @@ components:
       properties:
         site_name:
           type: string
+        show_changelog:
+          type: boolean
         enable_global_announcement:
           type: boolean
         global_announcement_text:
@@ -1795,6 +1807,11 @@ components:
           type: string
         expires_in:
           type: integer
+        interval:
+          type: integer
+        redirect_uri:
+          type: string
+          description: Echo of the validated native deep link, when requested
 
     DeviceStatus:
       type: object
@@ -1805,6 +1822,23 @@ components:
           type: string
         status:
           type: string
+        redirect_uri:
+          type: string
+          description: Native deep link to open after a decision (when requested at code issuance)
+
+    DeviceDecisionResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: string
+          description: approved or denied
+        redirect_uri:
+          type: string
+          description: |
+            Deep link for the browser to open. On approve includes status=approved;
+            on deny includes error=access_denied. Omitted when no redirect_uri was requested.
 
     DashboardStats:
       type: object

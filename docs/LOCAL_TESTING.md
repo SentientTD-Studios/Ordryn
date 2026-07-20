@@ -119,7 +119,7 @@ No Ordryn code changes required.
 2. Point the app at `http://<your-lan-ip>:8080` (not `localhost` on the phone’s own loopback).
 3. Auth options:
    - Paste Bearer API key (from bootstrap or Profile), or
-   - Device SSO: `POST /api/v1/auth/device/code` → open verification URL → approve in SPA at `/app/auth/device`.
+   - Device SSO: `POST /api/v1/auth/device/code` with optional `"redirect_uri":"ordryn://auth-complete"` → open verification URL → approve in SPA at `/auth/device` → browser returns to the app via the deep link.
 
 Minimum server checks before app testing:
 

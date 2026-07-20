@@ -35,12 +35,16 @@ func APIV1DeviceStatus(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load authorization request.")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"user_code":   record.UserCode,
 		"client_name": record.ClientName,
 		"status":      string(record.Status),
-	})
+	}
+	if record.RedirectURI != "" {
+		resp["redirect_uri"] = record.RedirectURI
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // APIV1DeviceApprove approves a pending device authorization (JSON).
@@ -87,11 +91,15 @@ func APIV1DeviceApprove(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to approve authorization request.")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"ok":     true,
 		"status": "approved",
-	})
+	}
+	if redirect := utils.DeviceDecisionRedirectURI(record.RedirectURI, true); redirect != "" {
+		resp["redirect_uri"] = redirect
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // APIV1DeviceDeny denies a pending device authorization (JSON).
@@ -114,7 +122,8 @@ func APIV1DeviceDeny(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "user_code is required.")
 		return
 	}
-	if _, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode); err != nil {
+	record, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode)
+	if err != nil {
 		if err == redis.Nil {
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Authorization request expired or not found.")
 			return
@@ -126,9 +135,13 @@ func APIV1DeviceDeny(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to deny authorization request.")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"ok":     true,
 		"status": "denied",
-	})
+	}
+	if redirect := utils.DeviceDecisionRedirectURI(record.RedirectURI, false); redirect != "" {
+		resp["redirect_uri"] = redirect
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(resp)
 }

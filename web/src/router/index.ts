@@ -114,7 +114,11 @@ router.beforeEach(async (to) => {
     await auth.refresh()
   }
   if (to.meta.requiresAuth && !auth.isAuthenticated.value) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    // Only preserve non-default destinations; `/` is the post-login default.
+    if (to.fullPath && to.fullPath !== '/') {
+      return { name: 'login', query: { redirect: to.fullPath } }
+    }
+    return { name: 'login' }
   }
   if (to.meta.guest && auth.isAuthenticated.value) {
     return { name: 'tasks' }
