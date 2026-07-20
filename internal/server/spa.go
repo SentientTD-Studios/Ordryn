@@ -2,12 +2,14 @@ package server
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"GoTodo/internal/server/utils"
+	"GoTodo/internal/storage"
 )
 
 const spaDistDir = "web/dist"
@@ -134,16 +136,50 @@ func serveSPAIndex(w http.ResponseWriter, r *http.Request) {
 	// (href="#x" → {BASE}/#x, dropping /docs/api/v1). Rewrite Vite's relative
 	// ./assets URLs to absolute paths under the public prefix instead.
 	inject := fmt.Sprintf(`<meta name="gotodo-base" content="%s">`, escaped)
-	html := string(raw)
-	if strings.Contains(html, "<head>") {
-		html = strings.Replace(html, "<head>", "<head>"+inject, 1)
+	siteName := spaSiteName()
+	inject += fmt.Sprintf(`<meta name="gotodo-site-name" content="%s">`, htmlAttrEscape(siteName))
+	page := string(raw)
+	if strings.Contains(page, "<head>") {
+		page = strings.Replace(page, "<head>", "<head>"+inject, 1)
 	} else {
-		html = inject + html
+		page = inject + page
 	}
-	html = absolutizeRelativeAssetURLs(html, injectBase)
-	html = nonceInlineScripts(html, utils.GetCSPNonce(r))
+	page = replaceHTMLTitle(page, siteName)
+	page = absolutizeRelativeAssetURLs(page, injectBase)
+	page = nonceInlineScripts(page, utils.GetCSPNonce(r))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(html))
+	// Avoid caching a stale branded title after admin renames the site.
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(page))
+}
+
+func spaSiteName() string {
+	const fallback = "GoTodo"
+	s, err := storage.GetSiteSettings()
+	if err != nil || s == nil {
+		return fallback
+	}
+	if name := strings.TrimSpace(s.SiteName); name != "" {
+		return name
+	}
+	return fallback
+}
+
+// replaceHTMLTitle sets the document <title>, creating one when missing.
+func replaceHTMLTitle(page, title string) string {
+	escaped := html.EscapeString(title)
+	const open, close = "<title>", "</title>"
+	if i := strings.Index(strings.ToLower(page), open); i >= 0 {
+		rest := page[i+len(open):]
+		if j := strings.Index(strings.ToLower(rest), close); j >= 0 {
+			return page[:i] + open + escaped + close + rest[j+len(close):]
+		}
+	}
+	if i := strings.Index(strings.ToLower(page), "<head>"); i >= 0 {
+		insertAt := i + len("<head>")
+		return page[:insertAt] + open + escaped + close + page[insertAt:]
+	}
+	return open + escaped + close + page
 }
 
 // absolutizeRelativeAssetURLs rewrites Vite "./…" asset refs so nested routes

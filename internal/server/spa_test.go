@@ -70,7 +70,7 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile("web/dist/index.html", []byte(
-		`<html><head><script type="module" src="./assets/app.js"></script><link rel="stylesheet" href="./assets/app.css"></head><body>spa</body></html>`,
+		`<html><head><title>GoTodo</title><script type="module" src="./assets/app.js"></script><link rel="stylesheet" href="./assets/app.css"></head><body>spa</body></html>`,
 	), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +96,15 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 	}
 	if !strings.Contains(body, `name="gotodo-base" content="/gotodo/"`) {
 		t.Fatalf("missing base inject in %q", body)
+	}
+	if !strings.Contains(body, `name="gotodo-site-name" content="GoTodo"`) {
+		t.Fatalf("missing site name meta in %q", body)
+	}
+	if !strings.Contains(body, `<title>GoTodo</title>`) {
+		t.Fatalf("missing title in %q", body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
 	if strings.Contains(body, `<base href=`) {
 		t.Fatalf("must not inject <base href> (breaks hash anchors): %q", body)
@@ -131,5 +140,20 @@ func TestAbsolutizeRelativeAssetURLs(t *testing.T) {
 	out := absolutizeRelativeAssetURLs(in, "/gotodo/")
 	if out != `<script src="/gotodo/assets/a.js"></script><link href='/gotodo/assets/a.css'><a href="#tasks">t</a>` {
 		t.Fatalf("got %q", out)
+	}
+}
+
+func TestReplaceHTMLTitle(t *testing.T) {
+	out := replaceHTMLTitle(`<html><head><title>GoTodo</title></head></html>`, `Acme & Co`)
+	if out != `<html><head><title>Acme &amp; Co</title></head></html>` {
+		t.Fatalf("replace existing: %q", out)
+	}
+	out = replaceHTMLTitle(`<html><head></head></html>`, `My Site`)
+	if out != `<html><head><title>My Site</title></head></html>` {
+		t.Fatalf("insert missing: %q", out)
+	}
+	out = replaceHTMLTitle(`<HTML><HEAD><TITLE>Old</TITLE></HEAD></HTML>`, `New`)
+	if !strings.Contains(out, `<title>New</title>`) {
+		t.Fatalf("case insensitive: %q", out)
 	}
 }
