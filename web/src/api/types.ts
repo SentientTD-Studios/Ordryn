@@ -8,6 +8,7 @@ export type User = {
   digest_enabled: boolean
   digest_hour: number
   allow_project_invites: boolean
+  username_change_available: boolean
 }
 
 export type Tag = {
@@ -36,6 +37,7 @@ export type ProjectInvite = {
   id: number
   project_id: number
   email: string
+  user_name?: string
   role: 'editor' | 'viewer'
   expires_at: string
   created_at: string

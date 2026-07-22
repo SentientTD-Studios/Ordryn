@@ -12,6 +12,8 @@ const { askConfirm } = useConfirm()
 const { refresh: refreshSite } = useSite()
 const users = ref<AdminUser[]>([])
 const busy = ref(false)
+const editingUsernameId = ref<number | null>(null)
+const editUsernameValue = ref('')
 const settings = reactive<AdminSettings>({
   site_name: '',
   default_timezone: 'UTC',
@@ -73,6 +75,32 @@ async function toggleBan(user: AdminUser) {
   }
 }
 
+function startEditUsername(user: AdminUser) {
+  editingUsernameId.value = user.id
+  editUsernameValue.value = user.user_name || ''
+}
+
+function cancelEditUsername() {
+  editingUsernameId.value = null
+  editUsernameValue.value = ''
+}
+
+async function saveUsername(user: AdminUser) {
+  const next = editUsernameValue.value.trim()
+  if (!next) {
+    toast.push('Username is required', 'error')
+    return
+  }
+  try {
+    await api.setAdminUsername(user.id, next)
+    toast.push('Username updated', 'success')
+    cancelEditUsername()
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Failed to update username', 'error')
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -131,17 +159,39 @@ onMounted(load)
     <div class="card">
       <div class="card-header"><h2 class="h5 mb-0">Users</h2></div>
       <ul class="list-group list-group-flush">
-        <li v-for="user in users" :key="user.id" class="list-group-item d-flex justify-content-between align-items-center">
-          <div>
-            <strong>{{ user.user_name || user.email }}</strong>
-            <div class="text-muted small">
-              {{ user.email }}
-              <span v-if="user.is_banned">· banned</span>
+        <li v-for="user in users" :key="user.id" class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div class="flex-grow-1">
+              <template v-if="editingUsernameId === user.id">
+                <div class="input-group input-group-sm" style="max-width: 280px">
+                  <input
+                    v-model="editUsernameValue"
+                    type="text"
+                    class="form-control"
+                    minlength="3"
+                    maxlength="32"
+                    pattern="[A-Za-z0-9_]+"
+                    @keyup.enter="saveUsername(user)"
+                  />
+                  <button type="button" class="btn btn-primary" @click="saveUsername(user)">Save</button>
+                  <button type="button" class="btn btn-outline-secondary" @click="cancelEditUsername">Cancel</button>
+                </div>
+              </template>
+              <template v-else>
+                <strong>{{ user.user_name || user.email }}</strong>
+                <button type="button" class="btn btn-link btn-sm py-0" @click="startEditUsername(user)">
+                  Edit username
+                </button>
+              </template>
+              <div class="text-muted small">
+                {{ user.email }}
+                <span v-if="user.is_banned">· banned</span>
+              </div>
             </div>
+            <button type="button" class="btn btn-sm" :class="user.is_banned ? 'btn-outline-secondary' : 'btn-outline-danger'" @click="toggleBan(user)">
+              {{ user.is_banned ? 'Unban' : 'Ban' }}
+            </button>
           </div>
-          <button type="button" class="btn btn-sm" :class="user.is_banned ? 'btn-outline-secondary' : 'btn-outline-danger'" @click="toggleBan(user)">
-            {{ user.is_banned ? 'Unban' : 'Ban' }}
-          </button>
         </li>
         <li v-if="!users.length" class="list-group-item text-muted">No users found.</li>
       </ul>

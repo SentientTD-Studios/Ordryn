@@ -76,7 +76,9 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v1/auth/register</code></a></td><td>Register (session cookie)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v1/auth/login</code></a></td><td>Login (session cookie)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v1/auth/logout</code></a></td><td>Clear session cookie</td></tr>
-                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#session-auth"><code>/api/v1/me</code></a></td><td>Current user / update profile</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#session-auth"><code>/api/v1/auth/username-available</code></a></td><td>Check username availability</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#session-auth"><code>/api/v1/me</code></a></td><td>Current user / update profile prefs</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v1/me/username</code></a></td><td>One-time username claim</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v1/me/password</code></a></td><td>Change password</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v1/api-keys</code></a></td><td>List / create API keys</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#session-auth"><code>/api/v1/api-keys/{id}</code></a></td><td>Revoke an API key</td></tr>
@@ -131,10 +133,12 @@ onUnmounted(() => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/register</code></td><td>Public (API enabled + Redis)</td><td>Create account; respects invite-only settings; sets session cookie; returns user JSON</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/register</code></td><td>Public (API enabled + Redis)</td><td>Create account with unique <code>user_name</code>; respects invite-only settings; sets session cookie; returns user JSON</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/login</code></td><td>Public (API enabled + Redis)</td><td>Email/password login; sets session cookie; returns user JSON</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/auth/logout</code></td><td>API enabled</td><td>Clears session cookie</td></tr>
-                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/me</code></td><td>Session cookie or Bearer</td><td>Read or update profile</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v1/auth/username-available</code></td><td>Public</td><td>Check username format and availability</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><code>/api/v1/me</code></td><td>Session cookie or Bearer</td><td>Read profile or update prefs (username not editable here)</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/me/username</code></td><td>Session cookie or Bearer</td><td>One-time username claim when <code>username_change_available</code></td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v1/me/password</code></td><td>Session cookie or Bearer</td><td>Change password</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><code>/api/v1/api-keys</code></td><td>Session cookie or Bearer</td><td>List or create keys</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/api/v1/api-keys/{id}</code></td><td>Session cookie or Bearer</td><td>Revoke a key</td></tr>
@@ -145,7 +149,7 @@ Content-Type: application/json
 
 { "email": "you@example.com", "password": "secret" }
 
-→ 200 { "id", "email", "user_name", "timezone", "items_per_page", "permissions" }
+→ 200 { "id", "email", "user_name", "timezone", "items_per_page", "permissions", "username_change_available" }
    (+ Set-Cookie: session=…)</code></pre>
                     <p class="text-muted small">
                         Password reset is also available via <code>/api/v1/auth/forgot-password</code> and <code>/api/v1/auth/reset-password</code>.

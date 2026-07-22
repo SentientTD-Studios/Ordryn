@@ -15,67 +15,64 @@ import (
 
 const defaultInviteTTL = 14 * 24 * time.Hour
 
-// ProjectInviteAckMessage is returned for all invite attempts (privacy-preserving).
-const ProjectInviteAckMessage = "If a user with this email is in the system they will be sent an invite."
-
-// InviteToProject attempts to create a pending invite (owner only).
-// It only creates an invite when the email belongs to an existing user who
-// allows project invites. Callers must always show ProjectInviteAckMessage
-// and must not reveal whether the invite was created.
-func InviteToProject(ctx context.Context, actorUserID, projectID int, email, role string) error {
+// InviteToProject creates a pending invite for the user with the given username (owner only).
+// Returns the created invite, or a clear error if the username is missing/invalid, not found,
+// opted out, already a member, or is the project owner.
+func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsername, role string) (*storage.ProjectInvite, error) {
 	_ = ctx
-	email = strings.TrimSpace(strings.ToLower(email))
-	if email == "" {
-		return fmt.Errorf("%w: email is required", ErrValidation)
+	name, err := PrepareUsername(rawUsername)
+	if err != nil {
+		return nil, err
 	}
 	role = strings.TrimSpace(strings.ToLower(role))
 	if !storage.ValidInviteRole(role) {
-		return fmt.Errorf("%w: role must be editor or viewer", ErrValidation)
+		return nil, fmt.Errorf("%w: role must be editor or viewer", ErrValidation)
 	}
 	proj, err := storage.GetAccessibleProjectByID(projectID, actorUserID)
 	if err != nil {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
 	if !storage.RoleCanManage(proj.Role) {
-		return ErrForbidden
+		return nil, ErrForbidden
 	}
-	// Privacy: never reveal whether the email exists, is the owner, opted out, or is already a member.
-	if strings.EqualFold(email, proj.OwnerEmail) {
-		return nil
-	}
-	user, err := storage.GetUserByEmail(email)
+
+	user, err := storage.GetUserByUsername(name)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-			return nil
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) ||
+			strings.Contains(strings.ToLower(err.Error()), "no rows") {
+			return nil, fmt.Errorf("%w: username not found", ErrNotFound)
 		}
-		// Treat lookup misses the same for privacy; only fail on unexpected errors after a found user.
-		if strings.Contains(strings.ToLower(err.Error()), "no rows") {
-			return nil
-		}
-		return err
+		return nil, err
 	}
 	if user == nil {
-		return nil
+		return nil, fmt.Errorf("%w: username not found", ErrNotFound)
+	}
+	if user.ID == proj.OwnerUserID {
+		return nil, fmt.Errorf("%w: cannot invite the project owner", ErrValidation)
 	}
 	allow, err := storage.UserAllowsProjectInvites(user.ID)
-	if err != nil || !allow {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if !allow {
+		return nil, fmt.Errorf("%w: user does not allow project invites", ErrValidation)
 	}
 	existingRole, err := storage.GetProjectRole(projectID, user.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if existingRole != "" {
-		return nil
+		return nil, fmt.Errorf("%w: user is already a member", ErrValidation)
 	}
-	inv, err := storage.CreateProjectInvite(projectID, email, role, actorUserID, time.Now().Add(defaultInviteTTL))
+	inv, err := storage.CreateProjectInvite(projectID, user.Email, role, actorUserID, time.Now().Add(defaultInviteTTL))
 	if err != nil {
-		return err
+		return nil, err
 	}
+	inv.UserName = user.UserName
 	_ = storage.LogProjectEvent(projectID, actorUserID, "invited", map[string]interface{}{
-		"role": role, "invite_id": inv.ID,
+		"role": role, "invite_id": inv.ID, "username": user.UserName,
 	})
-	return nil
+	return inv, nil
 }
 
 // UpdateProjectMemberRole changes a member's role (owner only). Cannot change owner role via this.

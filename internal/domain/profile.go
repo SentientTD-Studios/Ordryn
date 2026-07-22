@@ -3,16 +3,14 @@ package domain
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"GoTodo/internal/storage"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UpdateProfileInput is the shared profile update payload.
+// UpdateProfileInput is the shared profile update payload (username is not mutable here).
 type UpdateProfileInput struct {
-	UserName            string
 	Timezone            string
 	ItemsPerPage        int
 	DigestEnabled       bool
@@ -20,30 +18,9 @@ type UpdateProfileInput struct {
 	AllowProjectInvites bool
 }
 
-// UpdateProfile validates and persists profile fields. timezoneOK should come from utils.IsValidTimezone.
+// UpdateProfile validates and persists profile preference fields. timezoneOK should come from utils.IsValidTimezone.
 func UpdateProfile(ctx context.Context, userID int, in UpdateProfileInput, timezoneOK bool, itemsPerPageOK bool) (*storage.UserProfile, error) {
-	_ = ctx
-	in.UserName = strings.TrimSpace(in.UserName)
-	in.Timezone = strings.TrimSpace(in.Timezone)
-	if in.UserName == "" {
-		return nil, fmt.Errorf("%w: name is required", ErrValidation)
-	}
-	if !timezoneOK {
-		return nil, fmt.Errorf("%w: invalid timezone", ErrValidation)
-	}
-	if in.ItemsPerPage <= 0 {
-		in.ItemsPerPage = 15
-	}
-	if !itemsPerPageOK {
-		return nil, fmt.Errorf("%w: invalid items per page", ErrValidation)
-	}
-	if in.DigestHour < 0 || in.DigestHour > 23 {
-		return nil, fmt.Errorf("%w: digest_hour must be between 0 and 23", ErrValidation)
-	}
-	if err := storage.UpdateUserProfileByID(userID, in.UserName, in.Timezone, in.ItemsPerPage, in.DigestEnabled, in.DigestHour, in.AllowProjectInvites); err != nil {
-		return nil, err
-	}
-	return storage.GetUserProfileByID(userID)
+	return UpdateProfileWithoutUsername(ctx, userID, in, timezoneOK, itemsPerPageOK)
 }
 
 // ChangePassword verifies the current password and sets a new one.

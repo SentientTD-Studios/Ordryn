@@ -51,6 +51,12 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      path: '/claim-username',
+      name: 'claim-username',
+      component: () => import('@/views/ClaimUsernameView.vue'),
+      meta: { requiresAuth: true, allowUsernameClaim: true },
+    },
+    {
       path: '/',
       name: 'tasks',
       component: () => import('@/views/TasksView.vue'),
@@ -141,6 +147,20 @@ router.beforeEach(async (to) => {
     return { name: 'login' }
   }
   if (to.meta.guest && auth.isAuthenticated.value) {
+    if (auth.needsUsernameClaim.value) {
+      return { name: 'claim-username' }
+    }
+    return { name: 'tasks' }
+  }
+  if (
+    auth.isAuthenticated.value &&
+    auth.needsUsernameClaim.value &&
+    to.meta.requiresAuth &&
+    !to.meta.allowUsernameClaim
+  ) {
+    return { name: 'claim-username' }
+  }
+  if (to.name === 'claim-username' && auth.isAuthenticated.value && !auth.needsUsernameClaim.value) {
     return { name: 'tasks' }
   }
   const permission = to.meta.permission as string | undefined

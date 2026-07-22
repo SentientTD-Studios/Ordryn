@@ -17,6 +17,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/auth/register",
 	"/api/v1/auth/login",
 	"/api/v1/auth/logout",
+	"/api/v1/auth/username-available",
 	"/api/v1/auth/device/code",
 	"/api/v1/auth/device/token",
 	"/api/v1/auth/device/status",
@@ -24,6 +25,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/auth/device/deny",
 	"/api/v1/me",
 	"/api/v1/me/password",
+	"/api/v1/me/username",
 	"/api/v1/api-keys",
 	"/api/v1/api-keys/{id}",
 	"/api/v1/tasks",
@@ -67,6 +69,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/admin/users",
 	"/api/v1/admin/users/{id}/ban",
 	"/api/v1/admin/users/{id}/unban",
+	"/api/v1/admin/users/{id}/username",
 }
 
 func moduleRoot(t *testing.T) string {

@@ -61,6 +61,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateUsersAddAllowProjectInvites failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateUsersUsernames(); err != nil {
+		fmt.Printf("migration: MigrateUsersUsernames failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateTasksAddIsFavorite(); err != nil {
 		fmt.Printf("migration: MigrateTasksAddIsFavorite failed: %v\n", err)
 		errCount++
