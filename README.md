@@ -176,6 +176,29 @@ Ordryn is **one binary**. Operators choose UI+API or API-only; separate web/Andr
 | [`docs/MIGRATION_SERVER_WEB_SPA.md`](docs/MIGRATION_SERVER_WEB_SPA.md) | Server Split plan (phases 0–D landed on `dev`; cleanup items remain) |
 | [`docs/REPO_SPLIT.md`](docs/REPO_SPLIT.md) | Logical ownership; optional future extracts |
 
+## Releasing
+
+App version lives in [`internal/version/version.go`](internal/version/version.go) and is reported by `/api/v1/health`. It is **not** bumped by `go build`, `npm run build:web`, or CI.
+
+To cut a release:
+
+```bash
+make bump-patch   # v1.0.0 -> v1.0.1 (commit + annotated tag)
+make bump-minor   # v1.0.0 -> v1.1.0
+make bump-major   # v1.0.0 -> v2.0.0
+```
+
+Or dry-run (updates the file only):
+
+```bash
+./scripts/bump-version.sh patch
+./scripts/bump-version.sh set v1.2.3
+```
+
+Then push: `git push && git push --tags`.
+
+OpenAPI `info.version` in [`openapi.yaml`](openapi.yaml) is independent — bump that only for large or breaking API contract changes.
+
 ## License
 
 See LICENSE file.
