@@ -120,7 +120,7 @@ onMounted(load)
             <label class="form-label">Announcement text</label>
             <textarea v-model="settings.global_announcement_text" class="form-control" rows="2" maxlength="500" />
           </div>
-          <p v-if="settings.site_version" class="text-muted">Binary version: {{ settings.site_version }}</p>
+          <p class="text-muted">Site Version: {{ settings.site_version || '—' }}</p>
           <button type="submit" class="btn btn-primary" :disabled="busy">
             {{ busy ? 'Saving…' : 'Save settings' }}
           </button>
