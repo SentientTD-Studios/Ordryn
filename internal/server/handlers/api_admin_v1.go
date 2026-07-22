@@ -9,6 +9,7 @@ import (
 	"GoTodo/internal/config"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/version"
 )
 
 type adminSettingsJSON struct {
@@ -129,7 +130,7 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 		SiteName:                 s.SiteName,
 		DefaultTimezone:          s.DefaultTimezone,
 		ShowChangelog:            s.ShowChangelog,
-		SiteVersion:              s.SiteVersion,
+		SiteVersion:              version.Version, // baked into binary; not from DB
 		EnableRegistration:       s.EnableRegistration,
 		InviteOnly:               s.InviteOnly,
 		MetaDescription:          s.MetaDescription,
