@@ -22,13 +22,19 @@
     </ul>
 
     <h4 class="h6">Invite</h4>
-    <p class="small text-muted mb-2">
-      Invites are only delivered if that email has an account. You will not be told whether the address exists.
-    </p>
     <form class="row g-2 align-items-end mb-3" @submit.prevent="sendInvite">
       <div class="col-sm-6">
-        <label class="form-label small mb-0">Email</label>
-        <input v-model="inviteEmail" type="email" class="form-control form-control-sm" required />
+        <label class="form-label small mb-0">Username</label>
+        <input
+          v-model="inviteUsername"
+          type="text"
+          class="form-control form-control-sm"
+          autocomplete="username"
+          minlength="3"
+          maxlength="32"
+          pattern="[A-Za-z0-9_]+"
+          required
+        />
       </div>
       <div class="col-sm-3">
         <label class="form-label small mb-0">Role</label>
@@ -46,7 +52,7 @@
       <h4 class="h6">Pending invites</h4>
       <ul class="list-unstyled mb-0">
         <li v-for="inv in invites" :key="inv.id" class="d-flex justify-content-between align-items-center mb-1">
-          <span class="small">{{ inv.email }} ({{ inv.role }})</span>
+          <span class="small">{{ inv.user_name || inv.email }} ({{ inv.role }})</span>
           <button class="btn btn-sm btn-link text-danger" type="button" @click="revokeInvite(inv.id)">Revoke</button>
         </li>
       </ul>
@@ -130,7 +136,7 @@ const members = ref<ProjectMember[]>([])
 const invites = ref<ProjectInvite[]>([])
 const links = ref<ShareLink[]>([])
 const events = ref<ProjectEvent[]>([])
-const inviteEmail = ref('')
+const inviteUsername = ref('')
 const inviteRole = ref<'editor' | 'viewer'>('editor')
 const activityOpen = ref(false)
 const toast = useToast()
@@ -155,13 +161,9 @@ async function loadPanel() {
 
 async function sendInvite() {
   try {
-    const res = await api.createProjectInvite(props.project.id, inviteEmail.value.trim(), inviteRole.value)
-    inviteEmail.value = ''
-    toast.push(
-      res.message ||
-        'If a user with this email is in the system they will be sent an invite.',
-      'success',
-    )
+    await api.createProjectInvite(props.project.id, inviteUsername.value.trim(), inviteRole.value)
+    inviteUsername.value = ''
+    toast.push('Invite sent', 'success')
     await loadPanel()
     emit('changed')
   } catch (err) {

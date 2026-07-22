@@ -8,19 +8,15 @@ import (
 
 func TestUpdateProfileValidation(t *testing.T) {
 	ctx := context.Background()
-	_, err := UpdateProfile(ctx, 1, UpdateProfileInput{UserName: "", Timezone: "UTC", ItemsPerPage: 15}, true, true)
-	if !errors.Is(err, ErrValidation) {
-		t.Fatalf("empty name: %v", err)
-	}
-	_, err = UpdateProfile(ctx, 1, UpdateProfileInput{UserName: "Ada", Timezone: "Nope", ItemsPerPage: 15}, false, true)
+	_, err := UpdateProfile(ctx, 1, UpdateProfileInput{Timezone: "Nope", ItemsPerPage: 15}, false, true)
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("bad tz: %v", err)
 	}
-	_, err = UpdateProfile(ctx, 1, UpdateProfileInput{UserName: "Ada", Timezone: "UTC", ItemsPerPage: 99}, true, false)
+	_, err = UpdateProfile(ctx, 1, UpdateProfileInput{Timezone: "UTC", ItemsPerPage: 99}, true, false)
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("bad page size: %v", err)
 	}
-	_, err = UpdateProfile(ctx, 1, UpdateProfileInput{UserName: "Ada", Timezone: "UTC", ItemsPerPage: 15, DigestHour: 24}, true, true)
+	_, err = UpdateProfile(ctx, 1, UpdateProfileInput{Timezone: "UTC", ItemsPerPage: 15, DigestHour: 24}, true, true)
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("bad digest hour: %v", err)
 	}

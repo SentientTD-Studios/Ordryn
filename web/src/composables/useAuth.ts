@@ -8,6 +8,7 @@ const bootstrapped = ref(false)
 
 export function useAuth() {
   const isAuthenticated = computed(() => user.value !== null)
+  const needsUsernameClaim = computed(() => !!user.value?.username_change_available)
 
   async function refresh() {
     loading.value = true
@@ -30,6 +31,7 @@ export function useAuth() {
     email: string
     password: string
     confirm_password: string
+    user_name: string
     timezone?: string
     invite_token?: string
   }) {
@@ -46,9 +48,14 @@ export function useAuth() {
   }
 
   async function updateProfile(
-    payload: Partial<Pick<User, 'user_name' | 'timezone' | 'items_per_page' | 'digest_enabled' | 'digest_hour' | 'allow_project_invites'>>,
+    payload: Partial<Pick<User, 'timezone' | 'items_per_page' | 'digest_enabled' | 'digest_hour' | 'allow_project_invites'>>,
   ) {
     user.value = await api.patchMe(payload)
+    return user.value
+  }
+
+  async function claimUsername(user_name: string) {
+    user.value = await api.claimUsername(user_name)
     return user.value
   }
 
@@ -61,11 +68,13 @@ export function useAuth() {
     loading,
     bootstrapped,
     isAuthenticated,
+    needsUsernameClaim,
     hasPermission,
     refresh,
     login,
     register,
     logout,
     updateProfile,
+    claimUsername,
   }
 }

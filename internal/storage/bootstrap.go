@@ -47,6 +47,7 @@ func UserExistsByEmail(email string) (bool, error) {
 }
 
 // CreateUser inserts a user and returns the new id.
+// Generates a unique username from the email (bootstrap / admin create).
 func CreateUser(email, hashedPassword, timezone string, roleID int) (int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -57,11 +58,17 @@ func CreateUser(email, hashedPassword, timezone string, roleID int) (int, error)
 	if timezone == "" {
 		timezone = "America/New_York"
 	}
+	email = strings.TrimSpace(email)
+	claimed := make(map[string]int)
+	userName, err := allocateGeneratedUsername(email, claimed)
+	if err != nil {
+		return 0, fmt.Errorf("create user username: %w", err)
+	}
 	var id int
 	err = pool.QueryRow(context.Background(),
-		`INSERT INTO users (email, password, role_id, timezone)
-		 VALUES ($1, $2, $3, $4) RETURNING id`,
-		strings.TrimSpace(email), hashedPassword, roleID, timezone).Scan(&id)
+		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available)
+		 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
+		email, hashedPassword, roleID, timezone, userName).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("create user: %w", err)
 	}

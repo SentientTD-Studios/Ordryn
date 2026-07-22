@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"GoTodo/internal/config"
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/version"
@@ -168,34 +170,77 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parts := strings.Split(sub, "/")
-	if len(parts) != 2 {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid user path.")
-		return
-	}
-	id, err := strconv.Atoi(parts[0])
-	if err != nil || id <= 0 {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid user id.")
-		return
-	}
-	if r.Method != http.MethodPost {
-		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
-		return
-	}
-	switch parts[1] {
-	case "ban":
-		if err := storage.SetUserBanned(id, true); err != nil {
-			utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
+	if len(parts) == 2 {
+		id, err := strconv.Atoi(parts[0])
+		if err != nil || id <= 0 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid user id.")
 			return
 		}
-	case "unban":
-		if err := storage.SetUserBanned(id, false); err != nil {
-			utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
+		switch parts[1] {
+		case "ban":
+			if r.Method != http.MethodPost {
+				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+				return
+			}
+			if err := storage.SetUserBanned(id, true); err != nil {
+				utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
+				return
+			}
+		case "unban":
+			if r.Method != http.MethodPost {
+				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+				return
+			}
+			if err := storage.SetUserBanned(id, false); err != nil {
+				utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
+				return
+			}
+		case "username":
+			if r.Method != http.MethodPatch {
+				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+				return
+			}
+			apiV1AdminSetUsername(w, r, id)
+			return
+		default:
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Unknown action.")
 			return
 		}
-	default:
-		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Unknown action.")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		return
+	}
+
+	utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid user path.")
+}
+
+type adminSetUsernameRequest struct {
+	UserName string `json:"user_name"`
+}
+
+func apiV1AdminSetUsername(w http.ResponseWriter, r *http.Request, userID int) {
+	var req adminSetUsernameRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	profile, err := domain.AdminSetUsername(r.Context(), userID, req.UserName)
+	if err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			if strings.Contains(err.Error(), "already taken") {
+				utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+				return
+			}
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update username.")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":        true,
+		"id":        profile.ID,
+		"user_name": profile.UserName,
+	})
 }

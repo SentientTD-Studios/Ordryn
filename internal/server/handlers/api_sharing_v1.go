@@ -25,6 +25,7 @@ type apiProjectInviteJSON struct {
 	ID           int    `json:"id"`
 	ProjectID    int    `json:"project_id"`
 	Email        string `json:"email"`
+	UserName     string `json:"user_name,omitempty"`
 	Role         string `json:"role"`
 	ExpiresAt    string `json:"expires_at"`
 	CreatedAt    string `json:"created_at"`
@@ -56,8 +57,8 @@ type apiProjectEventJSON struct {
 }
 
 type apiInviteCreateRequest struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
 }
 
 type apiMemberPatchRequest struct {
@@ -91,6 +92,7 @@ func projectInviteToJSON(inv storage.ProjectInvite) apiProjectInviteJSON {
 		ID:           inv.ID,
 		ProjectID:    inv.ProjectID,
 		Email:        inv.Email,
+		UserName:     inv.UserName,
 		Role:         inv.Role,
 		ExpiresAt:    formatRFC3339(inv.ExpiresAt),
 		CreatedAt:    formatRFC3339(inv.CreatedAt),
@@ -241,15 +243,14 @@ func apiV1ProjectInvites(w http.ResponseWriter, r *http.Request, projectID int, 
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 				return
 			}
-			if err := domain.InviteToProject(r.Context(), userID, projectID, req.Email, req.Role); err != nil {
+			inv, err := domain.InviteToProject(r.Context(), userID, projectID, req.Username, req.Role)
+			if err != nil {
 				writeSharingDomainError(w, err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{
-				"message": domain.ProjectInviteAckMessage,
-			})
+			json.NewEncoder(w).Encode(projectInviteToJSON(*inv))
 		default:
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		}
@@ -567,16 +568,30 @@ func APIV1ShareLinkViewPublic(w http.ResponseWriter, r *http.Request) {
 
 func writeSharingDomainError(w http.ResponseWriter, err error) {
 	if errors.Is(err, domain.ErrValidation) {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", sharingClientMessage(err, "Invalid request."))
 		return
 	}
 	if errors.Is(err, domain.ErrForbidden) {
-		utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Forbidden.")
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden", sharingClientMessage(err, "Forbidden."))
 		return
 	}
 	if errors.Is(err, domain.ErrNotFound) {
-		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", sharingClientMessage(err, "Not found."))
 		return
 	}
 	utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
+}
+
+// sharingClientMessage returns the detail after the sentinel prefix, or fallback.
+func sharingClientMessage(err error, fallback string) string {
+	msg := err.Error()
+	for _, prefix := range []string{"validation: ", "not found: ", "forbidden: "} {
+		if strings.HasPrefix(msg, prefix) {
+			return strings.TrimPrefix(msg, prefix)
+		}
+	}
+	if msg != "" && msg != domain.ErrValidation.Error() && msg != domain.ErrNotFound.Error() && msg != domain.ErrForbidden.Error() {
+		return msg
+	}
+	return fallback
 }

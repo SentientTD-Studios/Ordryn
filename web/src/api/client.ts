@@ -145,6 +145,7 @@ export const api = {
     email: string
     password: string
     confirm_password: string
+    user_name: string
     timezone?: string
     invite_token?: string
   }) {
@@ -154,14 +155,28 @@ export const api = {
     })
   },
 
+  usernameAvailable(username: string) {
+    const qs = new URLSearchParams({ username })
+    return request<{ username: string; available: boolean; valid: boolean; message?: string }>(
+      `/api/v1/auth/username-available?${qs}`,
+    )
+  },
+
   logout() {
     return request<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' })
   },
 
-  patchMe(payload: Partial<Pick<User, 'user_name' | 'timezone' | 'items_per_page' | 'digest_enabled' | 'digest_hour' | 'allow_project_invites'>>) {
+  patchMe(payload: Partial<Pick<User, 'timezone' | 'items_per_page' | 'digest_enabled' | 'digest_hour' | 'allow_project_invites'>>) {
     return request<User>('/api/v1/me', {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    })
+  },
+
+  claimUsername(user_name: string) {
+    return request<User>('/api/v1/me/username', {
+      method: 'POST',
+      body: JSON.stringify({ user_name }),
     })
   },
 
@@ -318,10 +333,10 @@ export const api = {
     return request<ProjectInvite[]>(`/api/v1/projects/${projectId}/invites`)
   },
 
-  createProjectInvite(projectId: number, email: string, role: 'editor' | 'viewer') {
-    return request<{ message: string }>(`/api/v1/projects/${projectId}/invites`, {
+  createProjectInvite(projectId: number, username: string, role: 'editor' | 'viewer') {
+    return request<ProjectInvite>(`/api/v1/projects/${projectId}/invites`, {
       method: 'POST',
-      body: JSON.stringify({ email, role }),
+      body: JSON.stringify({ username, role }),
     })
   },
 
@@ -468,6 +483,13 @@ export const api = {
 
   unbanUser(id: number) {
     return request<{ ok: boolean }>(`/api/v1/admin/users/${id}/unban`, { method: 'POST' })
+  },
+
+  setAdminUsername(id: number, user_name: string) {
+    return request<{ ok: boolean; id: number; user_name: string }>(`/api/v1/admin/users/${id}/username`, {
+      method: 'PATCH',
+      body: JSON.stringify({ user_name }),
+    })
   },
 
   listInvites() {

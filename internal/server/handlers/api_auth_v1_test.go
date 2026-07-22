@@ -70,19 +70,25 @@ func TestAPIV1AuthRegisterValidation(t *testing.T) {
 	}{
 		{
 			name:       "password mismatch",
-			body:       `{"email":"a@b.com","password":"x","confirm_password":"y","timezone":"UTC"}`,
+			body:       `{"email":"a@b.com","password":"x","confirm_password":"y","timezone":"UTC","user_name":"alice"}`,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "invalid_request",
 		},
 		{
 			name:       "invalid timezone",
-			body:       `{"email":"a@b.com","password":"x","confirm_password":"x","timezone":"Not/AZone"}`,
+			body:       `{"email":"a@b.com","password":"x","confirm_password":"x","timezone":"Not/AZone","user_name":"alice"}`,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "invalid_request",
 		},
 		{
 			name:       "missing email",
-			body:       `{"password":"x","confirm_password":"x","timezone":"UTC"}`,
+			body:       `{"password":"x","confirm_password":"x","timezone":"UTC","user_name":"alice"}`,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "invalid_request",
+		},
+		{
+			name:       "invalid username",
+			body:       `{"email":"a@b.com","password":"x","confirm_password":"x","timezone":"UTC","user_name":"bad name"}`,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "invalid_request",
 		},
@@ -145,7 +151,7 @@ func TestProfileToMeJSON(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"id", "email", "user_name", "timezone", "items_per_page", "permissions", "digest_enabled", "digest_hour", "allow_project_invites"} {
+	for _, key := range []string{"id", "email", "user_name", "timezone", "items_per_page", "permissions", "digest_enabled", "digest_hour", "allow_project_invites", "username_change_available"} {
 		if _, ok := m[key]; !ok {
 			t.Fatalf("missing key %q in %s", key, string(raw))
 		}

@@ -13,7 +13,6 @@ import (
 )
 
 type apiMePatchRequest struct {
-	UserName            *string `json:"user_name"`
 	Timezone            *string `json:"timezone"`
 	ItemsPerPage        *int    `json:"items_per_page"`
 	DigestEnabled       *bool   `json:"digest_enabled"`
@@ -25,6 +24,10 @@ type apiChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
 	ConfirmPassword string `json:"confirm_password"`
+}
+
+type apiClaimUsernameRequest struct {
+	UserName string `json:"user_name"`
 }
 
 // APIV1Me handles GET/PATCH /api/v1/me.
@@ -73,15 +76,11 @@ func apiV1PatchMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := domain.UpdateProfileInput{
-		UserName:            current.UserName,
 		Timezone:            current.Timezone,
 		ItemsPerPage:        current.ItemsPerPage,
 		DigestEnabled:       current.DigestEnabled,
 		DigestHour:          current.DigestHour,
 		AllowProjectInvites: current.AllowProjectInvites,
-	}
-	if req.UserName != nil {
-		in.UserName = *req.UserName
 	}
 	if req.Timezone != nil {
 		in.Timezone = *req.Timezone
@@ -106,6 +105,45 @@ func apiV1PatchMe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update profile.")
+		return
+	}
+	refreshSessionProfile(w, r, profile)
+	writeAPIUserJSON(w, http.StatusOK, profile)
+}
+
+// APIV1ClaimUsername handles POST /api/v1/me/username (one-time free change).
+func APIV1ClaimUsername(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	userID, ok := utils.GetAPIUserID(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	var req apiClaimUsernameRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	profile, err := domain.ClaimUsername(r.Context(), userID, req.UserName)
+	if err != nil {
+		if errors.Is(err, domain.ErrForbidden) {
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Username cannot be changed.")
+			return
+		}
+		if errors.Is(err, domain.ErrValidation) {
+			code := "invalid_request"
+			if err.Error() == "validation: username is already taken" {
+				code = "username_taken"
+				utils.APIJSONError(w, http.StatusConflict, code, "That username is already taken.")
+				return
+			}
+			utils.APIJSONError(w, http.StatusBadRequest, code, err.Error())
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to set username.")
 		return
 	}
 	refreshSessionProfile(w, r, profile)

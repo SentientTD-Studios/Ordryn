@@ -56,7 +56,8 @@ type ProjectInvite struct {
 	AcceptedAt *time.Time
 	CreatedAt  time.Time
 	// Optional join fields for listing.
-	ProjectName string
+	UserName     string
+	ProjectName  string
 	InviterEmail string
 }
 
@@ -404,10 +405,12 @@ func ListProjectInvites(projectID int) ([]ProjectInvite, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT id, project_id, email, role, token, invited_by, expires_at, accepted_at, created_at
-		FROM project_invites
-		WHERE project_id = $1 AND accepted_at IS NULL
-		ORDER BY created_at DESC`, projectID)
+		SELECT i.id, i.project_id, i.email, i.role, i.token, i.invited_by, i.expires_at, i.accepted_at, i.created_at,
+		       COALESCE(u.user_name, '')
+		FROM project_invites i
+		LEFT JOIN users u ON LOWER(u.email) = LOWER(i.email)
+		WHERE i.project_id = $1 AND i.accepted_at IS NULL
+		ORDER BY i.created_at DESC`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +420,7 @@ func ListProjectInvites(projectID int) ([]ProjectInvite, error) {
 	for rows.Next() {
 		var inv ProjectInvite
 		if err := rows.Scan(&inv.ID, &inv.ProjectID, &inv.Email, &inv.Role, &inv.Token,
-			&inv.InvitedBy, &inv.ExpiresAt, &inv.AcceptedAt, &inv.CreatedAt); err != nil {
+			&inv.InvitedBy, &inv.ExpiresAt, &inv.AcceptedAt, &inv.CreatedAt, &inv.UserName); err != nil {
 			return nil, err
 		}
 		out = append(out, inv)
@@ -456,10 +459,11 @@ func ListPendingInvitesForEmail(email string) ([]ProjectInvite, error) {
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT i.id, i.project_id, i.email, i.role, i.token, i.invited_by, i.expires_at, i.accepted_at, i.created_at,
-		       p.name, COALESCE(u.email, '')
+		       COALESCE(invitee.user_name, ''), p.name, COALESCE(u.email, '')
 		FROM project_invites i
 		JOIN projects p ON p.id = i.project_id
 		LEFT JOIN users u ON u.id = i.invited_by
+		LEFT JOIN users invitee ON LOWER(invitee.email) = LOWER(i.email)
 		WHERE i.email = $1 AND i.accepted_at IS NULL AND i.expires_at > NOW()
 		ORDER BY i.created_at DESC`, email)
 	if err != nil {
@@ -472,7 +476,7 @@ func ListPendingInvitesForEmail(email string) ([]ProjectInvite, error) {
 		var inv ProjectInvite
 		if err := rows.Scan(&inv.ID, &inv.ProjectID, &inv.Email, &inv.Role, &inv.Token,
 			&inv.InvitedBy, &inv.ExpiresAt, &inv.AcceptedAt, &inv.CreatedAt,
-			&inv.ProjectName, &inv.InviterEmail); err != nil {
+			&inv.UserName, &inv.ProjectName, &inv.InviterEmail); err != nil {
 			return nil, err
 		}
 		out = append(out, inv)

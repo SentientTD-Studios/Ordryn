@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
@@ -21,6 +22,7 @@ type apiAuthRegisterRequest struct {
 	ConfirmPassword string `json:"confirm_password"`
 	Timezone        string `json:"timezone"`
 	InviteToken     string `json:"invite_token"`
+	UserName        string `json:"user_name"`
 }
 
 type apiAuthLoginRequest struct {
@@ -29,15 +31,16 @@ type apiAuthLoginRequest struct {
 }
 
 type apiUserMeJSON struct {
-	ID                  int      `json:"id"`
-	Email               string   `json:"email"`
-	UserName            string   `json:"user_name"`
-	Timezone            string   `json:"timezone"`
-	ItemsPerPage        int      `json:"items_per_page"`
-	Permissions         []string `json:"permissions"`
-	DigestEnabled       bool     `json:"digest_enabled"`
-	DigestHour          int      `json:"digest_hour"`
-	AllowProjectInvites bool     `json:"allow_project_invites"`
+	ID                      int      `json:"id"`
+	Email                   string   `json:"email"`
+	UserName                string   `json:"user_name"`
+	Timezone                string   `json:"timezone"`
+	ItemsPerPage            int      `json:"items_per_page"`
+	Permissions             []string `json:"permissions"`
+	DigestEnabled           bool     `json:"digest_enabled"`
+	DigestHour              int      `json:"digest_hour"`
+	AllowProjectInvites     bool     `json:"allow_project_invites"`
+	UsernameChangeAvailable bool     `json:"username_change_available"`
 }
 
 func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
@@ -46,15 +49,16 @@ func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
 		perms = []string{}
 	}
 	return apiUserMeJSON{
-		ID:                  p.ID,
-		Email:               p.Email,
-		UserName:            p.UserName,
-		Timezone:            p.Timezone,
-		ItemsPerPage:        p.ItemsPerPage,
-		Permissions:         perms,
-		DigestEnabled:       p.DigestEnabled,
-		DigestHour:          p.DigestHour,
-		AllowProjectInvites: p.AllowProjectInvites,
+		ID:                      p.ID,
+		Email:                   p.Email,
+		UserName:                p.UserName,
+		Timezone:                p.Timezone,
+		ItemsPerPage:            p.ItemsPerPage,
+		Permissions:             perms,
+		DigestEnabled:           p.DigestEnabled,
+		DigestHour:              p.DigestHour,
+		AllowProjectInvites:     p.AllowProjectInvites,
+		UsernameChangeAvailable: p.UsernameChangeAvailable,
 	}
 }
 
@@ -100,6 +104,11 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "All fields are required.")
 		return
 	}
+	userName, err := domain.PrepareUsername(req.UserName)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
 	if req.Password != req.ConfirmPassword {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Passwords do not match.")
 		return
@@ -140,6 +149,16 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	taken, err := storage.UsernameTaken(userName, 0)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	if taken {
+		utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+		return
+	}
+
 	inviteID := 0
 	if inviteOnly {
 		id, used, invErr := storage.LookupInvite(email, token)
@@ -171,7 +190,7 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := storage.RegisterUser(email, string(hashed), timezone, roleID, inviteID)
+	userID, err := storage.RegisterUser(email, string(hashed), timezone, userName, roleID, inviteID)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
@@ -218,7 +237,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hashedPassword, roleID, timezone, err := storage.GetAuthCredentials(email)
+	hashedPassword, _, _, err := storage.GetAuthCredentials(email)
 	if err != nil {
 		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
 			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)
@@ -244,18 +263,10 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
-	permissions, err := storage.GetPermissionsByRoleID(roleID)
+	profile, err := storage.GetUserProfileByID(user.ID)
 	if err != nil {
-		permissions = []string{}
-	}
-	profile := &storage.UserProfile{
-		ID:           user.ID,
-		Email:        user.Email,
-		UserName:     user.UserName,
-		Timezone:     timezone,
-		ItemsPerPage: user.ItemsPerPage,
-		RoleID:       roleID,
-		Permissions:  permissions,
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
 	}
 	if err := establishSession(w, r, profile); err != nil {
 		fmt.Printf("APIV1AuthLogin session: %v\n", err)
@@ -280,3 +291,36 @@ func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
+// APIV1UsernameAvailable handles GET /api/v1/auth/username-available?username=
+func APIV1UsernameAvailable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	raw := r.URL.Query().Get("username")
+	excludeID := 0
+	if uid := utils.GetSessionUserID(r); uid != nil {
+		excludeID = *uid
+	}
+	name, available, err := domain.UsernameAvailable(raw, excludeID)
+	if err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"username":  domain.NormalizeUsername(raw),
+				"available": false,
+				"valid":     false,
+				"message":   err.Error(),
+			})
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"username":  name,
+		"available": available,
+		"valid":     true,
+	})
+}

@@ -11,7 +11,6 @@ import { APIError } from '@/api/types'
 const { user, updateProfile } = useAuth()
 const { push } = useToast()
 const { askConfirm } = useConfirm()
-const userName = ref('')
 const timezone = ref('UTC')
 const itemsPerPage = ref(15)
 const digestEnabled = ref(false)
@@ -38,7 +37,6 @@ watch(
   user,
   (u) => {
     if (!u) return
-    userName.value = u.user_name || ''
     timezone.value = u.timezone || 'UTC'
     itemsPerPage.value = u.items_per_page || 15
     digestEnabled.value = u.digest_enabled
@@ -63,7 +61,6 @@ async function save() {
   busy.value = true
   try {
     await updateProfile({
-      user_name: userName.value.trim(),
       timezone: timezone.value.trim(),
       items_per_page: Number(itemsPerPage.value),
       digest_enabled: digestEnabled.value,
@@ -234,8 +231,11 @@ onUnmounted(() => {
             <input type="text" class="form-control-plaintext" :value="user?.email || ''" readonly tabindex="-1" />
           </div>
           <div class="mb-3">
-            <label for="profile-name" class="form-label">Display name</label>
-            <input id="profile-name" v-model="userName" type="text" class="form-control" required />
+            <label class="form-label fw-bold">Username</label>
+            <input type="text" class="form-control-plaintext" :value="user?.user_name || ''" readonly tabindex="-1" />
+            <div class="form-text">
+              Usernames cannot be changed except by an administrator.
+            </div>
           </div>
           <div class="mb-3">
             <label for="profile-timezone" class="form-label">Timezone</label>

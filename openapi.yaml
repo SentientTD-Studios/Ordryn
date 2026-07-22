@@ -115,6 +115,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
+  /api/v1/auth/username-available:
+    get:
+      tags: [Auth]
+      summary: Check whether a username is available
+      security: []
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Availability result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                  available:
+                    type: boolean
+                  valid:
+                    type: boolean
+                  message:
+                    type: string
+
   /api/v1/auth/forgot-password:
     post:
       tags: [Auth]
@@ -389,6 +417,45 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me/username:
+    post:
+      tags: [Profile]
+      summary: One-time username claim for migrated accounts
+      description: |
+        Allowed only when `username_change_available` is true. Sets the username
+        and clears the free-change flag. New registrations do not get this flag.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_name]
+              properties:
+                user_name:
+                  type: string
+                  minLength: 3
+                  maxLength: 32
+                  pattern: '^[A-Za-z0-9_]+$'
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/APIError"
+        "409":
+          $ref: "#/components/responses/APIError"
 
   /api/v1/me/password:
     post:
@@ -885,7 +952,7 @@ paths:
                   $ref: "#/components/schemas/ProjectInvite"
     post:
       tags: [Projects]
-      summary: Invite a user by email (owner only)
+      summary: Invite a user by username (owner only)
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -897,19 +964,21 @@ paths:
               $ref: "#/components/schemas/ProjectInviteCreate"
       responses:
         "200":
-          description: Privacy-preserving acknowledgment (does not reveal whether the email exists or an invite was created)
+          description: Invite created
           content:
             application/json:
               schema:
-                type: object
-                required: [message]
-                properties:
-                  message:
-                    type: string
+                $ref: "#/components/schemas/ProjectInvite"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Project not found, or username not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/projects/{id}/invites/{inviteId}:
     parameters:
@@ -1613,6 +1682,48 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
+  /api/v1/admin/users/{id}/username:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Admin]
+      summary: Set a user's username
+      description: Clears username_change_available so the user is not stuck in the claim flow.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_name]
+              properties:
+                user_name:
+                  type: string
+                  minLength: 3
+                  maxLength: 32
+                  pattern: '^[A-Za-z0-9_]+$'
+      responses:
+        "200":
+          description: Username updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  id:
+                    type: integer
+                  user_name:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/APIError"
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1744,12 +1855,13 @@ components:
         allow_project_invites:
           type: boolean
           description: When false, the user cannot be invited to shared projects
+        username_change_available:
+          type: boolean
+          description: When true, the user may call POST /api/v1/me/username once
 
     UserPatch:
       type: object
       properties:
-        user_name:
-          type: string
         timezone:
           type: string
         items_per_page:
@@ -1766,7 +1878,7 @@ components:
 
     RegisterRequest:
       type: object
-      required: [email, password, confirm_password]
+      required: [email, password, confirm_password, user_name]
       properties:
         email:
           type: string
@@ -1775,6 +1887,12 @@ components:
           minLength: 8
         confirm_password:
           type: string
+        user_name:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_]+$'
+          description: Unique username; immutable after registration except by admin
         timezone:
           type: string
         invite_token:
@@ -1878,6 +1996,8 @@ components:
           type: integer
         email:
           type: string
+        user_name:
+          type: string
         role:
           type: string
           enum: [editor, viewer]
@@ -1894,11 +2014,13 @@ components:
 
     ProjectInviteCreate:
       type: object
-      required: [email, role]
+      required: [username, role]
       properties:
-        email:
+        username:
           type: string
-          format: email
+          description: Unique username of the user to invite
+          minLength: 3
+          maxLength: 32
         role:
           type: string
           enum: [editor, viewer]

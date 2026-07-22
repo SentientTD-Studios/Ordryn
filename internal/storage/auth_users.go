@@ -11,16 +11,17 @@ import (
 
 // UserProfile is the public account view for /api/v1/me and auth responses.
 type UserProfile struct {
-	ID                  int
-	Email               string
-	UserName            string
-	Timezone            string
-	ItemsPerPage        int
-	RoleID              int
-	Permissions         []string
-	DigestEnabled       bool
-	DigestHour          int
-	AllowProjectInvites bool
+	ID                      int
+	Email                   string
+	UserName                string
+	Timezone                string
+	ItemsPerPage            int
+	RoleID                  int
+	Permissions             []string
+	DigestEnabled           bool
+	DigestHour              int
+	AllowProjectInvites     bool
+	UsernameChangeAvailable bool
 }
 
 // GetUserProfileByID loads profile fields and role permissions for a user.
@@ -36,12 +37,13 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		SELECT u.id, u.email, COALESCE(u.user_name, ''), COALESCE(u.timezone, 'America/New_York'),
 		       COALESCE(u.items_per_page, 15), u.role_id, COALESCE(r.permissions, '{}'),
 		       COALESCE(u.digest_enabled, false), COALESCE(u.digest_hour, 8),
-		       COALESCE(u.allow_project_invites, true)
+		       COALESCE(u.allow_project_invites, true),
+		       COALESCE(u.username_change_available, false)
 		FROM users u
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1`, userID).Scan(
 		&p.ID, &p.Email, &p.UserName, &p.Timezone, &p.ItemsPerPage, &p.RoleID, &p.Permissions,
-		&p.DigestEnabled, &p.DigestHour, &p.AllowProjectInvites,
+		&p.DigestEnabled, &p.DigestHour, &p.AllowProjectInvites, &p.UsernameChangeAvailable,
 	)
 	if err != nil {
 		return nil, err
@@ -130,8 +132,8 @@ func LookupInvite(email, token string) (id int, used bool, err error) {
 }
 
 // RegisterUser creates a user and optionally consumes an invite in one transaction.
-// inviteID <= 0 skips invite updates.
-func RegisterUser(email, hashedPassword, timezone string, roleID, inviteID int) (int, error) {
+// inviteID <= 0 skips invite updates. userName must already be validated and unique.
+func RegisterUser(email, hashedPassword, timezone, userName string, roleID, inviteID int) (int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return 0, err
@@ -150,9 +152,9 @@ func RegisterUser(email, hashedPassword, timezone string, roleID, inviteID int) 
 
 	var id int
 	err = tx.QueryRow(ctx,
-		`INSERT INTO users (email, password, role_id, timezone)
-		 VALUES ($1, $2, $3, $4) RETURNING id`,
-		strings.TrimSpace(email), hashedPassword, roleID, timezone).Scan(&id)
+		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available)
+		 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
+		strings.TrimSpace(email), hashedPassword, roleID, timezone, strings.TrimSpace(userName)).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("register user: %w", err)
 	}
