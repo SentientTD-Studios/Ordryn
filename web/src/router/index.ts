@@ -112,7 +112,8 @@ const router = createRouter({
       path: '/auth/device',
       name: 'device-auth',
       component: () => import('@/views/DeviceAuthView.vue'),
-      meta: { requiresAuth: true },
+      // App browser SSO must complete without the username-claim gate taking over.
+      meta: { requiresAuth: true, allowUsernameClaim: true },
     },
     {
       path: '/admin',
@@ -147,6 +148,12 @@ router.beforeEach(async (to) => {
     return { name: 'login' }
   }
   if (to.meta.guest && auth.isAuthenticated.value) {
+    // Preserve post-login redirects (e.g. /auth/device?user_code=…) so app SSO
+    // is not diverted to the username-claim screen mid-flow.
+    const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : null
+    if (redirect) {
+      return redirect
+    }
     if (auth.needsUsernameClaim.value) {
       return { name: 'claim-username' }
     }
