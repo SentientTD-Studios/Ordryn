@@ -798,18 +798,45 @@ func GetProjectTaskEvents(projectID, limit int) ([]TaskEvent, error) {
 	return out, nil
 }
 
-// TaskAccessSQL returns a SQL fragment (with alias prefix) for tasks visible to userID.
+// TaskVisibleCondition returns a SQL fragment for tasks readable by userID,
+// including viewer membership on shared projects.
 // Uses placeholder $N for userID; caller must append userID to args at that index.
 func TaskVisibleCondition(alias string, userParam string) string {
-	prefix := ""
+	return taskVisibleCondition(alias, userParam, false)
+}
+
+// TaskHomeVisibleCondition returns a SQL fragment for the unscoped/home task list.
+// Shared-project membership only counts when the caller is owner or editor;
+// viewers see those tasks only when listing a specific project.
+func TaskHomeVisibleCondition(alias string, userParam string) string {
+	return taskVisibleCondition(alias, userParam, true)
+}
+
+// TaskListVisibleCondition picks home vs full visibility from whether the list
+// is scoped to a specific project (projectFilter > 0).
+func TaskListVisibleCondition(alias, userParam string, projectFilter *int) string {
+	if projectFilter != nil && *projectFilter > 0 {
+		return TaskVisibleCondition(alias, userParam)
+	}
+	return TaskHomeVisibleCondition(alias, userParam)
+}
+
+func taskVisibleCondition(alias, userParam string, writeRolesOnly bool) string {
+	// Default to tasks. when unaliased so EXISTS subqueries correlate to the
+	// outer tasks row (bare project_id would resolve to pm.project_id).
+	prefix := "tasks."
 	if alias != "" {
 		prefix = alias + "."
 	}
+	memberRoleFilter := ""
+	if writeRolesOnly {
+		memberRoleFilter = " AND pm.role IN ('owner', 'editor')"
+	}
 	return fmt.Sprintf(`(%suser_id = %s OR (%sproject_id IS NOT NULL AND EXISTS (
-		SELECT 1 FROM project_members pm WHERE pm.project_id = %sproject_id AND pm.user_id = %s
+		SELECT 1 FROM project_members pm WHERE pm.project_id = %sproject_id AND pm.user_id = %s%s
 	)) OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM projects p_own WHERE p_own.id = %sproject_id AND p_own.user_id = %s
-	)))`, prefix, userParam, prefix, prefix, userParam, prefix, prefix, userParam)
+	)))`, prefix, userParam, prefix, prefix, userParam, memberRoleFilter, prefix, prefix, userParam)
 }
 
 // CanUserAccessTask reports whether userID can read the task and their effective write role.

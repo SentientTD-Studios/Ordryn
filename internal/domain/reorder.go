@@ -84,7 +84,7 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, isFav bool, projec
 		}
 	}
 
-	vis := storage.TaskVisibleCondition("t", "$1")
+	vis := storage.TaskListVisibleCondition("t", "$1", projectFilter)
 	argsAll := []interface{}{userID, isFav}
 	q := "SELECT t.id FROM tasks t WHERE " + vis + " AND COALESCE(t.is_favorite,false) = $2"
 	if projectFilter != nil {
