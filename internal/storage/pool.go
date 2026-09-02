@@ -27,6 +27,11 @@ func openDatabaseConn() (*pgxpool.Pool, error) {
 		config[key] = val
 	}
 
+	sslMode := os.Getenv("DB_SSLMODE")
+	if sslMode == "" {
+	    sslMode = "require" // or default
+	}
+
 	dsn := fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s",
 		config["DB_USER"],
