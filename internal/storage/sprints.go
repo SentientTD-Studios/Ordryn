@@ -359,6 +359,20 @@ func CountTasksWithSprint(sprintID int) (int, error) {
 	return n, err
 }
 
+// CountTasksInBacklog returns active tasks currently in a project's backlog (sprint_id IS NULL).
+func CountTasksInBacklog(projectID int) (int, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return 0, err
+	}
+	defer CloseDatabase(pool)
+	var n int
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM tasks t WHERE t.project_id = $1 AND t.sprint_id IS NULL AND NOT `+ArchivedTaskExistsSQL("t.id"),
+		projectID).Scan(&n)
+	return n, err
+}
+
 // MoveTasksFromSprint reassigns all tasks from one sprint to another (or NULL).
 func MoveTasksFromSprint(fromSprintID int, toSprintID *int) error {
 	pool, err := OpenDatabase()

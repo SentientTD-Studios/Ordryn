@@ -668,13 +668,19 @@ func statusChangeMetadata(projectID, oldStatusID, newStatusID int) map[string]in
 
 func sprintChangeMetadata(projectID, oldSprintID, newSprintID int) map[string]interface{} {
 	meta := map[string]interface{}{}
+	backlogName := "Backlog"
+	if projectID > 0 {
+		if bn, err := storage.GetProjectBacklogName(projectID); err == nil && bn != "" {
+			backlogName = bn
+		}
+	}
 	if newSprintID > 0 {
 		if s, err := storage.GetProjectSprint(projectID, newSprintID); err == nil && s != nil {
 			meta["to"] = s.Name
 			meta["to_id"] = s.ID
 		}
 	} else {
-		meta["to"] = "Backlog"
+		meta["to"] = backlogName
 	}
 	if oldSprintID > 0 {
 		if s, err := storage.GetProjectSprint(projectID, oldSprintID); err == nil && s != nil {
@@ -682,7 +688,7 @@ func sprintChangeMetadata(projectID, oldSprintID, newSprintID int) map[string]in
 			meta["from_id"] = s.ID
 		}
 	} else {
-		meta["from"] = "Backlog"
+		meta["from"] = backlogName
 	}
 	return meta
 }

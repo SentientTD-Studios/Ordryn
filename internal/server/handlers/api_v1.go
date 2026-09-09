@@ -176,6 +176,7 @@ type apiProjectJSON struct {
 	Description   string `json:"description,omitempty"`
 	WorkflowMode  string `json:"workflow_mode,omitempty"`
 	Archived      bool   `json:"archived"`
+	BacklogName   string `json:"backlog_name,omitempty"`
 	Role          string `json:"role,omitempty"`
 	OwnerEmail    string `json:"owner_email,omitempty"`
 	OwnerUserName string `json:"owner_user_name,omitempty"`
@@ -201,6 +202,7 @@ type apiProjectPatchRequest struct {
 	Name         *string `json:"name"`
 	Description  *string `json:"description"`
 	WorkflowMode *string `json:"workflow_mode"`
+	BacklogName  *string `json:"backlog_name"`
 }
 
 type apiProjectReorderRequest struct {
@@ -1087,11 +1089,11 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil {
+	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil && req.BacklogName == nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 		return
 	}
-	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode)
+	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName)
 	if err != nil {
 		if errors.Is(err, domain.ErrValidation) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())

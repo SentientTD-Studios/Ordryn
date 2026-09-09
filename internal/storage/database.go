@@ -215,6 +215,7 @@ func CreateProjectsTable() error {
 		"workflow_mode VARCHAR(16) NOT NULL DEFAULT 'classic'",
 		"position INTEGER NOT NULL DEFAULT 0",
 		"archived BOOLEAN NOT NULL DEFAULT false",
+		"backlog_name TEXT NOT NULL DEFAULT 'Backlog'",
 		"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 		"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 	}
@@ -276,6 +277,22 @@ func MigrateProjectsAddArchived() error {
 		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false`)
 	if err != nil {
 		return fmt.Errorf("failed to add projects.archived: %v", err)
+	}
+	return nil
+}
+
+// MigrateProjectsAddBacklogName adds the backlog_name column defaulting to 'Backlog'.
+func MigrateProjectsAddBacklogName() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(),
+		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS backlog_name TEXT NOT NULL DEFAULT 'Backlog'`)
+	if err != nil {
+		return fmt.Errorf("failed to add projects.backlog_name: %v", err)
 	}
 	return nil
 }

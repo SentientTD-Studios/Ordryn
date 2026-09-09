@@ -15,6 +15,9 @@ const MaxProjectNameLength = 50
 // MaxProjectDescriptionLength is the maximum length of a project description.
 const MaxProjectDescriptionLength = 1000
 
+// MaxBacklogNameLength is the maximum length of a project's backlog sprint name.
+const MaxBacklogNameLength = storage.MaxSprintNameLen
+
 // CreateProject validates and creates a project for the user.
 func CreateProject(ctx context.Context, userID int, name, description string) (*storage.Project, error) {
 	_ = ctx
@@ -34,11 +37,16 @@ func CreateProject(ctx context.Context, userID int, name, description string) (*
 
 // RenameProject updates a project name (owner only) and returns the updated project.
 func RenameProject(ctx context.Context, userID, projectID int, name string) (*storage.Project, error) {
-	return UpdateProject(ctx, userID, projectID, &name, nil, nil)
+	return UpdateProject(ctx, userID, projectID, &name, nil, nil, nil)
 }
 
-// UpdateProject patches name, description, and/or workflow_mode (owner only).
-func UpdateProject(ctx context.Context, userID, projectID int, name, description, workflowMode *string) (*storage.Project, error) {
+// RenameProjectBacklog updates a project's backlog sprint name (owner only).
+func RenameProjectBacklog(ctx context.Context, userID, projectID int, name string) (*storage.Project, error) {
+	return UpdateProject(ctx, userID, projectID, nil, nil, nil, &name)
+}
+
+// UpdateProject patches name, description, workflow_mode, and/or backlog_name (owner only).
+func UpdateProject(ctx context.Context, userID, projectID int, name, description, workflowMode, backlogName *string) (*storage.Project, error) {
 	_ = ctx
 	var trimmedName string
 	if name != nil {
@@ -60,6 +68,18 @@ func UpdateProject(ctx context.Context, userID, projectID int, name, description
 		trimmedDescription = &d
 	}
 
+	var trimmedBacklogName *string
+	if backlogName != nil {
+		b := strings.TrimSpace(*backlogName)
+		if b == "" {
+			return nil, fmt.Errorf("%w: backlog name is required", ErrValidation)
+		}
+		if len(b) > MaxBacklogNameLength {
+			return nil, fmt.Errorf("%w: backlog name must be %d characters or less", ErrValidation, MaxBacklogNameLength)
+		}
+		trimmedBacklogName = &b
+	}
+
 	proj, err := storage.GetAccessibleProjectByID(projectID, userID)
 	if err != nil {
 		return nil, ErrNotFound
@@ -72,8 +92,8 @@ func UpdateProject(ctx context.Context, userID, projectID int, name, description
 	if name != nil {
 		namePtr = &trimmedName
 	}
-	if namePtr != nil || trimmedDescription != nil {
-		if err := storage.UpdateProject(projectID, proj.OwnerUserID, namePtr, trimmedDescription); err != nil {
+	if namePtr != nil || trimmedDescription != nil || trimmedBacklogName != nil {
+		if err := storage.UpdateProject(projectID, proj.OwnerUserID, namePtr, trimmedDescription, trimmedBacklogName); err != nil {
 			return nil, err
 		}
 		if namePtr != nil && *namePtr != proj.Name {
@@ -84,13 +104,18 @@ func UpdateProject(ctx context.Context, userID, projectID int, name, description
 		if trimmedDescription != nil && *trimmedDescription != proj.Description {
 			_ = storage.LogProjectEvent(projectID, userID, "description_updated", nil)
 		}
+		if trimmedBacklogName != nil && *trimmedBacklogName != proj.BacklogName {
+			_ = storage.LogProjectEvent(projectID, userID, "backlog_renamed", map[string]interface{}{
+				"name": *trimmedBacklogName,
+			})
+		}
 	}
 
 	if workflowMode != nil {
 		if _, err := SetProjectWorkflowMode(ctx, userID, projectID, *workflowMode); err != nil {
 			return nil, err
 		}
-	} else if namePtr != nil || trimmedDescription != nil {
+	} else if namePtr != nil || trimmedDescription != nil || trimmedBacklogName != nil {
 		live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
 	}
 

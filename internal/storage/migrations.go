@@ -195,6 +195,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateProjectsAddArchived failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateProjectsAddBacklogName(); err != nil {
+		fmt.Printf("migration: MigrateProjectsAddBacklogName failed: %v\n", err)
+		errCount++
+	}
 	if err := CreateProjectWorkflowTables(); err != nil {
 		fmt.Printf("migration: CreateProjectWorkflowTables failed: %v\n", err)
 		errCount++

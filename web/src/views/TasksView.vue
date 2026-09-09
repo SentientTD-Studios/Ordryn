@@ -1420,7 +1420,7 @@ onUnmounted(() => {
               style="max-width: 28rem;"
               @change="onBoardSprintChange"
             >
-              <option value="backlog">Backlog</option>
+              <option value="backlog">{{ activeProjectObj?.backlog_name || 'Backlog' }}</option>
               <option v-for="s in boardSprints" :key="s.id" :value="String(s.id)">
                 {{ sprintOptionLabel(s, { activeSuffix: true, lockedSuffix: true }) }}
               </option>

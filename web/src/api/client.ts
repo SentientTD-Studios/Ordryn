@@ -463,7 +463,7 @@ export const api = {
 
   updateProject(
     id: number,
-    payload: Partial<{ name: string; description: string; workflow_mode: WorkflowMode }>,
+    payload: Partial<{ name: string; description: string; workflow_mode: WorkflowMode; backlog_name: string }>,
   ) {
     return request<Project>(`/api/v1/projects/${id}`, {
       method: 'PATCH',
@@ -569,6 +569,13 @@ export const api = {
     return request<ProjectSprint>(`/api/v1/projects/${projectId}/sprints/${sprintId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    })
+  },
+
+  updateProjectBacklogSprint(projectId: number, name: string) {
+    return request<ProjectSprint>(`/api/v1/projects/${projectId}/sprints/backlog`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
     })
   },
 
