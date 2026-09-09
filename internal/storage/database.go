@@ -216,10 +216,27 @@ func CreateProjectsTable() error {
 		"position INTEGER NOT NULL DEFAULT 0",
 		"archived BOOLEAN NOT NULL DEFAULT false",
 		"backlog_name TEXT NOT NULL DEFAULT 'Backlog'",
+		"backlog_description TEXT NOT NULL DEFAULT ''",
 		"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 		"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 	}
 	return CreateTable("projects", columns)
+}
+
+// MigrateProjectsAddBacklogDescription adds the backlog_description column defaulting to ''.
+func MigrateProjectsAddBacklogDescription() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(),
+		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS backlog_description TEXT NOT NULL DEFAULT ''`)
+	if err != nil {
+		return fmt.Errorf("failed to add projects.backlog_description: %v", err)
+	}
+	return nil
 }
 
 // MigrateProjectsAddDescriptionAndPosition adds description and position columns,

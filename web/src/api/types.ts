@@ -54,6 +54,7 @@ export type Project = {
   workflow_mode?: WorkflowMode
   archived?: boolean
   backlog_name?: string
+  backlog_description?: string
   role?: 'owner' | 'editor' | 'viewer'
   owner_email?: string
   owner_user_name?: string
@@ -76,8 +77,8 @@ export type ProjectSprint = {
   project_id: number
   name: string
   description?: string
-  start_date: string
-  end_date: string
+  start_date?: string | null
+  end_date?: string | null
   lock_date?: string | null
   is_active: boolean
   is_locked: boolean

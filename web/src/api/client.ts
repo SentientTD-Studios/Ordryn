@@ -463,7 +463,13 @@ export const api = {
 
   updateProject(
     id: number,
-    payload: Partial<{ name: string; description: string; workflow_mode: WorkflowMode; backlog_name: string }>,
+    payload: Partial<{
+      name: string
+      description: string
+      workflow_mode: WorkflowMode
+      backlog_name: string
+      backlog_description: string
+    }>,
   ) {
     return request<Project>(`/api/v1/projects/${id}`, {
       method: 'PATCH',
@@ -544,8 +550,8 @@ export const api = {
     payload: {
       name: string
       description?: string
-      start_date: string
-      end_date: string
+      start_date?: string | null
+      end_date?: string | null
       lock_date?: string | null
     },
   ) {
@@ -561,8 +567,8 @@ export const api = {
     payload: Partial<{
       name: string
       description: string
-      start_date: string
-      end_date: string
+      start_date: string | null
+      end_date: string | null
       lock_date: string | null
     }>,
   ) {
@@ -572,10 +578,14 @@ export const api = {
     })
   },
 
-  updateProjectBacklogSprint(projectId: number, name: string) {
+  updateProjectBacklogSprint(
+    projectId: number,
+    payload: string | Partial<{ name: string; description: string }>,
+  ) {
+    const body = typeof payload === 'string' ? { name: payload } : payload
     return request<ProjectSprint>(`/api/v1/projects/${projectId}/sprints/backlog`, {
       method: 'PATCH',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(body),
     })
   },
 

@@ -72,7 +72,7 @@ func rejectOverlappingSprint(projectID, excludeID int, start, end time.Time) err
 		return nil
 	}
 	return fmt.Errorf("%w: dates overlap %s (%s – %s)", ErrValidation, hit.Name,
-		storage.FormatSprintDate(hit.StartDate), storage.FormatSprintDate(hit.EndDate))
+		storage.FormatSprintDatePtr(hit.StartDate), storage.FormatSprintDatePtr(hit.EndDate))
 }
 
 func sprintConflictError(err error) error {
@@ -116,13 +116,30 @@ func CreateProjectSprintForUser(ctx context.Context, userID, projectID int, in C
 	if err != nil {
 		return nil, err
 	}
-	start, end, err := parseSprintDateRange(in.StartDate, in.EndDate)
-	if err != nil {
-		return nil, err
+
+	startRaw := strings.TrimSpace(in.StartDate)
+	endRaw := strings.TrimSpace(in.EndDate)
+	if (startRaw == "" && endRaw != "") || (startRaw != "" && endRaw == "") {
+		return nil, fmt.Errorf("%w: both start_date and end_date are required for a dated sprint, or leave both blank for a dateless sprint", ErrValidation)
 	}
-	if err := rejectOverlappingSprint(projectID, 0, start, end); err != nil {
-		return nil, err
+
+	var startPtr, endPtr *time.Time
+	if startRaw != "" && endRaw != "" {
+		start, end, err := parseSprintDateRange(startRaw, endRaw)
+		if err != nil {
+			return nil, err
+		}
+		if err := rejectOverlappingSprint(projectID, 0, start, end); err != nil {
+			return nil, err
+		}
+		startPtr = &start
+		endPtr = &end
 	}
+
+	if startPtr == nil && strings.TrimSpace(in.LockDate) != "" {
+		return nil, fmt.Errorf("%w: lock_date cannot be set on a dateless sprint", ErrValidation)
+	}
+
 	lockDate, err := parseOptionalLockDate(in.LockDate)
 	if err != nil {
 		return nil, err
@@ -134,7 +151,7 @@ func CreateProjectSprintForUser(ctx context.Context, userID, projectID int, in C
 	if n >= storage.MaxProjectSprints {
 		return nil, fmt.Errorf("%w: a maximum of %d sprints is allowed", ErrConflict, storage.MaxProjectSprints)
 	}
-	s, err := storage.CreateProjectSprint(projectID, name, desc, start, end, lockDate)
+	s, err := storage.CreateProjectSprint(projectID, name, desc, startPtr, endPtr, lockDate)
 	if err != nil {
 		return nil, sprintConflictError(err)
 	}
@@ -171,29 +188,59 @@ func UpdateProjectSprintForUser(ctx context.Context, userID, projectID, sprintID
 		}
 		description = &d
 	}
-	startRaw := storage.FormatSprintDate(cur.StartDate)
-	endRaw := storage.FormatSprintDate(cur.EndDate)
-	if in.StartDate != nil {
-		startRaw = *in.StartDate
+
+	var finalStart, finalEnd *time.Time
+	if in.StartDate == nil && in.EndDate == nil {
+		finalStart = cur.StartDate
+		finalEnd = cur.EndDate
+	} else {
+		startRaw := ""
+		if in.StartDate != nil {
+			startRaw = strings.TrimSpace(*in.StartDate)
+		} else if cur.StartDate != nil {
+			startRaw = storage.FormatSprintDate(*cur.StartDate)
+		}
+		endRaw := ""
+		if in.EndDate != nil {
+			endRaw = strings.TrimSpace(*in.EndDate)
+		} else if cur.EndDate != nil {
+			endRaw = storage.FormatSprintDate(*cur.EndDate)
+		}
+
+		if (startRaw == "" && endRaw != "") || (startRaw != "" && endRaw == "") {
+			return nil, fmt.Errorf("%w: both start_date and end_date are required for a dated sprint, or leave both blank for a dateless sprint", ErrValidation)
+		}
+
+		if startRaw != "" && endRaw != "" {
+			start, end, err := parseSprintDateRange(startRaw, endRaw)
+			if err != nil {
+				return nil, err
+			}
+			if err := rejectOverlappingSprint(projectID, sprintID, start, end); err != nil {
+				return nil, err
+			}
+			finalStart = &start
+			finalEnd = &end
+		}
 	}
-	if in.EndDate != nil {
-		endRaw = *in.EndDate
-	}
-	start, end, err := parseSprintDateRange(startRaw, endRaw)
-	if err != nil {
-		return nil, err
-	}
-	if err := rejectOverlappingSprint(projectID, sprintID, start, end); err != nil {
-		return nil, err
-	}
+
 	lockDate := cur.LockDate
 	if in.LockDate != nil {
-		lockDate, err = parseOptionalLockDate(*in.LockDate)
+		parsedLock, err := parseOptionalLockDate(*in.LockDate)
 		if err != nil {
 			return nil, err
 		}
+		lockDate = parsedLock
 	}
-	s, err := storage.UpdateProjectSprint(projectID, sprintID, name, description, &start, &end, lockDate)
+
+	if finalStart == nil && lockDate != nil {
+		if in.LockDate != nil && strings.TrimSpace(*in.LockDate) != "" {
+			return nil, fmt.Errorf("%w: lock_date cannot be set on a dateless sprint", ErrValidation)
+		}
+		lockDate = nil
+	}
+
+	s, err := storage.UpdateProjectSprint(projectID, sprintID, name, description, finalStart, finalEnd, lockDate)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "sprint not found") {
 			return nil, ErrNotFound

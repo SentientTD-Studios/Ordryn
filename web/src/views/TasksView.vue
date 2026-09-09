@@ -1427,13 +1427,20 @@ onUnmounted(() => {
             </select>
             <span v-if="selectedBoardSprint" class="small text-muted">
               <template v-if="selectedBoardSprint.description">{{ selectedBoardSprint.description }} · </template>
-              {{ selectedBoardSprint.start_date }} – {{ selectedBoardSprint.end_date }}
-              <template v-if="selectedBoardSprint.lock_date">
-                · {{ selectedBoardSprint.is_locked ? 'locked' : 'locks' }} {{ selectedBoardSprint.lock_date }}
+              <template v-if="selectedBoardSprint.start_date && selectedBoardSprint.end_date">
+                {{ selectedBoardSprint.start_date }} – {{ selectedBoardSprint.end_date }}
+                <template v-if="selectedBoardSprint.lock_date">
+                  · {{ selectedBoardSprint.is_locked ? 'locked' : 'locks' }} {{ selectedBoardSprint.lock_date }}
+                </template>
+                ·
               </template>
-              · {{ selectedBoardSprint.task_count }} task{{ selectedBoardSprint.task_count === 1 ? '' : 's' }}
+              <span v-else class="badge text-bg-secondary me-1">dateless</span>
+              {{ selectedBoardSprint.task_count }} task{{ selectedBoardSprint.task_count === 1 ? '' : 's' }}
             </span>
-            <span v-else class="small text-muted">Tasks not assigned to a sprint</span>
+            <span v-else class="small text-muted">
+              <template v-if="activeProjectObj?.backlog_description">{{ activeProjectObj.backlog_description }} · </template>
+              Tasks not assigned to a sprint
+            </span>
           </div>
           <div v-if="loading && !tasks.length" class="text-center py-4 text-muted">
             <div class="spinner-border spinner-border-sm me-2" role="status" />Loading tasks…

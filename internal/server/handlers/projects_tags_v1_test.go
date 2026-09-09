@@ -230,6 +230,32 @@ func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("patch project with too long backlog_description", func(t *testing.T) {
+		tooLong := strings.Repeat("d", 81)
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1", bytes.NewBufferString(`{"backlog_description":"`+tooLong+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = utils.SetAPIUserID(req, 1)
+		rec := httptest.NewRecorder()
+		APIV1ProjectsRouter(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("patch backlog sprint with nothing to update", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1/sprints/backlog", bytes.NewBufferString(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = utils.SetAPIUserID(req, 1)
+		rec := httptest.NewRecorder()
+		APIV1ProjectsRouter(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "Nothing to update") {
+			t.Fatalf("expected Nothing to update error, got: %s", rec.Body.String())
+		}
+	})
+
 	t.Run("delete backlog sprint rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/1/sprints/backlog", nil)
 		req = utils.SetAPIUserID(req, 1)
@@ -243,3 +269,4 @@ func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
 		}
 	})
 }
+

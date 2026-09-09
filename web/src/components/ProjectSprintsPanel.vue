@@ -14,20 +14,34 @@
         <template v-if="editingBacklog">
           <form class="d-flex flex-column gap-2" @submit.prevent="saveBacklogEdit">
             <label class="small fw-bold mb-0" :for="`backlog-name-input-${project.id}`">System sprint name</label>
-            <div class="d-flex align-items-center gap-2">
-              <input
-                :id="`backlog-name-input-${project.id}`"
-                v-model="editBacklogName"
-                type="text"
-                class="form-control form-control-sm"
-                maxlength="60"
-                required
-                aria-label="Backlog sprint name"
-              />
+            <input
+              :id="`backlog-name-input-${project.id}`"
+              v-model="editBacklogName"
+              type="text"
+              class="form-control form-control-sm"
+              maxlength="60"
+              required
+              aria-label="Backlog sprint name"
+            />
+            <label class="small fw-bold mb-0" :for="`backlog-desc-input-${project.id}`">Description (optional)</label>
+            <input
+              :id="`backlog-desc-input-${project.id}`"
+              v-model="editBacklogDescription"
+              type="text"
+              class="form-control form-control-sm"
+              :maxlength="maxSprintDescription"
+              placeholder="e.g. Unscheduled ideas and tasks"
+              aria-label="Backlog sprint description"
+            />
+            <div class="d-flex justify-content-between">
+              <small class="form-hint">Max {{ maxSprintDescription }} characters</small>
+              <small class="text-muted">{{ editBacklogDescription.length }}/{{ maxSprintDescription }}</small>
+            </div>
+            <small class="form-hint">Tasks with no assigned date range belong to this sprint. Dates cannot be set.</small>
+            <div class="d-flex gap-1">
               <button class="btn btn-sm btn-primary" type="submit" :disabled="savingBacklog">Save</button>
               <button class="btn btn-sm btn-secondary" type="button" @click="cancelBacklogEdit">Cancel</button>
             </div>
-            <small class="form-hint">Tasks with no assigned date range belong to this sprint. Dates cannot be set.</small>
           </form>
         </template>
         <template v-else>
@@ -40,11 +54,14 @@
                   v-if="isOwner"
                   class="btn btn-sm btn-link p-0"
                   type="button"
-                  aria-label="Rename backlog sprint"
+                  aria-label="Edit backlog sprint"
                   @click="beginBacklogEdit"
                 >
                   <i class="bi bi-pencil" />
                 </button>
+              </div>
+              <div v-if="backlogDescription" class="small text-muted text-break">
+                {{ backlogDescription }}
               </div>
               <div class="small text-muted">
                 Default destination for tasks not assigned to a dated sprint. Dates cannot be set.
@@ -83,7 +100,18 @@
               <small class="form-hint">Max {{ maxSprintDescription }} characters</small>
               <small class="text-muted">{{ editDescription.length }}/{{ maxSprintDescription }}</small>
             </div>
-            <div class="d-flex flex-wrap gap-2">
+            <div class="form-check">
+              <input
+                :id="`edit-sprint-dateless-${s.id}`"
+                v-model="editDateless"
+                type="checkbox"
+                class="form-check-input"
+              />
+              <label class="form-check-label small" :for="`edit-sprint-dateless-${s.id}`">
+                Dateless sprint (no date range or lock date)
+              </label>
+            </div>
+            <div v-if="!editDateless" class="d-flex flex-wrap gap-2">
               <input
                 v-model="editStart"
                 type="date"
@@ -105,7 +133,7 @@
                 aria-label="Sprint lock date"
               />
             </div>
-            <small class="form-hint">Lock date is optional. After that day, only you can add tasks.</small>
+            <small v-if="!editDateless" class="form-hint">Lock date is optional. After that day, only you can add tasks.</small>
             <div class="d-flex gap-1">
               <button class="btn btn-sm btn-primary" type="submit" :disabled="saving">Save</button>
               <button class="btn btn-sm btn-secondary" type="button" @click="editId = null">Cancel</button>
@@ -116,6 +144,7 @@
           <div class="min-w-0 flex-grow-1">
             <div class="d-flex align-items-center gap-1 flex-wrap">
               <strong>{{ s.name }}</strong>
+              <span v-if="!s.start_date || !s.end_date" class="badge text-bg-secondary">dateless</span>
               <span v-if="s.is_active" class="badge text-bg-success">active</span>
               <span v-if="s.is_locked" class="badge text-bg-warning">locked</span>
               <button
@@ -130,9 +159,12 @@
             </div>
             <div v-if="s.description" class="small text-muted text-break">{{ s.description }}</div>
             <div class="small text-muted">
-              {{ formatRange(s.start_date, s.end_date) }}
-              <template v-if="s.lock_date"> · locks {{ s.lock_date }}</template>
-              · {{ s.task_count }} task{{ s.task_count === 1 ? '' : 's' }}
+              <template v-if="s.start_date && s.end_date">
+                {{ formatRange(s.start_date, s.end_date) }}
+                <template v-if="s.lock_date"> · locks {{ s.lock_date }}</template>
+                ·
+              </template>
+              {{ s.task_count }} task{{ s.task_count === 1 ? '' : 's' }}
             </div>
           </div>
           <button
@@ -179,37 +211,55 @@
           <small class="text-muted">{{ newDescription.length }}/{{ maxSprintDescription }}</small>
         </div>
       </div>
-      <div class="col-sm-6">
-        <label class="form-label small mb-0" :for="`new-sprint-start-${project.id}`">Starts</label>
-        <input
-          :id="`new-sprint-start-${project.id}`"
-          v-model="newStart"
-          type="date"
-          class="form-control form-control-sm"
-          required
-        />
-      </div>
-      <div class="col-sm-6">
-        <label class="form-label small mb-0" :for="`new-sprint-end-${project.id}`">Ends</label>
-        <input
-          :id="`new-sprint-end-${project.id}`"
-          v-model="newEnd"
-          type="date"
-          class="form-control form-control-sm"
-          required
-        />
-      </div>
-      <div class="col-sm-6">
-        <label class="form-label small mb-0" :for="`new-sprint-lock-${project.id}`">Lock date</label>
-        <input
-          :id="`new-sprint-lock-${project.id}`"
-          v-model="newLock"
-          type="date"
-          class="form-control form-control-sm"
-        />
-      </div>
       <div class="col-12">
-        <small class="form-hint">After the lock date, only the project owner can add tasks. Leave blank to keep the sprint open.</small>
+        <div class="form-check">
+          <input
+            :id="`new-sprint-dateless-${project.id}`"
+            v-model="newDateless"
+            type="checkbox"
+            class="form-check-input"
+          />
+          <label class="form-check-label small" :for="`new-sprint-dateless-${project.id}`">
+            Dateless sprint (e.g. Icebox)
+          </label>
+        </div>
+      </div>
+      <template v-if="!newDateless">
+        <div class="col-sm-6">
+          <label class="form-label small mb-0" :for="`new-sprint-start-${project.id}`">Starts</label>
+          <input
+            :id="`new-sprint-start-${project.id}`"
+            v-model="newStart"
+            type="date"
+            class="form-control form-control-sm"
+            required
+          />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label small mb-0" :for="`new-sprint-end-${project.id}`">Ends</label>
+          <input
+            :id="`new-sprint-end-${project.id}`"
+            v-model="newEnd"
+            type="date"
+            class="form-control form-control-sm"
+            required
+          />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label small mb-0" :for="`new-sprint-lock-${project.id}`">Lock date</label>
+          <input
+            :id="`new-sprint-lock-${project.id}`"
+            v-model="newLock"
+            type="date"
+            class="form-control form-control-sm"
+          />
+        </div>
+        <div class="col-12">
+          <small class="form-hint">After the lock date, only the project owner can add tasks. Leave blank to keep the sprint open.</small>
+        </div>
+      </template>
+      <div v-else class="col-12">
+        <small class="form-hint">Dateless sprints have no start or end dates and do not lock. Ideal for iceboxes or secondary backlogs.</small>
       </div>
       <div class="col-12">
         <button class="btn btn-sm btn-primary" type="submit" :disabled="adding">Add sprint</button>
@@ -241,12 +291,14 @@ const deletingId = ref<number | null>(null)
 const maxSprintDescription = 80
 const newName = ref('')
 const newDescription = ref('')
+const newDateless = ref(false)
 const newStart = ref('')
 const newEnd = ref('')
 const newLock = ref('')
 const editId = ref<number | null>(null)
 const editName = ref('')
 const editDescription = ref('')
+const editDateless = ref(false)
 const editStart = ref('')
 const editEnd = ref('')
 const editLock = ref('')
@@ -255,18 +307,22 @@ const isKanban = computed(() => (props.project.workflow_mode || 'classic') === '
 const isOwner = computed(() => (props.project.role || 'owner') === 'owner')
 
 const backlogName = computed(() => props.project.backlog_name || 'Backlog')
+const backlogDescription = computed(() => props.project.backlog_description || '')
 const editingBacklog = ref(false)
 const editBacklogName = ref('')
+const editBacklogDescription = ref('')
 const savingBacklog = ref(false)
 
 function beginBacklogEdit() {
   editBacklogName.value = backlogName.value
+  editBacklogDescription.value = backlogDescription.value
   editingBacklog.value = true
 }
 
 function cancelBacklogEdit() {
   editingBacklog.value = false
   editBacklogName.value = ''
+  editBacklogDescription.value = ''
 }
 
 async function saveBacklogEdit() {
@@ -277,18 +333,22 @@ async function saveBacklogEdit() {
   }
   savingBacklog.value = true
   try {
-    await api.updateProject(props.project.id, { backlog_name: trimmed })
+    await api.updateProject(props.project.id, {
+      backlog_name: trimmed,
+      backlog_description: editBacklogDescription.value.trim(),
+    })
     editingBacklog.value = false
-    toast.push('System sprint renamed', 'success')
+    toast.push('System sprint updated', 'success')
     emit('changed')
   } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not rename system sprint', 'error')
+    toast.push(err instanceof APIError ? err.message : 'Could not update system sprint', 'error')
   } finally {
     savingBacklog.value = false
   }
 }
 
-function formatRange(start: string, end: string) {
+function formatRange(start?: string | null, end?: string | null) {
+  if (!start || !end) return ''
   return `${start} – ${end}`
 }
 
@@ -298,7 +358,11 @@ function datesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string
 
 function overlappingSprint(start: string, end: string, exceptId?: number): ProjectSprint | undefined {
   return sprints.value.find(
-    (s) => (exceptId == null || s.id !== exceptId) && datesOverlap(start, end, s.start_date, s.end_date),
+    (s) =>
+      (exceptId == null || s.id !== exceptId) &&
+      !!s.start_date &&
+      !!s.end_date &&
+      datesOverlap(start, end, s.start_date, s.end_date),
   )
 }
 
@@ -323,36 +387,41 @@ function beginEdit(s: ProjectSprint) {
   editId.value = s.id
   editName.value = s.name
   editDescription.value = s.description || ''
-  editStart.value = s.start_date
-  editEnd.value = s.end_date
+  editDateless.value = !s.start_date || !s.end_date
+  editStart.value = s.start_date || ''
+  editEnd.value = s.end_date || ''
   editLock.value = s.lock_date || ''
 }
 
 async function addSprint() {
-  if (!newName.value.trim() || !newStart.value || !newEnd.value) return
-  if (newEnd.value < newStart.value) {
-    toast.push('End date must be on or after start date', 'error')
-    return
-  }
-  const hit = overlappingSprint(newStart.value, newEnd.value)
-  if (hit) {
-    toast.push(overlapMessage(hit), 'error')
-    return
+  if (!newName.value.trim()) return
+  if (!newDateless.value) {
+    if (!newStart.value || !newEnd.value) return
+    if (newEnd.value < newStart.value) {
+      toast.push('End date must be on or after start date', 'error')
+      return
+    }
+    const hit = overlappingSprint(newStart.value, newEnd.value)
+    if (hit) {
+      toast.push(overlapMessage(hit), 'error')
+      return
+    }
   }
   adding.value = true
   try {
     await api.createProjectSprint(props.project.id, {
       name: newName.value.trim(),
       description: newDescription.value.trim(),
-      start_date: newStart.value,
-      end_date: newEnd.value,
-      lock_date: newLock.value || null,
+      start_date: newDateless.value ? null : newStart.value,
+      end_date: newDateless.value ? null : newEnd.value,
+      lock_date: newDateless.value ? null : newLock.value || null,
     })
     newName.value = ''
     newDescription.value = ''
     newStart.value = ''
     newEnd.value = ''
     newLock.value = ''
+    newDateless.value = false
     toast.push('Sprint created', 'success')
     await loadSprints()
     emit('changed')
@@ -364,25 +433,41 @@ async function addSprint() {
 }
 
 async function saveEdit(s: ProjectSprint) {
-  if (!editName.value.trim() || !editStart.value || !editEnd.value) return
-  if (editEnd.value < editStart.value) {
-    toast.push('End date must be on or after start date', 'error')
-    return
-  }
-  const hit = overlappingSprint(editStart.value, editEnd.value, s.id)
-  if (hit) {
-    toast.push(overlapMessage(hit), 'error')
-    return
+  if (!editName.value.trim()) return
+  if (!editDateless.value) {
+    if (!editStart.value || !editEnd.value) {
+      toast.push('Start and end dates are required for a dated sprint', 'error')
+      return
+    }
+    if (editEnd.value < editStart.value) {
+      toast.push('End date must be on or after start date', 'error')
+      return
+    }
+    const hit = overlappingSprint(editStart.value, editEnd.value, s.id)
+    if (hit) {
+      toast.push(overlapMessage(hit), 'error')
+      return
+    }
   }
   saving.value = true
   try {
-    await api.updateProjectSprint(props.project.id, s.id, {
-      name: editName.value.trim(),
-      description: editDescription.value.trim(),
-      start_date: editStart.value,
-      end_date: editEnd.value,
-      lock_date: editLock.value || null,
-    })
+    if (editDateless.value) {
+      await api.updateProjectSprint(props.project.id, s.id, {
+        name: editName.value.trim(),
+        description: editDescription.value.trim(),
+        start_date: '',
+        end_date: '',
+        lock_date: null,
+      })
+    } else {
+      await api.updateProjectSprint(props.project.id, s.id, {
+        name: editName.value.trim(),
+        description: editDescription.value.trim(),
+        start_date: editStart.value,
+        end_date: editEnd.value,
+        lock_date: editLock.value || null,
+      })
+    }
     editId.value = null
     toast.push('Sprint updated', 'success')
     await loadSprints()

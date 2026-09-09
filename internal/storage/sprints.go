@@ -19,24 +19,26 @@ const (
 	projectSprintSelectCols = `id, project_id, name, description, start_date, end_date, lock_date, created_at`
 )
 
-// ProjectSprint is a named date range on a kanban project.
+// ProjectSprint is a named date range (or dateless sprint) on a kanban project.
 type ProjectSprint struct {
 	ID          int
 	ProjectID   int
 	Name        string
 	Description string
-	StartDate   time.Time
-	EndDate     time.Time
+	StartDate   *time.Time
+	EndDate     *time.Time
 	LockDate    *time.Time
 	CreatedAt   time.Time
 	TaskCount   int
 }
 
 func scanProjectSprint(row projectStatusScanner, s *ProjectSprint) error {
-	var lock sql.NullTime
-	if err := row.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &s.StartDate, &s.EndDate, &lock, &s.CreatedAt); err != nil {
+	var start, end, lock sql.NullTime
+	if err := row.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &start, &end, &lock, &s.CreatedAt); err != nil {
 		return err
 	}
+	s.StartDate = nullTimePtr(start)
+	s.EndDate = nullTimePtr(end)
 	s.LockDate = nullTimePtr(lock)
 	return nil
 }
@@ -61,11 +63,23 @@ func FormatSprintDate(t time.Time) string {
 	return t.UTC().Format("2006-01-02")
 }
 
+// FormatSprintDatePtr returns a DATE value as YYYY-MM-DD in UTC, or "" if nil.
+func FormatSprintDatePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return FormatSprintDate(*t)
+}
+
 // SprintIsActive reports whether today (UTC calendar date) falls in [start, end].
-func SprintIsActive(start, end, now time.Time) bool {
+// Dateless sprints (nil start or end) are never active by date.
+func SprintIsActive(start, end *time.Time, now time.Time) bool {
+	if start == nil || end == nil {
+		return false
+	}
 	today := now.UTC().Format("2006-01-02")
-	s := FormatSprintDate(start)
-	e := FormatSprintDate(end)
+	s := FormatSprintDate(*start)
+	e := FormatSprintDate(*end)
 	return today >= s && today <= e
 }
 
@@ -100,6 +114,8 @@ func FindOverlappingProjectSprint(projectID int, start, end time.Time, excludeID
 	query := `SELECT ` + projectSprintSelectCols + `
 		 FROM project_sprints
 		 WHERE project_id = $1
+		   AND start_date IS NOT NULL
+		   AND end_date IS NOT NULL
 		   AND start_date <= $3::date
 		   AND end_date >= $2::date`
 	args := []interface{}{projectID, FormatSprintDate(start), FormatSprintDate(end)}
@@ -134,11 +150,11 @@ func CreateProjectSprintsTable() error {
 			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			name TEXT NOT NULL,
 			description TEXT NOT NULL DEFAULT '',
-			start_date DATE NOT NULL,
-			end_date DATE NOT NULL,
+			start_date DATE,
+			end_date DATE,
 			lock_date DATE,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CHECK (end_date >= start_date)
+			CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_sprints_project_lower_name
 			ON project_sprints (project_id, lower(name))`,
@@ -149,6 +165,22 @@ func CreateProjectSprintsTable() error {
 		if _, err := pool.Exec(context.Background(), s); err != nil {
 			return fmt.Errorf("failed to create project_sprints: %v", err)
 		}
+	}
+	return nil
+}
+
+// MigrateProjectSprintsAllowDateless alters start_date and end_date columns to allow NULL.
+func MigrateProjectSprintsAllowDateless() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(),
+		`ALTER TABLE project_sprints ALTER COLUMN start_date DROP NOT NULL, ALTER COLUMN end_date DROP NOT NULL`)
+	if err != nil {
+		return fmt.Errorf("failed to alter project_sprints dates to nullable: %v", err)
 	}
 	return nil
 }
@@ -220,7 +252,7 @@ func MigrateTasksAddSprintID() error {
 	return nil
 }
 
-// ListProjectSprints returns sprints for a project, newest start date first.
+// ListProjectSprints returns sprints for a project, dateless sprints first, then newest start date first.
 func ListProjectSprints(projectID int) ([]ProjectSprint, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -233,7 +265,7 @@ func ListProjectSprints(projectID int) ([]ProjectSprint, error) {
 		        COALESCE((SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = s.id AND NOT `+ArchivedTaskExistsSQL("t.id")+`), 0)
 		 FROM project_sprints s
 		 WHERE s.project_id = $1
-		 ORDER BY s.start_date DESC, s.id DESC`, projectID)
+		 ORDER BY (s.start_date IS NULL) DESC, s.start_date DESC, s.id DESC`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -242,10 +274,12 @@ func ListProjectSprints(projectID int) ([]ProjectSprint, error) {
 	var out []ProjectSprint
 	for rows.Next() {
 		var s ProjectSprint
-		var lock sql.NullTime
-		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &s.StartDate, &s.EndDate, &lock, &s.CreatedAt, &s.TaskCount); err != nil {
+		var start, end, lock sql.NullTime
+		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &start, &end, &lock, &s.CreatedAt, &s.TaskCount); err != nil {
 			return nil, err
 		}
+		s.StartDate = nullTimePtr(start)
+		s.EndDate = nullTimePtr(end)
 		s.LockDate = nullTimePtr(lock)
 		out = append(out, s)
 	}
@@ -288,7 +322,7 @@ func GetProjectSprint(projectID, sprintID int) (*ProjectSprint, error) {
 }
 
 // CreateProjectSprint inserts a sprint.
-func CreateProjectSprint(projectID int, name, description string, startDate, endDate time.Time, lockDate *time.Time) (*ProjectSprint, error) {
+func CreateProjectSprint(projectID int, name, description string, startDate, endDate, lockDate *time.Time) (*ProjectSprint, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -300,7 +334,7 @@ func CreateProjectSprint(projectID int, name, description string, startDate, end
 		`INSERT INTO project_sprints (project_id, name, description, start_date, end_date, lock_date)
 		 VALUES ($1, $2, $3, $4::date, $5::date, $6::date)
 		 RETURNING `+projectSprintSelectCols,
-		projectID, name, description, FormatSprintDate(startDate), FormatSprintDate(endDate), sprintDateArg(lockDate)), &s)
+		projectID, name, description, sprintDateArg(startDate), sprintDateArg(endDate), sprintDateArg(lockDate)), &s)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +342,7 @@ func CreateProjectSprint(projectID int, name, description string, startDate, end
 }
 
 // UpdateProjectSprint updates mutable sprint fields.
-func UpdateProjectSprint(projectID, sprintID int, name *string, description *string, startDate, endDate *time.Time, lockDate *time.Time) (*ProjectSprint, error) {
+func UpdateProjectSprint(projectID, sprintID int, name, description *string, startDate, endDate, lockDate *time.Time) (*ProjectSprint, error) {
 	cur, err := GetProjectSprint(projectID, sprintID)
 	if err != nil {
 		return nil, err
@@ -321,14 +355,6 @@ func UpdateProjectSprint(projectID, sprintID int, name *string, description *str
 	if description != nil {
 		newDescription = *description
 	}
-	newStart := cur.StartDate
-	if startDate != nil {
-		newStart = *startDate
-	}
-	newEnd := cur.EndDate
-	if endDate != nil {
-		newEnd = *endDate
-	}
 
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -339,7 +365,7 @@ func UpdateProjectSprint(projectID, sprintID int, name *string, description *str
 	_, err = pool.Exec(context.Background(),
 		`UPDATE project_sprints SET name = $1, description = $2, start_date = $3::date, end_date = $4::date, lock_date = $5::date
 		 WHERE id = $6 AND project_id = $7`,
-		newName, newDescription, FormatSprintDate(newStart), FormatSprintDate(newEnd), sprintDateArg(lockDate), sprintID, projectID)
+		newName, newDescription, sprintDateArg(startDate), sprintDateArg(endDate), sprintDateArg(lockDate), sprintID, projectID)
 	if err != nil {
 		return nil, err
 	}

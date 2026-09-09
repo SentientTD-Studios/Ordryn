@@ -199,6 +199,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateProjectsAddBacklogName failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateProjectsAddBacklogDescription(); err != nil {
+		fmt.Printf("migration: MigrateProjectsAddBacklogDescription failed: %v\n", err)
+		errCount++
+	}
 	if err := CreateProjectWorkflowTables(); err != nil {
 		fmt.Printf("migration: CreateProjectWorkflowTables failed: %v\n", err)
 		errCount++
@@ -225,6 +229,10 @@ func RunMigrations() error {
 	}
 	if err := MigrateProjectSprintsAddLockDate(); err != nil {
 		fmt.Printf("migration: MigrateProjectSprintsAddLockDate failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateProjectSprintsAllowDateless(); err != nil {
+		fmt.Printf("migration: MigrateProjectSprintsAllowDateless failed: %v\n", err)
 		errCount++
 	}
 	if err := MigrateTasksAddSprintID(); err != nil {
