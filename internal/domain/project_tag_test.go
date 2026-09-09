@@ -34,7 +34,7 @@ func TestRenameProjectValidation(t *testing.T) {
 func TestUpdateProjectDescriptionValidation(t *testing.T) {
 	ctx := context.Background()
 	long := strings.Repeat("d", MaxProjectDescriptionLength+1)
-	_, err := UpdateProject(ctx, 1, 1, nil, &long, nil)
+	_, err := UpdateProject(ctx, 1, 1, nil, &long, nil, nil)
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("long description: err=%v", err)
 	}
@@ -83,5 +83,18 @@ func TestUpdateTagValidation(t *testing.T) {
 	_, err = UpdateTag(ctx, 1, 1, nil, nil)
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("missing fields: err=%v", err)
+	}
+}
+
+func TestRenameProjectBacklogValidation(t *testing.T) {
+	ctx := context.Background()
+	_, err := RenameProjectBacklog(ctx, 1, 1, "   ")
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("blank backlog name: err=%v", err)
+	}
+	long := strings.Repeat("b", MaxBacklogNameLength+1)
+	_, err = RenameProjectBacklog(ctx, 1, 1, long)
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("long backlog name: err=%v", err)
 	}
 }

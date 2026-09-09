@@ -203,3 +203,43 @@ func TestAPIV1TagsPatchMethodRequiresID(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
+
+func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
+	t.Run("patch project with blank backlog_name", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1", bytes.NewBufferString(`{"backlog_name":"   "}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = utils.SetAPIUserID(req, 1)
+		rec := httptest.NewRecorder()
+		APIV1ProjectsRouter(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("patch backlog sprint with dates rejected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1/sprints/backlog", bytes.NewBufferString(`{"name":"Icebox","start_date":"2026-10-01"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = utils.SetAPIUserID(req, 1)
+		rec := httptest.NewRecorder()
+		APIV1ProjectsRouter(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "Dates cannot be set") {
+			t.Fatalf("expected Dates cannot be set error, got: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("delete backlog sprint rejected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/1/sprints/backlog", nil)
+		req = utils.SetAPIUserID(req, 1)
+		rec := httptest.NewRecorder()
+		APIV1ProjectsRouter(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "cannot be deleted") {
+			t.Fatalf("expected cannot be deleted error, got: %s", rec.Body.String())
+		}
+	})
+}

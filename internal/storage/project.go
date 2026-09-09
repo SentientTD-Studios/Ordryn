@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -15,12 +16,13 @@ type Project struct {
 	WorkflowMode string
 	Position     int
 	Archived     bool
+	BacklogName  string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
 
 const projectSelectCols = `id, user_id, name, COALESCE(description, ''), COALESCE(workflow_mode, 'classic'),
-		        COALESCE(position, 0), COALESCE(archived, false), created_at, updated_at`
+		        COALESCE(position, 0), COALESCE(archived, false), COALESCE(backlog_name, 'Backlog'), created_at, updated_at`
 
 // CreateProject inserts a new project for the given user and returns it.
 // New projects are appended at the end of the owner's ordered list.
@@ -40,7 +42,7 @@ func CreateProject(userID int, name, description string) (*Project, error) {
 		 )
 		 RETURNING `+projectSelectCols,
 		userID, name, description).Scan(
-		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.CreatedAt, &p.UpdatedAt)
+		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project: %v", err)
 	}
@@ -57,10 +59,10 @@ func CreateProject(userID int, name, description string) (*Project, error) {
 	return &p, nil
 }
 
-// UpdateProject updates name and/or description of a project owned by the user.
+// UpdateProject updates name, description, and/or backlog_name of a project owned by the user.
 // Nil pointers leave that field unchanged.
-func UpdateProject(id int, userID int, name *string, description *string) error {
-	if name == nil && description == nil {
+func UpdateProject(id int, userID int, name *string, description *string, backlogName *string) error {
+	if name == nil && description == nil && backlogName == nil {
 		return nil
 	}
 	pool, err := OpenDatabase()
@@ -69,24 +71,51 @@ func UpdateProject(id int, userID int, name *string, description *string) error 
 	}
 	defer CloseDatabase(pool)
 
-	switch {
-	case name != nil && description != nil:
-		_, err = pool.Exec(context.Background(),
-			`UPDATE projects SET name = $1, description = $2, updated_at = CURRENT_TIMESTAMP
-			 WHERE id = $3 AND user_id = $4`, *name, *description, id, userID)
-	case name != nil:
-		_, err = pool.Exec(context.Background(),
-			`UPDATE projects SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
-			*name, id, userID)
-	default:
-		_, err = pool.Exec(context.Background(),
-			`UPDATE projects SET description = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
-			*description, id, userID)
+	setClauses := []string{"updated_at = CURRENT_TIMESTAMP"}
+	args := []interface{}{}
+
+	if name != nil {
+		args = append(args, *name)
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", len(args)))
 	}
+	if description != nil {
+		args = append(args, *description)
+		setClauses = append(setClauses, fmt.Sprintf("description = $%d", len(args)))
+	}
+	if backlogName != nil {
+		args = append(args, *backlogName)
+		setClauses = append(setClauses, fmt.Sprintf("backlog_name = $%d", len(args)))
+	}
+
+	args = append(args, id, userID)
+	query := fmt.Sprintf("UPDATE projects SET %s WHERE id = $%d AND user_id = $%d",
+		strings.Join(setClauses, ", "), len(args)-1, len(args))
+
+	_, err = pool.Exec(context.Background(), query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update project: %v", err)
 	}
 	return nil
+}
+
+// GetProjectBacklogName returns the custom backlog sprint name for a project (or "Backlog").
+func GetProjectBacklogName(projectID int) (string, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return "Backlog", err
+	}
+	defer CloseDatabase(pool)
+
+	var name string
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(backlog_name, 'Backlog') FROM projects WHERE id = $1`, projectID).Scan(&name)
+	if err != nil {
+		return "Backlog", err
+	}
+	if strings.TrimSpace(name) == "" {
+		return "Backlog", nil
+	}
+	return name, nil
 }
 
 // DeleteProject removes a project owned by the user.
@@ -124,7 +153,7 @@ func GetProjectsForUser(userID int) ([]Project, error) {
 	var out []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan project row: %v", err)
 		}
 		out = append(out, p)
@@ -159,7 +188,7 @@ func GetProjectByID(id int, userID int) (*Project, error) {
 	err = pool.QueryRow(context.Background(),
 		`SELECT `+projectSelectCols+`
 		 FROM projects WHERE id = $1 AND user_id = $2`, id, userID).Scan(
-		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.CreatedAt, &p.UpdatedAt)
+		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project: %v", err)
 	}

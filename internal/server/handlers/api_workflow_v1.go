@@ -109,12 +109,17 @@ func projectToAPIJSON(p *storage.ProjectWithAccess) apiProjectJSON {
 	if mode == "" {
 		mode = storage.WorkflowClassic
 	}
+	backlogName := p.BacklogName
+	if backlogName == "" {
+		backlogName = "Backlog"
+	}
 	return apiProjectJSON{
 		ID:            p.ID,
 		Name:          p.Name,
 		Description:   p.Description,
 		WorkflowMode:  mode,
 		Archived:      p.Archived,
+		BacklogName:   backlogName,
 		Role:          p.Role,
 		OwnerEmail:    p.OwnerEmail,
 		OwnerUserName: p.OwnerUserName,
@@ -127,12 +132,17 @@ func projectStorageToAPIJSON(p *storage.Project, role string) apiProjectJSON {
 	if mode == "" {
 		mode = storage.WorkflowClassic
 	}
+	backlogName := p.BacklogName
+	if backlogName == "" {
+		backlogName = "Backlog"
+	}
 	return apiProjectJSON{
 		ID:           p.ID,
 		Name:         p.Name,
 		Description:  p.Description,
 		WorkflowMode: mode,
 		Archived:     p.Archived,
+		BacklogName:  backlogName,
 		Role:         role,
 		OwnerUserID:  p.UserID,
 	}
@@ -451,6 +461,11 @@ func handleProjectSprintsResource(w http.ResponseWriter, r *http.Request, projec
 		return
 	}
 
+	if len(rest) == 1 && rest[0] == "backlog" {
+		handleProjectBacklogSprint(w, r, userID, projectID)
+		return
+	}
+
 	sprintID, err := strconv.Atoi(rest[0])
 	if err != nil || sprintID <= 0 || len(rest) != 1 {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid sprint id.")
@@ -498,6 +513,91 @@ func handleProjectSprintsResource(w http.ResponseWriter, r *http.Request, projec
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	default:
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+	}
+}
+
+type apiBacklogSprintJSON struct {
+	ID        int    `json:"id"`
+	ProjectID int    `json:"project_id"`
+	Name      string `json:"name"`
+	IsActive  bool   `json:"is_active"`
+	IsLocked  bool   `json:"is_locked"`
+	IsSystem  bool   `json:"is_system"`
+	TaskCount int    `json:"task_count"`
+}
+
+func handleProjectBacklogSprint(w http.ResponseWriter, r *http.Request, userID, projectID int) {
+	switch r.Method {
+	case http.MethodGet:
+		proj, err := storage.GetAccessibleProjectByID(projectID, userID)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
+			return
+		}
+		if proj.WorkflowMode != storage.WorkflowKanban {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Sprints require a kanban project.")
+			return
+		}
+		count, _ := storage.CountTasksInBacklog(projectID)
+		name := proj.BacklogName
+		if name == "" {
+			name = "Backlog"
+		}
+		out := apiBacklogSprintJSON{
+			ID:        0,
+			ProjectID: projectID,
+			Name:      name,
+			IsActive:  false,
+			IsLocked:  false,
+			IsSystem:  true,
+			TaskCount: count,
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(out)
+	case http.MethodPatch:
+		var req apiSprintPatchRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+			return
+		}
+		if req.StartDate != nil || req.EndDate != nil || req.LockDate.Set {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Dates cannot be set on the backlog system sprint.")
+			return
+		}
+		if req.Name == nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
+			return
+		}
+		proj, err := storage.GetAccessibleProjectByID(projectID, userID)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
+			return
+		}
+		if proj.WorkflowMode != storage.WorkflowKanban {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Sprints require a kanban project.")
+			return
+		}
+		updatedProj, err := domain.UpdateProject(r.Context(), userID, projectID, nil, nil, nil, req.Name)
+		if err != nil {
+			writeWorkflowDomainError(w, err)
+			return
+		}
+		count, _ := storage.CountTasksInBacklog(projectID)
+		out := apiBacklogSprintJSON{
+			ID:        0,
+			ProjectID: projectID,
+			Name:      updatedProj.BacklogName,
+			IsActive:  false,
+			IsLocked:  false,
+			IsSystem:  true,
+			TaskCount: count,
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(out)
+	case http.MethodDelete:
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "The backlog system sprint cannot be deleted.")
 	default:
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 	}

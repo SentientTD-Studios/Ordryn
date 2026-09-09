@@ -1833,6 +1833,95 @@ paths:
         "204":
           description: Deleted
 
+  /api/v1/projects/{id}/sprints/backlog:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Get the backlog system sprint for a kanban project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Backlog system sprint details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 0
+                  project_id:
+                    type: integer
+                  name:
+                    type: string
+                    example: "Backlog"
+                  is_active:
+                    type: boolean
+                    example: false
+                  is_locked:
+                    type: boolean
+                    example: false
+                  is_system:
+                    type: boolean
+                    example: true
+                  task_count:
+                    type: integer
+        "400":
+          description: Project is not in kanban mode
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Projects]
+      summary: Rename the backlog system sprint (owner)
+      description: Renames the backlog system sprint. Cannot set start, end, or lock dates.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 60
+                  description: New name for the backlog system sprint
+      responses:
+        "200":
+          description: Backlog system sprint renamed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 0
+                  project_id:
+                    type: integer
+                  name:
+                    type: string
+                  is_active:
+                    type: boolean
+                  is_locked:
+                    type: boolean
+                  is_system:
+                    type: boolean
+                  task_count:
+                    type: integer
+        "400":
+          description: Invalid request or attempt to set dates
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/tasks/{id}/github-issue:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -3793,6 +3882,10 @@ components:
         archived:
           type: boolean
           description: When true, the project is in the Archived section and cannot accept new tasks
+        backlog_name:
+          type: string
+          maxLength: 60
+          description: Custom name for the project's backlog system sprint (default "Backlog")
         role:
           type: string
           enum: [owner, editor, viewer]
@@ -3826,6 +3919,10 @@ components:
         workflow_mode:
           type: string
           enum: [classic, kanban]
+        backlog_name:
+          type: string
+          maxLength: 60
+          description: Rename the project's backlog system sprint
       description: At least one field required. Disabling kanban fails with 409 if the project has tasks.
 
     ProjectStatus:

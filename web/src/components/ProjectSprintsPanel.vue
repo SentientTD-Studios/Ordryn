@@ -5,8 +5,55 @@
       Name a sprint, optionally describe it, and give it a date range. After the
       lock date, only the project owner can add tasks. Ranges cannot overlap;
       a sprint may start the day after another ends. The board can switch between
-      sprints; tasks with no sprint stay in the backlog.
+      sprints; tasks with no sprint stay in the {{ backlogName.toLowerCase() }}.
     </p>
+
+    <!-- Backlog system sprint -->
+    <div class="card mb-3 border bg-light-subtle">
+      <div class="card-body p-2">
+        <template v-if="editingBacklog">
+          <form class="d-flex flex-column gap-2" @submit.prevent="saveBacklogEdit">
+            <label class="small fw-bold mb-0" :for="`backlog-name-input-${project.id}`">System sprint name</label>
+            <div class="d-flex align-items-center gap-2">
+              <input
+                :id="`backlog-name-input-${project.id}`"
+                v-model="editBacklogName"
+                type="text"
+                class="form-control form-control-sm"
+                maxlength="60"
+                required
+                aria-label="Backlog sprint name"
+              />
+              <button class="btn btn-sm btn-primary" type="submit" :disabled="savingBacklog">Save</button>
+              <button class="btn btn-sm btn-secondary" type="button" @click="cancelBacklogEdit">Cancel</button>
+            </div>
+            <small class="form-hint">Tasks with no assigned date range belong to this sprint. Dates cannot be set.</small>
+          </form>
+        </template>
+        <template v-else>
+          <div class="d-flex align-items-center justify-content-between">
+            <div>
+              <div class="d-flex align-items-center gap-1 flex-wrap">
+                <strong>{{ backlogName }}</strong>
+                <span class="badge text-bg-secondary">system sprint</span>
+                <button
+                  v-if="isOwner"
+                  class="btn btn-sm btn-link p-0"
+                  type="button"
+                  aria-label="Rename backlog sprint"
+                  @click="beginBacklogEdit"
+                >
+                  <i class="bi bi-pencil" />
+                </button>
+              </div>
+              <div class="small text-muted">
+                Default destination for tasks not assigned to a dated sprint. Dates cannot be set.
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
 
     <ul class="list-unstyled mb-3">
       <li
@@ -207,6 +254,40 @@ const editLock = ref('')
 const isKanban = computed(() => (props.project.workflow_mode || 'classic') === 'kanban')
 const isOwner = computed(() => (props.project.role || 'owner') === 'owner')
 
+const backlogName = computed(() => props.project.backlog_name || 'Backlog')
+const editingBacklog = ref(false)
+const editBacklogName = ref('')
+const savingBacklog = ref(false)
+
+function beginBacklogEdit() {
+  editBacklogName.value = backlogName.value
+  editingBacklog.value = true
+}
+
+function cancelBacklogEdit() {
+  editingBacklog.value = false
+  editBacklogName.value = ''
+}
+
+async function saveBacklogEdit() {
+  const trimmed = editBacklogName.value.trim()
+  if (!trimmed) {
+    toast.push('Backlog sprint name is required', 'error')
+    return
+  }
+  savingBacklog.value = true
+  try {
+    await api.updateProject(props.project.id, { backlog_name: trimmed })
+    editingBacklog.value = false
+    toast.push('System sprint renamed', 'success')
+    emit('changed')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not rename system sprint', 'error')
+  } finally {
+    savingBacklog.value = false
+  }
+}
+
 function formatRange(start: string, end: string) {
   return `${start} – ${end}`
 }
@@ -317,7 +398,7 @@ async function removeSprint(s: ProjectSprint) {
   deletingId.value = s.id
   try {
     await api.deleteProjectSprint(props.project.id, s.id)
-    toast.push('Sprint deleted; tasks moved to backlog', 'success')
+    toast.push(`Sprint deleted; tasks moved to ${backlogName.value.toLowerCase()}`, 'success')
     await loadSprints()
     emit('changed')
   } catch (err) {

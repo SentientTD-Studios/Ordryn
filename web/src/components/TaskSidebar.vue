@@ -1348,7 +1348,7 @@ async function removeTimeEntry(entryId: number) {
             :value="sprintId === '' ? '' : String(sprintId)"
             @change="onSprintChange"
           >
-            <option value="">Backlog</option>
+            <option value="">{{ selectedProject?.backlog_name || 'Backlog' }}</option>
             <option
               v-for="s in sprints"
               :key="s.id"

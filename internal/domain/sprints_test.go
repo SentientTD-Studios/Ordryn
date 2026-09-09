@@ -793,3 +793,111 @@ func sprintTaskIDs(list []tasks.Task) []int {
 	}
 	return ids
 }
+
+func TestProjectBacklogSprintRename(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Backlog Rename Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+
+	// Initial backlog name should be default "Backlog"
+	gotProj, err := storage.GetProjectByID(proj.ID, 1)
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	if gotProj.BacklogName != "Backlog" {
+		t.Fatalf("initial BacklogName = %q, want 'Backlog'", gotProj.BacklogName)
+	}
+
+	bn, err := storage.GetProjectBacklogName(proj.ID)
+	if err != nil {
+		t.Fatalf("GetProjectBacklogName: %v", err)
+	}
+	if bn != "Backlog" {
+		t.Fatalf("initial GetProjectBacklogName = %q, want 'Backlog'", bn)
+	}
+
+	// Rename backlog to "Icebox"
+	updatedProj, err := RenameProjectBacklog(ctx, 1, proj.ID, "Icebox")
+	if err != nil {
+		t.Fatalf("RenameProjectBacklog: %v", err)
+	}
+	if updatedProj.BacklogName != "Icebox" {
+		t.Fatalf("updated BacklogName = %q, want 'Icebox'", updatedProj.BacklogName)
+	}
+
+	bn, err = storage.GetProjectBacklogName(proj.ID)
+	if err != nil {
+		t.Fatalf("GetProjectBacklogName after rename: %v", err)
+	}
+	if bn != "Icebox" {
+		t.Fatalf("bn = %q, want 'Icebox'", bn)
+	}
+
+	// Create a sprint
+	sprint, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:      "Sprint Beta",
+		StartDate: "2026-10-01",
+		EndDate:   "2026-10-14",
+	})
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+
+	// Create a task in the project (defaults to backlog, sprint_id=0)
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{
+		Title:     "Item to move",
+		ProjectID: &proj.ID,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	// Move task from backlog to Sprint Beta
+	spID := sprint.ID
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{SprintID: ptrToIntPtr(spID)}); err != nil {
+		t.Fatalf("move to sprint: %v", err)
+	}
+
+	// Verify events show "from": "Icebox"
+	evs, err := storage.GetEventsForTask(taskID, 1, 50)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	var foundSprintChange bool
+	for _, ev := range evs {
+		if ev.EventType == "sprint_changed" {
+			foundSprintChange = true
+			if ev.Metadata["from"] != "Icebox" {
+				t.Fatalf("sprint_changed from = %v, want 'Icebox'", ev.Metadata["from"])
+			}
+			if ev.Metadata["to"] != "Sprint Beta" {
+				t.Fatalf("sprint_changed to = %v, want 'Sprint Beta'", ev.Metadata["to"])
+			}
+		}
+	}
+	if !foundSprintChange {
+		t.Fatal("expected sprint_changed event")
+	}
+
+	// Move task back to backlog (0)
+	zero := 0
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{SprintID: ptrToIntPtr(zero)}); err != nil {
+		t.Fatalf("move back to backlog: %v", err)
+	}
+
+	evs, err = storage.GetEventsForTask(taskID, 1, 50)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if evs[0].EventType != "sprint_changed" {
+		t.Fatalf("latest event = %s, want sprint_changed", evs[0].EventType)
+	}
+	if evs[0].Metadata["to"] != "Icebox" {
+		t.Fatalf("sprint_changed to = %v, want 'Icebox'", evs[0].Metadata["to"])
+	}
+}
