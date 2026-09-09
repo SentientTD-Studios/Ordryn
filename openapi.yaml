@@ -1735,7 +1735,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, start_date, end_date]
+              required: [name]
               properties:
                 name:
                   type: string
@@ -1747,16 +1747,16 @@ paths:
                 start_date:
                   type: string
                   format: date
-                  description: Inclusive start (YYYY-MM-DD). Must not overlap another sprint in this project.
+                  description: Inclusive start (YYYY-MM-DD). Leave blank or omit for a dateless sprint (e.g. Icebox). For dated sprints, must not overlap another sprint in this project.
                 end_date:
                   type: string
                   format: date
-                  description: Inclusive end (YYYY-MM-DD). Adjacent ranges (next day after another sprint ends) are allowed.
+                  description: Inclusive end (YYYY-MM-DD). Leave blank or omit for a dateless sprint. Adjacent ranges (next day after another sprint ends) are allowed.
                 lock_date:
                   type: string
                   format: date
                   nullable: true
-                  description: Optional. From this UTC date onward, only the project owner can add tasks to the sprint. Omit or null to leave the sprint unlocked.
+                  description: Optional. From this UTC date onward, only the project owner can add tasks to the sprint. Cannot be set on dateless sprints. Omit or null to leave the sprint unlocked.
       responses:
         "201":
           description: Created
@@ -1858,6 +1858,10 @@ paths:
                   name:
                     type: string
                     example: "Backlog"
+                  description:
+                    type: string
+                    maxLength: 80
+                    example: "Cold storage for future features"
                   is_active:
                     type: boolean
                     example: false
@@ -1875,8 +1879,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     patch:
       tags: [Projects]
-      summary: Rename the backlog system sprint (owner)
-      description: Renames the backlog system sprint. Cannot set start, end, or lock dates.
+      summary: Update the backlog system sprint (owner)
+      description: Updates the backlog system sprint name and/or description. Cannot set start, end, or lock dates.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1886,15 +1890,18 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name]
               properties:
                 name:
                   type: string
                   maxLength: 60
                   description: New name for the backlog system sprint
+                description:
+                  type: string
+                  maxLength: 80
+                  description: New description for the backlog system sprint
       responses:
         "200":
-          description: Backlog system sprint renamed
+          description: Backlog system sprint updated
           content:
             application/json:
               schema:
@@ -1906,6 +1913,8 @@ paths:
                   project_id:
                     type: integer
                   name:
+                    type: string
+                  description:
                     type: string
                   is_active:
                     type: boolean
@@ -3886,6 +3895,10 @@ components:
           type: string
           maxLength: 60
           description: Custom name for the project's backlog system sprint (default "Backlog")
+        backlog_description:
+          type: string
+          maxLength: 80
+          description: Optional description for the project's backlog system sprint
         role:
           type: string
           enum: [owner, editor, viewer]
@@ -3923,6 +3936,10 @@ components:
           type: string
           maxLength: 60
           description: Rename the project's backlog system sprint
+        backlog_description:
+          type: string
+          maxLength: 80
+          description: Update the project's backlog system sprint description
       description: At least one field required. Disabling kanban fails with 409 if the project has tasks.
 
     ProjectStatus:
@@ -3960,9 +3977,11 @@ components:
         start_date:
           type: string
           format: date
+          nullable: true
         end_date:
           type: string
           format: date
+          nullable: true
           description: Inclusive range; sprints in a project must not overlap
         lock_date:
           type: string

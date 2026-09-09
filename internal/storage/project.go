@@ -12,17 +12,19 @@ type Project struct {
 	ID           int
 	UserID       int
 	Name         string
-	Description  string
-	WorkflowMode string
-	Position     int
-	Archived     bool
-	BacklogName  string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	Description        string
+	WorkflowMode       string
+	Position           int
+	Archived           bool
+	BacklogName        string
+	BacklogDescription string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 const projectSelectCols = `id, user_id, name, COALESCE(description, ''), COALESCE(workflow_mode, 'classic'),
-		        COALESCE(position, 0), COALESCE(archived, false), COALESCE(backlog_name, 'Backlog'), created_at, updated_at`
+		        COALESCE(position, 0), COALESCE(archived, false), COALESCE(backlog_name, 'Backlog'),
+		        COALESCE(backlog_description, ''), created_at, updated_at`
 
 // CreateProject inserts a new project for the given user and returns it.
 // New projects are appended at the end of the owner's ordered list.
@@ -42,7 +44,7 @@ func CreateProject(userID int, name, description string) (*Project, error) {
 		 )
 		 RETURNING `+projectSelectCols,
 		userID, name, description).Scan(
-		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt)
+		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.BacklogDescription, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project: %v", err)
 	}
@@ -59,10 +61,10 @@ func CreateProject(userID int, name, description string) (*Project, error) {
 	return &p, nil
 }
 
-// UpdateProject updates name, description, and/or backlog_name of a project owned by the user.
+// UpdateProject updates name, description, backlog_name, and/or backlog_description of a project owned by the user.
 // Nil pointers leave that field unchanged.
-func UpdateProject(id int, userID int, name *string, description *string, backlogName *string) error {
-	if name == nil && description == nil && backlogName == nil {
+func UpdateProject(id int, userID int, name *string, description *string, backlogName *string, backlogDescription *string) error {
+	if name == nil && description == nil && backlogName == nil && backlogDescription == nil {
 		return nil
 	}
 	pool, err := OpenDatabase()
@@ -85,6 +87,10 @@ func UpdateProject(id int, userID int, name *string, description *string, backlo
 	if backlogName != nil {
 		args = append(args, *backlogName)
 		setClauses = append(setClauses, fmt.Sprintf("backlog_name = $%d", len(args)))
+	}
+	if backlogDescription != nil {
+		args = append(args, *backlogDescription)
+		setClauses = append(setClauses, fmt.Sprintf("backlog_description = $%d", len(args)))
 	}
 
 	args = append(args, id, userID)
@@ -116,6 +122,23 @@ func GetProjectBacklogName(projectID int) (string, error) {
 		return "Backlog", nil
 	}
 	return name, nil
+}
+
+// GetProjectBacklogDescription returns the custom backlog sprint description for a project.
+func GetProjectBacklogDescription(projectID int) (string, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return "", err
+	}
+	defer CloseDatabase(pool)
+
+	var desc string
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(backlog_description, '') FROM projects WHERE id = $1`, projectID).Scan(&desc)
+	if err != nil {
+		return "", err
+	}
+	return desc, nil
 }
 
 // DeleteProject removes a project owned by the user.
@@ -153,7 +176,7 @@ func GetProjectsForUser(userID int) ([]Project, error) {
 	var out []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.BacklogDescription, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan project row: %v", err)
 		}
 		out = append(out, p)
@@ -188,7 +211,7 @@ func GetProjectByID(id int, userID int) (*Project, error) {
 	err = pool.QueryRow(context.Background(),
 		`SELECT `+projectSelectCols+`
 		 FROM projects WHERE id = $1 AND user_id = $2`, id, userID).Scan(
-		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt)
+		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived, &p.BacklogName, &p.BacklogDescription, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project: %v", err)
 	}

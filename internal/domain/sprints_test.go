@@ -46,11 +46,11 @@ func TestProjectSprintsCRUDAndTaskAssignment(t *testing.T) {
 	if sprint.LockDate != nil {
 		t.Fatalf("lock_date=%v want nil", sprint.LockDate)
 	}
-	if storage.FormatSprintDate(sprint.StartDate) != "2026-08-24" {
-		t.Fatalf("start=%q", storage.FormatSprintDate(sprint.StartDate))
+	if storage.FormatSprintDatePtr(sprint.StartDate) != "2026-08-24" {
+		t.Fatalf("start=%q", storage.FormatSprintDatePtr(sprint.StartDate))
 	}
-	if storage.FormatSprintDate(sprint.EndDate) != "2026-09-06" {
-		t.Fatalf("end=%q", storage.FormatSprintDate(sprint.EndDate))
+	if storage.FormatSprintDatePtr(sprint.EndDate) != "2026-09-06" {
+		t.Fatalf("end=%q", storage.FormatSprintDatePtr(sprint.EndDate))
 	}
 
 	if _, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
@@ -521,16 +521,19 @@ func TestSprintIsActiveWindow(t *testing.T) {
 	start, _ := time.Parse("2006-01-02", "2026-08-24")
 	end, _ := time.Parse("2006-01-02", "2026-09-06")
 	now, _ := time.Parse(time.RFC3339, "2026-08-24T18:00:00Z")
-	if !storage.SprintIsActive(start, end, now) {
+	if !storage.SprintIsActive(&start, &end, now) {
 		t.Fatal("expected active on start date")
 	}
 	before, _ := time.Parse(time.RFC3339, "2026-08-23T23:00:00Z")
-	if storage.SprintIsActive(start, end, before) {
+	if storage.SprintIsActive(&start, &end, before) {
 		t.Fatal("expected inactive before start")
 	}
 	after, _ := time.Parse(time.RFC3339, "2026-09-07T00:00:00Z")
-	if storage.SprintIsActive(start, end, after) {
+	if storage.SprintIsActive(&start, &end, after) {
 		t.Fatal("expected inactive after end")
+	}
+	if storage.SprintIsActive(nil, nil, now) {
+		t.Fatal("dateless sprint should never be active by date")
 	}
 }
 
@@ -901,3 +904,184 @@ func TestProjectBacklogSprintRename(t *testing.T) {
 		t.Fatalf("sprint_changed to = %v, want 'Icebox'", evs[0].Metadata["to"])
 	}
 }
+
+func TestDatelessSprintsAndDescriptions(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Kanban Board With Icebox", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+
+	// 1. Backlog description can be set on project
+	backlogDesc := "Items waiting for triage"
+	updatedProj, err := UpdateProject(ctx, 1, proj.ID, nil, nil, nil, nil, &backlogDesc)
+	if err != nil {
+		t.Fatalf("set backlog description: %v", err)
+	}
+	if updatedProj.BacklogDescription != backlogDesc {
+		t.Fatalf("backlog description = %q, want %q", updatedProj.BacklogDescription, backlogDesc)
+	}
+
+	// 2. Reject incomplete dates (only start_date or only end_date)
+	if _, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:      "Incomplete Sprint 1",
+		StartDate: "2026-10-01",
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation for start_date only, got %v", err)
+	}
+	if _, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:    "Incomplete Sprint 2",
+		EndDate: "2026-10-15",
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation for end_date only, got %v", err)
+	}
+
+	// 3. Reject lock_date on dateless sprint
+	if _, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:     "Bad Dateless Sprint",
+		LockDate: "2026-10-01",
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation for lock_date on dateless sprint, got %v", err)
+	}
+
+	// 4. Reject sprint description exceeding 80 chars
+	tooLongDesc := strings.Repeat("x", storage.MaxSprintDescriptionLen+1)
+	if _, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:        "Long Desc Sprint",
+		Description: tooLongDesc,
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation for description > 80 chars, got %v", err)
+	}
+
+	// 5. Create a dateless sprint (e.g. Icebox)
+	icebox, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:        "Icebox",
+		Description: "Ideas and deprioritized work",
+	})
+	if err != nil {
+		t.Fatalf("create dateless sprint: %v", err)
+	}
+	if icebox.Name != "Icebox" {
+		t.Fatalf("name = %q, want 'Icebox'", icebox.Name)
+	}
+	if icebox.Description != "Ideas and deprioritized work" {
+		t.Fatalf("description = %q", icebox.Description)
+	}
+	if icebox.StartDate != nil || icebox.EndDate != nil {
+		t.Fatalf("expected nil dates for dateless sprint, got %v, %v", icebox.StartDate, icebox.EndDate)
+	}
+	if icebox.LockDate != nil {
+		t.Fatalf("expected nil lock_date for dateless sprint, got %v", icebox.LockDate)
+	}
+
+	// 6. Create another dateless sprint (e.g. Someday/Maybe) - multiple dateless sprints coexist
+	someday, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:        "Someday",
+		Description: "Blue sky research",
+	})
+	if err != nil {
+		t.Fatalf("create second dateless sprint: %v", err)
+	}
+	if someday.StartDate != nil || someday.EndDate != nil {
+		t.Fatalf("expected nil dates, got %v, %v", someday.StartDate, someday.EndDate)
+	}
+
+	// 7. Create a dated sprint
+	dated, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:      "Sprint 1",
+		StartDate: "2026-10-01",
+		EndDate:   "2026-10-14",
+	})
+	if err != nil {
+		t.Fatalf("create dated sprint: %v", err)
+	}
+
+	// 8. List sprints: dateless sprints appear first, then dated sprints
+	sprints, err := ListProjectSprintsForUser(ctx, 1, proj.ID)
+	if err != nil {
+		t.Fatalf("list sprints: %v", err)
+	}
+	if len(sprints) != 3 {
+		t.Fatalf("expected 3 sprints, got %d", len(sprints))
+	}
+	// First two should be dateless (Someday id > Icebox id), third should be dated
+	if sprints[0].StartDate != nil || sprints[1].StartDate != nil {
+		t.Fatalf("first two sprints should be dateless, got %v, %v", sprints[0].StartDate, sprints[1].StartDate)
+	}
+	if sprints[2].StartDate == nil {
+		t.Fatal("third sprint should be dated")
+	}
+
+	// 9. Assign a task to the dateless sprint
+	pid := proj.ID
+	iceboxID := icebox.ID
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{
+		Title:     "Icebox item",
+		ProjectID: &pid,
+		SprintID:  &iceboxID,
+	})
+	if err != nil {
+		t.Fatalf("create task in icebox: %v", err)
+	}
+	assignedSprintID, err := storage.GetTaskSprintID(taskID)
+	if err != nil || assignedSprintID != iceboxID {
+		t.Fatalf("task sprint_id = %d, want %d", assignedSprintID, iceboxID)
+	}
+
+	// 10. Update dateless sprint description and name
+	newDesc := "Updated icebox description"
+	newName := "Deep Freeze"
+	updated, err := UpdateProjectSprintForUser(ctx, 1, proj.ID, iceboxID, UpdateProjectSprintInput{
+		Name:        &newName,
+		Description: &newDesc,
+	})
+	if err != nil {
+		t.Fatalf("update dateless sprint: %v", err)
+	}
+	if updated.Name != "Deep Freeze" || updated.Description != newDesc {
+		t.Fatalf("updated = (%q, %q)", updated.Name, updated.Description)
+	}
+	if updated.StartDate != nil || updated.EndDate != nil {
+		t.Fatalf("expected dates to remain nil, got %v, %v", updated.StartDate, updated.EndDate)
+	}
+
+	// 11. Reject setting lock_date when updating a dateless sprint
+	badLock := "2026-10-15"
+	if _, err := UpdateProjectSprintForUser(ctx, 1, proj.ID, iceboxID, UpdateProjectSprintInput{
+		LockDate: &badLock,
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation when adding lock_date to dateless sprint, got %v", err)
+	}
+
+	// 12. Convert dateless sprint to dated sprint
+	newStart := "2026-10-15"
+	newEnd := "2026-10-28"
+	datedConverted, err := UpdateProjectSprintForUser(ctx, 1, proj.ID, iceboxID, UpdateProjectSprintInput{
+		StartDate: &newStart,
+		EndDate:   &newEnd,
+	})
+	if err != nil {
+		t.Fatalf("convert to dated: %v", err)
+	}
+	if datedConverted.StartDate == nil || storage.FormatSprintDatePtr(datedConverted.StartDate) != "2026-10-15" {
+		t.Fatalf("converted start_date = %v", datedConverted.StartDate)
+	}
+
+	// 13. Convert dated sprint to dateless sprint
+	emptyStart := ""
+	emptyEnd := ""
+	datelessConverted, err := UpdateProjectSprintForUser(ctx, 1, proj.ID, dated.ID, UpdateProjectSprintInput{
+		StartDate: &emptyStart,
+		EndDate:   &emptyEnd,
+	})
+	if err != nil {
+		t.Fatalf("convert dated to dateless: %v", err)
+	}
+	if datelessConverted.StartDate != nil || datelessConverted.EndDate != nil {
+		t.Fatalf("expected nil dates after converting to dateless, got %v, %v", datelessConverted.StartDate, datelessConverted.EndDate)
+	}
+}
+

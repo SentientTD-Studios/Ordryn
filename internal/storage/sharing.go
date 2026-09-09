@@ -25,20 +25,21 @@ const (
 
 // ProjectWithAccess is a project plus the caller's role and owner info.
 type ProjectWithAccess struct {
-	ID            int
-	UserID        int
-	Name          string
-	Description   string
-	WorkflowMode  string
-	Position      int
-	Archived      bool
-	BacklogName   string
-	Role          string
-	OwnerEmail    string
-	OwnerUserName string
-	OwnerUserID   int
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID                 int
+	UserID             int
+	Name               string
+	Description        string
+	WorkflowMode       string
+	Position           int
+	Archived           bool
+	BacklogName        string
+	BacklogDescription string
+	Role               string
+	OwnerEmail         string
+	OwnerUserName      string
+	OwnerUserID        int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // ProjectMember is a member of a shared project.
@@ -338,7 +339,8 @@ func GetAccessibleProjects(userID int) ([]ProjectWithAccess, error) {
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT p.id, p.user_id, p.name, COALESCE(p.description, ''), COALESCE(p.workflow_mode, 'classic'),
-		       COALESCE(p.position, 0), COALESCE(p.archived, false), COALESCE(p.backlog_name, 'Backlog'), p.created_at, p.updated_at,
+		       COALESCE(p.position, 0), COALESCE(p.archived, false), COALESCE(p.backlog_name, 'Backlog'),
+		       COALESCE(p.backlog_description, ''), p.created_at, p.updated_at,
 		       COALESCE(pm.role, CASE WHEN p.user_id = $1 THEN 'owner' END),
 		       u.email, COALESCE(u.user_name, ''), p.user_id
 		FROM projects p
@@ -360,7 +362,7 @@ func GetAccessibleProjects(userID int) ([]ProjectWithAccess, error) {
 	for rows.Next() {
 		var p ProjectWithAccess
 		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position,
-			&p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt, &p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID); err != nil {
+			&p.Archived, &p.BacklogName, &p.BacklogDescription, &p.CreatedAt, &p.UpdatedAt, &p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -379,7 +381,8 @@ func GetAccessibleProjectByID(projectID, userID int) (*ProjectWithAccess, error)
 	var p ProjectWithAccess
 	err = pool.QueryRow(context.Background(), `
 		SELECT p.id, p.user_id, p.name, COALESCE(p.description, ''), COALESCE(p.workflow_mode, 'classic'),
-		       COALESCE(p.position, 0), COALESCE(p.archived, false), COALESCE(p.backlog_name, 'Backlog'), p.created_at, p.updated_at,
+		       COALESCE(p.position, 0), COALESCE(p.archived, false), COALESCE(p.backlog_name, 'Backlog'),
+		       COALESCE(p.backlog_description, ''), p.created_at, p.updated_at,
 		       COALESCE(pm.role, CASE WHEN p.user_id = $2 THEN 'owner' END),
 		       u.email, COALESCE(u.user_name, ''), p.user_id
 		FROM projects p
@@ -388,7 +391,7 @@ func GetAccessibleProjectByID(projectID, userID int) (*ProjectWithAccess, error)
 		WHERE p.id = $1 AND (p.user_id = $2 OR pm.user_id = $2)`,
 		projectID, userID).Scan(
 		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position,
-		&p.Archived, &p.BacklogName, &p.CreatedAt, &p.UpdatedAt, &p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID)
+		&p.Archived, &p.BacklogName, &p.BacklogDescription, &p.CreatedAt, &p.UpdatedAt, &p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("project not found")

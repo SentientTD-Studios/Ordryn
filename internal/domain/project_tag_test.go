@@ -34,9 +34,15 @@ func TestRenameProjectValidation(t *testing.T) {
 func TestUpdateProjectDescriptionValidation(t *testing.T) {
 	ctx := context.Background()
 	long := strings.Repeat("d", MaxProjectDescriptionLength+1)
-	_, err := UpdateProject(ctx, 1, 1, nil, &long, nil, nil)
+	_, err := UpdateProject(ctx, 1, 1, nil, &long, nil, nil, nil)
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("long description: err=%v", err)
+	}
+
+	longBacklogDesc := strings.Repeat("b", MaxBacklogDescriptionLength+1)
+	_, err = UpdateProject(ctx, 1, 1, nil, nil, nil, nil, &longBacklogDesc)
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("long backlog description: err=%v", err)
 	}
 }
 

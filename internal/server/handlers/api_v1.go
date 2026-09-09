@@ -175,9 +175,10 @@ type apiProjectJSON struct {
 	Name          string `json:"name"`
 	Description   string `json:"description,omitempty"`
 	WorkflowMode  string `json:"workflow_mode,omitempty"`
-	Archived      bool   `json:"archived"`
-	BacklogName   string `json:"backlog_name,omitempty"`
-	Role          string `json:"role,omitempty"`
+	Archived           bool   `json:"archived"`
+	BacklogName        string `json:"backlog_name,omitempty"`
+	BacklogDescription string `json:"backlog_description,omitempty"`
+	Role               string `json:"role,omitempty"`
 	OwnerEmail    string `json:"owner_email,omitempty"`
 	OwnerUserName string `json:"owner_user_name,omitempty"`
 	OwnerUserID   int    `json:"owner_user_id,omitempty"`
@@ -201,8 +202,9 @@ type apiProjectCreateRequest struct {
 type apiProjectPatchRequest struct {
 	Name         *string `json:"name"`
 	Description  *string `json:"description"`
-	WorkflowMode *string `json:"workflow_mode"`
-	BacklogName  *string `json:"backlog_name"`
+	WorkflowMode       *string `json:"workflow_mode"`
+	BacklogName        *string `json:"backlog_name"`
+	BacklogDescription *string `json:"backlog_description"`
 }
 
 type apiProjectReorderRequest struct {
@@ -1089,11 +1091,11 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil && req.BacklogName == nil {
+	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil && req.BacklogName == nil && req.BacklogDescription == nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 		return
 	}
-	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName)
+	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription)
 	if err != nil {
 		if errors.Is(err, domain.ErrValidation) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())

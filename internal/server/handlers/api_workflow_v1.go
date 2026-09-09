@@ -114,16 +114,17 @@ func projectToAPIJSON(p *storage.ProjectWithAccess) apiProjectJSON {
 		backlogName = "Backlog"
 	}
 	return apiProjectJSON{
-		ID:            p.ID,
-		Name:          p.Name,
-		Description:   p.Description,
-		WorkflowMode:  mode,
-		Archived:      p.Archived,
-		BacklogName:   backlogName,
-		Role:          p.Role,
-		OwnerEmail:    p.OwnerEmail,
-		OwnerUserName: p.OwnerUserName,
-		OwnerUserID:   p.OwnerUserID,
+		ID:                 p.ID,
+		Name:               p.Name,
+		Description:        p.Description,
+		WorkflowMode:       mode,
+		Archived:           p.Archived,
+		BacklogName:        backlogName,
+		BacklogDescription: p.BacklogDescription,
+		Role:               p.Role,
+		OwnerEmail:         p.OwnerEmail,
+		OwnerUserName:      p.OwnerUserName,
+		OwnerUserID:        p.OwnerUserID,
 	}
 }
 
@@ -137,14 +138,15 @@ func projectStorageToAPIJSON(p *storage.Project, role string) apiProjectJSON {
 		backlogName = "Backlog"
 	}
 	return apiProjectJSON{
-		ID:           p.ID,
-		Name:         p.Name,
-		Description:  p.Description,
-		WorkflowMode: mode,
-		Archived:     p.Archived,
-		BacklogName:  backlogName,
-		Role:         role,
-		OwnerUserID:  p.UserID,
+		ID:                 p.ID,
+		Name:               p.Name,
+		Description:        p.Description,
+		WorkflowMode:       mode,
+		Archived:           p.Archived,
+		BacklogName:        backlogName,
+		BacklogDescription: p.BacklogDescription,
+		Role:               role,
+		OwnerUserID:        p.UserID,
 	}
 }
 
@@ -358,8 +360,8 @@ type apiProjectSprintJSON struct {
 	ProjectID   int     `json:"project_id"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
-	StartDate   string  `json:"start_date"`
-	EndDate     string  `json:"end_date"`
+	StartDate   *string `json:"start_date"`
+	EndDate     *string `json:"end_date"`
 	LockDate    *string `json:"lock_date"`
 	IsActive    bool    `json:"is_active"`
 	IsLocked    bool    `json:"is_locked"`
@@ -394,13 +396,23 @@ func sprintToAPIJSON(s storage.ProjectSprint) apiProjectSprintJSON {
 		d := storage.FormatSprintDate(*s.LockDate)
 		lockDate = &d
 	}
+	var startDate *string
+	if s.StartDate != nil {
+		d := storage.FormatSprintDate(*s.StartDate)
+		startDate = &d
+	}
+	var endDate *string
+	if s.EndDate != nil {
+		d := storage.FormatSprintDate(*s.EndDate)
+		endDate = &d
+	}
 	return apiProjectSprintJSON{
 		ID:          s.ID,
 		ProjectID:   s.ProjectID,
 		Name:        s.Name,
 		Description: s.Description,
-		StartDate:   storage.FormatSprintDate(s.StartDate),
-		EndDate:     storage.FormatSprintDate(s.EndDate),
+		StartDate:   startDate,
+		EndDate:     endDate,
 		LockDate:    lockDate,
 		IsActive:    storage.SprintIsActive(s.StartDate, s.EndDate, now),
 		IsLocked:    storage.SprintIsLocked(s.LockDate, now),
@@ -519,13 +531,14 @@ func handleProjectSprintsResource(w http.ResponseWriter, r *http.Request, projec
 }
 
 type apiBacklogSprintJSON struct {
-	ID        int    `json:"id"`
-	ProjectID int    `json:"project_id"`
-	Name      string `json:"name"`
-	IsActive  bool   `json:"is_active"`
-	IsLocked  bool   `json:"is_locked"`
-	IsSystem  bool   `json:"is_system"`
-	TaskCount int    `json:"task_count"`
+	ID          int    `json:"id"`
+	ProjectID   int    `json:"project_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsActive    bool   `json:"is_active"`
+	IsLocked    bool   `json:"is_locked"`
+	IsSystem    bool   `json:"is_system"`
+	TaskCount   int    `json:"task_count"`
 }
 
 func handleProjectBacklogSprint(w http.ResponseWriter, r *http.Request, userID, projectID int) {
@@ -546,13 +559,14 @@ func handleProjectBacklogSprint(w http.ResponseWriter, r *http.Request, userID, 
 			name = "Backlog"
 		}
 		out := apiBacklogSprintJSON{
-			ID:        0,
-			ProjectID: projectID,
-			Name:      name,
-			IsActive:  false,
-			IsLocked:  false,
-			IsSystem:  true,
-			TaskCount: count,
+			ID:          0,
+			ProjectID:   projectID,
+			Name:        name,
+			Description: proj.BacklogDescription,
+			IsActive:    false,
+			IsLocked:    false,
+			IsSystem:    true,
+			TaskCount:   count,
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(out)
@@ -566,7 +580,7 @@ func handleProjectBacklogSprint(w http.ResponseWriter, r *http.Request, userID, 
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Dates cannot be set on the backlog system sprint.")
 			return
 		}
-		if req.Name == nil {
+		if req.Name == nil && req.Description == nil {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 			return
 		}
@@ -579,20 +593,21 @@ func handleProjectBacklogSprint(w http.ResponseWriter, r *http.Request, userID, 
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Sprints require a kanban project.")
 			return
 		}
-		updatedProj, err := domain.UpdateProject(r.Context(), userID, projectID, nil, nil, nil, req.Name)
+		updatedProj, err := domain.UpdateProject(r.Context(), userID, projectID, nil, nil, nil, req.Name, req.Description)
 		if err != nil {
 			writeWorkflowDomainError(w, err)
 			return
 		}
 		count, _ := storage.CountTasksInBacklog(projectID)
 		out := apiBacklogSprintJSON{
-			ID:        0,
-			ProjectID: projectID,
-			Name:      updatedProj.BacklogName,
-			IsActive:  false,
-			IsLocked:  false,
-			IsSystem:  true,
-			TaskCount: count,
+			ID:          0,
+			ProjectID:   projectID,
+			Name:        updatedProj.BacklogName,
+			Description: updatedProj.BacklogDescription,
+			IsActive:    false,
+			IsLocked:    false,
+			IsSystem:    true,
+			TaskCount:   count,
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(out)
