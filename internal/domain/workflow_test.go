@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"GoTodo/internal/storage"
 
@@ -21,15 +22,7 @@ func TestMain(m *testing.M) {
 	// Isolate RuntimePath so go test ./... can run this package in parallel with
 	// internal/tasks (which also starts embedded-postgres).
 	runtimePath := filepath.Join(os.TempDir(), "gotodo-embedded-pg-domain")
-	db := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
-		Version(embeddedpostgres.V16).
-		Port(port).
-		Database("gotodo_workflow_test").
-		RuntimePath(runtimePath))
-	if err := db.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "start postgres: %v\n", err)
-		os.Exit(1)
-	}
+	db := startEmbeddedPostgres("gotodo_workflow_test", runtimePath, port)
 
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_PORT", fmt.Sprintf("%d", port))
@@ -226,6 +219,27 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	_ = db.Stop()
 	os.Exit(code)
+}
+
+func startEmbeddedPostgres(database, runtimePath string, port uint32) *embeddedpostgres.EmbeddedPostgres {
+	var last error
+	for attempt := 1; attempt <= 3; attempt++ {
+		db := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
+			Version(embeddedpostgres.V16).
+			Port(port).
+			Database(database).
+			RuntimePath(runtimePath))
+		if err := db.Start(); err == nil {
+			return db
+		} else {
+			last = err
+			fmt.Fprintf(os.Stderr, "start postgres (attempt %d/3): %v\n", attempt, err)
+			time.Sleep(time.Duration(attempt) * 2 * time.Second)
+		}
+	}
+	fmt.Fprintf(os.Stderr, "start postgres: %v\n", last)
+	os.Exit(1)
+	return nil
 }
 
 func TestKanbanEnableDisableAndStatusCap(t *testing.T) {
