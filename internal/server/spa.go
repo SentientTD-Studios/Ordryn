@@ -113,11 +113,34 @@ func serveSPA(w http.ResponseWriter, r *http.Request, mount string, fileServer h
 		return
 	}
 	if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+		// Hashed Vite files under assets/ are content-addressed; cache them hard.
+		if isSPAStaticPath(rel) && strings.HasPrefix(strings.ToLower(rel), "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 		fileServer.ServeHTTP(w, r)
 		return
 	}
 
+	// Never SPA-fallback hashed/static files. Serving index.html as a module
+	// script yields MIME "text/html" and breaks lazy Vue routes after deploys
+	// (stale index-*.js still requesting old DashboardView-*.js hashes).
+	if isSPAStaticPath(rel) {
+		w.Header().Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+		return
+	}
+
 	serveSPAIndex(w, r)
+}
+
+// isSPAStaticPath reports paths that must be real files (or 404), never index.html.
+// Vue routes in this app have no file extension; Vite emits hashed files under assets/.
+func isSPAStaticPath(rel string) bool {
+	rel = strings.ToLower(strings.TrimPrefix(rel, "/"))
+	if rel == "assets" || strings.HasPrefix(rel, "assets/") {
+		return true
+	}
+	return filepath.Ext(rel) != ""
 }
 
 func serveSPAIndex(w http.ResponseWriter, r *http.Request) {
