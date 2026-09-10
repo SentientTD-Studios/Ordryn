@@ -122,6 +122,105 @@ func TestServeSPAFallbackToIndex(t *testing.T) {
 	if got := rec.Body.String(); got != "console.log(1)" {
 		t.Fatalf("asset body = %q", got)
 	}
+	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("asset Cache-Control = %q", got)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "javascript") && !strings.Contains(ct, "ecmascript") {
+		t.Fatalf("asset Content-Type = %q, want javascript", ct)
+	}
+}
+
+func TestServeSPAMissingAssetIsNotHTML(t *testing.T) {
+	dir := t.TempDir()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+
+	if err := os.MkdirAll("web/dist/assets", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("web/dist/index.html", []byte(
+		`<html><head><title>GoTodo</title></head><body>spa</body></html>`,
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := utils.BasePath
+	t.Cleanup(func() { utils.BasePath = orig })
+	utils.BasePath = "/"
+
+	fs := http.StripPrefix("/", http.FileServer(http.Dir("web/dist")))
+
+	req := httptest.NewRequest(http.MethodGet, "/assets/DashboardView-BHg0u49w.js", nil)
+	rec := httptest.NewRecorder()
+	serveSPA(rec, req, "", fs)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing chunk status = %d, want 404", rec.Code)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if strings.Contains(ct, "text/html") {
+		t.Fatalf("missing chunk Content-Type = %q; must not be HTML (breaks module scripts)", ct)
+	}
+	if strings.Contains(rec.Body.String(), "spa") {
+		t.Fatalf("missing chunk must not fall back to index.html: %q", rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("missing chunk Cache-Control = %q, want no-store", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/CalendarView-D5KwOmbh.js", nil)
+	rec = httptest.NewRecorder()
+	serveSPA(rec, req, "", fs)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing calendar chunk status = %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/favicon.svg", nil)
+	rec = httptest.NewRecorder()
+	serveSPA(rec, req, "", fs)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing ext file status = %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	rec = httptest.NewRecorder()
+	serveSPA(rec, req, "", fs)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("SPA route status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "spa") {
+		t.Fatalf("SPA route should still serve index.html: %q", rec.Body.String())
+	}
+}
+
+func TestIsSPAStaticPath(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		rel  string
+		want bool
+	}{
+		{"assets/DashboardView-BHg0u49w.js", true},
+		{"assets/CalendarView-D5KwOmbh.js", true},
+		{"assets/index-DOlRIdmY.js", true},
+		{"assets", true},
+		{"favicon.svg", true},
+		{"site.css", true},
+		{"dashboard", false},
+		{"calendar", false},
+		{"tasks/1", false},
+		{"docs/api/v1", false},
+	}
+	for _, tc := range cases {
+		if got := isSPAStaticPath(tc.rel); got != tc.want {
+			t.Errorf("isSPAStaticPath(%q) = %v, want %v", tc.rel, got, tc.want)
+		}
+	}
 }
 
 func TestNonceInlineScripts(t *testing.T) {
