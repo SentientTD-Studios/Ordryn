@@ -85,7 +85,7 @@ const showMentionMenu = computed(
     (mentionToken.value?.query.length ?? 0) >= USER_SEARCH_MIN_QUERY,
 )
 
-async function reload() {
+async function reload(scroll = false) {
   if (!props.taskId) return
   const keepEditing = editingId.value
   const keepDraft = editDraft.value
@@ -94,7 +94,9 @@ async function reload() {
   try {
     comments.value = await api.listTaskComments(props.taskId)
     await nextTick()
-    bottomEl.value?.scrollIntoView({ block: 'nearest' })
+    if (scroll) {
+      bottomEl.value?.scrollIntoView({ block: 'nearest' })
+    }
     if (keepEditing && comments.value.some((c) => c.id === keepEditing && !c.deleted)) {
       editingId.value = keepEditing
       editDraft.value = keepDraft
@@ -886,8 +888,9 @@ defineExpose({ reload })
 }
 .task-post-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem 0.65rem;
   padding: 0.65rem 0.75rem;
   background: color-mix(in srgb, var(--ordryn-muted-bg, #f1f5f9) 80%, var(--ordryn-card-bg, #fff));
   border-bottom: 1px solid var(--ordryn-card-border, #dee2e6);

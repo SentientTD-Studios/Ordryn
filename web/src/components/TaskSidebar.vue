@@ -1921,7 +1921,7 @@ textarea.task-description-input {
 
 @media (max-width: 991.98px) {
   .kanban-task-dialog,
-  .oryryn-task-dialog:not(.kanban-task-dialog) {
+  .oryryn-task-dialog {
     width: 100vw;
     max-width: 100vw;
     height: 100dvh;
@@ -1929,33 +1929,84 @@ textarea.task-description-input {
     margin: 0;
   }
 
-  .oryryn-task-dialog:not(.kanban-task-dialog) .modal-content {
+  .kanban-task-dialog .modal-content,
+  .oryryn-task-dialog .modal-content {
     min-height: 100dvh;
+    height: 100%;
     border-radius: 0;
+  }
+
+  .kanban-task-header.modal-header {
+    flex-wrap: wrap;
+    padding: 0.65rem 0.85rem;
+    gap: 0.5rem;
+  }
+
+  .task-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    height: auto;
+    width: auto;
+  }
+
+  .task-header-actions > .task-header-btn.btn {
+    height: 30px !important;
+    max-height: 30px;
+    font-size: 0.8rem;
+    padding: 0 0.6rem !important;
+  }
+
+  .task-header-actions > .task-header-close.btn {
+    width: 30px;
+    padding: 0 !important;
   }
 
   .kanban-task-body {
     overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .kanban-task-form {
     display: flex;
     flex-direction: column;
+    flex: none;
+    width: 100%;
+    min-height: auto;
     height: auto;
+    grid-template-columns: none;
+    grid-template-rows: none;
+    grid-template-areas: none;
   }
 
   .kanban-task-head,
-  .kanban-task-rest,
-  .kanban-task-aside {
+  .kanban-task-aside,
+  .kanban-task-rest {
+    grid-area: auto;
+    width: 100%;
+    min-height: auto;
+    flex: none;
     overflow: visible;
   }
 
-  .kanban-task-head { order: 1; }
-  .kanban-task-rest { order: 2; }
+  .kanban-task-head {
+    order: 1;
+    padding: 0.85rem 1rem 0.5rem;
+  }
+
   .kanban-task-aside {
-    order: 3;
+    order: 2;
     border-left: none;
     border-top: 1px solid var(--ordryn-card-border, #dee2e6);
+    padding: 0.85rem 1rem 1.25rem;
+  }
+
+  .kanban-task-rest {
+    order: 3;
+    border-top: 1px solid var(--ordryn-card-border, #dee2e6);
+    padding: 0.85rem 1rem 2.5rem;
   }
 }
 </style>
