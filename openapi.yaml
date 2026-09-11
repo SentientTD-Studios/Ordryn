@@ -3629,6 +3629,7 @@ components:
       properties:
         version:
           type: string
+          description: Application version (git release tag). Checkouts use the latest reachable tag; unstamped builds without git tags report "dev".
         api_enabled:
           type: boolean
         redis_ok:
@@ -5021,6 +5022,7 @@ components:
           type: boolean
         site_version:
           type: string
+          description: Read-only. Application version (git release tag from the running process). Not stored in site settings.
         enable_registration:
           type: boolean
         invite_only:

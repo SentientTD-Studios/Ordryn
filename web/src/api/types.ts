@@ -466,7 +466,7 @@ export type AdminSettings = {
 }
 
 /** Write-only secret fields accepted by PATCH /admin/settings. */
-export type AdminSettingsPatch = Partial<AdminSettings> & {
+export type AdminSettingsPatch = Partial<Omit<AdminSettings, 'site_version'>> & {
   email_mailgun_api_key?: string
   email_smtp_password?: string
   github_oauth_client_secret?: string

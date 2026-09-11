@@ -1,4 +1,13 @@
-.PHONY: bump-patch bump-minor bump-major test test-web
+.PHONY: test test-web build run
+
+VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
+LDFLAGS := -X GoTodo/internal/version.Version=$(VERSION)
+
+ifeq ($(OS),Windows_NT)
+BIN := GoTodo.exe
+else
+BIN := GoTodo
+endif
 
 test:
 	go test ./...
@@ -7,11 +16,8 @@ test:
 test-web:
 	npm --prefix web test
 
-bump-patch:
-	./scripts/bump-version.sh patch --commit --tag
+build:
+	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) .
 
-bump-minor:
-	./scripts/bump-version.sh minor --commit --tag
-
-bump-major:
-	./scripts/bump-version.sh major --commit --tag
+run:
+	go run -ldflags "$(LDFLAGS)" .

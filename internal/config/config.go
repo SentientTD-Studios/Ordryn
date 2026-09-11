@@ -17,7 +17,6 @@ type Config struct {
 	FromEmail       string `json:"from_email,omitempty"`
 	ShowChangelog   bool   `json:"showChangelog,omitempty"`
 	SiteName        string `json:"siteName,omitempty"`
-	SiteVersion     string `json:"siteVersion,omitempty"`
 	DefaultTimezone string `json:"defaultTimezone,omitempty"`
 }
 
@@ -27,7 +26,6 @@ const (
 	defaultAssetVersion    = "20251130"
 	defaultFromEmail       = "no-reply@example.com"
 	defaultSiteName        = "GoTodo"
-	defaultSiteVersion     = "v0.0.0"
 	defaultDefaultTimezone = "America/New_York"
 	minSessionKeyLen       = 32
 )
@@ -179,13 +177,6 @@ func applyEnvToCfg() {
 		Cfg.SiteName = defaultSiteName
 	}
 
-	if envIsSet("SITE_VERSION") {
-		Cfg.SiteVersion = strings.TrimSpace(os.Getenv("SITE_VERSION"))
-	}
-	if Cfg.SiteVersion == "" {
-		Cfg.SiteVersion = defaultSiteVersion
-	}
-
 	if envIsSet("DEFAULT_TIMEZONE") {
 		Cfg.DefaultTimezone = strings.TrimSpace(os.Getenv("DEFAULT_TIMEZONE"))
 	}
@@ -230,9 +221,6 @@ func mergeOptionalJSON() error {
 	}
 	if !envIsSet("SITE_NAME") && fileCfg.SiteName != "" {
 		Cfg.SiteName = fileCfg.SiteName
-	}
-	if !envIsSet("SITE_VERSION") && fileCfg.SiteVersion != "" {
-		Cfg.SiteVersion = fileCfg.SiteVersion
 	}
 	if !envIsSet("DEFAULT_TIMEZONE") && fileCfg.DefaultTimezone != "" {
 		Cfg.DefaultTimezone = fileCfg.DefaultTimezone
