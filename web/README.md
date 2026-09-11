@@ -9,7 +9,7 @@ Operator install, reverse proxy, and API docs: [Ordryn wiki](https://github.com/
 Terminal 1 — API (API must be enabled + Redis):
 
 ```bash
-GOTODO_MODE=full go run .
+GOTODO_MODE=full make run
 ```
 
 Terminal 2 — Vite (proxies `/api` → `:8080`):
@@ -33,7 +33,7 @@ npm run build
 Output lands in `web/dist`. Production assets use a relative Vite `base` so the same build works at `/` or under a subpath such as `/gotodo/`.
 
 ```bash
-GOTODO_MODE=full go run .   # UI at / (or BASE_PATH)
+GOTODO_MODE=full make run   # UI at / (or BASE_PATH)
 ```
 
 ### Subpath deploys (`BASE_PATH=/gotodo`)

@@ -114,18 +114,21 @@ func ChangelogHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, v)
 }
 
-// filterEntriesBySiteVersion removes any changelog entries with versions greater than current site version
+// filterEntriesBySiteVersionWithSiteVersion keeps changelog entries at or below
+// the running binary version so instances do not see notes for releases they
+// are not running. Unstamped versions ("dev", empty, non-semver) hide all
+// versioned entries rather than leaking newer GitHub releases.
 func filterEntriesBySiteVersionWithSiteVersion(entries []ChangelogEntry, siteVersion string) []ChangelogEntry {
-	sv := siteVersion
+	sv := strings.TrimSpace(siteVersion)
 	if sv == "" {
-		return entries
+		return []ChangelogEntry{}
 	}
 	if !strings.HasPrefix(sv, "v") {
 		sv = "v" + sv
 	}
-	// if site version isn't a valid semver, don't filter
+	// Unstamped/"dev" binaries must not see GitHub releases they may not be running.
 	if !semver.IsValid(sv) {
-		return entries
+		return []ChangelogEntry{}
 	}
 
 	out := make([]ChangelogEntry, 0, len(entries))

@@ -26,7 +26,6 @@ type SiteSettings struct {
 	SiteName                 string
 	DefaultTimezone          string
 	ShowChangelog            bool
-	SiteVersion              string
 	EnableRegistration       bool
 	InviteOnly               bool
 	EnableJoinRequests       bool
@@ -89,7 +88,6 @@ func GetSiteSettings() (*SiteSettings, error) {
 			site_name,
 			default_timezone,
 			show_changelog,
-			COALESCE(site_version, ''),
 			enable_registration,
 			invite_only,
 			COALESCE(enable_join_requests, FALSE),
@@ -122,7 +120,7 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(image_local_path, '')
 		FROM site_settings WHERE id = 1`)
 	if err := row.Scan(
-		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog, &s.SiteVersion,
+		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
 		&s.EnableRegistration, &s.InviteOnly, &s.EnableJoinRequests, &s.MetaDescription,
 		&s.EnableGlobalAnnouncement, &s.GlobalAnnouncementText, &s.EnableAPI,
 		&s.Email.Provider, &s.Email.FromAddress, &s.Email.FromName,
@@ -163,7 +161,7 @@ func UpsertSiteSettings(s SiteSettings) error {
 
 	_, err = pool.Exec(context.Background(), `
         INSERT INTO site_settings (
-			id, site_name, default_timezone, show_changelog, site_version,
+			id, site_name, default_timezone, show_changelog,
 			enable_registration, invite_only, enable_join_requests, meta_description,
 			enable_global_announcement, global_announcement_text, enable_api,
 			email_provider, email_from_address, email_from_name,
@@ -176,12 +174,11 @@ func UpsertSiteSettings(s SiteSettings) error {
 			image_s3_bucket, image_s3_access_key, image_s3_secret_key_enc,
 			image_s3_public_url, image_s3_force_path_style, image_local_path
 		)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
             show_changelog = EXCLUDED.show_changelog,
-            site_version = EXCLUDED.site_version,
             enable_registration = EXCLUDED.enable_registration,
             invite_only = EXCLUDED.invite_only,
             enable_join_requests = EXCLUDED.enable_join_requests,
@@ -212,7 +209,7 @@ func UpsertSiteSettings(s SiteSettings) error {
 			image_s3_public_url = EXCLUDED.image_s3_public_url,
 			image_s3_force_path_style = EXCLUDED.image_s3_force_path_style,
 			image_local_path = EXCLUDED.image_local_path
-    `, s.SiteName, s.DefaultTimezone, s.ShowChangelog, s.SiteVersion,
+    `, s.SiteName, s.DefaultTimezone, s.ShowChangelog,
 		s.EnableRegistration, s.InviteOnly, s.EnableJoinRequests, s.MetaDescription,
 		s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI,
 		s.Email.Provider, s.Email.FromAddress, s.Email.FromName,

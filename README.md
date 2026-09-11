@@ -1,8 +1,8 @@
-# GoTodo
+# Ordryn
 
-GoTodo (Ordryn) is a self-hosted task manager built with Go, PostgreSQL, Redis, and a Vue 3 SPA. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, and a JSON `/api/v1` for web and mobile clients.
+Ordryn (formerly GoTodo) is a self-hosted task manager built with Go, PostgreSQL, Redis, and a Vue 3 SPA. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, and a JSON `/api/v1` for web and mobile clients.
 
-**Current version:** v2.1.4
+Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordryn/releases).
 
 ## Features
 
@@ -43,12 +43,24 @@ One binary serves `/api/v1` and the Vue UI at `/` (or under `BASE_PATH`).
 ```bash
 cp .env.example .env   # required; process will not start without it
 npm run build:web      # writes web/dist; UI path is 503 without it
-go run .
+make run
 ```
 
 Set `DB_*`, `SESSION_KEY`, and `REDIS_URL` in `.env`. Open http://localhost:8080/
 
+`go run .` is fine too.
+
 Install, reverse proxy, API-only mode, and upgrades: **[wiki](https://github.com/SentientTD-Studios/Ordryn/wiki)**.
+
+## Version
+
+The git tag is the version. Nothing in source is bumped for a release.
+
+- **GitHub Release:** Creating a release named `vX.Y.Z` (target `main`) creates the tag and is enough. CI stamps that tag into the attached server binaries. Those binaries do not need a `.git` directory.
+- **Git checkout (`git pull` / `go run` / `make run`):** The process reports the latest tag reachable from HEAD. If you only pull production when you publish a tag, a host still on the `v3.22.0` commit shows `v3.22.0`; after you tag `v4.0.0` and pull that commit, it shows `v4.0.0`.
+- **Changelog:** The in-app changelog only lists GitHub releases at or below that version, so `v3.22.0` will not show `v4.0.0` notes.
+- **Forks:** The fork uses **its** tags, not new tags from upstream. A fork created at `v3.22.0` keeps reporting `v3.22.0` until you tag (or fetch tags) on that fork. Syncing `main` without tags can leave you with newer code still labeled as the old tag.
+- **`"dev"`:** Fallback only when the checkout has no usable tag and the binary was not stamped. Fetch tags with `git fetch --tags` if a tagged checkout still shows `dev`.
 
 ## Docs
 

@@ -266,7 +266,7 @@ onMounted(load)
             <label class="form-label">Announcement text</label>
             <textarea v-model="settings.global_announcement_text" class="form-control" rows="2" maxlength="500" />
           </div>
-          <p class="text-muted">Site Version: {{ settings.site_version || '—' }}</p>
+          <p class="text-muted">Site Version: {{ settings.site_version || '—' }} <span class="small">(running binary)</span></p>
           <button type="submit" class="btn btn-primary" :disabled="busy">
             {{ busy ? 'Saving…' : 'Save settings' }}
           </button>

@@ -298,7 +298,6 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", errMsg)
 		return
 	}
-	next.SiteVersion = "" // never persist binary version from API
 	if err := storage.UpsertSiteSettings(next); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
 		return

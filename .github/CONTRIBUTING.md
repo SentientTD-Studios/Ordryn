@@ -54,12 +54,12 @@ Delete branches after their pull requests are merged.
 
 ## Releases
 
-Releases are created from commits already merged into `main`.
+Releases are created from commits already merged into `main`. The git tag is the version; nothing in source is bumped.
 
 1. Ensure the intended changes are merged into `main` and all required checks pass.
-2. Create and push a version tag from the release commit, such as `v1.8.0`.
+2. Create and push an annotated version tag from the release commit, such as `v1.8.0`.
 3. Publish the GitHub release from that tag.
-4. Release automation builds and attaches distributable artifacts where configured.
+4. Release automation builds the Vue distribution and Go server binaries, stamping `version.Version` from the tag via `-ldflags`. Hosts that `git pull` a checkout resolve the same tag at process start (`git describe --tags --abbrev=0`).
 5. If a release issue is found afterward, create a new fix branch from `main`, merge it through a pull request, and publish a new version tag.
 
 Do not move or reuse published version tags. Each release should correspond to a specific, reproducible commit.

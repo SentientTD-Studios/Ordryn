@@ -4,6 +4,5 @@
   "assetVersion": "20251212v2",
   "showChangelog": true,
   "siteName": "GoTodo",
-  "defaultTimezone": "America/New_York",
-  "siteVersion": "v0.0.0"
+  "defaultTimezone": "America/New_York"
 }
