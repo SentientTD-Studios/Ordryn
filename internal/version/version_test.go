@@ -6,11 +6,8 @@ import (
 )
 
 func TestVersionDefaultIsDev(t *testing.T) {
-	if Version == "" {
-		t.Fatal("Version must be non-empty")
-	}
-	if Version != devVersion && Version[0] != 'v' {
-		t.Fatalf("Version = %q, want %q or a tagged module version", Version, devVersion)
+	if Version != devVersion {
+		t.Fatalf("under go test, Version = %q, want %q", Version, devVersion)
 	}
 }
 
@@ -23,7 +20,9 @@ func TestVersionFromBuildInfo(t *testing.T) {
 	}{
 		{name: "nil", want: ""},
 		{name: "empty", info: &debug.BuildInfo{}, want: ""},
-		{name: "devel", info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, want: ""},
+		{name: "devel parens", info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, want: ""},
+		{name: "devel", info: &debug.BuildInfo{Main: debug.Module{Version: "devel"}}, want: ""},
+		{name: "module path", info: &debug.BuildInfo{Main: debug.Module{Version: "GoTodo"}}, want: ""},
 		{name: "tagged", info: &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}}, want: "v1.2.3"},
 	}
 	for _, tc := range cases {

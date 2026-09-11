@@ -3,11 +3,13 @@ package version
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -26,14 +28,15 @@ func init() {
 	if Version != devVersion {
 		return
 	}
+	// Stay on the placeholder under `go test` so CI/local suites are deterministic.
+	if testing.Testing() {
+		return
+	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		if v := versionFromBuildInfo(info); v != "" {
 			Version = v
 			return
 		}
-	}
-	if runningGoTest() {
-		return
 	}
 	if v := versionFromGit(); v != "" {
 		Version = v
@@ -44,23 +47,7 @@ func versionFromBuildInfo(info *debug.BuildInfo) string {
 	if info == nil {
 		return ""
 	}
-	v := info.Main.Version
-	if v == "" || v == "(devel)" {
-		return ""
-	}
-	return v
-}
-
-func runningGoTest() bool {
-	if strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe") {
-		return true
-	}
-	for _, arg := range os.Args {
-		if strings.HasPrefix(arg, "-test.") {
-			return true
-		}
-	}
-	return false
+	return parseGitDescribeOutput([]byte(info.Main.Version))
 }
 
 func versionFromGit() string {
@@ -72,6 +59,8 @@ func versionFromGit() string {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "describe", "--tags", "--abbrev=0")
 	cmd.Dir = dir
+	cmd.Stderr = io.Discard
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
