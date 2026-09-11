@@ -949,13 +949,13 @@ func RemapTaskTagsForProjectChange(taskID, userID int, newProjectID *int) error 
 	for _, t := range dest {
 		byName[strings.ToLower(t.Name)] = t.ID
 	}
-	wasRemoved := false
+	wasArchived := false
 	var ids []int
 	seen := make(map[int]bool)
 	for _, t := range existing {
 		if t.Protected || IsSystemTagName(t.Name) {
-			if IsRemovedTagName(t.Name) {
-				wasRemoved = true
+			if IsArchivedTagName(t.Name) || IsRemovedTagName(t.Name) {
+				wasArchived = true
 			}
 			continue
 		}
@@ -969,8 +969,8 @@ func RemapTaskTagsForProjectChange(taskID, userID int, newProjectID *int) error 
 	if err := SetTaskTags(taskID, userID, ids); err != nil {
 		return err
 	}
-	if wasRemoved {
-		return ApplyRemovedTag(taskID, userID)
+	if wasArchived {
+		return ApplyArchivedTag(taskID, userID)
 	}
 	return nil
 }
@@ -1087,74 +1087,14 @@ func ResolveTaskTagIDs(userID int, projectID *int, tagIDStrs []string, newTagsCS
 	return ids, nil
 }
 
-// EnsureRemovedTag returns the protected "removed" tag for a namespace, creating or converting it.
+// EnsureRemovedTag delegates to EnsureArchivedTag as the system-level archive tag is now "archived".
 func EnsureRemovedTag(userID int, projectID *int) (*Tag, error) {
-	if existing, err := FindTagByName(userID, projectID, RemovedTagName); err == nil {
-		if !existing.Protected {
-			pool, err := OpenDatabase()
-			if err != nil {
-				return nil, err
-			}
-			defer CloseDatabase(pool)
-			_, err = pool.Exec(context.Background(),
-				`UPDATE tags SET protected = true, name = $1, color = COALESCE(NULLIF(color, ''), $2) WHERE id = $3`,
-				RemovedTagName, removedTagColor, existing.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to protect removed tag: %v", err)
-			}
-			existing.Protected = true
-			existing.Name = RemovedTagName
-		}
-		return existing, nil
-	}
-
-	pool, err := OpenDatabase()
-	if err != nil {
-		return nil, err
-	}
-	defer CloseDatabase(pool)
-
-	var t Tag
-	if projectID == nil || *projectID <= 0 {
-		t, err = scanTag(pool.QueryRow(context.Background(),
-			`INSERT INTO tags (user_id, name, color, protected) VALUES ($1, $2, $3, true)
-			 RETURNING `+tagSelectCols, userID, RemovedTagName, removedTagColor))
-	} else {
-		t, err = scanTag(pool.QueryRow(context.Background(),
-			`INSERT INTO tags (user_id, project_id, name, color, protected) VALUES ($1, $2, $3, $4, true)
-			 RETURNING `+tagSelectCols, userID, *projectID, RemovedTagName, removedTagColor))
-	}
-	if err != nil {
-		if existing, findErr := FindTagByName(userID, projectID, RemovedTagName); findErr == nil {
-			return existing, nil
-		}
-		return nil, fmt.Errorf("failed to create removed tag: %v", err)
-	}
-	return &t, nil
+	return EnsureArchivedTag(userID, projectID)
 }
 
-// ApplyRemovedTag archives a task by attaching the namespace's protected removed tag.
+// ApplyRemovedTag delegates to ApplyArchivedTag as the system-level archive tag is now "archived".
 func ApplyRemovedTag(taskID, userID int) error {
-	ns, err := taskTagNamespace(taskID)
-	if err != nil {
-		return err
-	}
-	tag, err := EnsureRemovedTag(userID, ns)
-	if err != nil {
-		return err
-	}
-	pool, err := OpenDatabase()
-	if err != nil {
-		return err
-	}
-	defer CloseDatabase(pool)
-	_, err = pool.Exec(context.Background(),
-		`INSERT INTO task_tags (task_id, tag_id) VALUES ($1, $2)
-		 ON CONFLICT (task_id, tag_id) DO NOTHING`, taskID, tag.ID)
-	if err != nil {
-		return fmt.Errorf("failed to archive task: %v", err)
-	}
-	return nil
+	return ApplyArchivedTag(taskID, userID)
 }
 
 // EnsureArchivedTag returns the protected "archived" tag for a namespace, creating or converting it.
@@ -1278,44 +1218,49 @@ func ClearArchivedTagFromProjectTasks(projectID, userID int) error {
 	return nil
 }
 
-// ClearRemovedTag restores a task by removing the protected removed tag.
-func ClearRemovedTag(taskID, userID int) error {
-	ns, err := taskTagNamespace(taskID)
-	if err != nil {
-		return err
-	}
-	tag, err := FindTagByName(userID, ns, RemovedTagName)
-	if err != nil {
-		return nil
-	}
+// ClearArchivedTag restores a task by removing the protected archived tag (and legacy removed tag).
+func ClearArchivedTag(taskID, userID int) error {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return err
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(),
-		`DELETE FROM task_tags WHERE task_id = $1 AND tag_id = $2`, taskID, tag.ID)
+		`DELETE FROM task_tags tt
+		 USING tags tg
+		 WHERE tt.task_id = $1 AND tt.tag_id = tg.id AND (LOWER(tg.name) = LOWER($2) OR LOWER(tg.name) = LOWER($3))`,
+		taskID, ArchivedTagName, RemovedTagName)
 	if err != nil {
 		return fmt.Errorf("failed to restore task: %v", err)
 	}
 	return nil
 }
 
-// TaskHasRemovedTag reports whether the task currently has the protected removed tag.
-func TaskHasRemovedTag(taskID int) (bool, error) {
+// ClearRemovedTag restores a task by removing the protected archive tag.
+func ClearRemovedTag(taskID, userID int) error {
+	return ClearArchivedTag(taskID, userID)
+}
+
+// TaskHasArchivedTag reports whether the task currently has the protected archived (or legacy removed) tag.
+func TaskHasArchivedTag(taskID int) (bool, error) {
 	tags, err := GetTagsForTask(taskID)
 	if err != nil {
 		return false, err
 	}
 	for _, t := range tags {
-		if IsRemovedTagName(t.Name) {
+		if IsArchivedTagName(t.Name) || IsRemovedTagName(t.Name) {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-// ArchivedTaskExistsSQL is a SQL EXISTS clause for tasks with the protected removed tag.
+// TaskHasRemovedTag reports whether the task currently has the protected archive tag.
+func TaskHasRemovedTag(taskID int) (bool, error) {
+	return TaskHasArchivedTag(taskID)
+}
+
+// ArchivedTaskExistsSQL is a SQL EXISTS clause for tasks with the protected archived tag.
 func ArchivedTaskExistsSQL(taskIDExpr string) string {
 	if taskIDExpr == "" || taskIDExpr == "id" {
 		taskIDExpr = "tasks.id"
@@ -1323,11 +1268,62 @@ func ArchivedTaskExistsSQL(taskIDExpr string) string {
 	return fmt.Sprintf(`EXISTS (
 		SELECT 1 FROM task_tags tt
 		JOIN tags tg ON tg.id = tt.tag_id
-		WHERE tt.task_id = %s AND tg.protected = true AND LOWER(tg.name) = LOWER('%s')
-	)`, taskIDExpr, RemovedTagName)
+		WHERE tt.task_id = %s AND tg.protected = true AND (LOWER(tg.name) = LOWER('%s') OR LOWER(tg.name) = LOWER('%s'))
+	)`, taskIDExpr, ArchivedTagName, RemovedTagName)
 }
 
-// MigrateTagsAddProtected adds the protected column and seeds a removed tag per namespace.
+func migrateRenameRemovedTagsToArchived(pool *pgxpool.Pool) error {
+	ctx := context.Background()
+
+	// Handle namespaces that have both a 'removed' tag and an 'archived' tag
+	rows, err := pool.Query(ctx, `
+		SELECT r.id, a.id
+		FROM tags r
+		JOIN tags a ON (
+			(r.project_id IS NULL AND a.project_id IS NULL AND r.user_id = a.user_id)
+			OR (r.project_id IS NOT NULL AND a.project_id IS NOT NULL AND r.project_id = a.project_id)
+		)
+		WHERE LOWER(r.name) = LOWER($1) AND LOWER(a.name) = LOWER($2)`,
+		RemovedTagName, ArchivedTagName)
+	if err == nil {
+		type idPair struct{ removedID, archivedID int }
+		var pairs []idPair
+		for rows.Next() {
+			var p idPair
+			if scanErr := rows.Scan(&p.removedID, &p.archivedID); scanErr == nil {
+				pairs = append(pairs, p)
+			}
+		}
+		rows.Close()
+
+		for _, p := range pairs {
+			_, _ = pool.Exec(ctx, `
+				INSERT INTO task_tags (task_id, tag_id)
+				SELECT task_id, $1 FROM task_tags WHERE tag_id = $2
+				ON CONFLICT (task_id, tag_id) DO NOTHING`, p.archivedID, p.removedID)
+			_, _ = pool.Exec(ctx, `DELETE FROM task_tags WHERE tag_id = $1`, p.removedID)
+			_, _ = pool.Exec(ctx, `DELETE FROM tags WHERE id = $1`, p.removedID)
+		}
+	}
+
+	// Rename any remaining 'removed' tags to 'archived' and protect them
+	if _, err := pool.Exec(ctx,
+		`UPDATE tags SET protected = true, name = $1 WHERE LOWER(name) = LOWER($2)`,
+		ArchivedTagName, RemovedTagName); err != nil {
+		return fmt.Errorf("failed to rename removed tags to archived: %v", err)
+	}
+
+	// Ensure all 'archived' tags are protected
+	if _, err := pool.Exec(ctx,
+		`UPDATE tags SET protected = true WHERE LOWER(name) = LOWER($1)`,
+		ArchivedTagName); err != nil {
+		return fmt.Errorf("failed to protect archived tags: %v", err)
+	}
+
+	return nil
+}
+
+// MigrateTagsAddProtected adds the protected column, renames removed tags to archived, and seeds archived tags per namespace.
 func MigrateTagsAddProtected() error {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -1340,14 +1336,12 @@ func MigrateTagsAddProtected() error {
 		return fmt.Errorf("failed to add tags.protected: %v", err)
 	}
 
-	if _, err := pool.Exec(context.Background(),
-		`UPDATE tags SET protected = true, name = $1 WHERE LOWER(name) = LOWER($1)`, RemovedTagName); err != nil {
-		return fmt.Errorf("failed to convert existing removed tags: %v", err)
+	// Drop leftover UNIQUE(user_id, name) first or PostgreSQL raises 23505.
+	if err := dropLegacyTagsUserNameUnique(pool); err != nil {
+		return err
 	}
 
-	// Seeding a project "removed" tag reuses (user_id, name) of the personal
-	// row. Drop leftover UNIQUE(user_id, name) first or PostgreSQL raises 23505.
-	if err := dropLegacyTagsUserNameUnique(pool); err != nil {
+	if err := migrateRenameRemovedTagsToArchived(pool); err != nil {
 		return err
 	}
 
@@ -1359,8 +1353,8 @@ func MigrateTagsAddProtected() error {
 			WHERE NOT EXISTS (
 				SELECT 1 FROM tags t
 				WHERE t.project_id IS NULL AND t.user_id = u.id AND LOWER(t.name) = LOWER($1)
-			)`, RemovedTagName, removedTagColor); err != nil {
-			return fmt.Errorf("failed to seed personal removed tags: %v", err)
+			)`, ArchivedTagName, archivedTagColor); err != nil {
+			return fmt.Errorf("failed to seed personal archived tags: %v", err)
 		}
 	}
 	if tableExists(pool, "projects") {
@@ -1371,8 +1365,8 @@ func MigrateTagsAddProtected() error {
 			WHERE NOT EXISTS (
 				SELECT 1 FROM tags t
 				WHERE t.project_id = p.id AND LOWER(t.name) = LOWER($1)
-			)`, RemovedTagName, removedTagColor); err != nil {
-			return fmt.Errorf("failed to seed project removed tags: %v", err)
+			)`, ArchivedTagName, archivedTagColor); err != nil {
+			return fmt.Errorf("failed to seed project archived tags: %v", err)
 		}
 	}
 	return nil

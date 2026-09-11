@@ -330,10 +330,14 @@ func appendTagCondition(where string, args []interface{}, filters ListFilters, u
 		args = append(args, name, userID)
 		nameIdx := len(args) - 1
 		userIdx := len(args)
+		tagMatchClause := fmt.Sprintf("LOWER(tg.name) = LOWER($%d)", nameIdx)
+		if storage.IsSystemTagName(name) {
+			tagMatchClause = fmt.Sprintf("(LOWER(tg.name) = LOWER($%d) OR LOWER(tg.name) IN ('archived', 'removed'))", nameIdx)
+		}
 		where += fmt.Sprintf(` AND %s IN (
 			SELECT tt.task_id FROM task_tags tt
 			JOIN tags tg ON tg.id = tt.tag_id
-			WHERE LOWER(tg.name) = LOWER($%d)
+			WHERE %s
 			  AND (
 				(tg.project_id IS NULL AND tg.user_id = $%d)
 				OR EXISTS (
@@ -342,7 +346,7 @@ func appendTagCondition(where string, args []interface{}, filters ListFilters, u
 					WHERE p.id = tg.project_id AND (p.user_id = $%d OR pm.user_id IS NOT NULL)
 				)
 			  )
-		)`, idCol, nameIdx, userIdx, userIdx, userIdx)
+		)`, idCol, tagMatchClause, userIdx, userIdx, userIdx)
 		return where, args
 	}
 	if filters.TagFilter == nil {
@@ -354,20 +358,26 @@ func appendTagCondition(where string, args []interface{}, filters ListFilters, u
 	return where, args
 }
 
-// IsRemovedTagFilter reports whether the filters specify the protected removed tag.
-func IsRemovedTagFilter(filters ListFilters) bool {
-	if storage.IsRemovedTagName(strings.TrimSpace(filters.TagNameFilter)) {
+// IsArchivedTagFilter reports whether the filters specify the protected archived (or legacy removed) tag.
+func IsArchivedTagFilter(filters ListFilters) bool {
+	name := strings.TrimSpace(filters.TagNameFilter)
+	if storage.IsArchivedTagName(name) || storage.IsRemovedTagName(name) {
 		return true
 	}
 	if filters.TagFilter == nil {
 		return false
 	}
 	tag, err := storage.GetTag(*filters.TagFilter)
-	return err == nil && tag != nil && storage.IsRemovedTagName(tag.Name)
+	return err == nil && tag != nil && (storage.IsArchivedTagName(tag.Name) || storage.IsRemovedTagName(tag.Name))
+}
+
+// IsRemovedTagFilter delegates to IsArchivedTagFilter for backward compatibility.
+func IsRemovedTagFilter(filters ListFilters) bool {
+	return IsArchivedTagFilter(filters)
 }
 
 func appendArchivedExclusion(where string, filters ListFilters, tablePrefix string) string {
-	if IsRemovedTagFilter(filters) {
+	if IsArchivedTagFilter(filters) {
 		return where
 	}
 	idCol := "tasks.id"
