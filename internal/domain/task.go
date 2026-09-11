@@ -637,7 +637,7 @@ func logTagChanges(taskID, userID int, before, after []storage.Tag) {
 func tagActivityMap(tags []storage.Tag) map[string]storage.Tag {
 	m := make(map[string]storage.Tag, len(tags))
 	for _, t := range tags {
-		if t.Protected || storage.IsRemovedTagName(t.Name) {
+		if t.Protected || storage.IsSystemTagName(t.Name) {
 			continue
 		}
 		key := strings.ToLower(strings.TrimSpace(t.Name))
@@ -752,7 +752,7 @@ func requireTaskWrite(taskID, userID int) error {
 	return nil
 }
 
-// ArchiveTask applies the protected removed tag to a task and its descendants.
+// ArchiveTask applies the protected archived tag to a task and its descendants.
 func ArchiveTask(ctx context.Context, userID, taskID int) error {
 	if err := requireTaskWrite(taskID, userID); err != nil {
 		return err
@@ -762,7 +762,7 @@ func ArchiveTask(ctx context.Context, userID, taskID int) error {
 		return err
 	}
 	for _, id := range ids {
-		if err := storage.ApplyRemovedTag(id, userID); err != nil {
+		if err := storage.ApplyArchivedTag(id, userID); err != nil {
 			return err
 		}
 		_ = storage.LogTaskEvent(id, userID, "archived", nil)
@@ -771,7 +771,7 @@ func ArchiveTask(ctx context.Context, userID, taskID int) error {
 	return nil
 }
 
-// RestoreTask removes the protected removed tag from a task and its descendants.
+// RestoreTask removes the protected archived tag from a task and its descendants.
 func RestoreTask(ctx context.Context, userID, taskID int) error {
 	if err := requireTaskWrite(taskID, userID); err != nil {
 		return err
@@ -781,7 +781,7 @@ func RestoreTask(ctx context.Context, userID, taskID int) error {
 		return err
 	}
 	for _, id := range ids {
-		if err := storage.ClearRemovedTag(id, userID); err != nil {
+		if err := storage.ClearArchivedTag(id, userID); err != nil {
 			return err
 		}
 		_ = storage.LogTaskEvent(id, userID, "restored", nil)
