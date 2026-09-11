@@ -778,12 +778,13 @@ watch(
   },
 )
 
-function isRemovedTagFilter(): boolean {
+function isArchivedTagFilter(): boolean {
   const q = (filters.tag || '').trim().toLowerCase()
-  if (q === 'removed') return true
+  if (q === 'archived' || q === 'removed') return true
   const tag = tags.value.find((t) => String(t.id) === filters.tag)
-  return !!tag && tag.name.toLowerCase() === 'removed'
+  return !!tag && (tag.name.toLowerCase() === 'archived' || tag.name.toLowerCase() === 'removed')
 }
+const isRemovedTagFilter = isArchivedTagFilter
 
 watch(lastSavedTask, async (task) => {
   if (!task) return

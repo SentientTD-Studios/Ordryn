@@ -10,7 +10,7 @@ import (
 	"GoTodo/internal/tasks"
 )
 
-func TestRemovedTagIsProtected(t *testing.T) {
+func TestRemovedAndArchivedTagsAreProtected(t *testing.T) {
 	ctx := context.Background()
 	proj, err := CreateProject(ctx, 1, "Archive Protect Proj", "")
 	if err != nil {
@@ -19,36 +19,50 @@ func TestRemovedTagIsProtected(t *testing.T) {
 	pid := proj.ID
 
 	if _, err := CreateTag(ctx, 1, "removed", &pid); !errors.Is(err, ErrValidation) {
-		t.Fatalf("create reserved: err=%v want validation", err)
+		t.Fatalf("create reserved removed: err=%v want validation", err)
+	}
+	if _, err := CreateTag(ctx, 1, "archived", &pid); !errors.Is(err, ErrValidation) {
+		t.Fatalf("create reserved archived: err=%v want validation", err)
 	}
 
 	tags, err := ListTags(ctx, 1, &pid)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	var removed *storage.Tag
+	var archived *storage.Tag
 	for i := range tags {
-		if storage.IsRemovedTagName(tags[i].Name) {
-			removed = &tags[i]
+		if storage.IsArchivedTagName(tags[i].Name) {
+			archived = &tags[i]
 			break
 		}
 	}
-	if removed == nil || !removed.Protected {
-		t.Fatalf("expected protected removed tag, got %+v", tags)
+	if archived == nil || !archived.Protected {
+		t.Fatalf("expected protected archived tag, got %+v", tags)
 	}
-	if _, err := RenameTag(ctx, 1, removed.ID, "gone"); !errors.Is(err, ErrValidation) {
+	if _, err := RenameTag(ctx, 1, archived.ID, "gone"); !errors.Is(err, ErrValidation) {
 		t.Fatalf("rename protected: err=%v want validation", err)
 	}
 	color := "#dc3545"
-	if _, err := UpdateTag(ctx, 1, removed.ID, nil, &color); !errors.Is(err, ErrValidation) {
+	if _, err := UpdateTag(ctx, 1, archived.ID, nil, &color); !errors.Is(err, ErrValidation) {
 		t.Fatalf("recolor protected: err=%v want validation", err)
 	}
-	if err := DeleteTag(ctx, 1, removed.ID); !errors.Is(err, ErrValidation) {
+	if err := DeleteTag(ctx, 1, archived.ID); !errors.Is(err, ErrValidation) {
 		t.Fatalf("delete protected: err=%v want validation", err)
+	}
+
+	custom, err := CreateTag(ctx, 1, "custom-test-tag", &pid)
+	if err != nil {
+		t.Fatalf("create custom tag: %v", err)
+	}
+	if _, err := RenameTag(ctx, 1, custom.ID, "archived"); !errors.Is(err, ErrValidation) {
+		t.Fatalf("rename custom to archived: err=%v want validation", err)
+	}
+	if _, err := RenameTag(ctx, 1, custom.ID, "removed"); !errors.Is(err, ErrValidation) {
+		t.Fatalf("rename custom to removed: err=%v want validation", err)
 	}
 }
 
-func TestCannotManuallyAssignRemovedTag(t *testing.T) {
+func TestCannotManuallyAssignArchivedOrRemovedTag(t *testing.T) {
 	ctx := context.Background()
 	proj, err := CreateProject(ctx, 1, "Archive Assign Proj", "")
 	if err != nil {
@@ -59,23 +73,26 @@ func TestCannotManuallyAssignRemovedTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	var removedID int
+	var archivedID int
 	for _, tg := range tags {
-		if storage.IsRemovedTagName(tg.Name) {
-			removedID = tg.ID
+		if storage.IsArchivedTagName(tg.Name) {
+			archivedID = tg.ID
 			break
 		}
 	}
-	if removedID == 0 {
-		t.Fatal("missing removed tag")
+	if archivedID == 0 {
+		t.Fatal("missing archived tag")
 	}
-	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Assign archive", ProjectID: &pid, TagIDs: []int{removedID}})
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Assign archive", ProjectID: &pid, TagIDs: []int{archivedID}})
 	if !errors.Is(err, ErrValidation) {
-		t.Fatalf("create with removed tag_ids: err=%v want validation", err)
+		t.Fatalf("create with archived tag_ids: err=%v want validation", err)
 	}
 	_ = taskID
 	if _, err := storage.GetOrCreateTagByName(1, &pid, "removed"); err == nil {
-		t.Fatal("GetOrCreateTagByName should reject reserved name")
+		t.Fatal("GetOrCreateTagByName should reject removed name")
+	}
+	if _, err := storage.GetOrCreateTagByName(1, &pid, "archived"); err == nil {
+		t.Fatal("GetOrCreateTagByName should reject archived name")
 	}
 }
 
@@ -125,45 +142,54 @@ func TestArchiveRestoreAndListFilter(t *testing.T) {
 		t.Fatalf("expected search total 0 after archive, got %d", searchTotalAfterArchive)
 	}
 
-	removed, err := storage.FindTagByName(1, &pid, storage.RemovedTagName)
+	archivedTag, err := storage.FindTagByName(1, &pid, storage.ArchivedTagName)
 	if err != nil {
-		t.Fatalf("find removed: %v", err)
+		t.Fatalf("find archived tag: %v", err)
 	}
-	listed, totalByID, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &uid, "UTC", tasks.ListFilters{ProjectFilter: &pid, TagFilter: &removed.ID})
+	listed, totalByID, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &uid, "UTC", tasks.ListFilters{ProjectFilter: &pid, TagFilter: &archivedTag.ID})
 	if err != nil {
 		t.Fatalf("list by id: %v", err)
 	}
 	if totalByID != 1 {
-		t.Fatalf("expected total 1 for removed tag by id, got %d", totalByID)
+		t.Fatalf("expected total 1 for archived tag by id, got %d", totalByID)
 	}
 	if !containsTaskID(listed, taskID) {
-		t.Fatal("filter by removed id should show archived task")
+		t.Fatal("filter by archived id should show archived task")
 	}
-	listed, totalByName, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &uid, "UTC", tasks.ListFilters{ProjectFilter: &pid, TagNameFilter: "removed"})
+	listed, totalByName, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &uid, "UTC", tasks.ListFilters{ProjectFilter: &pid, TagNameFilter: "archived"})
 	if err != nil {
 		t.Fatalf("list by name: %v", err)
 	}
 	if totalByName != 1 {
-		t.Fatalf("expected total 1 for removed tag by name, got %d", totalByName)
+		t.Fatalf("expected total 1 for archived tag by name, got %d", totalByName)
 	}
 	if !containsTaskID(listed, taskID) {
-		t.Fatal("filter by removed name should show archived task")
+		t.Fatal("filter by archived name should show archived task")
 	}
 
-	_, searchRemovedTotal, err := tasks.SearchTasksForUserWithFilters(1, 50, "Active", &uid, "UTC", tasks.ListFilters{ProjectFilter: &pid, TagNameFilter: "removed"})
+	// Also verify backward compatibility when filtering by "removed"
+	listedRemoved, totalByRemovedName, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &uid, "UTC", tasks.ListFilters{ProjectFilter: &pid, TagNameFilter: "removed"})
 	if err != nil {
-		t.Fatalf("search by removed tag name: %v", err)
+		t.Fatalf("list by removed name: %v", err)
 	}
-	if searchRemovedTotal != 1 {
-		t.Fatalf("expected search total 1 for removed tag name, got %d", searchRemovedTotal)
+	if totalByRemovedName != 1 || !containsTaskID(listedRemoved, taskID) {
+		t.Fatalf("filter by removed name should also show archived task, total=%d", totalByRemovedName)
+	}
+
+	_, searchArchivedTotal, err := tasks.SearchTasksForUserWithFilters(1, 50, "Active", &uid, "UTC", tasks.ListFilters{ProjectFilter: &pid, TagNameFilter: "archived"})
+	if err != nil {
+		t.Fatalf("search by archived tag name: %v", err)
+	}
+	if searchArchivedTotal != 1 {
+		t.Fatalf("expected search total 1 for archived tag name, got %d", searchArchivedTotal)
 	}
 
 	got, err := storage.GetTagsForTask(taskID)
 	if err != nil {
 		t.Fatalf("tags: %v", err)
 	}
-	if !taskHasRemoved(got) {
-		t.Fatalf("expected removed tag after archive, got %+v", got)
+	if !taskHasArchived(got) {
+		t.Fatalf("expected archived tag after archive, got %+v", got)
 	}
 
 	ids := []int{work.ID}
@@ -307,21 +333,34 @@ func containsTaskID(list []tasks.Task, id int) bool {
 	return false
 }
 
-func taskHasRemoved(tags []storage.Tag) bool {
+func taskHasArchived(tags []storage.Tag) bool {
 	for _, tg := range tags {
-		if storage.IsRemovedTagName(tg.Name) {
+		if storage.IsArchivedTagName(tg.Name) || storage.IsRemovedTagName(tg.Name) {
 			return true
 		}
 	}
 	return false
 }
 
-func TestRemovedTagNameHelper(t *testing.T) {
+func taskHasRemoved(tags []storage.Tag) bool {
+	return taskHasArchived(tags)
+}
+
+func TestArchivedAndRemovedTagNameHelpers(t *testing.T) {
 	if !storage.IsRemovedTagName("Removed") || storage.IsRemovedTagName("work") {
 		t.Fatal("IsRemovedTagName mismatch")
 	}
+	if !storage.IsArchivedTagName("Archived") || storage.IsArchivedTagName("work") {
+		t.Fatal("IsArchivedTagName mismatch")
+	}
+	if !storage.IsSystemTagName("archived") || !storage.IsSystemTagName("removed") || storage.IsSystemTagName("work") {
+		t.Fatal("IsSystemTagName mismatch")
+	}
 	if !strings.EqualFold(storage.RemovedTagName, "removed") {
 		t.Fatalf("canonical name %q", storage.RemovedTagName)
+	}
+	if !strings.EqualFold(storage.ArchivedTagName, "archived") {
+		t.Fatalf("canonical name %q", storage.ArchivedTagName)
 	}
 }
 

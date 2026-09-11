@@ -95,7 +95,7 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v1/tasks/{id}</code></a></td><td>Get one task</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#tasks"><code>/api/v1/tasks/{id}</code></a></td><td>Update a task</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#tasks"><code>/api/v1/tasks/{id}</code></a></td><td>Delete a task (permanent; may return undo_token)</td></tr>
-                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v1/tasks/{id}/archive</code></a></td><td>Archive a task (applies protected removed tag)</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v1/tasks/{id}/archive</code></a></td><td>Archive a task (applies protected archived tag)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v1/tasks/{id}/restore</code></a></td><td>Restore an archived task</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v1/tasks/reorder</code></a></td><td>Reorder tasks (favorite grouping is deprecated)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v1/tasks/bulk</code></a></td><td>Bulk actions</td></tr>
@@ -380,12 +380,12 @@ Content-Type: application/json
                     <h3 class="h5 mt-3">Archive / restore</h3>
                     <p><span class="badge bg-primary">POST</span> <code>/api/v1/tasks/{id}/archive</code></p>
                     <p>
-                      Applies the protected <code>removed</code> tag in the task’s namespace (and to subtasks).
+                      Applies the protected <code>archived</code> tag in the task’s namespace (and to subtasks).
                       Archived tasks are hidden from default lists unless you filter by that tag. Returns the updated task.
                       Owners and editors only (403 for viewers).
                     </p>
                     <p><span class="badge bg-primary">POST</span> <code>/api/v1/tasks/{id}/restore</code></p>
-                    <p>Removes the protected <code>removed</code> tag from the task and its subtasks. Returns the updated task.</p>
+                    <p>Removes the protected <code>archived</code> tag from the task and its subtasks. Returns the updated task.</p>
 
                     <h3 class="h5 mt-3">Delete task</h3>
                     <p><span class="badge bg-danger">DELETE</span> <code>/api/v1/tasks/{id}</code></p>

@@ -326,7 +326,7 @@ func bulkRemoveTag(ctx context.Context, db *pgxpool.Pool, ids []int, userID, tag
 	if err != nil || !ok {
 		return fmt.Errorf("invalid tag")
 	}
-	if src.Protected || storage.IsRemovedTagName(src.Name) {
+	if src.Protected || storage.IsSystemTagName(src.Name) {
 		return fmt.Errorf("cannot remove a protected tag")
 	}
 	for _, taskID := range ids {
