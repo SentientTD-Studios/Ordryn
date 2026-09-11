@@ -19,7 +19,7 @@ export function isProtectedTag(tag: Tag): boolean {
 }
 
 export function isArchivedTask(task?: { tags?: Tag[] } | null): boolean {
-  return (task?.tags || []).some((tag) => tag.name.toLowerCase() === 'removed')
+  return (task?.tags || []).some((tag) => tag.name.toLowerCase() === 'archived')
 }
 
 export function assignableTags(tags: Tag[]): Tag[] {
@@ -32,5 +32,5 @@ export function archiveConfirmMessage(task: Task): string {
     kids > 0
       ? ` Its ${kids} subtask${kids === 1 ? '' : 's'} will be archived too.`
       : ''
-  return `Archive “${task.title}”?${extra} Filter by the removed tag to find archived tasks and restore them.`
+  return `Archive “${task.title}”?${extra} Filter by the archived tag to find archived tasks and restore them.`
 }

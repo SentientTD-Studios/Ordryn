@@ -48,8 +48,8 @@ func TestProjectTagsAreSharedAndScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("viewer list: %v", err)
 	}
-	if !containsTagID(listed, ownerTag.ID) || !containsRemovedTag(listed) {
-		t.Fatalf("viewer should see project tags including removed, got %+v", listed)
+	if !containsTagID(listed, ownerTag.ID) || !containsArchivedTag(listed) {
+		t.Fatalf("viewer should see project tags including archived, got %+v", listed)
 	}
 
 	if err := DeleteTag(ctx, 3, ownerTag.ID); !errors.Is(err, ErrForbidden) {
@@ -215,7 +215,7 @@ func TestListTagsQueryScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("project list: %v", err)
 	}
-	if !containsTagName(projectTags, "project-a") || !containsRemovedTag(projectTags) {
+	if !containsTagName(projectTags, "project-a") || !containsArchivedTag(projectTags) {
 		t.Fatalf("project list: %+v", projectTags)
 	}
 
@@ -445,9 +445,9 @@ func containsTagName(tags []storage.Tag, name string) bool {
 	return false
 }
 
-func containsRemovedTag(tags []storage.Tag) bool {
+func containsArchivedTag(tags []storage.Tag) bool {
 	for _, tg := range tags {
-		if storage.IsRemovedTagName(tg.Name) && tg.Protected {
+		if storage.IsArchivedTagName(tg.Name) && tg.Protected {
 			return true
 		}
 	}

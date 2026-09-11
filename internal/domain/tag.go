@@ -51,17 +51,17 @@ func normalizeProjectIDArg(projectID *int) *int {
 func ListTags(ctx context.Context, userID int, projectID *int) ([]storage.Tag, error) {
 	_ = ctx
 	if projectID == nil {
-		_, _ = storage.EnsureRemovedTag(userID, nil)
+		_, _ = storage.EnsureArchivedTag(userID, nil)
 		return storage.GetAccessibleTags(userID)
 	}
 	if *projectID <= 0 {
-		_, _ = storage.EnsureRemovedTag(userID, nil)
+		_, _ = storage.EnsureArchivedTag(userID, nil)
 		return storage.GetPersonalTags(userID)
 	}
 	if _, err := storage.GetAccessibleProjectByID(*projectID, userID); err != nil {
 		return nil, ErrNotFound
 	}
-	_, _ = storage.EnsureRemovedTag(userID, projectID)
+	_, _ = storage.EnsureArchivedTag(userID, projectID)
 	return storage.GetProjectTags(*projectID)
 }
 
