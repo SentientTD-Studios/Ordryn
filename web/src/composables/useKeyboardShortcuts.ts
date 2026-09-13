@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
+import { useConfirm } from '@/composables/useConfirm'
 
 export type TaskShortcutHandlers = {
   newTask: () => void
@@ -108,8 +109,11 @@ function onKeydown(e: KeyboardEvent) {
   const typing = isTypingTarget(document.activeElement)
 
   if (e.code === 'Escape') {
+    if (useConfirm().state.open) return
+    e.preventDefault()
+    e.stopPropagation()
     closeOpenModals()
-    useTaskSidebar().close()
+    void useTaskSidebar().requestClose()
     const active = document.activeElement
     if (active instanceof HTMLElement && isTypingTarget(active)) {
       active.blur()

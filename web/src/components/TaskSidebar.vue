@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskEvent, TaskGitHubIssue, TaskTimeEntry } from '@/api/types'
@@ -31,13 +31,15 @@ const {
   defaultParentTitle,
   defaultSprintId,
   close,
+  requestClose,
+  setCloseGuard,
   notifySaved,
   notifyDeleted,
   openEdit,
   openView,
 } = useTaskSidebar()
 const toast = useToast()
-const { askConfirm } = useConfirm()
+const { askConfirm, askUnsaved, state: confirmState } = useConfirm()
 const { user } = useAuth()
 const { enabled: imageEnabled, uploadImageFile } = useImageUpload()
 const router = useRouter()
@@ -167,7 +169,12 @@ const showDiscussion = computed(
   () => (mode.value === 'edit' || mode.value === 'view') && !!currentTask.value?.project_id,
 )
 const discussionIsOwner = computed(() => selectedProject.value?.role === 'owner')
-const discussionRef = ref<{ reload: () => Promise<void> } | null>(null)
+type TaskDiscussionExpose = {
+  reload: () => Promise<void>
+  isDirty: () => boolean
+  flushUnsaved: () => Promise<boolean>
+}
+const discussionRef = ref<TaskDiscussionExpose | null>(null)
 const claimerLabel = computed(() => {
   if (!claimedBy.value) return 'Unclaimed'
   if (user.value?.id && claimedBy.value === user.value.id) return 'You'
@@ -296,7 +303,7 @@ function onDescriptionDrop(e: DragEvent) {
 
 function onTaskOverlayClick() {
   if (shouldIgnoreTaskOverlayClose()) return
-  close()
+  void requestClose()
 }
 
 function resetForm() {
@@ -511,6 +518,38 @@ function sameIdSet(a: number[], b: number[]) {
   return b.every((id) => seen.has(id))
 }
 
+type FormSnapshot = {
+  title: string
+  description: string
+  projectId: number | ''
+  parentId: number | ''
+  priority: number
+  dueDate: string
+  selectedTagIds: number[]
+  newTags: string
+  statusId: number | ''
+  sprintId: number | ''
+  estimatePoints: number | ''
+}
+
+const addFormBaseline = ref<FormSnapshot | null>(null)
+
+function captureFormSnapshot(): FormSnapshot {
+  return {
+    title: title.value,
+    description: description.value,
+    projectId: projectId.value,
+    parentId: parentId.value,
+    priority: priority.value,
+    dueDate: dueDate.value,
+    selectedTagIds: [...selectedTagIds.value],
+    newTags: newTags.value,
+    statusId: statusId.value,
+    sprintId: formSprintId(sprintId.value),
+    estimatePoints: estimatePoints.value,
+  }
+}
+
 function isFormDirty(): boolean {
   if (mode.value !== 'edit' || !currentTask.value) return false
   const t = currentTask.value
@@ -535,6 +574,39 @@ function isFormDirty(): boolean {
     newTags.value.trim() !== '' ||
     !sameIdSet(selectedTagIds.value, tagIds)
   )
+}
+
+function isAddFormDirty(): boolean {
+  if (mode.value !== 'add' || !addFormBaseline.value) return false
+  const b = addFormBaseline.value
+  return (
+    title.value !== b.title ||
+    description.value !== b.description ||
+    projectId.value !== b.projectId ||
+    parentId.value !== b.parentId ||
+    priority.value !== b.priority ||
+    dueDate.value !== b.dueDate ||
+    !sameIdSet(selectedTagIds.value, b.selectedTagIds) ||
+    newTags.value.trim() !== b.newTags.trim() ||
+    statusId.value !== b.statusId ||
+    formSprintId(sprintId.value) !== b.sprintId ||
+    estimatePoints.value !== b.estimatePoints
+  )
+}
+
+function isDiscussionDirty() {
+  return discussionRef.value?.isDirty() ?? false
+}
+
+function isLeaveDirty() {
+  if (mode.value === 'add') return isAddFormDirty()
+  if (mode.value === 'view' || readOnly.value) return isDiscussionDirty()
+  return isFormDirty() || isDiscussionDirty()
+}
+
+async function flushDiscussion(): Promise<boolean> {
+  if (!discussionRef.value) return true
+  return discussionRef.value.flushUnsaved()
 }
 
 useLiveUpdates(async (event: LiveEvent) => {
@@ -613,13 +685,13 @@ function validateDescription() {
   return true
 }
 
-async function save(keepOpen = false) {
-  if (readOnly.value) return
-  if (!title.value.trim()) return
-  if (!validateDescription()) return
+async function save(keepOpen = false): Promise<boolean> {
+  if (readOnly.value) return false
+  if (!title.value.trim()) return false
+  if (!validateDescription()) return false
   if (mode.value === 'add' && selectedProject.value && isArchivedProject(selectedProject.value)) {
     toast.push('Cannot add tasks to an archived project', 'error')
-    return
+    return false
   }
   saving.value = true
   try {
@@ -658,12 +730,13 @@ async function save(keepOpen = false) {
         await nextTick()
         autosizeDescription()
         titleInput.value?.focus()
+        addFormBaseline.value = captureFormSnapshot()
       } else {
         resetForm()
       }
-      return
+      return true
     }
-    if (!taskId.value) return
+    if (!taskId.value) return false
     const payload: Parameters<typeof api.patchTask>[1] = {
       title: title.value.trim(),
       description: description.value,
@@ -685,17 +758,53 @@ async function save(keepOpen = false) {
         estimatePoints.value === '' ? null : Number(estimatePoints.value)
     }
     const updated = await api.patchTask(taskId.value, payload)
-    notifySaved(updated, true)
+    currentTask.value = updated
+    notifySaved(updated, false)
     toast.push('Task saved', 'success')
     editingDescription.value = false
     if (eventsLoaded.value) await loadEvents(true)
+    const flushed = await flushDiscussion()
+    if (!flushed) return false
+    close()
+    return true
   } catch (err) {
     const msg = err instanceof APIError ? err.message : err instanceof Error ? err.message : 'Save failed'
     toast.push(msg, 'error')
+    return false
   } finally {
     saving.value = false
   }
 }
+
+const closePromptOpen = ref(false)
+
+async function guardClose(): Promise<boolean> {
+  if (closePromptOpen.value || confirmState.open) return false
+  if (!isLeaveDirty()) return true
+  closePromptOpen.value = true
+  try {
+    const choice = await askUnsaved({
+      title: 'Unsaved changes',
+      message: 'You have unsaved changes. Save them before leaving?',
+    })
+    if (choice === 'stay') return false
+    if (choice === 'discard') return true
+    if (readOnly.value) {
+      return flushDiscussion()
+    }
+    return save(false)
+  } finally {
+    closePromptOpen.value = false
+  }
+}
+
+onMounted(() => {
+  setCloseGuard(guardClose)
+})
+
+onUnmounted(() => {
+  setCloseGuard(null)
+})
 
 function applyDuePreset(preset: string) {
   const today = new Date()
@@ -783,6 +892,7 @@ watch(
   async ({ isOpen, m, id, due, proj, parent, parentLabel }) => {
     if (!isOpen) {
       loading.value = false
+      addFormBaseline.value = null
       return
     }
     // Show spinner immediately so the modal never flashes empty/stale form content.
@@ -828,7 +938,10 @@ watch(
     await nextTick()
     autosizeDescription()
     if (m === 'add') {
+      addFormBaseline.value = captureFormSnapshot()
       titleInput.value?.focus()
+    } else {
+      addFormBaseline.value = null
     }
   },
   { immediate: true },
@@ -1146,7 +1259,7 @@ async function removeTimeEntry(entryId: number) {
                 class="btn btn-sm btn-outline-secondary task-header-btn task-header-close"
                 id="closeSidebar"
                 aria-label="Close"
-                @click="close"
+                @click="requestClose"
               >
                 <i class="bi bi-x-lg" />
               </button>
@@ -1167,7 +1280,7 @@ async function removeTimeEntry(entryId: number) {
                 <i class="bi bi-link-45deg" /> Copy link
               </button>
             </h5>
-            <button type="button" class="btn-close" id="closeSidebar" aria-label="Close" @click="close" />
+            <button type="button" class="btn-close" id="closeSidebar" aria-label="Close" @click="requestClose" />
           </template>
         </div>
         <div class="modal-body" :class="isKanbanTask ? 'kanban-task-body' : 'py-3'">

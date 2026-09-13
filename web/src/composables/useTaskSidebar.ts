@@ -12,6 +12,9 @@ const defaultSprintId = ref<number | null | undefined>(undefined)
 const lastSavedTask = ref<Task | null>(null)
 const lastDeletedTask = ref<{ id: number; mode: 'cascade' | 'reparent' } | null>(null)
 
+type CloseGuard = () => boolean | Promise<boolean>
+let closeGuard: CloseGuard | null = null
+
 export function useTaskSidebar() {
   function openAdd(
     dueDate?: string,
@@ -59,6 +62,15 @@ export function useTaskSidebar() {
     open.value = false
   }
 
+  function setCloseGuard(fn: CloseGuard | null) {
+    closeGuard = fn
+  }
+
+  async function requestClose() {
+    if (closeGuard && !(await closeGuard())) return
+    close()
+  }
+
   function notifySaved(task: Task, closeDrawer = true) {
     lastSavedTask.value = task
     if (closeDrawer) {
@@ -86,6 +98,8 @@ export function useTaskSidebar() {
     openEdit,
     openView,
     close,
+    requestClose,
+    setCloseGuard,
     notifySaved,
     notifyDeleted,
   }
