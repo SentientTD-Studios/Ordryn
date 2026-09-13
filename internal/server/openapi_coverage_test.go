@@ -95,6 +95,8 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/admin/join-requests",
 	"/api/v1/admin/join-requests/{id}/approve",
 	"/api/v1/admin/join-requests/{id}/deny",
+	"/api/v1/admin/invites",
+	"/api/v1/admin/invites/{id}",
 	"/api/v1/admin/email-audit",
 	"/api/v1/admin/comment-audit",
 	"/api/v1/admin/comment-audit/{id}/restore",

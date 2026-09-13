@@ -28,6 +28,9 @@ type adminSettingsJSON struct {
 	EnableGlobalAnnouncement bool   `json:"enable_global_announcement"`
 	GlobalAnnouncementText   string `json:"global_announcement_text"`
 	EnableAPI                bool   `json:"enable_api"`
+	AllowUserInvites         bool   `json:"allow_user_invites"`
+	UserInviteLimit          int    `json:"user_invite_limit"`
+	InviteExpirationDays     int    `json:"invite_expiration_days"`
 
 	EmailProvider           string `json:"email_provider"`
 	EmailFromAddress        string `json:"email_from_address"`
@@ -68,6 +71,9 @@ type adminSettingsPatch struct {
 	EnableGlobalAnnouncement *bool   `json:"enable_global_announcement"`
 	GlobalAnnouncementText   *string `json:"global_announcement_text"`
 	EnableAPI                *bool   `json:"enable_api"`
+	AllowUserInvites         *bool   `json:"allow_user_invites"`
+	UserInviteLimit          *int    `json:"user_invite_limit"`
+	InviteExpirationDays     *int    `json:"invite_expiration_days"`
 
 	EmailProvider           *string `json:"email_provider"`
 	EmailFromAddress        *string `json:"email_from_address"`
@@ -159,6 +165,21 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.EnableAPI != nil {
 		next.EnableAPI = *req.EnableAPI
+	}
+	if req.AllowUserInvites != nil {
+		next.AllowUserInvites = *req.AllowUserInvites
+	}
+	if req.UserInviteLimit != nil {
+		next.UserInviteLimit = *req.UserInviteLimit
+		if next.UserInviteLimit < 0 {
+			next.UserInviteLimit = 0
+		}
+	}
+	if req.InviteExpirationDays != nil {
+		next.InviteExpirationDays = *req.InviteExpirationDays
+		if next.InviteExpirationDays < 0 {
+			next.InviteExpirationDays = 0
+		}
 	}
 	if req.EmailProvider != nil {
 		next.Email.Provider = normalizeEmailProvider(*req.EmailProvider)
@@ -388,6 +409,9 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 		EnableGlobalAnnouncement:   s.EnableGlobalAnnouncement,
 		GlobalAnnouncementText:     s.GlobalAnnouncementText,
 		EnableAPI:                  s.EnableAPI,
+		AllowUserInvites:           s.AllowUserInvites,
+		UserInviteLimit:            s.UserInviteLimit,
+		InviteExpirationDays:       s.InviteExpirationDays,
 		EmailProvider:              s.Email.Provider,
 		EmailFromAddress:           s.Email.FromAddress,
 		EmailFromName:              s.Email.FromName,

@@ -1,17 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
 import type { Invite } from '@/api/types'
 import { APIError } from '@/api/types'
-import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useSite } from '@/composables/useSite'
-
-const auth = useAuth()
-const { siteInfo } = useSite()
-const toast = useToast()
-const { askConfirm } = useConfirm()
+import AdminSubnav from '@/components/AdminSubnav.vue'
 
 const invites = ref<Invite[]>([])
 const email = ref('')
@@ -19,17 +14,9 @@ const expiresAt = ref('')
 const neverExpires = ref(false)
 const revealed = ref<Record<number, boolean>>({})
 const busy = ref(false)
-
-const isAdmin = computed(() => auth.hasPermission('admin'))
-const userInviteLimit = computed(() => siteInfo.value?.user_invite_limit ?? 5)
-const siteExpirationDays = computed(() => siteInfo.value?.invite_expiration_days ?? 7)
-const isQuotaEnforced = computed(() => !isAdmin.value && userInviteLimit.value > 0)
-const activeInviteCount = computed(() => {
-  return invites.value.filter((i) => i.used || i.status !== 'expired').length
-})
-const isLimitReached = computed(() => {
-  return isQuotaEnforced.value && activeInviteCount.value >= userInviteLimit.value
-})
+const toast = useToast()
+const { askConfirm } = useConfirm()
+const { siteInfo } = useSite()
 
 function defaultExpirationDate(): string {
   const days = siteInfo.value?.invite_expiration_days ?? 7
@@ -41,20 +28,20 @@ function defaultExpirationDate(): string {
 
 async function load() {
   try {
-    invites.value = await api.listInvites()
+    invites.value = await api.listAdminInvites()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load invites', 'error')
   }
 }
 
 async function create() {
-  if (!email.value.trim() || isLimitReached.value) return
+  if (!email.value.trim()) return
   busy.value = true
   try {
     const to = email.value.trim()
-    const exp = isAdmin.value && !neverExpires.value ? expiresAt.value || undefined : undefined
-    const bypass = isAdmin.value && neverExpires.value
-    await api.createInvite(to, exp, bypass)
+    const exp = !neverExpires.value ? expiresAt.value || undefined : undefined
+    const bypass = neverExpires.value
+    await api.createAdminInvite(to, exp, bypass)
     email.value = ''
     expiresAt.value = defaultExpirationDate()
     neverExpires.value = false
@@ -76,7 +63,7 @@ async function remove(inv: Invite) {
   })
   if (!ok) return
   try {
-    await api.deleteInvite(inv.id)
+    await api.deleteAdminInvite(inv.id)
     toast.push('Invite deleted', 'info')
     await load()
   } catch (err) {
@@ -105,85 +92,59 @@ function formatDate(val?: string | null): string {
 }
 
 onMounted(() => {
-  document.body.classList.add('create-invite-page')
   expiresAt.value = defaultExpirationDate()
   void load()
-})
-
-onUnmounted(() => {
-  document.body.classList.remove('create-invite-page')
 })
 </script>
 
 <template>
   <div class="container mt-3">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <div>
-        <h1 class="mb-1">Invites</h1>
-        <p class="text-muted mb-0">Send an invitation to join this site and track the invites you've sent.</p>
-      </div>
-      <div v-if="isQuotaEnforced" class="badge bg-light text-dark border p-2 fs-6">
-        Invites used: <strong>{{ activeInviteCount }}</strong> / <strong>{{ userInviteLimit }}</strong>
-      </div>
-    </div>
+    <AdminSubnav />
+    <h1>Site Invites</h1>
+    <p class="text-muted">
+      Manage all invitation tokens sent to join this site. Registration requests are managed separately under Requests.
+    </p>
 
     <div class="card mb-4">
       <div class="card-body">
         <h2 class="card-title h5">Create Invite</h2>
-
-        <div v-if="isLimitReached" class="alert alert-warning mb-3">
-          <i class="bi bi-exclamation-triangle-fill me-1" />
-          You have reached your limit of <strong>{{ userInviteLimit }}</strong> invites. You cannot send more invites unless an unused invite is deleted.
-        </div>
-
-        <form id="create-invite-form" @submit.prevent="create">
+        <form id="admin-create-invite-form" @submit.prevent="create">
           <div class="row g-3 align-items-end">
-            <div :class="isAdmin ? 'col-md-6' : 'col-md-9 col-lg-10'">
-              <label for="email" class="form-label">Email</label>
+            <div class="col-md-6">
+              <label for="admin-invite-email" class="form-label">Email</label>
               <input
-                id="email"
+                id="admin-invite-email"
                 v-model="email"
                 type="email"
                 class="form-control"
                 name="email"
                 required
-                :disabled="isLimitReached || busy"
                 placeholder="user@example.com"
               />
-              <div v-if="!isAdmin && siteExpirationDays > 0" class="form-text text-muted">
-                <i class="bi bi-clock-history me-1" /> Invites expire automatically after {{ siteExpirationDays }} days.
-              </div>
-              <div v-else-if="!isAdmin" class="form-text text-muted">
-                <i class="bi bi-info-circle me-1" /> Invites do not expire.
-              </div>
             </div>
-            <div v-if="isAdmin" class="col-md-4">
-              <label for="invite-expires" class="form-label d-flex justify-content-between align-items-center mb-1">
-                <span>Expires on <span class="text-muted small">(Admin)</span></span>
+            <div class="col-md-4">
+              <label for="admin-invite-expires" class="form-label d-flex justify-content-between align-items-center mb-1">
+                <span>Expires on</span>
                 <span class="form-check form-switch m-0 d-inline-flex align-items-center gap-1">
                   <input
-                    id="invite-no-expiry"
+                    id="admin-no-expiry"
                     v-model="neverExpires"
                     type="checkbox"
                     class="form-check-input"
                   />
-                  <label for="invite-no-expiry" class="form-check-label small text-muted">Never expires</label>
+                  <label for="admin-no-expiry" class="form-check-label small text-muted">Never expires</label>
                 </span>
               </label>
               <input
-                id="invite-expires"
+                id="admin-invite-expires"
                 v-model="expiresAt"
                 type="date"
                 class="form-control"
-                :disabled="neverExpires || isLimitReached || busy"
+                :disabled="neverExpires || busy"
               />
             </div>
-            <div :class="isAdmin ? 'col-md-2' : 'col-md-3 col-lg-2'">
-              <button
-                type="submit"
-                class="btn btn-primary w-100"
-                :disabled="isLimitReached || busy"
-              >
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-primary w-100" :disabled="busy">
                 <i class="bi bi-plus-lg" /> Send
               </button>
             </div>
@@ -192,15 +153,16 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="card invite-list-card">
+    <div class="card">
       <div class="card-body">
-        <h2 class="card-title h5 mb-3">Your Sent Invites</h2>
+        <h2 class="card-title h5 mb-3">All Existing Invites</h2>
         <div class="table-responsive">
           <table class="table table-striped align-middle">
             <thead>
               <tr>
                 <th>Email</th>
                 <th>Token</th>
+                <th>Sent By</th>
                 <th>Created</th>
                 <th>Expires</th>
                 <th>Status</th>
@@ -208,16 +170,16 @@ onUnmounted(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="inv in invites" :key="inv.id" :id="`invite-row-${inv.id}`">
-                <td class="title-column" data-label="Email">
+              <tr v-for="inv in invites" :key="inv.id" :id="`admin-invite-row-${inv.id}`">
+                <td data-label="Email">
                   <strong>{{ inv.email }}</strong>
                 </td>
-                <td class="desc-column" data-label="Token">
+                <td data-label="Token">
                   <code class="token-masked me-1">{{ revealed[inv.id] ? inv.token : '••••••••' }}</code>
                   <button
                     type="button"
-                    class="btn btn-sm btn-link p-0 me-1 reveal-token-btn"
-                    :aria-label="revealed[inv.id] ? 'Hide invite token' : 'Show invite token'"
+                    class="btn btn-sm btn-link p-0 me-1"
+                    :aria-label="revealed[inv.id] ? 'Hide token' : 'Show token'"
                     @click="toggleToken(inv.id)"
                   >
                     {{ revealed[inv.id] ? 'Hide' : 'Show' }}
@@ -225,11 +187,17 @@ onUnmounted(() => {
                   <button
                     type="button"
                     class="btn btn-sm btn-link p-0"
-                    aria-label="Copy invite token"
+                    aria-label="Copy token"
                     @click="copyToken(inv)"
                   >
                     Copy
                   </button>
+                </td>
+                <td data-label="Sent By">
+                  <span v-if="inv.creator_user_name || inv.creator_email">
+                    {{ inv.creator_user_name || inv.creator_email }}
+                  </span>
+                  <span v-else class="text-muted">Admin / System</span>
                 </td>
                 <td data-label="Created" class="small text-muted">
                   {{ formatDate(inv.created_at) }}
@@ -237,12 +205,12 @@ onUnmounted(() => {
                 <td data-label="Expires" class="small text-muted">
                   {{ formatDate(inv.expires_at) }}
                 </td>
-                <td class="status-column" data-label="Status">
+                <td data-label="Status">
                   <span v-if="inv.status === 'used' || inv.used" class="badge bg-success">Used</span>
                   <span v-else-if="inv.status === 'expired'" class="badge bg-danger">Expired</span>
                   <span v-else class="badge bg-warning text-dark">Pending</span>
                 </td>
-                <td class="delete-column" data-label="Actions">
+                <td data-label="Actions">
                   <button
                     v-if="!inv.used"
                     class="btn btn-sm btn-outline-danger"
@@ -257,7 +225,7 @@ onUnmounted(() => {
                 </td>
               </tr>
               <tr v-if="!invites.length">
-                <td colspan="6" class="text-muted text-center py-4">No invites sent yet.</td>
+                <td colspan="7" class="text-muted text-center py-4">No invites found.</td>
               </tr>
             </tbody>
           </table>

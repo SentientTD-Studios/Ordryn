@@ -24,6 +24,9 @@ const { push } = useToast()
 const router = useRouter()
 
 const showChangelog = computed(() => siteInfo.value?.show_changelog !== false)
+const canViewInvites = computed(
+  () => hasPermission('admin') || hasPermission('createinvites') || !!siteInfo.value?.allow_user_invites,
+)
 
 const notifications = ref<Notification[]>([])
 const unreadCount = ref(0)
@@ -171,7 +174,7 @@ async function onLogout() {
           <RouterLink to="/docs/api/v1" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">API</RouterLink>
           <template v-if="isAuthenticated">
             <RouterLink v-if="hasPermission('admin')" to="/admin" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">Admin</RouterLink>
-            <RouterLink v-if="hasPermission('createinvites')" to="/invites" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">Create Invite</RouterLink>
+            <RouterLink v-if="canViewInvites" to="/invites" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">Invites</RouterLink>
           </template>
         </nav>
       </div>

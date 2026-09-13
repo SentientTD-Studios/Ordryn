@@ -276,6 +276,14 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateEmailAuditTable failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateSiteSettingsAddUserInvitesAndExpiration(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddUserInvitesAndExpiration failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateInvitesAddFields(); err != nil {
+		fmt.Printf("migration: MigrateInvitesAddFields failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {
@@ -424,6 +432,30 @@ func MigrateUsersAddAvatarURL() error {
 		"ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT ''")
 	if err != nil {
 		return fmt.Errorf("failed to ensure avatar_url column on users: %v", err)
+	}
+	return nil
+}
+
+// MigrateInvitesAddFields adds created_by, created_at, expires_at, and is_join_request columns to invites.
+func MigrateInvitesAddFields() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer CloseDatabase(pool)
+
+	queries := []string{
+		"ALTER TABLE invites ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL",
+		"ALTER TABLE invites ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"ALTER TABLE invites ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ",
+		"ALTER TABLE invites ADD COLUMN IF NOT EXISTS is_join_request BOOLEAN NOT NULL DEFAULT FALSE",
+		`UPDATE invites SET is_join_request = TRUE 
+		 WHERE id IN (SELECT invite_id FROM join_requests WHERE invite_id IS NOT NULL)`,
+	}
+	for _, q := range queries {
+		if _, err := pool.Exec(context.Background(), q); err != nil {
+			return fmt.Errorf("migration failed on %q: %w", q, err)
+		}
 	}
 	return nil
 }

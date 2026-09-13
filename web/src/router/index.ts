@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { appBase } from '@/base'
 import { useAuth } from '@/composables/useAuth'
+import { useSite } from '@/composables/useSite'
 import { isDeviceAuthPath, stashDeviceAuthReturn } from '@/deviceAuthReturn'
 import { isProfileSectionHash } from '@/utils/profileSections'
 
@@ -162,10 +163,16 @@ const router = createRouter({
       meta: { requiresAuth: true, permission: 'admin' },
     },
     {
+      path: '/admin/invites',
+      name: 'admin-invites',
+      component: () => import('@/views/AdminInvitesView.vue'),
+      meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
       path: '/invites',
       name: 'invites',
       component: () => import('@/views/InvitesView.vue'),
-      meta: { requiresAuth: true, permission: 'createinvites' },
+      meta: { requiresAuth: true },
     },
     {
       path: '/:pathMatch(.*)*',
@@ -219,6 +226,20 @@ router.beforeEach(async (to) => {
   if (to.name === 'claim-username' && auth.isAuthenticated.value && !auth.needsUsernameClaim.value) {
     return { name: 'tasks' }
   }
+  if (to.name === 'invites') {
+    const site = useSite()
+    if (!site.loaded.value) {
+      await site.refresh()
+    }
+    const canInvite =
+      auth.hasPermission('admin') ||
+      auth.hasPermission('createinvites') ||
+      !!site.siteInfo.value?.allow_user_invites
+    if (!canInvite) {
+      return { name: 'tasks' }
+    }
+  }
+
   const permission = to.meta.permission as string | undefined
   if (permission && !auth.hasPermission(permission)) {
     return { name: 'tasks' }

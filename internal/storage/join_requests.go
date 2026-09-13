@@ -241,12 +241,14 @@ func ApproveJoinRequest(id, reviewerID int) (*JoinRequest, *Invite, error) {
 		}
 		inv.Token = hex.EncodeToString(tokenBytes)
 		if err := tx.QueryRow(context.Background(),
-			`INSERT INTO invites (email, token, inviteused) VALUES ($1, $2, 0)
+			`INSERT INTO invites (email, token, inviteused, is_join_request) VALUES ($1, $2, 0, TRUE)
 			 RETURNING id, email, token`, jr.Email, inv.Token).Scan(&inv.ID, &inv.Email, &inv.Token); err != nil {
 			return nil, nil, err
 		}
 	} else if err != nil {
 		return nil, nil, err
+	} else {
+		_, _ = tx.Exec(context.Background(), `UPDATE invites SET is_join_request = TRUE WHERE id = $1`, inv.ID)
 	}
 
 	var reviewer any

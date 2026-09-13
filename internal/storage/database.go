@@ -162,6 +162,10 @@ func CreateInvitesTable() error {
 		"email VARCHAR(255) UNIQUE NOT NULL",
 		"token VARCHAR(255) UNIQUE NOT NULL",
 		"inviteused INTEGER DEFAULT 0",
+		"created_by INTEGER REFERENCES users(id) ON DELETE SET NULL",
+		"created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"expires_at TIMESTAMPTZ",
+		"is_join_request BOOLEAN NOT NULL DEFAULT FALSE",
 	}
 	return CreateTable("invites", columns)
 }
