@@ -48,7 +48,9 @@ onUnmounted(() => {
         <p>
           Click <strong>Add Task</strong> (or press <kbd>n</kbd> on the home page) to open the task
           sidebar. Fill in a title, optional markdown description, due date, project, tags, and priority, then
-          save. When an admin has enabled image hosting, paste or drop a JPEG, PNG, GIF, or WebP
+          save. Saving a task also posts any comment you have typed but not posted yet. If you try to
+          close the sidebar with unsaved field changes or unposted comment text, Ordryn asks whether to
+          <strong>Save</strong>, <strong>Discard</strong>, or <strong>Stay</strong>. When an admin has enabled image hosting, paste or drop a JPEG, PNG, GIF, or WebP
           into the description or a comment, or use <strong>Insert image</strong>. The picture
           shows inline in the task description and in discussion comments, sized to the panel.
           Click <strong>Edit</strong> on the description to change the text. Clicking an image
@@ -125,6 +127,8 @@ onUnmounted(() => {
           </li>
           <li>
             Owners, editors, and viewers can discuss a project task in the sidebar.
+            You do not have to hit Post before Save: saving the task posts any comment still in the box.
+            Closing the sidebar with unposted comment text (or unsaved task edits) asks Save / Discard / Stay.
             You can edit your own comments; project owners can also edit anyone else’s.
             Each comment shows when it was posted and, if changed, when it was last edited.
             Hover the edited date to see who originally posted it (and who edited it, if that was someone else).

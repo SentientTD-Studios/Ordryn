@@ -2,21 +2,32 @@
 import { onMounted, onUnmounted, watch } from 'vue'
 import { useConfirm } from '@/composables/useConfirm'
 
-const { state, accept, cancel } = useConfirm()
+const { state, accept, cancel, discard } = useConfirm()
 
 function onKeydown(e: KeyboardEvent) {
   if (!state.open) return
   if (e.key === 'Escape') {
     e.preventDefault()
+    e.stopImmediatePropagation()
     cancel()
   }
+}
+
+function syncBodyModalState(open: boolean) {
+  const taskOpen = !!document.getElementById('taskModal')
+  if (open || taskOpen) {
+    document.body.classList.add('modal-open')
+    document.body.style.overflow = 'hidden'
+    return
+  }
+  document.body.classList.remove('modal-open')
+  document.body.style.overflow = ''
 }
 
 watch(
   () => state.open,
   (open) => {
-    document.body.classList.toggle('modal-open', open)
-    document.body.style.overflow = open ? 'hidden' : ''
+    syncBodyModalState(open)
   },
 )
 
@@ -25,11 +36,11 @@ onMounted(() => {
   document.body.classList.remove('modal-open')
   document.body.style.overflow = ''
   document.body.style.paddingRight = ''
-  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('keydown', onKeydown, true)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('keydown', onKeydown, true)
   document.body.classList.remove('modal-open')
   document.body.style.overflow = ''
 })
@@ -40,7 +51,7 @@ onUnmounted(() => {
     <div
       v-if="state.open"
       id="siteConfirmModal"
-      class="modal fade show d-block"
+      class="modal fade show d-block site-confirm-modal"
       tabindex="-1"
       role="dialog"
       aria-modal="true"
@@ -60,6 +71,14 @@ onUnmounted(() => {
               {{ state.cancelLabel }}
             </button>
             <button
+              v-if="state.mode === 'unsaved'"
+              type="button"
+              class="btn btn-warning"
+              @click="discard"
+            >
+              {{ state.discardLabel }}
+            </button>
+            <button
               type="button"
               class="btn"
               :class="state.danger ? 'btn-danger' : state.warning ? 'btn-warning' : 'btn-primary'"
@@ -71,6 +90,15 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-    <div v-if="state.open" class="modal-backdrop fade show" />
+    <div v-if="state.open" class="modal-backdrop fade show site-confirm-backdrop" />
   </Teleport>
 </template>
+
+<style>
+.site-confirm-modal {
+  z-index: 2100;
+}
+.site-confirm-backdrop {
+  z-index: 2090;
+}
+</style>

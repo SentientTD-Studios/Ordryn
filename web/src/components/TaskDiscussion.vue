@@ -486,9 +486,10 @@ function onMentionReposition() {
 
 const charCount = computed(() => draft.value.length)
 
-async function post() {
+async function post(): Promise<boolean> {
   const body = draft.value.trim()
-  if (!body || posting.value) return
+  if (!body) return true
+  if (posting.value) return false
   posting.value = true
   try {
     const created = await api.addTaskComment(props.taskId, body)
@@ -498,8 +499,10 @@ async function post() {
     closeMentionMenu()
     await nextTick()
     bottomEl.value?.scrollIntoView({ block: 'nearest' })
+    return true
   } catch (err) {
     toast.push(err instanceof Error ? err.message : 'Could not post comment', 'error')
+    return false
   } finally {
     posting.value = false
   }
@@ -539,9 +542,9 @@ function cancelEdit() {
   editDraft.value = ''
 }
 
-async function saveEdit(c: TaskComment) {
+async function saveEdit(c: TaskComment): Promise<boolean> {
   const body = editDraft.value.trim()
-  if (!body || savingEdit.value) return
+  if (!body || savingEdit.value) return false
   savingEdit.value = true
   try {
     const updated = await api.editTaskComment(props.taskId, c.id, body)
@@ -551,11 +554,34 @@ async function saveEdit(c: TaskComment) {
     if (historyId.value === c.id) {
       await loadHistory(c.id)
     }
+    return true
   } catch (err) {
     toast.push(err instanceof Error ? err.message : 'Could not save comment', 'error')
+    return false
   } finally {
     savingEdit.value = false
   }
+}
+
+function isEditDirty() {
+  if (editingId.value == null) return false
+  const original = comments.value.find((row) => row.id === editingId.value)
+  return editDraft.value.trim() !== (original?.body ?? '').trim()
+}
+
+function isDirty() {
+  return draft.value.trim() !== '' || isEditDirty()
+}
+
+async function flushUnsaved(): Promise<boolean> {
+  if (isEditDirty()) {
+    const current = comments.value.find((row) => row.id === editingId.value)
+    if (!current) return false
+    const saved = await saveEdit(current)
+    if (!saved) return false
+  }
+  if (draft.value.trim()) return post()
+  return true
 }
 
 async function loadHistory(commentId: number) {
@@ -634,7 +660,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', onMentionReposition)
 })
 
-defineExpose({ reload })
+defineExpose({ reload, isDirty, flushUnsaved })
 </script>
 
 <template>
