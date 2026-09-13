@@ -33,6 +33,9 @@ type SiteSettings struct {
 	EnableGlobalAnnouncement bool
 	GlobalAnnouncementText   string
 	EnableAPI                bool
+	AllowUserInvites         bool
+	UserInviteLimit          int
+	InviteExpirationDays     int
 
 	Email mailer.Config
 
@@ -63,9 +66,13 @@ func CreateSiteSettingsTable() error {
 			site_version TEXT,
 			enable_registration BOOLEAN DEFAULT TRUE,
 			invite_only BOOLEAN DEFAULT TRUE,
+			enable_join_requests BOOLEAN DEFAULT FALSE,
 			meta_description TEXT,
 			enable_global_announcement BOOLEAN DEFAULT FALSE,
-			global_announcement_text TEXT
+			global_announcement_text TEXT,
+			allow_user_invites BOOLEAN DEFAULT FALSE,
+			user_invite_limit INTEGER DEFAULT 5,
+			invite_expiration_days INTEGER DEFAULT 7
         )
     `)
 	if err != nil {
@@ -95,6 +102,9 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(enable_global_announcement, FALSE),
 			COALESCE(global_announcement_text, ''),
 			COALESCE(enable_api, FALSE),
+			COALESCE(allow_user_invites, FALSE),
+			COALESCE(user_invite_limit, 5),
+			COALESCE(invite_expiration_days, 7),
 			COALESCE(email_provider, ''),
 			COALESCE(email_from_address, ''),
 			COALESCE(email_from_name, ''),
@@ -123,6 +133,7 @@ func GetSiteSettings() (*SiteSettings, error) {
 		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
 		&s.EnableRegistration, &s.InviteOnly, &s.EnableJoinRequests, &s.MetaDescription,
 		&s.EnableGlobalAnnouncement, &s.GlobalAnnouncementText, &s.EnableAPI,
+		&s.AllowUserInvites, &s.UserInviteLimit, &s.InviteExpirationDays,
 		&s.Email.Provider, &s.Email.FromAddress, &s.Email.FromName,
 		&s.Email.MailgunDomain, &s.Email.MailgunAPIKeyEnc,
 		&s.Email.SMTPHost, &s.Email.SMTPPort, &s.Email.SMTPUsername,
@@ -158,12 +169,19 @@ func UpsertSiteSettings(s SiteSettings) error {
 	if s.Image.LocalPath == "" {
 		s.Image.LocalPath = imagehost.DefaultLocalPath
 	}
+	if s.UserInviteLimit < 0 {
+		s.UserInviteLimit = 0
+	}
+	if s.InviteExpirationDays < 0 {
+		s.InviteExpirationDays = 0
+	}
 
 	_, err = pool.Exec(context.Background(), `
         INSERT INTO site_settings (
 			id, site_name, default_timezone, show_changelog,
 			enable_registration, invite_only, enable_join_requests, meta_description,
 			enable_global_announcement, global_announcement_text, enable_api,
+			allow_user_invites, user_invite_limit, invite_expiration_days,
 			email_provider, email_from_address, email_from_name,
 			email_mailgun_domain, email_mailgun_api_key_enc,
 			email_smtp_host, email_smtp_port, email_smtp_username,
@@ -174,7 +192,7 @@ func UpsertSiteSettings(s SiteSettings) error {
 			image_s3_bucket, image_s3_access_key, image_s3_secret_key_enc,
 			image_s3_public_url, image_s3_force_path_style, image_local_path
 		)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
@@ -186,6 +204,9 @@ func UpsertSiteSettings(s SiteSettings) error {
             enable_global_announcement = EXCLUDED.enable_global_announcement,
             global_announcement_text = EXCLUDED.global_announcement_text,
             enable_api = EXCLUDED.enable_api,
+            allow_user_invites = EXCLUDED.allow_user_invites,
+            user_invite_limit = EXCLUDED.user_invite_limit,
+            invite_expiration_days = EXCLUDED.invite_expiration_days,
 			email_provider = EXCLUDED.email_provider,
 			email_from_address = EXCLUDED.email_from_address,
 			email_from_name = EXCLUDED.email_from_name,
@@ -212,6 +233,7 @@ func UpsertSiteSettings(s SiteSettings) error {
     `, s.SiteName, s.DefaultTimezone, s.ShowChangelog,
 		s.EnableRegistration, s.InviteOnly, s.EnableJoinRequests, s.MetaDescription,
 		s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI,
+		s.AllowUserInvites, s.UserInviteLimit, s.InviteExpirationDays,
 		s.Email.Provider, s.Email.FromAddress, s.Email.FromName,
 		s.Email.MailgunDomain, s.Email.MailgunAPIKeyEnc,
 		s.Email.SMTPHost, s.Email.SMTPPort, s.Email.SMTPUsername,
@@ -224,6 +246,27 @@ func UpsertSiteSettings(s SiteSettings) error {
 		s.Image.S3ForcePathStyle, s.Image.LocalPath)
 	if err != nil {
 		return fmt.Errorf("failed to upsert site_settings: %v", err)
+	}
+	return nil
+}
+
+// MigrateSiteSettingsAddUserInvitesAndExpiration adds user invites, limits, and expiration settings.
+func MigrateSiteSettingsAddUserInvitesAndExpiration() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	queries := []string{
+		"ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS allow_user_invites BOOLEAN DEFAULT FALSE",
+		"ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS user_invite_limit INTEGER DEFAULT 5",
+		"ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS invite_expiration_days INTEGER DEFAULT 7",
+	}
+	for _, q := range queries {
+		if _, err := pool.Exec(context.Background(), q); err != nil {
+			return fmt.Errorf("migration failed on %q: %w", q, err)
+		}
 	}
 	return nil
 }

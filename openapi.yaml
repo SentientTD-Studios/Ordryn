@@ -3168,6 +3168,11 @@ paths:
                 email:
                   type: string
                   format: email
+                expires_at:
+                  type: string
+                  format: date-time
+                bypass_expiration:
+                  type: boolean
       responses:
         "201":
           description: Created
@@ -3514,6 +3519,65 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
+  /api/v1/admin/invites:
+    get:
+      tags: [Admin]
+      summary: List all invites (admin)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: All invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invite"
+    post:
+      tags: [Admin]
+      summary: Create an invite (admin)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                expires_at:
+                  type: string
+                  format: date-time
+                bypass_expiration:
+                  type: boolean
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+
+  /api/v1/admin/invites/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      tags: [Admin]
+      summary: Delete an unused invite (admin)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+
 components:
   securitySchemes:
     BearerAuth:
@@ -3668,6 +3732,12 @@ components:
           type: integer
           format: int64
           description: Maximum upload size in bytes when image hosting is enabled
+        allow_user_invites:
+          type: boolean
+        user_invite_limit:
+          type: integer
+        invite_expiration_days:
+          type: integer
 
     User:
       type: object
@@ -4985,6 +5055,23 @@ components:
           type: string
         used:
           type: boolean
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_by:
+          type: integer
+          nullable: true
+        creator_user_name:
+          type: string
+        creator_email:
+          type: string
+        status:
+          type: string
+          enum: [pending, used, expired]
 
     JoinRequest:
       type: object
@@ -5037,6 +5124,12 @@ components:
           type: string
         enable_api:
           type: boolean
+        allow_user_invites:
+          type: boolean
+        user_invite_limit:
+          type: integer
+        invite_expiration_days:
+          type: integer
         email_provider:
           type: string
           description: none, mailgun, or smtp
@@ -5116,6 +5209,12 @@ components:
           type: string
         enable_api:
           type: boolean
+        allow_user_invites:
+          type: boolean
+        user_invite_limit:
+          type: integer
+        invite_expiration_days:
+          type: integer
         email_provider:
           type: string
         email_from_address:

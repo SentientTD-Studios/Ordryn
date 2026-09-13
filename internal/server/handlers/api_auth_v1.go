@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
@@ -172,8 +173,8 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inviteID := 0
-	if inviteOnly {
-		id, used, invErr := storage.LookupInvite(email, token)
+	if inviteOnly || token != "" {
+		id, used, expiresAt, invErr := storage.LookupInvite(email, token)
 		if invErr != nil {
 			if errors.Is(invErr, pgx.ErrNoRows) {
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_invite",
@@ -186,6 +187,11 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		if used {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_invite",
 				"Invalid email or invite token; please double check and try again.")
+			return
+		}
+		if expiresAt != nil && time.Now().After(*expiresAt) {
+			utils.APIJSONError(w, http.StatusBadRequest, "invite_expired",
+				"This invite has expired. Please ask for a new invite.")
 			return
 		}
 		inviteID = id

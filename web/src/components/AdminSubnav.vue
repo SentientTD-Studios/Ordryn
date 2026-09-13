@@ -13,6 +13,7 @@ const fetchedCount = ref(0)
 const links = [
   { name: 'admin', label: 'Settings', to: '/admin' },
   { name: 'admin-requests', label: 'Requests', to: '/admin/requests' },
+  { name: 'admin-invites', label: 'Invites', to: '/admin/invites' },
   { name: 'admin-users', label: 'Users', to: '/admin/users' },
   { name: 'admin-email-audit', label: 'Email log', to: '/admin/email-audit' },
   { name: 'admin-comment-audit', label: 'Comment history', to: '/admin/comment-audit' },

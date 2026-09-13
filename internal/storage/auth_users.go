@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -141,25 +142,25 @@ func UpdatePasswordByID(userID int, hashedPassword string) error {
 	return err
 }
 
-// LookupInvite returns invite id and whether it was already used.
-func LookupInvite(email, token string) (id int, used bool, err error) {
+// LookupInvite returns invite id, whether it was already used, and its expiration time if set.
+func LookupInvite(email, token string) (id int, used bool, expiresAt *time.Time, err error) {
 	pool, err := OpenDatabase()
 	if err != nil {
-		return 0, false, err
+		return 0, false, nil, err
 	}
 	defer CloseDatabase(pool)
 
 	var inviteUsed int
 	err = pool.QueryRow(context.Background(),
-		`SELECT id, inviteused FROM invites WHERE email = $1 AND token = $2`,
-		strings.TrimSpace(email), strings.TrimSpace(token)).Scan(&id, &inviteUsed)
+		`SELECT id, inviteused, expires_at FROM invites WHERE email = $1 AND token = $2`,
+		strings.TrimSpace(email), strings.TrimSpace(token)).Scan(&id, &inviteUsed, &expiresAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, false, pgx.ErrNoRows
+			return 0, false, nil, pgx.ErrNoRows
 		}
-		return 0, false, err
+		return 0, false, nil, err
 	}
-	return id, inviteUsed == 1, nil
+	return id, inviteUsed == 1, expiresAt, nil
 }
 
 // RegisterUser creates a user and optionally consumes an invite in one transaction.

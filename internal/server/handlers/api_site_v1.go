@@ -23,6 +23,9 @@ type apiSiteResponse struct {
 	GitHubOAuthConfigured    bool   `json:"github_oauth_configured"`
 	ImageHostingEnabled      bool   `json:"image_hosting_enabled"`
 	ImageMaxBytes            int64  `json:"image_max_bytes"`
+	AllowUserInvites         bool   `json:"allow_user_invites"`
+	UserInviteLimit          int    `json:"user_invite_limit"`
+	InviteExpirationDays     int    `json:"invite_expiration_days"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -64,5 +67,8 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		GitHubOAuthConfigured:    domain.GitHubOAuthConfigured(),
 		ImageHostingEnabled:      imageEnabled,
 		ImageMaxBytes:            imageMax,
+		AllowUserInvites:         settings.AllowUserInvites,
+		UserInviteLimit:          settings.UserInviteLimit,
+		InviteExpirationDays:     settings.InviteExpirationDays,
 	})
 }

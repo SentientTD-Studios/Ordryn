@@ -43,6 +43,9 @@ func TestAPISiteResponsePublicFields(t *testing.T) {
 		"github_oauth_configured",
 		"image_hosting_enabled",
 		"image_max_bytes",
+		"allow_user_invites",
+		"user_invite_limit",
+		"invite_expiration_days",
 	} {
 		if _, ok := m[key]; !ok {
 			t.Fatalf("missing key %q in %s", key, string(raw))

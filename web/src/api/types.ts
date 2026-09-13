@@ -333,6 +333,9 @@ export type SiteInfo = {
   github_oauth_configured?: boolean
   image_hosting_enabled?: boolean
   image_max_bytes?: number
+  allow_user_invites?: boolean
+  user_invite_limit?: number
+  invite_expiration_days?: number
 }
 
 export type ChangelogEntry = {
@@ -413,6 +416,12 @@ export type Invite = {
   email: string
   token: string
   used: boolean
+  created_at?: string
+  expires_at?: string | null
+  created_by?: number | null
+  creator_user_name?: string
+  creator_email?: string
+  status?: 'pending' | 'used' | 'expired'
 }
 
 export type JoinRequest = {
@@ -439,6 +448,9 @@ export type AdminSettings = {
   enable_global_announcement: boolean
   global_announcement_text: string
   enable_api: boolean
+  allow_user_invites: boolean
+  user_invite_limit: number
+  invite_expiration_days: number
   email_provider: string
   email_from_address: string
   email_from_name: string

@@ -939,15 +939,38 @@ export const api = {
     return request<Invite[]>('/api/v1/invites')
   },
 
-  createInvite(email: string) {
+  createInvite(email: string, expiresAt?: string, bypassExpiration?: boolean) {
     return request<Invite>('/api/v1/invites', {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({
+        email,
+        expires_at: expiresAt || undefined,
+        bypass_expiration: !!bypassExpiration,
+      }),
     })
   },
 
   deleteInvite(id: number) {
     return request<void>(`/api/v1/invites/${id}`, { method: 'DELETE' })
+  },
+
+  listAdminInvites() {
+    return request<Invite[]>('/api/v1/admin/invites')
+  },
+
+  createAdminInvite(email: string, expiresAt?: string, bypassExpiration?: boolean) {
+    return request<Invite>('/api/v1/admin/invites', {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        expires_at: expiresAt || undefined,
+        bypass_expiration: !!bypassExpiration,
+      }),
+    })
+  },
+
+  deleteAdminInvite(id: number) {
+    return request<void>(`/api/v1/admin/invites/${id}`, { method: 'DELETE' })
   },
 
   forgotPassword(email: string, confirmEmail: string) {

@@ -29,6 +29,9 @@ const settings = reactive<AdminSettings>({
   enable_registration: true,
   invite_only: false,
   enable_join_requests: false,
+  allow_user_invites: false,
+  user_invite_limit: 5,
+  invite_expiration_days: 7,
   meta_description: '',
   enable_global_announcement: false,
   global_announcement_text: '',
@@ -82,6 +85,9 @@ async function saveSettings() {
       enable_registration: settings.enable_registration,
       invite_only: settings.invite_only,
       enable_join_requests: settings.enable_join_requests,
+      allow_user_invites: settings.allow_user_invites,
+      user_invite_limit: settings.user_invite_limit,
+      invite_expiration_days: settings.invite_expiration_days,
       meta_description: settings.meta_description,
       enable_global_announcement: settings.enable_global_announcement,
       global_announcement_text: settings.global_announcement_text,
@@ -248,6 +254,34 @@ onMounted(load)
           <div class="form-check mb-2">
             <input id="admin-join-requests" v-model="settings.enable_join_requests" class="form-check-input" type="checkbox" />
             <label class="form-check-label" for="admin-join-requests">Enable join requests</label>
+          </div>
+          <div class="form-check mb-2">
+            <input id="admin-user-invites" v-model="settings.allow_user_invites" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-user-invites">Allow regular users to send invites</label>
+          </div>
+          <div v-if="settings.allow_user_invites" class="mb-3 ms-4">
+            <label for="admin-user-invite-limit" class="form-label">User invite limit</label>
+            <input
+              id="admin-user-invite-limit"
+              v-model.number="settings.user_invite_limit"
+              type="number"
+              class="form-control"
+              style="max-width: 12rem"
+              min="0"
+            />
+            <div class="form-text">Maximum number of invites each regular user can send.</div>
+          </div>
+          <div class="mb-3">
+            <label for="admin-invite-expiration-days" class="form-label">Default invite expiration (days)</label>
+            <input
+              id="admin-invite-expiration-days"
+              v-model.number="settings.invite_expiration_days"
+              type="number"
+              class="form-control"
+              style="max-width: 12rem"
+              min="0"
+            />
+            <div class="form-text">Days before a sent invite expires. Set to 0 for invites that never expire.</div>
           </div>
           <div class="form-check mb-2">
             <input id="admin-changelog" v-model="settings.show_changelog" class="form-check-input" type="checkbox" />

@@ -31,6 +31,9 @@ const archivedCollapsed = ref(true)
 const viewsCollapsed = ref(false)
 
 const showChangelog = computed(() => siteInfo.value?.show_changelog !== false)
+const canViewInvites = computed(
+  () => hasPermission('admin') || hasPermission('createinvites') || !!siteInfo.value?.allow_user_invites,
+)
 const activeProject = computed(() => (typeof route.query.project === 'string' ? route.query.project : ''))
 const activeView = computed(() => (typeof route.query.view === 'string' ? route.query.view : ''))
 
@@ -201,7 +204,7 @@ watch(isAuthenticated, (ok) => {
                 <span>Admin</span>
               </RouterLink>
             </li>
-            <li v-if="hasPermission('createinvites')" class="sidebar-nav-item">
+            <li v-if="canViewInvites" class="sidebar-nav-item">
               <RouterLink
                 to="/invites"
                 class="sidebar-nav-link"
@@ -209,7 +212,7 @@ watch(isAuthenticated, (ok) => {
                 @click="close"
               >
                 <i class="bi bi-envelope-plus" />
-                <span>Create Invite</span>
+                <span>Invites</span>
               </RouterLink>
             </li>
           </template>
