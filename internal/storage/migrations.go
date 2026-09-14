@@ -203,6 +203,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateProjectsAddBacklogDescription failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateProjectsAddAutoSprintSettings(); err != nil {
+		fmt.Printf("migration: MigrateProjectsAddAutoSprintSettings failed: %v\n", err)
+		errCount++
+	}
 	if err := CreateProjectWorkflowTables(); err != nil {
 		fmt.Printf("migration: CreateProjectWorkflowTables failed: %v\n", err)
 		errCount++
@@ -459,4 +463,3 @@ func MigrateInvitesAddFields() error {
 	}
 	return nil
 }
-

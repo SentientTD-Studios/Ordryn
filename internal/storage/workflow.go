@@ -269,9 +269,12 @@ func SetProjectWorkflowMode(projectID int, mode string) error {
 	}
 	defer CloseDatabase(pool)
 
-	_, err = pool.Exec(context.Background(),
-		`UPDATE projects SET workflow_mode = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-		mode, projectID)
+	query := `UPDATE projects SET workflow_mode = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	args := []interface{}{mode, projectID}
+	if mode == WorkflowClassic {
+		query = `UPDATE projects SET workflow_mode = $1, auto_create_next_sprint = false, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	}
+	_, err = pool.Exec(context.Background(), query, args...)
 	return err
 }
 

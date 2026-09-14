@@ -3970,6 +3970,20 @@ components:
           type: string
           maxLength: 80
           description: Optional description for the project's backlog system sprint
+        auto_create_next_sprint:
+          type: boolean
+          description: When true, automatically create the next sprint after the current dated sprint ends, if that sprint still has tasks
+        auto_sprint_length_days:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 365
+          description: Inclusive length in days of automatically created sprints
+        auto_sprint_lock_days_before:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Optional days before the new sprint ends to set its lock date
         role:
           type: string
           enum: [owner, editor, viewer]
@@ -4011,6 +4025,20 @@ components:
           type: string
           maxLength: 80
           description: Update the project's backlog system sprint description
+        auto_create_next_sprint:
+          type: boolean
+          description: Enable automatic creation of the next sprint when the current dated sprint ends (kanban only; skipped if that sprint has no tasks)
+        auto_sprint_length_days:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 365
+          description: Inclusive length in days of automatically created sprints. Required when auto_create_next_sprint is true.
+        auto_sprint_lock_days_before:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Days before the automatic sprint end to set lock_date. Null clears the lock. Must be less than auto_sprint_length_days.
       description: At least one field required. Disabling kanban fails with 409 if the project has tasks.
 
     ProjectStatus:

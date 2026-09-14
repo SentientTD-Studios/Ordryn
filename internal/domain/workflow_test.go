@@ -54,6 +54,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "projects: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateProjectsAddAutoSprintSettings(); err != nil {
+		fmt.Fprintf(os.Stderr, "auto sprint settings: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.MigrateProjectsAddArchived(); err != nil {
 		fmt.Fprintf(os.Stderr, "projects archived: %v\n", err)
 		os.Exit(1)

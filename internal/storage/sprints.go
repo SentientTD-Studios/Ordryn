@@ -385,6 +385,46 @@ func CountTasksWithSprint(sprintID int) (int, error) {
 	return n, err
 }
 
+// CountActiveTasksWithSprint returns non-archived tasks currently assigned to a sprint.
+func CountActiveTasksWithSprint(sprintID int) (int, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return 0, err
+	}
+	defer CloseDatabase(pool)
+	var n int
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = $1 AND NOT `+ArchivedTaskExistsSQL("t.id"),
+		sprintID).Scan(&n)
+	return n, err
+}
+
+// GetLatestDatedProjectSprint returns the dated sprint with the latest end date, if any.
+func GetLatestDatedProjectSprint(projectID int) (*ProjectSprint, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	var s ProjectSprint
+	err = scanProjectSprint(pool.QueryRow(context.Background(),
+		`SELECT `+projectSprintSelectCols+`
+		 FROM project_sprints
+		 WHERE project_id = $1
+		   AND start_date IS NOT NULL
+		   AND end_date IS NOT NULL
+		 ORDER BY end_date DESC, start_date DESC, id DESC
+		 LIMIT 1`, projectID), &s)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &s, nil
+}
+
 // CountTasksInBacklog returns active tasks currently in a project's backlog (sprint_id IS NULL).
 func CountTasksInBacklog(projectID int) (int, error) {
 	pool, err := OpenDatabase()

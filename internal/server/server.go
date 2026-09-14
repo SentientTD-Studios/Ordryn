@@ -1,6 +1,7 @@
 package server
 
 import (
+	"GoTodo/internal/domain"
 	"GoTodo/internal/live"
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/server/handlers"
@@ -62,6 +63,7 @@ func StartServer() error {
 
 	mailer.SetAuditor(storage.RecordEmailAudit)
 	storage.StartEmailAuditPurgeWorker()
+	domain.StartAutoSprintWorker()
 
 	registerAPIV1Routes()
 

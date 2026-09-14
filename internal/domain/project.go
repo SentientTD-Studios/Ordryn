@@ -3,7 +3,9 @@ package domain
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
@@ -40,16 +42,28 @@ func CreateProject(ctx context.Context, userID int, name, description string) (*
 
 // RenameProject updates a project name (owner only) and returns the updated project.
 func RenameProject(ctx context.Context, userID, projectID int, name string) (*storage.Project, error) {
-	return UpdateProject(ctx, userID, projectID, &name, nil, nil, nil, nil)
+	return UpdateProject(ctx, userID, projectID, &name, nil, nil, nil, nil, nil)
 }
 
 // RenameProjectBacklog updates a project's backlog sprint name (owner only).
 func RenameProjectBacklog(ctx context.Context, userID, projectID int, name string) (*storage.Project, error) {
-	return UpdateProject(ctx, userID, projectID, nil, nil, nil, &name, nil)
+	return UpdateProject(ctx, userID, projectID, nil, nil, nil, &name, nil, nil)
 }
 
-// UpdateProject patches name, description, workflow_mode, backlog_name, and/or backlog_description (owner only).
-func UpdateProject(ctx context.Context, userID, projectID int, name, description, workflowMode, backlogName, backlogDescription *string) (*storage.Project, error) {
+// AutoSprintPatch is a partial update for automatic next-sprint settings.
+type AutoSprintPatch struct {
+	Enabled        *bool
+	LengthDays     **int
+	LockDaysBefore **int
+}
+
+func (p *AutoSprintPatch) empty() bool {
+	return p == nil || (p.Enabled == nil && p.LengthDays == nil && p.LockDaysBefore == nil)
+}
+
+// UpdateProject patches name, description, workflow_mode, backlog_name, backlog_description,
+// and optional auto-sprint settings (owner only).
+func UpdateProject(ctx context.Context, userID, projectID int, name, description, workflowMode, backlogName, backlogDescription *string, auto *AutoSprintPatch) (*storage.Project, error) {
 	_ = ctx
 	var trimmedName string
 	if name != nil {
@@ -104,8 +118,23 @@ func UpdateProject(ctx context.Context, userID, projectID int, name, description
 	if name != nil {
 		namePtr = &trimmedName
 	}
-	if namePtr != nil || trimmedDescription != nil || trimmedBacklogName != nil || trimmedBacklogDesc != nil {
-		if err := storage.UpdateProject(projectID, proj.OwnerUserID, namePtr, trimmedDescription, trimmedBacklogName, trimmedBacklogDesc); err != nil {
+
+	autoPatch, err := normalizeAutoSprintPatch(proj, auto, workflowMode)
+	if err != nil {
+		return nil, err
+	}
+
+	storagePatch := storage.ProjectPatch{
+		Name:                     namePtr,
+		Description:              trimmedDescription,
+		BacklogName:              trimmedBacklogName,
+		BacklogDescription:       trimmedBacklogDesc,
+		AutoCreateNextSprint:     autoPatch.Enabled,
+		AutoSprintLengthDays:     autoPatch.LengthDays,
+		AutoSprintLockDaysBefore: autoPatch.LockDaysBefore,
+	}
+	if !storagePatch.Empty() {
+		if err := storage.UpdateProject(projectID, proj.OwnerUserID, storagePatch); err != nil {
 			return nil, err
 		}
 		if namePtr != nil && *namePtr != proj.Name {
@@ -124,17 +153,31 @@ func UpdateProject(ctx context.Context, userID, projectID int, name, description
 		if trimmedBacklogDesc != nil && *trimmedBacklogDesc != proj.BacklogDescription {
 			_ = storage.LogProjectEvent(projectID, userID, "backlog_description_updated", nil)
 		}
+		if autoSprintSettingsChanged(proj, autoPatch) {
+			_ = storage.LogProjectEvent(projectID, userID, "auto_sprint_settings_updated", nil)
+		}
 	}
 
 	if workflowMode != nil {
 		if _, err := SetProjectWorkflowMode(ctx, userID, projectID, *workflowMode); err != nil {
 			return nil, err
 		}
-	} else if namePtr != nil || trimmedDescription != nil || trimmedBacklogName != nil || trimmedBacklogDesc != nil {
+	} else if !storagePatch.Empty() {
 		live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
 	}
 
-	return storage.GetProjectByID(projectID, proj.OwnerUserID)
+	updated, err := storage.GetProjectByID(projectID, proj.OwnerUserID)
+	if err != nil {
+		return nil, err
+	}
+	if updated.AutoCreateNextSprint && autoSprintSettingsChanged(proj, autoPatch) {
+		if _, err := AutoCreateDueSprintsForProject(*updated, time.Now().UTC()); err != nil {
+			log.Printf("auto-sprint after settings save: project %d: %v", projectID, err)
+		} else {
+			return storage.GetProjectByID(projectID, proj.OwnerUserID)
+		}
+	}
+	return updated, nil
 }
 
 // ReorderProjectsForUser sets the display order of active (non-archived) owned projects.

@@ -469,6 +469,9 @@ export const api = {
       workflow_mode: WorkflowMode
       backlog_name: string
       backlog_description: string
+      auto_create_next_sprint: boolean
+      auto_sprint_length_days: number | null
+      auto_sprint_lock_days_before: number | null
     }>,
   ) {
     return request<Project>(`/api/v1/projects/${id}`, {

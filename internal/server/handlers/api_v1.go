@@ -171,17 +171,20 @@ type apiReorderOKResponse struct {
 }
 
 type apiProjectJSON struct {
-	ID            int    `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description,omitempty"`
-	WorkflowMode  string `json:"workflow_mode,omitempty"`
-	Archived           bool   `json:"archived"`
-	BacklogName        string `json:"backlog_name,omitempty"`
-	BacklogDescription string `json:"backlog_description,omitempty"`
-	Role               string `json:"role,omitempty"`
-	OwnerEmail    string `json:"owner_email,omitempty"`
-	OwnerUserName string `json:"owner_user_name,omitempty"`
-	OwnerUserID   int    `json:"owner_user_id,omitempty"`
+	ID                       int    `json:"id"`
+	Name                     string `json:"name"`
+	Description              string `json:"description,omitempty"`
+	WorkflowMode             string `json:"workflow_mode,omitempty"`
+	Archived                 bool   `json:"archived"`
+	BacklogName              string `json:"backlog_name,omitempty"`
+	BacklogDescription       string `json:"backlog_description,omitempty"`
+	AutoCreateNextSprint     bool   `json:"auto_create_next_sprint"`
+	AutoSprintLengthDays     *int   `json:"auto_sprint_length_days"`
+	AutoSprintLockDaysBefore *int   `json:"auto_sprint_lock_days_before"`
+	Role                     string `json:"role,omitempty"`
+	OwnerEmail               string `json:"owner_email,omitempty"`
+	OwnerUserName            string `json:"owner_user_name,omitempty"`
+	OwnerUserID              int    `json:"owner_user_id,omitempty"`
 }
 
 type apiTagCreateRequest struct {
@@ -200,11 +203,14 @@ type apiProjectCreateRequest struct {
 }
 
 type apiProjectPatchRequest struct {
-	Name         *string `json:"name"`
-	Description  *string `json:"description"`
-	WorkflowMode       *string `json:"workflow_mode"`
-	BacklogName        *string `json:"backlog_name"`
-	BacklogDescription *string `json:"backlog_description"`
+	Name                     *string     `json:"name"`
+	Description              *string     `json:"description"`
+	WorkflowMode             *string     `json:"workflow_mode"`
+	BacklogName              *string     `json:"backlog_name"`
+	BacklogDescription       *string     `json:"backlog_description"`
+	AutoCreateNextSprint     *bool       `json:"auto_create_next_sprint"`
+	AutoSprintLengthDays     optionalInt `json:"auto_sprint_length_days"`
+	AutoSprintLockDaysBefore optionalInt `json:"auto_sprint_lock_days_before"`
 }
 
 type apiProjectReorderRequest struct {
@@ -1091,11 +1097,17 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil && req.BacklogName == nil && req.BacklogDescription == nil {
+	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil && req.BacklogName == nil && req.BacklogDescription == nil &&
+		req.AutoCreateNextSprint == nil && !req.AutoSprintLengthDays.Set && !req.AutoSprintLockDaysBefore.Set {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 		return
 	}
-	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription)
+	auto := &domain.AutoSprintPatch{
+		Enabled:        req.AutoCreateNextSprint,
+		LengthDays:     req.AutoSprintLengthDays.toPatchInt(false),
+		LockDaysBefore: req.AutoSprintLockDaysBefore.toPatchInt(false),
+	}
+	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription, auto)
 	if err != nil {
 		if errors.Is(err, domain.ErrValidation) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
