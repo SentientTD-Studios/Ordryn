@@ -395,12 +395,14 @@ Content-Type: application/json
                     <h3 class="h5 mt-3">Bulk actions</h3>
                     <p><span class="badge bg-primary">POST</span> <code>/api/v1/tasks/bulk</code></p>
                     <pre class="api-docs-pre"><code>{
-  "action": "complete",          // complete|incomplete|delete|move_project|add_tag|remove_tag|set_priority|set_due_date
+  "action": "complete",          // complete|incomplete|delete|move_project|add_tag|remove_tag|set_priority|set_due_date|set_status|set_sprint
   "task_ids": [1, 2, 3],
   "project_id": 4,               // move_project (omit/null clears project)
   "tag_id": 7,                   // add_tag / remove_tag
   "priority": 2,                 // set_priority (0-3)
-  "due_date": "2026-08-01"       // set_due_date ("" clears)
+  "due_date": "2026-08-01",      // set_due_date ("" clears)
+  "status_id": 12,               // set_status (kanban column)
+  "sprint_id": 8                 // set_sprint (0 or null = backlog)
 }</code></pre>
                     <p>Returns <code>{ "ok": true, "affected": N, "action": "…" }</code>. Deletes also include <code>undo_token</code>.</p>
 

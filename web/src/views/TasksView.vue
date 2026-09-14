@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { Project, ProjectSprint, SavedView, Tag, Task } from '@/api/types'
+import type { Project, ProjectSprint, ProjectStatus, SavedView, Tag, Task } from '@/api/types'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
@@ -23,7 +23,8 @@ import { useSidebarState } from '@/composables/useSidebarState'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
 import { projectOptionLabel, activeProjects, isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
-import { sprintOptionLabel } from '@/utils/sprintLabel'
+import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
+import { kanbanSprintQueryValue, kanbanWorkflowClaimScope } from '@/utils/kanbanTaskQuery'
 import { uniqueTagsByName, isArchivedTask } from '@/utils/tags'
 
 const route = useRoute()
@@ -78,6 +79,8 @@ const bulkProject = ref('')
 const bulkTag = ref('')
 const bulkPriority = ref('')
 const bulkDate = ref('')
+const bulkSprint = ref('')
+const bulkStatus = ref('')
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
@@ -94,6 +97,7 @@ const {
 const undoToken = ref<string | null>(null)
 const kanbanColumnsRev = ref(0)
 const boardSprints = ref<ProjectSprint[]>([])
+const boardStatuses = ref<ProjectStatus[]>([])
 const boardSprintKey = ref('backlog')
 let sprintsLoadedForProject: number | null = null
 const selected = ref<number[]>([])
@@ -218,10 +222,11 @@ function applyBoardReorder(payload: { statusId: number; taskIds: number[] }) {
   tasks.value = result
 }
 
-/** Board has no infinite-scroll sentinel — fetch remaining pages after the first. */
+/** Board has no infinite-scroll sentinel — fetch remaining pages after the first.
+ *  Kanban list view also loads the full sprint so select-all covers unclaimed work. */
 async function loadAllForBoard() {
-  if (!showBoardView.value) return
-  while (showBoardView.value && hasMore.value && !loading.value) {
+  if (!isKanbanProjectView.value) return
+  while (isKanbanProjectView.value && hasMore.value && !loading.value) {
     const before = loadedPage.value
     await loadMore()
     if (loadedPage.value === before) break
@@ -229,19 +234,21 @@ async function loadAllForBoard() {
 }
 
 function listApiParams(page: number, perPage: number) {
-  // Board needs the full backlog (including unclaimed). List/home only show
-  // kanban tasks the current user has claimed.
-  const onKanbanBoard = isKanbanProjectView.value && viewMode.value === 'board'
+  // Home/classic lists stay on claimed work. A kanban project view (board or
+  // list) includes unclaimed tasks so mass-edit can cover the whole sprint.
+  const inKanbanProject = isKanbanProjectView.value
+  const onKanbanBoard = inKanbanProject && viewMode.value === 'board'
   const params: Record<string, string | number> = {
     ...toApiParams(page, perPage),
-    workflow_claim_scope: onKanbanBoard ? 'all' : 'mine',
+    workflow_claim_scope: kanbanWorkflowClaimScope(inKanbanProject),
   }
   // List defaults to incomplete; board still needs done-column cards.
   if (onKanbanBoard && params.status === 'incomplete') {
     delete params.status
   }
-  if (onKanbanBoard) {
-    params.sprint_id = boardSprintKey.value === 'backlog' ? 'none' : boardSprintKey.value
+  const sprintId = kanbanSprintQueryValue(inKanbanProject, boardSprintKey.value)
+  if (sprintId !== undefined) {
+    params.sprint_id = sprintId
   }
   return params
 }
@@ -265,8 +272,9 @@ function pickDefaultSprintKey(projectId: number, sprints: ProjectSprint[]): stri
 
 async function ensureBoardSprints() {
   const p = activeProjectObj.value
-  if (!p || !showBoardView.value) {
+  if (!p || !isKanbanProjectView.value) {
     boardSprints.value = []
+    boardStatuses.value = []
     sprintsLoadedForProject = null
     return
   }
@@ -275,6 +283,11 @@ async function ensureBoardSprints() {
     boardSprints.value = await api.listProjectSprints(p.id)
   } catch {
     boardSprints.value = []
+  }
+  try {
+    boardStatuses.value = await api.listProjectStatuses(p.id)
+  } catch {
+    boardStatuses.value = []
   }
   boardSprintKey.value = pickDefaultSprintKey(p.id, boardSprints.value)
   sprintsLoadedForProject = p.id
@@ -301,7 +314,7 @@ const selectedBoardSprint = computed(() => {
 })
 
 function currentBoardSprintId(): number | null | undefined {
-  if (!showBoardView.value) return undefined
+  if (!isKanbanProjectView.value) return undefined
   if (boardSprintKey.value === 'backlog') return null
   const n = parseInt(boardSprintKey.value, 10)
   return Number.isNaN(n) ? undefined : n
@@ -381,7 +394,7 @@ function getNextWeekStr() {
 }
 
 function taskMatchesBoardSprint(task: Task): boolean {
-  if (!isKanbanProjectView.value || viewMode.value !== 'board') return true
+  if (!isKanbanProjectView.value) return true
   const assigned = task.sprint_id && task.sprint_id > 0 ? task.sprint_id : 0
   if (boardSprintKey.value === 'backlog') return assigned === 0
   return assigned === parseInt(boardSprintKey.value, 10)
@@ -741,7 +754,7 @@ async function reloadInitial() {
     loading.value = false
     await nextTick()
     refreshSortable()
-    if (showBoardView.value) {
+    if (isKanbanProjectView.value) {
       void loadAllForBoard()
     }
   }
@@ -1407,67 +1420,63 @@ onUnmounted(() => {
           @clear-filters="clearFilters"
         />
 
-        <!-- Kanban board -->
-        <div v-if="showBoardView" class="mb-3">
-          <div
-            class="d-flex flex-wrap align-items-center gap-2 mb-3 p-2 rounded-3 border shadow-xs"
-            style="background: var(--ordryn-card-bg); border-color: var(--ordryn-card-border) !important;"
+        <!-- Sprint picker (kanban list and board) -->
+        <div
+          v-if="isKanbanProjectView"
+          class="d-flex flex-wrap align-items-center gap-2 mb-3 p-2 rounded-3 border shadow-xs"
+          style="background: var(--ordryn-card-bg); border-color: var(--ordryn-card-border) !important;"
+        >
+          <label class="small fw-bold mb-0" for="board-sprint">Sprint</label>
+          <select
+            id="board-sprint"
+            v-model="boardSprintKey"
+            class="form-select form-select-sm"
+            style="max-width: 28rem;"
+            @change="onBoardSprintChange"
           >
-            <label class="small fw-bold mb-0" for="board-sprint">Sprint</label>
-            <select
-              id="board-sprint"
-              v-model="boardSprintKey"
-              class="form-select form-select-sm"
-              style="max-width: 28rem;"
-              @change="onBoardSprintChange"
-            >
-              <option value="backlog">{{ activeProjectObj?.backlog_name || 'Backlog' }}</option>
-              <option v-for="s in boardSprints" :key="s.id" :value="String(s.id)">
-                {{ sprintOptionLabel(s, { activeSuffix: true, lockedSuffix: true }) }}
-              </option>
-            </select>
-            <span v-if="selectedBoardSprint" class="small text-muted">
-              <template v-if="selectedBoardSprint.description">{{ selectedBoardSprint.description }} · </template>
-              <template v-if="selectedBoardSprint.start_date && selectedBoardSprint.end_date">
-                {{ selectedBoardSprint.start_date }} – {{ selectedBoardSprint.end_date }}
-                <template v-if="selectedBoardSprint.lock_date">
-                  · {{ selectedBoardSprint.is_locked ? 'locked' : 'locks' }} {{ selectedBoardSprint.lock_date }}
-                </template>
-                ·
+            <option value="backlog">{{ activeProjectObj?.backlog_name || 'Backlog' }}</option>
+            <option v-for="s in boardSprints" :key="s.id" :value="String(s.id)">
+              {{ sprintOptionLabel(s, { activeSuffix: true, lockedSuffix: true }) }}
+            </option>
+          </select>
+          <span v-if="selectedBoardSprint" class="small text-muted">
+            <template v-if="selectedBoardSprint.description">{{ selectedBoardSprint.description }} · </template>
+            <template v-if="selectedBoardSprint.start_date && selectedBoardSprint.end_date">
+              {{ selectedBoardSprint.start_date }} – {{ selectedBoardSprint.end_date }}
+              <template v-if="selectedBoardSprint.lock_date">
+                · {{ selectedBoardSprint.is_locked ? 'locked' : 'locks' }} {{ selectedBoardSprint.lock_date }}
               </template>
-              <span v-else class="badge text-bg-secondary me-1">dateless</span>
-              {{ selectedBoardSprint.task_count }} task{{ selectedBoardSprint.task_count === 1 ? '' : 's' }}
-            </span>
-            <span v-else class="small text-muted">
-              <template v-if="activeProjectObj?.backlog_description">{{ activeProjectObj.backlog_description }} · </template>
-              Tasks not assigned to a sprint
-            </span>
-          </div>
-          <div v-if="loading && !tasks.length" class="text-center py-4 text-muted">
-            <div class="spinner-border spinner-border-sm me-2" role="status" />Loading tasks…
-          </div>
-          <KanbanBoard
-            v-else-if="activeProjectObj"
-            :key="activeProjectObj.id"
-            :project-id="activeProjectObj.id"
-            :tasks="tasks"
-            :role="activeProjectObj.role"
-            :density="density"
-            :columns-rev="kanbanColumnsRev"
-            :sprint-filter="boardSprintKey"
-            @open-task="openTaskDetails"
-            @changed="reloadInitial"
-            @task-updated="applyTaskUpdate"
-            @board-reorder="applyBoardReorder"
-          />
-          <div v-if="loadingMore" class="text-center py-2 text-muted small">
-            <span class="spinner-border spinner-border-sm me-2" />Loading more tasks…
+              ·
+            </template>
+            <span v-else class="badge text-bg-secondary me-1">dateless</span>
+            {{ selectedBoardSprint.task_count }} task{{ selectedBoardSprint.task_count === 1 ? '' : 's' }}
+          </span>
+          <span v-else class="small text-muted">
+            <template v-if="activeProjectObj?.backlog_description">{{ activeProjectObj.backlog_description }} · </template>
+            Tasks not assigned to a sprint
+          </span>
+          <div
+            v-if="!isViewerProjectView && showBoardView"
+            class="form-check align-items-center m-0 p-0 ms-auto d-flex"
+          >
+            <input
+              id="select-all-board-tasks"
+              type="checkbox"
+              class="form-check-input m-0 cursor-pointer"
+              :checked="allSelected"
+              :disabled="!flatSelectableIds.length"
+              style="width: 0.95rem; height: 0.95rem;"
+              @change="toggleSelectAll(($event.target as HTMLInputElement).checked)"
+            />
+            <label for="select-all-board-tasks" class="form-check-label small text-muted cursor-pointer ms-1.5">
+              Select all
+            </label>
           </div>
         </div>
 
         <!-- Sleek Bulk Actions Bar -->
         <div
-          v-if="!showBoardView && selected.length && !isViewerProjectView"
+          v-if="selected.length && !isViewerProjectView"
           class="bulk-action-bar alert alert-info py-1.5 px-3 rounded-3 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
         >
           <span class="fw-semibold small">{{ selected.length }} task{{ selected.length === 1 ? '' : 's' }} selected</span>
@@ -1552,6 +1561,50 @@ onUnmounted(() => {
                   </button>
                 </div>
 
+                <!-- Move to sprint (kanban) -->
+                <div v-if="isKanbanProjectView" class="mb-3 border-top pt-2">
+                  <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Move to sprint...</label>
+                  <select v-model="bulkSprint" class="form-select form-select-sm mb-2">
+                    <option value="">Select sprint...</option>
+                    <option value="0">{{ activeProjectObj?.backlog_name || 'Backlog' }}</option>
+                    <option
+                      v-for="s in boardSprints"
+                      :key="s.id"
+                      :value="String(s.id)"
+                      :disabled="sprintLockedForUser(s, activeProjectObj?.role)"
+                    >
+                      {{ sprintOptionLabel(s, { activeSuffix: true, lockedSuffix: true }) }}
+                    </option>
+                  </select>
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline-primary rounded-pill w-100"
+                    :disabled="bulkSprint === ''"
+                    @click="bulk('set_sprint', { sprint_id: parseInt(bulkSprint, 10) })"
+                  >
+                    Move to sprint
+                  </button>
+                </div>
+
+                <!-- Move to board column (kanban) -->
+                <div v-if="isKanbanProjectView" class="mb-3 border-top pt-2">
+                  <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Move to column...</label>
+                  <select v-model="bulkStatus" class="form-select form-select-sm mb-2">
+                    <option value="">Select column...</option>
+                    <option v-for="st in boardStatuses" :key="st.id" :value="String(st.id)">
+                      {{ st.name }}{{ st.is_done ? ' (done)' : '' }}{{ st.is_default ? ' (default)' : '' }}
+                    </option>
+                  </select>
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline-primary rounded-pill w-100"
+                    :disabled="bulkStatus === ''"
+                    @click="bulk('set_status', { status_id: parseInt(bulkStatus, 10) })"
+                  >
+                    Move to column
+                  </button>
+                </div>
+
                 <!-- Due Date -->
                 <div class="border-top pt-2">
                   <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Due Date</label>
@@ -1585,6 +1638,33 @@ onUnmounted(() => {
 
             <button type="button" class="btn btn-xs btn-danger rounded-pill" @click="bulk('delete')">Delete</button>
             <button type="button" class="btn btn-xs btn-link text-muted" @click="selected = []">Deselect</button>
+          </div>
+        </div>
+
+        <!-- Kanban board -->
+        <div v-if="showBoardView" class="mb-3">
+          <div v-if="loading && !tasks.length" class="text-center py-4 text-muted">
+            <div class="spinner-border spinner-border-sm me-2" role="status" />Loading tasks…
+          </div>
+          <KanbanBoard
+            v-else-if="activeProjectObj"
+            :key="activeProjectObj.id"
+            :project-id="activeProjectObj.id"
+            :tasks="tasks"
+            :role="activeProjectObj.role"
+            :density="density"
+            :columns-rev="kanbanColumnsRev"
+            :sprint-filter="boardSprintKey"
+            :selected-ids="selected"
+            :selecting="isSelecting"
+            @open-task="openTaskDetails"
+            @changed="reloadInitial"
+            @task-updated="applyTaskUpdate"
+            @board-reorder="applyBoardReorder"
+            @toggle-select="toggleSelect"
+          />
+          <div v-if="loadingMore" class="text-center py-2 text-muted small">
+            <span class="spinner-border spinner-border-sm me-2" />Loading more tasks…
           </div>
         </div>
 
@@ -1682,7 +1762,7 @@ onUnmounted(() => {
               >
                 <template v-if="isKanbanProjectView">
                   <p class="text-muted mb-2">
-                    No claimed tasks in your list. Unclaimed work lives on the board — claim a task to see it here.
+                    No tasks in this sprint match your current filters.
                   </p>
                   <button type="button" class="btn btn-sm btn-primary rounded-pill" @click="setViewMode('board')">
                     <i class="bi bi-kanban me-1" />Open board

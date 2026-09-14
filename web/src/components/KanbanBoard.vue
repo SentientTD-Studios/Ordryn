@@ -77,6 +77,7 @@
               :class="[
                 density === 'dense' ? 'density-dense' : 'density-comfortable',
                 { 'kanban-card-readonly': !canDrag },
+                { 'kanban-card-selected': isSelected(task.id) },
               ]"
               :data-task-id="task.id"
             >
@@ -91,6 +92,22 @@
               >
                 <i class="bi bi-grip-vertical" />
               </span>
+              <div
+                v-if="canDrag"
+                class="hover-reveal flex-shrink-0 align-items-center justify-content-center m-0 p-0"
+                :class="selecting || isSelected(task.id) ? 'd-inline-flex is-visible' : 'd-none d-md-inline-flex'"
+                title="Select task for bulk actions"
+              >
+                <input
+                  type="checkbox"
+                  class="cursor-pointer m-0 p-0"
+                  :checked="isSelected(task.id)"
+                  style="width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--ordryn-accent);"
+                  :aria-label="`Select task ${task.title}`"
+                  @click.stop
+                  @change="emit('toggle-select', task.id, ($event.target as HTMLInputElement).checked)"
+                />
+              </div>
 
               <div class="flex-grow-1 min-w-0">
                 <button
@@ -228,11 +245,15 @@ const props = withDefaults(
     columnsRev?: number
     /** Board sprint key: `backlog` or a sprint id string. */
     sprintFilter?: string
+    selectedIds?: number[]
+    selecting?: boolean
   }>(),
   {
     density: 'comfortable',
     columnsRev: 0,
     sprintFilter: '',
+    selectedIds: () => [],
+    selecting: false,
   },
 )
 
@@ -241,6 +262,7 @@ const emit = defineEmits<{
   changed: []
   'task-updated': [task: Task]
   'board-reorder': [payload: { statusId: number; taskIds: number[] }]
+  'toggle-select': [id: number, checked: boolean]
 }>()
 
 const toast = useToast()
@@ -278,6 +300,10 @@ const parentTitleById = computed(() => {
   }
   return titles
 })
+
+function isSelected(id: number) {
+  return props.selectedIds.includes(id)
+}
 
 function matchesBoardSprint(task: Task): boolean {
   const key = props.sprintFilter
@@ -691,6 +717,11 @@ onBeforeUnmount(destroySortables)
 .kanban-card:hover {
   box-shadow: var(--ordryn-card-hover-shadow);
   border-color: var(--ordryn-card-hover-border);
+}
+
+.kanban-card-selected {
+  border-color: var(--ordryn-accent, #0d6efd) !important;
+  box-shadow: 0 0 0 1px var(--ordryn-accent, #0d6efd);
 }
 
 .kanban-card .drag-handle {
