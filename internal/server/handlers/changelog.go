@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,6 +46,24 @@ var memCache = struct {
 	m  map[string]memItem
 	mu sync.RWMutex
 }{m: make(map[string]memItem)}
+
+const (
+	githubReleasesPerPage  = 100
+	githubReleasesMaxPages = 20
+	changelogCacheVersion  = "v2"
+)
+
+// githubAPIBase is the GitHub REST API origin. Tests may override it.
+var githubAPIBase = "https://api.github.com"
+
+type githubRelease struct {
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	PublishedAt string `json:"published_at"`
+	Body        string `json:"body"`
+	Draft       bool   `json:"draft"`
+	Prerelease  bool   `json:"prerelease"`
+}
 
 // ChangelogHandler serves the changelog JSON; it will attempt to pull from
 // GitHub releases when GITHUB_REPO is set (owner/repo). If that fails, it
@@ -160,121 +179,77 @@ func respondJSON(w http.ResponseWriter, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// fetchFromGitHub fetches releases from the GitHub API and maps them to ChangelogEntry
-func fetchFromGitHub(repo string) ([]ChangelogEntry, error) {
-	// Use Redis caching (with ETag) if available, otherwise in-memory TTL cache.
-	ctx := context.Background()
-	dataKey := fmt.Sprintf("changelog:data:%s", repo)
-	etagKey := fmt.Sprintf("changelog:etag:%s", repo)
+func changelogCacheKeys(repo string) (dataKey, etagKey, memKey string) {
+	dataKey = fmt.Sprintf("changelog:data:%s:%s", changelogCacheVersion, repo)
+	etagKey = fmt.Sprintf("changelog:etag:%s:%s", changelogCacheVersion, repo)
+	memKey = repo + "#" + changelogCacheVersion
+	return
+}
 
-	var cachedJSON string
-	var cachedETag string
+func cachedChangelogEntries(raw string) ([]ChangelogEntry, bool) {
+	if raw == "" {
+		return nil, false
+	}
+	var cached []ChangelogEntry
+	if err := json.Unmarshal([]byte(raw), &cached); err != nil {
+		return nil, false
+	}
+	return cached, true
+}
 
-	// Try Redis first
-	if srvutils.RedisClient != nil {
-		if v, err := srvutils.RedisClient.Get(ctx, dataKey).Result(); err == nil {
-			cachedJSON = v
+func githubReleasesListURL(repo string, page int) string {
+	if page < 1 {
+		page = 1
+	}
+	return fmt.Sprintf("%s/repos/%s/releases?per_page=%d&page=%d",
+		strings.TrimRight(githubAPIBase, "/"), repo, githubReleasesPerPage, page)
+}
+
+// githubNextPageURL returns the rel=next URL from a GitHub Link header when it
+// points at the same API host. Empty string means there is no further page.
+func githubNextPageURL(linkHeader, currentURL string) string {
+	next := ""
+	for _, part := range strings.Split(linkHeader, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
 		}
-		if e, err := srvutils.RedisClient.Get(ctx, etagKey).Result(); err == nil {
-			cachedETag = e
+		low := strings.ToLower(part)
+		if !strings.Contains(low, `rel="next"`) && !strings.Contains(low, `rel='next'`) {
+			continue
 		}
-	} else {
-		// In-memory fallback
-		memCache.mu.RLock()
-		if it, ok := memCache.m[repo]; ok && time.Now().Before(it.expiry) {
-			cachedJSON = it.data
-			cachedETag = it.etag
+		start := strings.Index(part, "<")
+		end := strings.Index(part, ">")
+		if start == -1 || end <= start {
+			continue
 		}
-		memCache.mu.RUnlock()
+		next = strings.TrimSpace(part[start+1 : end])
+		break
 	}
+	if next == "" {
+		return ""
+	}
+	parsed, err := url.Parse(next)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	cur, err := url.Parse(currentURL)
+	if err != nil || cur.Host == "" {
+		return ""
+	}
+	if !strings.EqualFold(parsed.Host, cur.Host) || !strings.EqualFold(parsed.Scheme, cur.Scheme) {
+		return ""
+	}
+	return next
+}
 
-	// repo expected as owner/repo
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases", repo)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	// Optionally use token for higher rate limits
-	token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
-	if token != "" {
-		req.Header.Set("Authorization", "token "+token)
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	if cachedETag != "" {
-		req.Header.Set("If-None-Match", cachedETag)
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		// On network error, if cached JSON exists, return cached
-		if cachedJSON != "" {
-			var cached []ChangelogEntry
-			_ = json.Unmarshal([]byte(cachedJSON), &cached)
-			return cached, nil
-		}
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotModified {
-		// 304 — use cached data
-		if cachedJSON != "" {
-			var cached []ChangelogEntry
-			if err := json.Unmarshal([]byte(cachedJSON), &cached); err == nil {
-				return cached, nil
-			}
-		}
-		return nil, fmt.Errorf("received 304 but no cached data")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, resp.Body)
-		// If we have cached payload, return it instead of failing
-		if cachedJSON != "" {
-			var cached []ChangelogEntry
-			_ = json.Unmarshal([]byte(cachedJSON), &cached)
-			return cached, nil
-		}
-		return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		if cachedJSON != "" {
-			var cached []ChangelogEntry
-			_ = json.Unmarshal([]byte(cachedJSON), &cached)
-			return cached, nil
-		}
-		return nil, err
-	}
-
-	// Minimal struct to decode releases
-	var releases []struct {
-		TagName     string `json:"tag_name"`
-		Name        string `json:"name"`
-		PublishedAt string `json:"published_at"`
-		Body        string `json:"body"`
-		Draft       bool   `json:"draft"`
-		Prerelease  bool   `json:"prerelease"`
-	}
-
-	if err := json.Unmarshal(body, &releases); err != nil {
-		if cachedJSON != "" {
-			var cached []ChangelogEntry
-			_ = json.Unmarshal([]byte(cachedJSON), &cached)
-			return cached, nil
-		}
-		return nil, err
-	}
-
+func changelogEntriesFromGitHubReleases(releases []githubRelease) []ChangelogEntry {
 	out := make([]ChangelogEntry, 0, len(releases))
 	for _, r := range releases {
 		if r.Draft {
 			continue
 		}
 		date := r.PublishedAt
-		// Trim time portion if present
 		if strings.Contains(date, "T") {
 			if t, err := time.Parse(time.RFC3339, date); err == nil {
 				date = t.Format("2006-01-02")
@@ -284,13 +259,8 @@ func fetchFromGitHub(repo string) ([]ChangelogEntry, error) {
 		if title == "" {
 			title = r.TagName
 		}
-		// Render the full markdown body from GitHub releases to HTML
 		notes := parseNotesFromBody(r.Body)
 		html := renderMarkdown(r.Body)
-		// Normalize out leading breadcrumb-like paragraphs that duplicate the
-		// release/version line (many release bodies include a short one-line
-		// breadcrumb before the actual heading). Remove that leading block
-		// when it contains the tag/version or the published date.
 		html = normalizeReleaseHTML(html, r.TagName, title, date)
 		out = append(out, ChangelogEntry{
 			Version:    r.TagName,
@@ -301,23 +271,154 @@ func fetchFromGitHub(repo string) ([]ChangelogEntry, error) {
 			Prerelease: r.Prerelease,
 		})
 	}
+	return out
+}
 
-	// Marshal final payload and cache it with ETag
-	finalB, _ := json.Marshal(out)
-	newETag := resp.Header.Get("ETag")
-	// Store in Redis if available
+func storeChangelogCache(ctx context.Context, dataKey, etagKey, memKey, payload, etag string) {
 	if srvutils.RedisClient != nil {
-		// cache for 10 minutes
-		_ = srvutils.RedisClient.Set(ctx, dataKey, string(finalB), 10*time.Minute).Err()
-		if newETag != "" {
-			_ = srvutils.RedisClient.Set(ctx, etagKey, newETag, 10*time.Minute).Err()
+		_ = srvutils.RedisClient.Set(ctx, dataKey, payload, 10*time.Minute).Err()
+		if etag != "" {
+			_ = srvutils.RedisClient.Set(ctx, etagKey, etag, 10*time.Minute).Err()
+		}
+		return
+	}
+	memCache.mu.Lock()
+	memCache.m[memKey] = memItem{data: payload, etag: etag, expiry: time.Now().Add(10 * time.Minute)}
+	memCache.mu.Unlock()
+}
+
+func newGitHubReleasesRequest(rawURL, etag string) (*http.Request, error) {
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	if token != "" {
+		req.Header.Set("Authorization", "token "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "Ordryn-Changelog")
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+	return req, nil
+}
+
+// fetchFromGitHub fetches every release page from the GitHub API (default page
+// size is 30; we request 100 and follow Link rel=next) and maps them to ChangelogEntry.
+func fetchFromGitHub(repo string) ([]ChangelogEntry, error) {
+	ctx := context.Background()
+	dataKey, etagKey, memKey := changelogCacheKeys(repo)
+
+	var cachedJSON string
+	var cachedETag string
+
+	if srvutils.RedisClient != nil {
+		if v, err := srvutils.RedisClient.Get(ctx, dataKey).Result(); err == nil {
+			cachedJSON = v
+		}
+		if e, err := srvutils.RedisClient.Get(ctx, etagKey).Result(); err == nil {
+			cachedETag = e
 		}
 	} else {
-		memCache.mu.Lock()
-		memCache.m[repo] = memItem{data: string(finalB), etag: newETag, expiry: time.Now().Add(10 * time.Minute)}
-		memCache.mu.Unlock()
+		memCache.mu.RLock()
+		if it, ok := memCache.m[memKey]; ok && time.Now().Before(it.expiry) {
+			cachedJSON = it.data
+			cachedETag = it.etag
+		}
+		memCache.mu.RUnlock()
 	}
 
+	client := &http.Client{Timeout: 15 * time.Second}
+	pageURL := githubReleasesListURL(repo, 1)
+	var all []githubRelease
+	var firstETag string
+
+	for page := 1; page <= githubReleasesMaxPages && pageURL != ""; page++ {
+		etag := ""
+		if page == 1 {
+			etag = cachedETag
+		}
+		req, err := newGitHubReleasesRequest(pageURL, etag)
+		if err != nil {
+			if cached, ok := cachedChangelogEntries(cachedJSON); ok {
+				return cached, nil
+			}
+			return nil, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			if cached, ok := cachedChangelogEntries(cachedJSON); ok {
+				return cached, nil
+			}
+			if len(all) > 0 {
+				break
+			}
+			return nil, err
+		}
+
+		if page == 1 && resp.StatusCode == http.StatusNotModified {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if cached, ok := cachedChangelogEntries(cachedJSON); ok {
+				return cached, nil
+			}
+			return nil, fmt.Errorf("received 304 but no cached data")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if cached, ok := cachedChangelogEntries(cachedJSON); ok {
+				return cached, nil
+			}
+			if len(all) > 0 {
+				break
+			}
+			return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		next := githubNextPageURL(resp.Header.Get("Link"), pageURL)
+		if firstETag == "" {
+			firstETag = resp.Header.Get("ETag")
+		}
+		resp.Body.Close()
+		if err != nil {
+			if cached, ok := cachedChangelogEntries(cachedJSON); ok {
+				return cached, nil
+			}
+			if len(all) > 0 {
+				break
+			}
+			return nil, err
+		}
+
+		var releases []githubRelease
+		if err := json.Unmarshal(body, &releases); err != nil {
+			if cached, ok := cachedChangelogEntries(cachedJSON); ok {
+				return cached, nil
+			}
+			if len(all) > 0 {
+				break
+			}
+			return nil, err
+		}
+
+		all = append(all, releases...)
+		if next == "" && len(releases) == githubReleasesPerPage {
+			next = githubReleasesListURL(repo, page+1)
+		}
+		pageURL = next
+		if len(releases) == 0 {
+			break
+		}
+	}
+
+	out := changelogEntriesFromGitHubReleases(all)
+	finalB, _ := json.Marshal(out)
+	storeChangelogCache(ctx, dataKey, etagKey, memKey, string(finalB), firstETag)
 	return out, nil
 }
 

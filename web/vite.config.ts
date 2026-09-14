@@ -27,7 +27,7 @@ export default defineConfig(({ command }) => ({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/changelog': {
+      '^/changelog$': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },

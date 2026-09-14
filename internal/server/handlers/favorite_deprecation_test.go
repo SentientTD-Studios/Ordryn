@@ -20,8 +20,8 @@ func TestSetFavoriteDeprecationNotice(t *testing.T) {
 	if !strings.Contains(warning, "299") {
 		t.Fatalf("Warning header %q missing warn-code 299", warning)
 	}
-	if !strings.Contains(warning, "v4") {
-		t.Fatalf("Warning header %q missing v4 removal notice", warning)
+	if !strings.Contains(warning, "v2") {
+		t.Fatalf("Warning header %q missing v2 removal notice", warning)
 	}
 	if !strings.Contains(warning, FavoriteDeprecationMessage) {
 		t.Fatalf("Warning header %q missing deprecation message", warning)
@@ -58,8 +58,8 @@ func TestCreateTaskFavoriteDeprecationHeaders(t *testing.T) {
 		if rec.Header().Get("Deprecation") != "true" {
 			t.Fatalf("Deprecation = %q, want true; status=%d body=%s", rec.Header().Get("Deprecation"), rec.Code, rec.Body.String())
 		}
-		if !strings.Contains(rec.Header().Get("Warning"), "v4") {
-			t.Fatalf("Warning = %q, want v4 notice", rec.Header().Get("Warning"))
+		if !strings.Contains(rec.Header().Get("Warning"), "v2") {
+			t.Fatalf("Warning = %q, want v2 notice", rec.Header().Get("Warning"))
 		}
 	})
 	t.Run("omitted favorite does not deprecate", func(t *testing.T) {

@@ -48,7 +48,7 @@ func TestOpenAPISpecIncludesSavedViews(t *testing.T) {
 		"/api/v1/tasks/{id}/github-issue",
 		"/api/v1/webhooks/github",
 		"deprecated: true",
-		"will be removed in API v4",
+		"will be removed in API v2",
 	}
 	for _, value := range required {
 		if !strings.Contains(documentation, value) {

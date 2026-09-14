@@ -3,8 +3,8 @@ package handlers
 import "net/http"
 
 // FavoriteDeprecationMessage is returned in Warning headers and JSON when a
-// client uses the deprecated favorite field. Favoriting remains accepted until API v4.
-const FavoriteDeprecationMessage = "Task favoriting is deprecated and will be removed in API v4."
+// client uses the deprecated favorite field. Favoriting remains accepted until API v2.
+const FavoriteDeprecationMessage = "Task favoriting is deprecated and will be removed in API v2."
 
 const favoriteDeprecationWarning = `299 - "` + FavoriteDeprecationMessage + `"`
 

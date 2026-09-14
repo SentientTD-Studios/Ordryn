@@ -28,7 +28,7 @@ type CreateTaskInput struct {
 	ParentID       *int
 	Priority       int
 	Completed      bool
-	Favorite       bool // Deprecated: will be removed in API v4.
+	Favorite       bool // Deprecated: will be removed in API v2.
 	TagIDs         []int
 	StatusID       *int
 	EstimatePoints *int
@@ -47,7 +47,7 @@ type UpdateTaskInput struct {
 	ParentID  **int
 	Priority  *int
 	Completed *bool
-	Favorite  *bool // Deprecated: will be removed in API v4.
+	Favorite  *bool // Deprecated: will be removed in API v2.
 	TagIDs    *[]int
 	// StatusID: nil = leave; non-nil with *nil or 0 = reject on kanban; non-nil with id = set.
 	StatusID **int
@@ -877,7 +877,7 @@ func ToggleTaskCompleted(ctx context.Context, userID, taskID int) (bool, error) 
 }
 
 // SetTaskFavorite sets is_favorite for a writable task.
-// Deprecated: task favoriting will be removed in API v4.
+// Deprecated: task favoriting will be removed in API v2.
 func SetTaskFavorite(ctx context.Context, userID, taskID int, favorite bool) error {
 	pool, err := storage.OpenDatabase()
 	if err != nil {
@@ -917,7 +917,7 @@ func SetTaskFavorite(ctx context.Context, userID, taskID int, favorite bool) err
 }
 
 // ToggleTaskFavorite flips is_favorite for a writable task.
-// Deprecated: task favoriting will be removed in API v4.
+// Deprecated: task favoriting will be removed in API v2.
 func ToggleTaskFavorite(ctx context.Context, userID, taskID int) (bool, error) {
 	pool, err := storage.OpenDatabase()
 	if err != nil {
