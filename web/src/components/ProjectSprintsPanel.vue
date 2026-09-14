@@ -45,7 +45,7 @@
               <label class="form-label small mb-0" :for="`auto-sprint-lock-${project.id}`">Lock days before end</label>
               <input
                 :id="`auto-sprint-lock-${project.id}`"
-                v-model="autoLockDays"
+                v-model.number="autoLockDays"
                 type="number"
                 class="form-control form-control-sm"
                 min="0"
@@ -331,6 +331,7 @@ import { api } from '@/api/client'
 import type { Project, ProjectSprint } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
+import { formatAutoSprintPreview, parseOptionalNumberInput } from '@/utils/autoSprintForm'
 
 const props = defineProps<{
   project: Project
@@ -370,42 +371,21 @@ const editBacklogName = ref('')
 const editBacklogDescription = ref('')
 const savingBacklog = ref(false)
 const autoCreateEnabled = ref(false)
-const autoLengthDays = ref<number | ''>('')
-const autoLockDays = ref<string>('')
+const autoLengthDays = ref<number | string>('')
+const autoLockDays = ref<number | string>('')
 const savingAuto = ref(false)
 
 function syncAutoSprintForm() {
   autoCreateEnabled.value = !!props.project.auto_create_next_sprint
   autoLengthDays.value = props.project.auto_sprint_length_days ?? ''
-  autoLockDays.value =
-    props.project.auto_sprint_lock_days_before == null ? '' : String(props.project.auto_sprint_lock_days_before)
+  autoLockDays.value = props.project.auto_sprint_lock_days_before ?? ''
 }
 
-function addUTCDays(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
-}
-
-const autoSprintPreview = computed(() => {
-  const length = typeof autoLengthDays.value === 'number' ? autoLengthDays.value : Number(autoLengthDays.value)
-  if (!Number.isInteger(length) || length < 1) return ''
-  const lockRaw = autoLockDays.value.trim()
-  const lockDays = lockRaw === '' ? null : Number(lockRaw)
-  if (lockDays != null && (!Number.isInteger(lockDays) || lockDays < 0 || lockDays >= length)) return ''
-  const start = addUTCDays('2026-08-31', 1)
-  const end = addUTCDays(start, length - 1)
-  if (lockDays == null) {
-    return `Example: a sprint ending 2026-08-31 is followed by ${start} – ${end} with no lock date.`
-  }
-  const lock = addUTCDays(end, -lockDays)
-  return `Example: a sprint ending 2026-08-31 is followed by ${start} – ${end}, locking on ${lock}.`
-})
+const autoSprintPreview = computed(() => formatAutoSprintPreview(autoLengthDays.value, autoLockDays.value))
 
 async function saveAutoSprint() {
-  const lengthRaw = autoLengthDays.value === '' ? null : Number(autoLengthDays.value)
-  const lockRaw = autoLockDays.value.trim()
-  const lockDays = lockRaw === '' ? null : Number(lockRaw)
+  const lengthRaw = parseOptionalNumberInput(autoLengthDays.value)
+  const lockDays = parseOptionalNumberInput(autoLockDays.value)
   if (autoCreateEnabled.value) {
     if (lengthRaw == null || !Number.isInteger(lengthRaw) || lengthRaw < 1 || lengthRaw > 365) {
       toast.push('Sprint length is required when auto-create is enabled (1–365 days)', 'error')
