@@ -281,7 +281,7 @@ Content-Type: application/json
 
                     <div class="alert alert-warning" role="alert">
                         <strong>Deprecation:</strong> Task favoriting (<code>favorite</code>) is deprecated and
-                        will be removed in API v4. Create, update, reorder (<code>favorite: true</code>), and
+                        will be removed in API v2. Create, update, reorder (<code>favorite: true</code>), and
                         CSV import requests that use <code>favorite</code> still succeed. Those responses include
                         <code>Deprecation: true</code>, a RFC 7234 <code>Warning</code> header, and
                         <code>deprecation_notice</code> in the JSON body.
@@ -297,7 +297,7 @@ Content-Type: application/json
   "project_id": 3,
   "project": "Personal",
   "priority": 2,
-  "favorite": false,             // deprecated; will be removed in API v4
+  "favorite": false,             // deprecated; will be removed in API v2
   "position": 5,
   "tags": [
   { "id": 1, "name": "errands", "color": "#6c757d", "project_id": 3 }
@@ -309,7 +309,7 @@ Content-Type: application/json
                         <code>priority</code>: 0 = None, 1 = Low, 2 = Medium, 3 = High.
                         <code>due_date</code> is empty string when unset.
                         <code>project_id</code> is omitted when the task has no project.
-                        <code>favorite</code> is deprecated and will be removed in API v4.
+                        <code>favorite</code> is deprecated and will be removed in API v2.
                         Responses that set or change it also include <code>deprecation_notice</code>.
                     </p>
 
@@ -352,7 +352,7 @@ Content-Type: application/json
   "project_id": 3,               // optional; omit or use 0 for no project
   "priority": 1,                 // optional, 0–3 (default 0)
   "completed": false,            // optional (default false)
-  "favorite": false,             // deprecated; optional (default false); removed in API v4
+  "favorite": false,             // deprecated; optional (default false); removed in API v2
   "tag_ids": [1, 2]              // optional
 }</code></pre>
                     <p>Returns <code>201 Created</code> with the new task object. Including <code>favorite</code> adds deprecation headers and <code>deprecation_notice</code>.</p>
@@ -372,7 +372,7 @@ Content-Type: application/json
   "project_id": null,            // null or 0 clears project; number sets project
   "priority": 3,
   "completed": true,
-  "favorite": true,              // deprecated; will be removed in API v4
+  "favorite": true,              // deprecated; will be removed in API v2
   "tag_ids": [1]                 // replaces all tags on the task
 }</code></pre>
                     <p>Returns the updated task object. Including <code>favorite</code> adds deprecation headers and <code>deprecation_notice</code>.</p>
@@ -417,7 +417,7 @@ Content-Type: application/json
                     <p><span class="badge bg-primary">POST</span> <code>/api/v1/tasks/reorder</code></p>
                     <p>
                         Updates manual sort order (<code>position</code>) within one favorite or non-favorite group.
-                        Favorite grouping is deprecated and will be removed in API v4; the <code>favorite</code>
+                        Favorite grouping is deprecated and will be removed in API v2; the <code>favorite</code>
                         field is still required. Reordering the starred group (<code>favorite: true</code>)
                         returns deprecation headers and <code>deprecation_notice</code>.
                         Tasks cannot move across favorite groups.
@@ -426,7 +426,7 @@ Content-Type: application/json
                     </p>
                     <pre class="api-docs-pre"><code>{
   "task_ids": [12, 5, 9],   // required: new order for this page window
-  "favorite": false,        // required: which group is being reordered (deprecated; removed in API v4)
+  "favorite": false,        // required: which group is being reordered (deprecated; removed in API v2)
   "page": 1,                // optional; default 1
   "per_page": 50,           // optional; default 50, max 100
   "project": "3"            // optional: project id, or "none"/"0" for no project

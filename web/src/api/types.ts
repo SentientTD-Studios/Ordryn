@@ -236,7 +236,7 @@ export type Task = {
   project_id?: number | null
   project?: string
   priority: number
-  /** @deprecated Task favoriting will be removed in API v4. */
+  /** @deprecated Task favoriting will be removed in API v2. */
   favorite: boolean
   position: number
   parent_id?: number | null
