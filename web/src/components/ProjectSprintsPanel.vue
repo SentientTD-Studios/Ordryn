@@ -8,6 +8,63 @@
       sprints; tasks with no sprint stay in the {{ backlogName.toLowerCase() }}.
     </p>
 
+    <div v-if="isOwner" class="card mb-3 border">
+      <div class="card-body p-2">
+        <h5 class="h6 mb-2">Automatic next sprint</h5>
+        <p class="small text-muted mb-2">
+          When the current dated sprint ends, create the next one only if that sprint still has tasks.
+          Empty sprints are not followed automatically.
+        </p>
+        <form class="d-flex flex-column gap-2" @submit.prevent="saveAutoSprint">
+          <div class="form-check">
+            <input
+              :id="`auto-create-sprint-${project.id}`"
+              v-model="autoCreateEnabled"
+              type="checkbox"
+              class="form-check-input"
+            />
+            <label class="form-check-label small" :for="`auto-create-sprint-${project.id}`">
+              Auto-create next sprint when the current sprint ends
+            </label>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <div>
+              <label class="form-label small mb-0" :for="`auto-sprint-length-${project.id}`">Sprint length (days)</label>
+              <input
+                :id="`auto-sprint-length-${project.id}`"
+                v-model.number="autoLengthDays"
+                type="number"
+                class="form-control form-control-sm"
+                min="1"
+                max="365"
+                placeholder="30"
+                :required="autoCreateEnabled"
+              />
+            </div>
+            <div>
+              <label class="form-label small mb-0" :for="`auto-sprint-lock-${project.id}`">Lock days before end</label>
+              <input
+                :id="`auto-sprint-lock-${project.id}`"
+                v-model="autoLockDays"
+                type="number"
+                class="form-control form-control-sm"
+                min="0"
+                :max="typeof autoLengthDays === 'number' && autoLengthDays > 0 ? autoLengthDays - 1 : 364"
+                placeholder="optional"
+              />
+            </div>
+          </div>
+          <small class="form-hint">
+            Length is inclusive. Lock date is optional; leave blank to keep new sprints open.
+          </small>
+          <small v-if="autoSprintPreview" class="text-muted">{{ autoSprintPreview }}</small>
+          <div>
+            <button class="btn btn-sm btn-primary" type="submit" :disabled="savingAuto">Save auto-sprint settings</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Backlog system sprint -->
     <div class="card mb-3 border bg-light-subtle">
       <div class="card-body p-2">
@@ -312,6 +369,78 @@ const editingBacklog = ref(false)
 const editBacklogName = ref('')
 const editBacklogDescription = ref('')
 const savingBacklog = ref(false)
+const autoCreateEnabled = ref(false)
+const autoLengthDays = ref<number | ''>('')
+const autoLockDays = ref<string>('')
+const savingAuto = ref(false)
+
+function syncAutoSprintForm() {
+  autoCreateEnabled.value = !!props.project.auto_create_next_sprint
+  autoLengthDays.value = props.project.auto_sprint_length_days ?? ''
+  autoLockDays.value =
+    props.project.auto_sprint_lock_days_before == null ? '' : String(props.project.auto_sprint_lock_days_before)
+}
+
+function addUTCDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+const autoSprintPreview = computed(() => {
+  const length = typeof autoLengthDays.value === 'number' ? autoLengthDays.value : Number(autoLengthDays.value)
+  if (!Number.isInteger(length) || length < 1) return ''
+  const lockRaw = autoLockDays.value.trim()
+  const lockDays = lockRaw === '' ? null : Number(lockRaw)
+  if (lockDays != null && (!Number.isInteger(lockDays) || lockDays < 0 || lockDays >= length)) return ''
+  const start = addUTCDays('2026-08-31', 1)
+  const end = addUTCDays(start, length - 1)
+  if (lockDays == null) {
+    return `Example: a sprint ending 2026-08-31 is followed by ${start} – ${end} with no lock date.`
+  }
+  const lock = addUTCDays(end, -lockDays)
+  return `Example: a sprint ending 2026-08-31 is followed by ${start} – ${end}, locking on ${lock}.`
+})
+
+async function saveAutoSprint() {
+  const lengthRaw = autoLengthDays.value === '' ? null : Number(autoLengthDays.value)
+  const lockRaw = autoLockDays.value.trim()
+  const lockDays = lockRaw === '' ? null : Number(lockRaw)
+  if (autoCreateEnabled.value) {
+    if (lengthRaw == null || !Number.isInteger(lengthRaw) || lengthRaw < 1 || lengthRaw > 365) {
+      toast.push('Sprint length is required when auto-create is enabled (1–365 days)', 'error')
+      return
+    }
+    if (lockDays != null && (!Number.isInteger(lockDays) || lockDays < 0 || lockDays >= lengthRaw)) {
+      toast.push('Lock days before end must be less than sprint length', 'error')
+      return
+    }
+  } else if (lengthRaw != null && (!Number.isInteger(lengthRaw) || lengthRaw < 1 || lengthRaw > 365)) {
+    toast.push('Sprint length must be between 1 and 365 days', 'error')
+    return
+  } else if (lengthRaw != null && lockDays != null && (!Number.isInteger(lockDays) || lockDays < 0 || lockDays >= lengthRaw)) {
+    toast.push('Lock days before end must be less than sprint length', 'error')
+    return
+  } else if (lockDays != null && !Number.isInteger(lockDays)) {
+    toast.push('Lock days before end must be a whole number', 'error')
+    return
+  }
+  savingAuto.value = true
+  try {
+    await api.updateProject(props.project.id, {
+      auto_create_next_sprint: autoCreateEnabled.value,
+      auto_sprint_length_days: lengthRaw,
+      auto_sprint_lock_days_before: lockDays,
+    })
+    toast.push('Auto-sprint settings saved', 'success')
+    await loadSprints()
+    emit('changed')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not save auto-sprint settings', 'error')
+  } finally {
+    savingAuto.value = false
+  }
+}
 
 function beginBacklogEdit() {
   editBacklogName.value = backlogName.value
@@ -497,7 +626,20 @@ watch(
   () => [props.project.id, props.project.workflow_mode] as const,
   () => {
     void loadSprints()
+    syncAutoSprintForm()
   },
   { immediate: true },
+)
+
+watch(
+  () =>
+    [
+      props.project.auto_create_next_sprint,
+      props.project.auto_sprint_length_days,
+      props.project.auto_sprint_lock_days_before,
+    ] as const,
+  () => {
+    syncAutoSprintForm()
+  },
 )
 </script>

@@ -55,6 +55,9 @@ export type Project = {
   archived?: boolean
   backlog_name?: string
   backlog_description?: string
+  auto_create_next_sprint?: boolean
+  auto_sprint_length_days?: number | null
+  auto_sprint_lock_days_before?: number | null
   role?: 'owner' | 'editor' | 'viewer'
   owner_email?: string
   owner_user_name?: string

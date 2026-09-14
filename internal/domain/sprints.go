@@ -108,6 +108,10 @@ func CreateProjectSprintForUser(ctx context.Context, userID, projectID int, in C
 	if _, err := requireKanbanOwner(projectID, userID); err != nil {
 		return nil, err
 	}
+	return createProjectSprintRecord(projectID, userID, in, nil)
+}
+
+func createProjectSprintRecord(projectID, actorUserID int, in CreateProjectSprintInput, extraMeta map[string]interface{}) (*storage.ProjectSprint, error) {
 	name, err := normalizeSprintName(in.Name)
 	if err != nil {
 		return nil, err
@@ -155,10 +159,14 @@ func CreateProjectSprintForUser(ctx context.Context, userID, projectID int, in C
 	if err != nil {
 		return nil, sprintConflictError(err)
 	}
-	_ = storage.LogProjectEvent(projectID, userID, "sprint_added", map[string]interface{}{
+	meta := map[string]interface{}{
 		"sprint_id": s.ID, "name": s.Name,
-	})
-	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	}
+	for k, v := range extraMeta {
+		meta[k] = v
+	}
+	_ = storage.LogProjectEvent(projectID, actorUserID, "sprint_added", meta)
+	live.AfterProjectChange(actorUserID, projectID, live.TypeProjectUpdated)
 	return s, nil
 }
 

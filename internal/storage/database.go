@@ -221,13 +221,16 @@ func CreateProjectsTable() error {
 		"archived BOOLEAN NOT NULL DEFAULT false",
 		"backlog_name TEXT NOT NULL DEFAULT 'Backlog'",
 		"backlog_description TEXT NOT NULL DEFAULT ''",
+		"auto_create_next_sprint BOOLEAN NOT NULL DEFAULT false",
+		"auto_sprint_length_days INTEGER",
+		"auto_sprint_lock_days_before INTEGER",
 		"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 		"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 	}
 	return CreateTable("projects", columns)
 }
 
-// MigrateProjectsAddBacklogDescription adds the backlog_description column defaulting to ''.
+// MigrateProjectsAddBacklogDescription adds the backlog_description column defaulting to ”.
 func MigrateProjectsAddBacklogDescription() error {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -314,6 +317,27 @@ func MigrateProjectsAddBacklogName() error {
 		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS backlog_name TEXT NOT NULL DEFAULT 'Backlog'`)
 	if err != nil {
 		return fmt.Errorf("failed to add projects.backlog_name: %v", err)
+	}
+	return nil
+}
+
+// MigrateProjectsAddAutoSprintSettings adds auto-create next sprint options.
+func MigrateProjectsAddAutoSprintSettings() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	stmts := []string{
+		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_create_next_sprint BOOLEAN NOT NULL DEFAULT false`,
+		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_sprint_length_days INTEGER`,
+		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_sprint_lock_days_before INTEGER`,
+	}
+	for _, s := range stmts {
+		if _, err := pool.Exec(context.Background(), s); err != nil {
+			return fmt.Errorf("failed to add project auto-sprint settings: %v", err)
+		}
 	}
 	return nil
 }

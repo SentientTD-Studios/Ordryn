@@ -917,7 +917,7 @@ func TestDatelessSprintsAndDescriptions(t *testing.T) {
 
 	// 1. Backlog description can be set on project
 	backlogDesc := "Items waiting for triage"
-	updatedProj, err := UpdateProject(ctx, 1, proj.ID, nil, nil, nil, nil, &backlogDesc)
+	updatedProj, err := UpdateProject(ctx, 1, proj.ID, nil, nil, nil, nil, &backlogDesc, nil)
 	if err != nil {
 		t.Fatalf("set backlog description: %v", err)
 	}
@@ -1085,3 +1085,282 @@ func TestDatelessSprintsAndDescriptions(t *testing.T) {
 	}
 }
 
+func TestNextAutoSprintWindowExample(t *testing.T) {
+	prevEnd, err := time.Parse("2006-01-02", "2026-08-31")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockDays := 7
+	start, end, lock, err := NextAutoSprintWindow(prevEnd, 30, &lockDays)
+	if err != nil {
+		t.Fatalf("window: %v", err)
+	}
+	if storage.FormatSprintDate(start) != "2026-09-01" {
+		t.Fatalf("start=%s want 2026-09-01", storage.FormatSprintDate(start))
+	}
+	if storage.FormatSprintDate(end) != "2026-09-30" {
+		t.Fatalf("end=%s want 2026-09-30", storage.FormatSprintDate(end))
+	}
+	if lock == nil || storage.FormatSprintDate(*lock) != "2026-09-23" {
+		t.Fatalf("lock=%v want 2026-09-23", lock)
+	}
+
+	start, end, lock, err = NextAutoSprintWindow(prevEnd, 30, nil)
+	if err != nil {
+		t.Fatalf("window without lock: %v", err)
+	}
+	if storage.FormatSprintDate(start) != "2026-09-01" || storage.FormatSprintDate(end) != "2026-09-30" {
+		t.Fatalf("unlocked window %s – %s", storage.FormatSprintDate(start), storage.FormatSprintDate(end))
+	}
+	if lock != nil {
+		t.Fatalf("lock=%v want nil", lock)
+	}
+}
+
+func TestNextAutoSprintName(t *testing.T) {
+	if got := NextAutoSprintName("Sprint 1", nil); got != "Sprint 2" {
+		t.Fatalf("got %q", got)
+	}
+	if got := NextAutoSprintName("Sprint 1", []string{"Sprint 2"}); got != "Sprint 3" {
+		t.Fatalf("collision got %q", got)
+	}
+	if got := NextAutoSprintName("Icebox", nil); got != "Icebox 2" {
+		t.Fatalf("dateless-style got %q", got)
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func intValPtr(n int) **int {
+	p := &n
+	return &p
+}
+
+func TestAutoCreateNextSprintWhenEndedWithItems(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Auto Sprint Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+	sprint, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:      "Sprint 1",
+		StartDate: "2099-08-01",
+		EndDate:   "2099-08-31",
+	})
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+	pid := proj.ID
+	sid := sprint.ID
+	if _, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Carry work", ProjectID: &pid, SprintID: &sid}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	updated, err := UpdateProject(ctx, 1, proj.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled:        boolPtr(true),
+		LengthDays:     intValPtr(30),
+		LockDaysBefore: intValPtr(7),
+	})
+	if err != nil {
+		t.Fatalf("enable auto: %v", err)
+	}
+	if !updated.AutoCreateNextSprint || updated.AutoSprintLengthDays == nil || *updated.AutoSprintLengthDays != 30 {
+		t.Fatalf("settings=%+v", updated)
+	}
+	if updated.AutoSprintLockDaysBefore == nil || *updated.AutoSprintLockDaysBefore != 7 {
+		t.Fatalf("lock days=%v", updated.AutoSprintLockDaysBefore)
+	}
+
+	now, _ := time.Parse("2006-01-02", "2099-09-01")
+	created, err := AutoCreateDueSprintsForProject(*updated, now)
+	if err != nil {
+		t.Fatalf("auto create: %v", err)
+	}
+	if created == nil {
+		t.Fatal("expected next sprint")
+	}
+	if created.Name != "Sprint 2" {
+		t.Fatalf("name=%q", created.Name)
+	}
+	if storage.FormatSprintDatePtr(created.StartDate) != "2099-09-01" {
+		t.Fatalf("start=%q", storage.FormatSprintDatePtr(created.StartDate))
+	}
+	if storage.FormatSprintDatePtr(created.EndDate) != "2099-09-30" {
+		t.Fatalf("end=%q", storage.FormatSprintDatePtr(created.EndDate))
+	}
+	if created.LockDate == nil || storage.FormatSprintDate(*created.LockDate) != "2099-09-23" {
+		t.Fatalf("lock=%v", created.LockDate)
+	}
+
+	again, err := AutoCreateDueSprintsForProject(*updated, now)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if again != nil {
+		t.Fatalf("expected no second sprint, got %+v", again)
+	}
+
+	late, _ := time.Parse("2006-01-02", "2099-10-15")
+	reloaded, err := storage.GetProjectByID(proj.ID, 1)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	skipped, err := AutoCreateDueSprintsForProject(*reloaded, late)
+	if err != nil {
+		t.Fatalf("late pass: %v", err)
+	}
+	if skipped != nil {
+		t.Fatalf("expected skip after empty follow-up sprint, got %+v", skipped)
+	}
+}
+
+func TestAutoCreateNextSprintSkipsEmptyEndedSprint(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Empty Auto Sprint Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+	if _, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:      "Sprint 1",
+		StartDate: "2099-08-01",
+		EndDate:   "2099-08-31",
+	}); err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+	updated, err := UpdateProject(ctx, 1, proj.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled:    boolPtr(true),
+		LengthDays: intValPtr(30),
+	})
+	if err != nil {
+		t.Fatalf("enable auto: %v", err)
+	}
+	now, _ := time.Parse("2006-01-02", "2099-09-01")
+	created, err := AutoCreateDueSprintsForProject(*updated, now)
+	if err != nil {
+		t.Fatalf("auto create: %v", err)
+	}
+	if created != nil {
+		t.Fatalf("empty sprint should not auto-create, got %+v", created)
+	}
+	listed, err := ListProjectSprintsForUser(ctx, 1, proj.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("sprints=%d want 1", len(listed))
+	}
+}
+
+func TestAutoCreateNextSprintSettingsValidation(t *testing.T) {
+	ctx := context.Background()
+	classic, err := CreateProject(ctx, 1, "Classic Auto Sprint", "")
+	if err != nil {
+		t.Fatalf("create classic: %v", err)
+	}
+	_, err = UpdateProject(ctx, 1, classic.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled:    boolPtr(true),
+		LengthDays: intValPtr(30),
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("classic enable err=%v", err)
+	}
+
+	kanban, err := CreateProject(ctx, 1, "Kanban Auto Sprint Settings", "")
+	if err != nil {
+		t.Fatalf("create kanban: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, kanban.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+	_, err = UpdateProject(ctx, 1, kanban.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled: boolPtr(true),
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("enable without length err=%v", err)
+	}
+
+	_, err = UpdateProject(ctx, 1, kanban.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled:        boolPtr(true),
+		LengthDays:     intValPtr(30),
+		LockDaysBefore: intValPtr(30),
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("lock >= length err=%v", err)
+	}
+
+	if err := storage.UpsertProjectMember(kanban.ID, 2, storage.RoleEditor); err != nil {
+		t.Fatalf("add editor: %v", err)
+	}
+	_, err = UpdateProject(ctx, 2, kanban.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled:    boolPtr(true),
+		LengthDays: intValPtr(14),
+	})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("editor enable err=%v", err)
+	}
+
+	saved, err := UpdateProject(ctx, 1, kanban.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled:    boolPtr(true),
+		LengthDays: intValPtr(14),
+	})
+	if err != nil {
+		t.Fatalf("enable 14 day: %v", err)
+	}
+	if !saved.AutoCreateNextSprint || saved.AutoSprintLengthDays == nil || *saved.AutoSprintLengthDays != 14 {
+		t.Fatalf("saved=%+v", saved)
+	}
+
+	now, _ := time.Parse("2006-01-02", "2026-09-01")
+	created, err := AutoCreateDueSprintsForProject(*saved, now)
+	if err != nil {
+		t.Fatalf("disabled-by-default create: %v", err)
+	}
+	if created != nil {
+		t.Fatalf("no dated sprint should be a no-op, got %+v", created)
+	}
+}
+
+func TestAutoCreateNextSprintSkipsElapsedWindow(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Elapsed Auto Sprint Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+	sprint, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:      "Sprint 1",
+		StartDate: "2099-01-01",
+		EndDate:   "2099-01-31",
+	})
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+	pid := proj.ID
+	sid := sprint.ID
+	if _, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Old work", ProjectID: &pid, SprintID: &sid}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	updated, err := UpdateProject(ctx, 1, proj.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{
+		Enabled:    boolPtr(true),
+		LengthDays: intValPtr(30),
+	})
+	if err != nil {
+		t.Fatalf("enable auto: %v", err)
+	}
+	now, _ := time.Parse("2006-01-02", "2099-04-01")
+	created, err := AutoCreateDueSprintsForProject(*updated, now)
+	if err != nil {
+		t.Fatalf("auto create: %v", err)
+	}
+	if created != nil {
+		t.Fatalf("elapsed next window should not be created, got %+v", created)
+	}
+}

@@ -420,6 +420,12 @@ func formatProjectEventLabel(eventType string, metadata map[string]interface{}) 
 		}
 		return "Status deleted"
 	case "sprint_added":
+		if metadataBool(metadata, "auto") {
+			if name != "" {
+				return "Sprint added automatically · " + name
+			}
+			return "Sprint added automatically"
+		}
 		if name != "" {
 			return "Sprint added · " + name
 		}
@@ -446,6 +452,8 @@ func formatProjectEventLabel(eventType string, metadata map[string]interface{}) 
 		return "Project renamed"
 	case "description_updated":
 		return "Description updated"
+	case "auto_sprint_settings_updated":
+		return "Auto-sprint settings updated"
 	case "github_repo_linked":
 		if full := metadataString(metadata, "full_name"); full != "" {
 			return "GitHub repo linked · " + full
@@ -475,6 +483,18 @@ func metadataString(metadata map[string]interface{}, key string) string {
 		return ""
 	}
 	return s
+}
+
+func metadataBool(metadata map[string]interface{}, key string) bool {
+	if metadata == nil {
+		return false
+	}
+	v, ok := metadata[key]
+	if !ok || v == nil {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
 }
 
 // APIV1ProjectInvitesRouter handles /api/v1/project-invites and accept/decline.

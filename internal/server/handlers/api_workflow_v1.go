@@ -114,17 +114,20 @@ func projectToAPIJSON(p *storage.ProjectWithAccess) apiProjectJSON {
 		backlogName = "Backlog"
 	}
 	return apiProjectJSON{
-		ID:                 p.ID,
-		Name:               p.Name,
-		Description:        p.Description,
-		WorkflowMode:       mode,
-		Archived:           p.Archived,
-		BacklogName:        backlogName,
-		BacklogDescription: p.BacklogDescription,
-		Role:               p.Role,
-		OwnerEmail:         p.OwnerEmail,
-		OwnerUserName:      p.OwnerUserName,
-		OwnerUserID:        p.OwnerUserID,
+		ID:                       p.ID,
+		Name:                     p.Name,
+		Description:              p.Description,
+		WorkflowMode:             mode,
+		Archived:                 p.Archived,
+		BacklogName:              backlogName,
+		BacklogDescription:       p.BacklogDescription,
+		AutoCreateNextSprint:     p.AutoCreateNextSprint,
+		AutoSprintLengthDays:     p.AutoSprintLengthDays,
+		AutoSprintLockDaysBefore: p.AutoSprintLockDaysBefore,
+		Role:                     p.Role,
+		OwnerEmail:               p.OwnerEmail,
+		OwnerUserName:            p.OwnerUserName,
+		OwnerUserID:              p.OwnerUserID,
 	}
 }
 
@@ -138,15 +141,18 @@ func projectStorageToAPIJSON(p *storage.Project, role string) apiProjectJSON {
 		backlogName = "Backlog"
 	}
 	return apiProjectJSON{
-		ID:                 p.ID,
-		Name:               p.Name,
-		Description:        p.Description,
-		WorkflowMode:       mode,
-		Archived:           p.Archived,
-		BacklogName:        backlogName,
-		BacklogDescription: p.BacklogDescription,
-		Role:               role,
-		OwnerUserID:        p.UserID,
+		ID:                       p.ID,
+		Name:                     p.Name,
+		Description:              p.Description,
+		WorkflowMode:             mode,
+		Archived:                 p.Archived,
+		BacklogName:              backlogName,
+		BacklogDescription:       p.BacklogDescription,
+		AutoCreateNextSprint:     p.AutoCreateNextSprint,
+		AutoSprintLengthDays:     p.AutoSprintLengthDays,
+		AutoSprintLockDaysBefore: p.AutoSprintLockDaysBefore,
+		Role:                     role,
+		OwnerUserID:              p.UserID,
 	}
 }
 
@@ -593,7 +599,7 @@ func handleProjectBacklogSprint(w http.ResponseWriter, r *http.Request, userID, 
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Sprints require a kanban project.")
 			return
 		}
-		updatedProj, err := domain.UpdateProject(r.Context(), userID, projectID, nil, nil, nil, req.Name, req.Description)
+		updatedProj, err := domain.UpdateProject(r.Context(), userID, projectID, nil, nil, nil, req.Name, req.Description, nil)
 		if err != nil {
 			writeWorkflowDomainError(w, err)
 			return
