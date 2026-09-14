@@ -1364,3 +1364,61 @@ func TestAutoCreateNextSprintSkipsElapsedWindow(t *testing.T) {
 		t.Fatalf("elapsed next window should not be created, got %+v", created)
 	}
 }
+
+func TestBulkAssignSprintToMultipleTasks(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Bulk Sprint Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+	sprint, err := CreateProjectSprintForUser(ctx, 1, proj.ID, CreateProjectSprintInput{
+		Name:      "Bulk Sprint",
+		StartDate: "2026-08-24",
+		EndDate:   "2026-09-06",
+	})
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+
+	pid := proj.ID
+	firstID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Bulk one", ProjectID: &pid})
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	secondID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Bulk two", ProjectID: &pid})
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+
+	sid := sprint.ID
+	for _, id := range []int{firstID, secondID} {
+		if _, err := UpdateTask(ctx, 1, id, UpdateTaskInput{SprintID: ptrToIntPtr(sid)}); err != nil {
+			t.Fatalf("move task %d: %v", id, err)
+		}
+	}
+
+	fields, err := storage.GetWorkflowFieldsForTasks([]int{firstID, secondID})
+	if err != nil {
+		t.Fatalf("workflow fields: %v", err)
+	}
+	if fields[firstID].SprintID != sid || fields[secondID].SprintID != sid {
+		t.Fatalf("sprint ids=%d,%d want %d", fields[firstID].SprintID, fields[secondID].SprintID, sid)
+	}
+
+	clear := (*int)(nil)
+	for _, id := range []int{firstID, secondID} {
+		if _, err := UpdateTask(ctx, 1, id, UpdateTaskInput{SprintID: &clear}); err != nil {
+			t.Fatalf("clear task %d: %v", id, err)
+		}
+	}
+	fields, err = storage.GetWorkflowFieldsForTasks([]int{firstID, secondID})
+	if err != nil {
+		t.Fatalf("workflow fields after clear: %v", err)
+	}
+	if fields[firstID].SprintID != 0 || fields[secondID].SprintID != 0 {
+		t.Fatalf("expected backlog, got %d,%d", fields[firstID].SprintID, fields[secondID].SprintID)
+	}
+}

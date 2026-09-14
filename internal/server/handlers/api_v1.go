@@ -225,6 +225,7 @@ type apiBulkRequest struct {
 	Priority  *int    `json:"priority"`
 	DueDate   *string `json:"due_date"`
 	StatusID  *int    `json:"status_id"`
+	SprintID  *int    `json:"sprint_id"`
 }
 
 type apiUndoRequest struct {
@@ -831,6 +832,8 @@ func apiV1BulkTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err = bulkSetStatus(ctx, db, req.TaskIDs, userID, *req.StatusID)
+	case "set_sprint":
+		err = bulkSetSprint(ctx, db, req.TaskIDs, userID, req.SprintID)
 	case "delete":
 		undoToken, err = deleteTasksForAPI(ctx, db, r, w, req.TaskIDs, userID)
 	default:

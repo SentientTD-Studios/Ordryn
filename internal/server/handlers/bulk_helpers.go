@@ -177,6 +177,22 @@ func bulkSetStatus(ctx context.Context, db *pgxpool.Pool, ids []int, userID, sta
 	return nil
 }
 
+func bulkSetSprint(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, sprintID *int) error {
+	_ = db
+	var ptr *int
+	if sprintID != nil && *sprintID > 0 {
+		sid := *sprintID
+		ptr = &sid
+	}
+	for _, id := range ids {
+		in := domain.UpdateTaskInput{SprintID: &ptr}
+		if _, err := domain.UpdateTask(ctx, userID, id, in); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func bulkSetPriority(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, priority int) error {
 	for _, id := range ids {
 		if _, err := db.Exec(ctx, "UPDATE tasks SET priority = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2", priority, id); err != nil {

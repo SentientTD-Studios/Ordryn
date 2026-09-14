@@ -16,7 +16,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Search with project, status, tag, and due-date filters
 - Markdown task descriptions with truncated list view and expand-in-place
 - Task discussion comments with @-mentions of project members (notifies them) and #task links; authors and project owners can edit comments, with posted/edited timestamps and an admin restore log
-- Bulk actions: complete, delete, move project, add/remove tag, set/clear due date, set priority
+- Bulk actions: complete, delete, move project, add/remove tag, set/clear due date, set priority, set kanban status, move sprint
 - Undo delete (toast with up to 120 seconds to restore, preserves task IDs when possible)
 - ICS calendar feed for due tasks; in-app calendar view; ICS import to sync due dates
 - CSV import with preview/confirm; CSV/JSON export (auto-creates projects and tags on import)

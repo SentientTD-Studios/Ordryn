@@ -377,6 +377,7 @@ export const api = {
     priority?: number
     due_date?: string
     status_id?: number
+    sprint_id?: number | null
   }) {
     return request<{ ok: boolean; affected: number; undo_token?: string }>('/api/v1/tasks/bulk', {
       method: 'POST',

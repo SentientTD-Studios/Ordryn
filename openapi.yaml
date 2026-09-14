@@ -4729,6 +4729,8 @@ components:
             - remove_tag
             - set_priority
             - set_due_date
+            - set_status
+            - set_sprint
         task_ids:
           type: array
           items:
@@ -4746,6 +4748,13 @@ components:
         due_date:
           type: string
           description: YYYY-MM-DD; empty string clears
+        status_id:
+          type: integer
+          description: Kanban column status id for set_status
+        sprint_id:
+          type: integer
+          nullable: true
+          description: Sprint id for set_sprint; 0 or null moves tasks to the project backlog
 
     BulkResult:
       type: object
