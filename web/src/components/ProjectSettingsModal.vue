@@ -9,11 +9,11 @@ import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
 import ProjectSprintsPanel from '@/components/ProjectSprintsPanel.vue'
 import ProjectGitHubPanel from '@/components/ProjectGitHubPanel.vue'
-import ProjectModsPanel from '@/components/ProjectModsPanel.vue'
+import ProjectExtensionsPanel from '@/components/ProjectExtensionsPanel.vue'
 import ProjectTagsPanel from '@/components/ProjectTagsPanel.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
 
-type SettingsTab = 'details' | 'board' | 'sprints' | 'tags' | 'github' | 'mods' | 'sharing'
+type SettingsTab = 'details' | 'board' | 'sprints' | 'tags' | 'github' | 'extensions' | 'sharing'
 
 const props = defineProps<{
   open: boolean
@@ -44,7 +44,7 @@ const tabs = computed(() => {
   ]
   if (isKanban.value) items.push({ id: 'sprints', label: 'Sprints' })
   items.push({ id: 'tags', label: 'Tags' }, { id: 'github', label: 'GitHub' })
-  if (isOwner.value) items.push({ id: 'mods', label: 'Mods' })
+  if (isOwner.value) items.push({ id: 'extensions', label: 'Extensions' })
   items.push({ id: 'sharing', label: 'Sharing' })
   return items
 })
@@ -74,7 +74,7 @@ watch(isKanban, (kanban) => {
 })
 
 watch(isOwner, (owner) => {
-  if (!owner && tab.value === 'mods') tab.value = 'details'
+  if (!owner && tab.value === 'extensions') tab.value = 'details'
 })
 
 function close() {
@@ -253,8 +253,8 @@ async function archiveOrRestore() {
             @changed="onPanelChanged"
           />
 
-          <ProjectModsPanel
-            v-else-if="tab === 'mods' && isOwner"
+          <ProjectExtensionsPanel
+            v-else-if="tab === 'extensions' && isOwner"
             :project="project"
           />
 

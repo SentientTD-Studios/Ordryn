@@ -1,4 +1,4 @@
-package mods
+package extensions
 
 import (
 	"encoding/json"
@@ -97,9 +97,22 @@ func TestSettingScopeDefaultsToSite(t *testing.T) {
 	}
 }
 
+func TestValidateManifestDescriptionTooLong(t *testing.T) {
+	m := validDiscord()
+	m.Description = strings.Repeat("x", maxDescriptionLen+1)
+	if err := ValidateManifest("discord", m); err == nil {
+		t.Fatal("expected description length error")
+	}
+	m.Description = ""
+	m.Settings[0].Description = strings.Repeat("y", maxDescriptionLen+1)
+	if err := ValidateManifest("discord", m); err == nil {
+		t.Fatal("expected settings description length error")
+	}
+}
+
 func TestLoadFailSoftAndSkipMissingManifest(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("MODS_DIR", root)
+	t.Setenv("EXTENSIONS_DIR", root)
 
 	good := filepath.Join(root, "discord")
 	if err := os.Mkdir(good, 0o755); err != nil {
@@ -143,7 +156,7 @@ func TestLoadFailSoftAndSkipMissingManifest(t *testing.T) {
 }
 
 func TestExampleDiscordManifest(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "mods", "discord", "manifest.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "discord", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,12 +177,18 @@ func TestExampleDiscordManifest(t *testing.T) {
 		if s.Key == "webhook_url" && s.ScopeName() != ScopeProject {
 			t.Fatalf("webhook_url scope=%q", s.ScopeName())
 		}
+		if s.Description == "" {
+			t.Fatalf("example setting %s missing description", s.Key)
+		}
+	}
+	if strings.TrimSpace(m.Description) == "" {
+		t.Fatal("example should include an extension description")
 	}
 }
 
 func TestLoadIDMismatchFails(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("MODS_DIR", root)
+	t.Setenv("EXTENSIONS_DIR", root)
 	dir := filepath.Join(root, "discord")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)

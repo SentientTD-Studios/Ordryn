@@ -1,4 +1,4 @@
-package mods
+package extensions
 
 import (
 	"encoding/json"
@@ -9,14 +9,14 @@ import (
 	"sync"
 )
 
-const defaultDir = "data/mods"
+const defaultDir = "data/extensions"
 
 var (
 	mu      sync.RWMutex
 	entries []Entry
 )
 
-// Entry is one scanned mod folder, loaded or failed.
+// Entry is one scanned extension folder, loaded or failed.
 type Entry struct {
 	ID       string   `json:"id"`
 	Dir      string   `json:"-"`
@@ -25,15 +25,29 @@ type Entry struct {
 	Loaded   bool     `json:"loaded"`
 }
 
-// Dir returns the mods root (MODS_DIR or data/mods).
+// Dir returns the extensions root (EXTENSIONS_DIR, MODS_DIR, data/extensions, or data/mods).
 func Dir() string {
+	if v := strings.TrimSpace(os.Getenv("EXTENSIONS_DIR")); v != "" {
+		return v
+	}
 	if v := strings.TrimSpace(os.Getenv("MODS_DIR")); v != "" {
 		return v
+	}
+	if isDir(defaultDir) {
+		return defaultDir
+	}
+	if isDir("data/mods") {
+		return "data/mods"
 	}
 	return defaultDir
 }
 
-// Load scans the mods directory. Failures disable that mod only.
+func isDir(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
+}
+
+// Load scans the extensions directory. Failures disable that extension only.
 func Load() []Entry {
 	root := Dir()
 	loaded := scan(root)
@@ -42,9 +56,9 @@ func Load() []Entry {
 	mu.Unlock()
 	for _, e := range loaded {
 		if e.Loaded {
-			fmt.Printf("mods: loaded %s (%s)\n", e.ID, e.Manifest.Version)
+			fmt.Printf("extensions: loaded %s (%s)\n", e.ID, e.Manifest.Version)
 		} else if e.Error != "" {
-			fmt.Printf("mods: failed %s: %s\n", e.ID, e.Error)
+			fmt.Printf("extensions: failed %s: %s\n", e.ID, e.Error)
 		}
 	}
 	return Snapshot()
@@ -56,16 +70,16 @@ func scan(root string) []Entry {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		fmt.Printf("mods: cannot read %s: %v\n", root, err)
+		fmt.Printf("extensions: cannot read %s: %v\n", root, err)
 		return nil
 	}
 	if !info.IsDir() {
-		fmt.Printf("mods: %s is not a directory\n", root)
+		fmt.Printf("extensions: %s is not a directory\n", root)
 		return nil
 	}
 	children, err := os.ReadDir(root)
 	if err != nil {
-		fmt.Printf("mods: cannot list %s: %v\n", root, err)
+		fmt.Printf("extensions: cannot list %s: %v\n", root, err)
 		return nil
 	}
 	out := make([]Entry, 0)
@@ -80,7 +94,7 @@ func scan(root string) []Entry {
 		}
 		e := loadFolder(root, folder)
 		if e.Error == "missing manifest.json" && !e.Loaded {
-			fmt.Printf("mods: skipped %s (no manifest.json)\n", folder)
+			fmt.Printf("extensions: skipped %s (no manifest.json)\n", folder)
 			continue
 		}
 		if prev, ok := seen[e.ID]; ok && e.ID != "" {
@@ -127,7 +141,7 @@ func loadFolder(root, folder string) Entry {
 	if ui := strings.TrimSpace(m.UI); ui != "" {
 		uiPath := filepath.Join(dir, filepath.Clean(ui))
 		if !strings.HasPrefix(uiPath, dir+string(os.PathSeparator)) && uiPath != dir {
-			e.Error = "ui path is outside the mod folder"
+			e.Error = "ui path is outside the extension folder"
 			e.Manifest = m
 			return e
 		}
@@ -163,7 +177,7 @@ func Get(id string) (Entry, bool) {
 	return Entry{}, false
 }
 
-// LoadedCount is the number of successfully loaded mods.
+// LoadedCount is the number of successfully loaded extensions.
 func LoadedCount() int {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -176,7 +190,7 @@ func LoadedCount() int {
 	return n
 }
 
-// LoadedEntries returns only successfully loaded mods.
+// LoadedEntries returns only successfully loaded extensions.
 func LoadedEntries() []Entry {
 	mu.RLock()
 	defer mu.RUnlock()

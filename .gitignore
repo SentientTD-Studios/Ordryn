@@ -12,7 +12,9 @@ docs/*
 # Uploaded images when using local hosting
 data/uploads/
 
-# Operator-installed mods (keep the folder)
+# Operator-installed extensions (keep the folder)
+data/extensions/*
+!data/extensions/.gitkeep
 data/mods/*
 !data/mods/.gitkeep
 

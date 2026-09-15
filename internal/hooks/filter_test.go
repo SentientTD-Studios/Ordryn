@@ -3,15 +3,15 @@ package hooks
 import (
 	"testing"
 
-	"GoTodo/internal/mods"
+	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
 )
 
-func testManifest() mods.Manifest {
-	return mods.Manifest{
+func testManifest() extensions.Manifest {
+	return extensions.Manifest{
 		ID:   "discord",
 		Name: "Discord",
-		Hooks: []mods.Hook{
+		Hooks: []extensions.Hook{
 			{On: "task.created"},
 			{On: "task.updated"},
 		},
@@ -21,8 +21,8 @@ func testManifest() mods.Manifest {
 
 func TestShouldDeliverFilters(t *testing.T) {
 	m := testManifest()
-	site := storage.ModSettings{Enabled: true}
-	base := storage.ModProjectSettings{
+	site := storage.ExtensionSettings{Enabled: true}
+	base := storage.ExtensionProjectSettings{
 		Enabled:  true,
 		Triggers: []string{"task.updated"},
 	}

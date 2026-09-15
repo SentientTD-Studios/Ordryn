@@ -289,8 +289,8 @@ func RunMigrations() error {
 		errCount++
 	}
 
-	if err := CreateModTables(); err != nil {
-		fmt.Printf("migration: CreateModTables failed: %v\n", err)
+	if err := CreateExtensionTables(); err != nil {
+		fmt.Printf("migration: CreateExtensionTables failed: %v\n", err)
 		errCount++
 	}
 

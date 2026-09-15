@@ -3,7 +3,7 @@ package hooks
 import (
 	"strings"
 
-	"GoTodo/internal/mods"
+	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
 )
 
@@ -16,7 +16,7 @@ func triggerAllowed(triggers []string, eventType string) bool {
 	return false
 }
 
-func hookDeclared(m mods.Manifest, eventType string) bool {
+func hookDeclared(m extensions.Manifest, eventType string) bool {
 	for _, h := range m.Hooks {
 		if strings.TrimSpace(h.On) == eventType {
 			return true
@@ -25,7 +25,7 @@ func hookDeclared(m mods.Manifest, eventType string) bool {
 	return false
 }
 
-func templateFor(m mods.Manifest, templates map[string]string, eventType string) string {
+func templateFor(m extensions.Manifest, templates map[string]string, eventType string) string {
 	if templates != nil {
 		if s, ok := templates[eventType]; ok {
 			return s
@@ -41,7 +41,7 @@ func templateFor(m mods.Manifest, templates map[string]string, eventType string)
 
 // ShouldDeliver reports whether this event should produce an outbound message.
 // Site enabled plus project enabled are both required. Personal tasks (project_id 0) never post.
-func ShouldDeliver(m mods.Manifest, site storage.ModSettings, project storage.ModProjectSettings, ev Event, projectID int) bool {
+func ShouldDeliver(m extensions.Manifest, site storage.ExtensionSettings, project storage.ExtensionProjectSettings, ev Event, projectID int) bool {
 	if !site.Enabled {
 		return false
 	}

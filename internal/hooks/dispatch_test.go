@@ -3,23 +3,23 @@ package hooks
 import (
 	"testing"
 
-	"GoTodo/internal/mods"
+	"GoTodo/internal/extensions"
 )
 
-func TestHasWorkWithoutMods(t *testing.T) {
+func TestHasWorkWithoutExtensions(t *testing.T) {
 	if HasWork() {
-		t.Fatal("no mods loaded")
+		t.Fatal("no extensions loaded")
 	}
 }
 
-func TestDispatchNoModsIsNoop(t *testing.T) {
+func TestDispatchNoExtensionsIsNoop(t *testing.T) {
 	Dispatch(Event{Type: "task.updated", TaskID: 1})
 }
 
 func TestDeliverSkipsWithoutProject(t *testing.T) {
-	m := mods.Manifest{
+	m := extensions.Manifest{
 		ID:       "discord",
-		Delivery: &mods.Delivery{Type: "discord.webhook", URLFrom: "webhook_url"},
+		Delivery: &extensions.Delivery{Type: "discord.webhook", URLFrom: "webhook_url"},
 	}
 	sent, err := deliver(m, "hello", 0)
 	if err != nil || sent {

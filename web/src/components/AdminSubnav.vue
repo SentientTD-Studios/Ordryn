@@ -12,7 +12,7 @@ const fetchedCount = ref(0)
 
 const links = [
   { name: 'admin', label: 'Settings', to: '/admin' },
-  { name: 'admin-mods', label: 'Mods', to: '/admin/mods' },
+  { name: 'admin-extensions', label: 'Extensions', to: '/admin/extensions' },
   { name: 'admin-requests', label: 'Requests', to: '/admin/requests' },
   { name: 'admin-invites', label: 'Invites', to: '/admin/invites' },
   { name: 'admin-users', label: 'Users', to: '/admin/users' },

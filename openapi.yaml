@@ -1570,38 +1570,38 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/mods:
+  /api/v1/projects/{id}/extensions:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [Projects]
-      summary: List project-scoped mods for the owner
+      summary: List project-scoped extensions for the owner
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
         "200":
-          description: Mods with this project's settings
+          description: Extensions with this project's settings
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProjectModsList"
+                $ref: "#/components/schemas/ProjectExtensionsList"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/mods/{modId}:
+  /api/v1/projects/{id}/extensions/{extensionId}:
     parameters:
       - $ref: "#/components/parameters/ID"
-      - name: modId
+      - name: extensionId
         in: path
         required: true
         schema:
           type: string
     patch:
       tags: [Projects]
-      summary: Update this project's mod settings (owner)
+      summary: Update this project's extension settings (owner)
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1610,14 +1610,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProjectModPatch"
+              $ref: "#/components/schemas/ProjectExtensionPatch"
       responses:
         "200":
-          description: Updated project mod
+          description: Updated project extension
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProjectMod"
+                $ref: "#/components/schemas/ProjectExtension"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -1625,10 +1625,10 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/mods/{modId}/test:
+  /api/v1/projects/{id}/extensions/{extensionId}/test:
     parameters:
       - $ref: "#/components/parameters/ID"
-      - name: modId
+      - name: extensionId
         in: path
         required: true
         schema:
@@ -3535,22 +3535,22 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/admin/mods:
+  /api/v1/admin/extensions:
     get:
       tags: [Admin]
-      summary: List loaded mods
+      summary: List loaded extensions
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
         "200":
-          description: Mods with site-level enable state
+          description: Extensions with site-level enable state
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AdminModsList"
+                $ref: "#/components/schemas/AdminExtensionsList"
 
-  /api/v1/admin/mods/{id}:
+  /api/v1/admin/extensions/{id}:
     parameters:
       - name: id
         in: path
@@ -3559,22 +3559,22 @@ paths:
           type: string
     get:
       tags: [Admin]
-      summary: Get one mod and its settings
+      summary: Get one extension and its settings
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
         "200":
-          description: Mod
+          description: Extension
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AdminMod"
+                $ref: "#/components/schemas/AdminExtension"
         "404":
           $ref: "#/components/responses/NotFound"
     patch:
       tags: [Admin]
-      summary: Enable or disable a mod for the site
+      summary: Enable or disable an extension for the site
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -3583,14 +3583,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AdminModPatch"
+              $ref: "#/components/schemas/AdminExtensionPatch"
       responses:
         "200":
-          description: Updated mod
+          description: Updated extension
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AdminMod"
+                $ref: "#/components/schemas/AdminExtension"
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
@@ -5294,13 +5294,13 @@ components:
         archived:
           type: boolean
 
-    AdminModSettings:
+    AdminExtensionSettings:
       type: object
       properties:
         enabled:
           type: boolean
 
-    AdminMod:
+    AdminExtension:
       type: object
       properties:
         id:
@@ -5320,27 +5320,27 @@ components:
           type: object
           additionalProperties: true
         settings:
-          $ref: "#/components/schemas/AdminModSettings"
+          $ref: "#/components/schemas/AdminExtensionSettings"
         secrets:
           type: object
           additionalProperties:
             type: boolean
 
-    AdminModsList:
+    AdminExtensionsList:
       type: object
       properties:
-        mods:
+        extensions:
           type: array
           items:
-            $ref: "#/components/schemas/AdminMod"
+            $ref: "#/components/schemas/AdminExtension"
 
-    AdminModPatch:
+    AdminExtensionPatch:
       type: object
       properties:
         enabled:
           type: boolean
 
-    ProjectModSettings:
+    ProjectExtensionSettings:
       type: object
       properties:
         enabled:
@@ -5360,7 +5360,7 @@ components:
         last_delivery_at:
           type: string
 
-    ProjectMod:
+    ProjectExtension:
       type: object
       properties:
         id:
@@ -5377,21 +5377,21 @@ components:
           type: object
           additionalProperties: true
         settings:
-          $ref: "#/components/schemas/ProjectModSettings"
+          $ref: "#/components/schemas/ProjectExtensionSettings"
         secrets:
           type: object
           additionalProperties:
             type: boolean
 
-    ProjectModsList:
+    ProjectExtensionsList:
       type: object
       properties:
-        mods:
+        extensions:
           type: array
           items:
-            $ref: "#/components/schemas/ProjectMod"
+            $ref: "#/components/schemas/ProjectExtension"
 
-    ProjectModPatch:
+    ProjectExtensionPatch:
       type: object
       properties:
         enabled:

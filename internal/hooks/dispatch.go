@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"GoTodo/internal/config"
-	"GoTodo/internal/mods"
+	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
 )
 
-// Event is a domain change delivered to loaded mods.
+// Event is a domain change delivered to loaded extensions.
 type Event struct {
 	Type          string
 	TaskID        int
@@ -26,26 +26,26 @@ type Event struct {
 	Actor    string
 }
 
-// HasWork reports whether any mod is loaded (skip goroutine in tests).
+// HasWork reports whether any extension is loaded (skip goroutine in tests).
 func HasWork() bool {
-	return mods.LoadedCount() > 0
+	return extensions.LoadedCount() > 0
 }
 
-// Dispatch delivers ev to matching mods. Safe to call from a goroutine.
+// Dispatch delivers ev to matching extensions. Safe to call from a goroutine.
 func Dispatch(ev Event) {
 	if ev.TaskID <= 0 && ev.Snapshot == nil {
 		return
 	}
-	for _, entry := range mods.LoadedEntries() {
-		deliverToMod(entry, ev)
+	for _, entry := range extensions.LoadedEntries() {
+		deliverToExtension(entry, ev)
 	}
 }
 
-func deliverToMod(entry mods.Entry, ev Event) {
+func deliverToExtension(entry extensions.Entry, ev Event) {
 	if !entry.Loaded {
 		return
 	}
-	site, err := storage.GetModSettings(entry.ID)
+	site, err := storage.GetExtensionSettings(entry.ID)
 	if err != nil {
 		log.Printf("hooks: load settings %s: %v", entry.ID, err)
 		return
@@ -65,7 +65,7 @@ func deliverToMod(entry mods.Entry, ev Event) {
 	if projectID <= 0 {
 		return
 	}
-	project, err := storage.GetModProjectSettings(entry.ID, projectID)
+	project, err := storage.GetExtensionProjectSettings(entry.ID, projectID)
 	if err != nil {
 		log.Printf("hooks: load project settings %s project=%d: %v", entry.ID, projectID, err)
 		return
@@ -113,11 +113,11 @@ func deliverToMod(entry mods.Entry, ev Event) {
 	sent, err := deliver(entry.Manifest, msg, projectID)
 	if err != nil {
 		log.Printf("hooks: %s: %v", entry.ID, err)
-		_ = storage.RecordModProjectDelivery(entry.ID, projectID, err.Error())
+		_ = storage.RecordExtensionProjectDelivery(entry.ID, projectID, err.Error())
 		return
 	}
 	if sent {
-		_ = storage.RecordModProjectDelivery(entry.ID, projectID, "")
+		_ = storage.RecordExtensionProjectDelivery(entry.ID, projectID, "")
 	}
 }
 
@@ -131,7 +131,7 @@ func snapshotFor(ev Event) (*storage.HookTaskSnapshot, error) {
 	return storage.GetHookTaskSnapshot(ev.TaskID)
 }
 
-func deliver(m mods.Manifest, msg string, projectID int) (sent bool, err error) {
+func deliver(m extensions.Manifest, msg string, projectID int) (sent bool, err error) {
 	if m.Delivery == nil {
 		return false, nil
 	}
@@ -140,7 +140,7 @@ func deliver(m mods.Manifest, msg string, projectID int) (sent bool, err error) 
 	}
 	switch strings.TrimSpace(m.Delivery.Type) {
 	case "discord.webhook":
-		url, err := storage.GetModSecret(m.ID, projectID, strings.TrimSpace(m.Delivery.URLFrom))
+		url, err := storage.GetExtensionSecret(m.ID, projectID, strings.TrimSpace(m.Delivery.URLFrom))
 		if err != nil {
 			return false, err
 		}
@@ -165,18 +165,18 @@ func publicTaskURL(taskID int) string {
 }
 
 // DeliverTest sends a fake event to this project's webhook (bypasses enabled/filters).
-func DeliverTest(modID string, projectID int, projectName string) error {
+func DeliverTest(extensionID string, projectID int, projectName string) error {
 	if projectID <= 0 {
 		return fmt.Errorf("project required")
 	}
-	entry, ok := mods.Get(modID)
+	entry, ok := extensions.Get(extensionID)
 	if !ok || !entry.Loaded {
-		return fmt.Errorf("mod not loaded")
+		return fmt.Errorf("extension not loaded")
 	}
 	if entry.Manifest.Delivery == nil {
-		return fmt.Errorf("mod has no delivery")
+		return fmt.Errorf("extension has no delivery")
 	}
-	settings, err := storage.GetModProjectSettings(modID, projectID)
+	settings, err := storage.GetExtensionProjectSettings(extensionID, projectID)
 	if err != nil {
 		return err
 	}
@@ -218,12 +218,12 @@ func DeliverTest(modID string, projectID int, projectName string) error {
 	msg := Interpolate(tmpl, vars)
 	sent, err := deliver(entry.Manifest, msg, projectID)
 	if err != nil {
-		_ = storage.RecordModProjectDelivery(modID, projectID, err.Error())
+		_ = storage.RecordExtensionProjectDelivery(extensionID, projectID, err.Error())
 		return err
 	}
 	if !sent {
 		return fmt.Errorf("webhook URL is not set")
 	}
-	_ = storage.RecordModProjectDelivery(modID, projectID, "")
+	_ = storage.RecordExtensionProjectDelivery(extensionID, projectID, "")
 	return nil
 }

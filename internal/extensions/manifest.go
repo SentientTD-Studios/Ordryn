@@ -1,4 +1,4 @@
-package mods
+package extensions
 
 import (
 	"fmt"
@@ -39,17 +39,20 @@ var knownDeliveryTypes = map[string]struct{}{
 	"discord.webhook": {},
 }
 
-// Manifest is the required data/mods/<id>/manifest.json document.
+const maxDescriptionLen = 400
+
+// Manifest is the required data/extensions/<id>/manifest.json document.
 type Manifest struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Version   string            `json:"version"`
-	HostAPI   int               `json:"host_api"`
-	UI        string            `json:"ui,omitempty"`
-	Hooks     []Hook            `json:"hooks,omitempty"`
-	Delivery  *Delivery         `json:"delivery,omitempty"`
-	Settings  []Setting         `json:"settings,omitempty"`
-	Templates map[string]string `json:"templates,omitempty"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	HostAPI     int               `json:"host_api"`
+	Description string            `json:"description,omitempty"`
+	UI          string            `json:"ui,omitempty"`
+	Hooks       []Hook            `json:"hooks,omitempty"`
+	Delivery    *Delivery         `json:"delivery,omitempty"`
+	Settings    []Setting         `json:"settings,omitempty"`
+	Templates   map[string]string `json:"templates,omitempty"`
 }
 
 // Hook is a registration on a named core extension point.
@@ -65,11 +68,12 @@ type Delivery struct {
 
 // Setting is a schema-driven form field (site admin or project owner).
 type Setting struct {
-	Key      string `json:"key"`
-	Type     string `json:"type"`
-	Label    string `json:"label"`
-	Required bool   `json:"required"`
-	Scope    string `json:"scope,omitempty"`
+	Key         string `json:"key"`
+	Type        string `json:"type"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required"`
+	Scope       string `json:"scope,omitempty"`
 }
 
 // ScopeName returns site (default) or project.
@@ -95,6 +99,9 @@ func ValidateManifest(folderName string, m Manifest) error {
 	}
 	if strings.TrimSpace(m.Name) == "" {
 		return fmt.Errorf("name is required")
+	}
+	if len(strings.TrimSpace(m.Description)) > maxDescriptionLen {
+		return fmt.Errorf("description must be %d characters or less", maxDescriptionLen)
 	}
 	if strings.TrimSpace(m.Version) == "" {
 		return fmt.Errorf("version is required")
@@ -152,6 +159,9 @@ func ValidateManifest(folderName string, m Manifest) error {
 		}
 		if strings.TrimSpace(s.Label) == "" {
 			return fmt.Errorf("settings label is required for %s", key)
+		}
+		if len(strings.TrimSpace(s.Description)) > maxDescriptionLen {
+			return fmt.Errorf("settings description is too long for %s", key)
 		}
 		switch s.ScopeName() {
 		case ScopeSite, ScopeProject:

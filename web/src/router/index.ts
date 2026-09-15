@@ -139,10 +139,14 @@ const router = createRouter({
       meta: { requiresAuth: true, permission: 'admin' },
     },
     {
-      path: '/admin/mods',
-      name: 'admin-mods',
-      component: () => import('@/views/AdminModsView.vue'),
+      path: '/admin/extensions',
+      name: 'admin-extensions',
+      component: () => import('@/views/AdminExtensionsView.vue'),
       meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
+      path: '/admin/mods',
+      redirect: '/admin/extensions',
     },
     {
       path: '/admin/requests',

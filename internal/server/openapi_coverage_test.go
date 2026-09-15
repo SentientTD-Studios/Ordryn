@@ -100,11 +100,11 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/admin/email-audit",
 	"/api/v1/admin/comment-audit",
 	"/api/v1/admin/comment-audit/{id}/restore",
-	"/api/v1/admin/mods",
-	"/api/v1/admin/mods/{id}",
-	"/api/v1/projects/{id}/mods",
-	"/api/v1/projects/{id}/mods/{modId}",
-	"/api/v1/projects/{id}/mods/{modId}/test",
+	"/api/v1/admin/extensions",
+	"/api/v1/admin/extensions/{id}",
+	"/api/v1/projects/{id}/extensions",
+	"/api/v1/projects/{id}/extensions/{extensionId}",
+	"/api/v1/projects/{id}/extensions/{extensionId}/test",
 }
 
 func moduleRoot(t *testing.T) string {

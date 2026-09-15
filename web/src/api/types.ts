@@ -508,50 +508,52 @@ export type AdminProjectRef = {
   archived: boolean
 }
 
-export type AdminModSettingField = {
+export type ExtensionSettingField = {
   key: string
   type: 'secret' | 'project_ids' | 'hook_select' | 'bool' | string
   label: string
+  description?: string
   required?: boolean
   scope?: 'site' | 'project' | string
 }
 
-export type AdminModManifest = {
+export type ExtensionManifest = {
   id: string
   name: string
   version: string
   host_api: number
+  description?: string
   hooks?: { on: string }[]
   delivery?: { type: string; url_from: string }
-  settings?: AdminModSettingField[]
+  settings?: ExtensionSettingField[]
   templates?: Record<string, string>
 }
 
-export type AdminModSettings = {
+export type AdminExtensionSettings = {
   enabled: boolean
 }
 
-export type AdminMod = {
+export type AdminExtension = {
   id: string
   name: string
   version: string
   host_api: number
   status: 'loaded' | 'failed' | string
   error?: string
-  manifest: AdminModManifest
-  settings: AdminModSettings
+  manifest: ExtensionManifest
+  settings: AdminExtensionSettings
   secrets: Record<string, boolean>
 }
 
-export type AdminModsList = {
-  mods: AdminMod[]
+export type AdminExtensionsList = {
+  extensions: AdminExtension[]
 }
 
-export type AdminModPatch = {
+export type AdminExtensionPatch = {
   enabled?: boolean
 }
 
-export type ProjectModSettings = {
+export type ProjectExtensionSettings = {
   enabled: boolean
   triggers: string[]
   templates: Record<string, string>
@@ -560,22 +562,22 @@ export type ProjectModSettings = {
   last_delivery_at?: string
 }
 
-export type ProjectMod = {
+export type ProjectExtension = {
   id: string
   name: string
   version: string
   host_api: number
   site_enabled: boolean
-  manifest: AdminModManifest
-  settings: ProjectModSettings
+  manifest: ExtensionManifest
+  settings: ProjectExtensionSettings
   secrets: Record<string, boolean>
 }
 
-export type ProjectModsList = {
-  mods: ProjectMod[]
+export type ProjectExtensionsList = {
+  extensions: ProjectExtension[]
 }
 
-export type ProjectModPatch = {
+export type ProjectExtensionPatch = {
   enabled?: boolean
   triggers?: string[]
   templates?: Record<string, string>

@@ -7,28 +7,28 @@ import (
 	"strings"
 
 	"GoTodo/internal/domain"
+	"GoTodo/internal/extensions"
 	"GoTodo/internal/hooks"
-	"GoTodo/internal/mods"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 )
 
-type projectModJSON struct {
-	ID          string                     `json:"id"`
-	Name        string                     `json:"name"`
-	Version     string                     `json:"version"`
-	HostAPI     int                        `json:"host_api"`
-	SiteEnabled bool                       `json:"site_enabled"`
-	Manifest    mods.Manifest              `json:"manifest"`
-	Settings    storage.ModProjectSettings `json:"settings"`
-	Secrets     map[string]bool            `json:"secrets"`
+type projectExtensionJSON struct {
+	ID          string                           `json:"id"`
+	Name        string                           `json:"name"`
+	Version     string                           `json:"version"`
+	HostAPI     int                              `json:"host_api"`
+	SiteEnabled bool                             `json:"site_enabled"`
+	Manifest    extensions.Manifest              `json:"manifest"`
+	Settings    storage.ExtensionProjectSettings `json:"settings"`
+	Secrets     map[string]bool                  `json:"secrets"`
 }
 
-type projectModsListJSON struct {
-	Mods []projectModJSON `json:"mods"`
+type projectExtensionsListJSON struct {
+	Extensions []projectExtensionJSON `json:"extensions"`
 }
 
-type projectModPatch struct {
+type projectExtensionPatch struct {
 	Enabled    *bool             `json:"enabled"`
 	Triggers   *[]string         `json:"triggers"`
 	Templates  map[string]string `json:"templates"`
@@ -36,15 +36,15 @@ type projectModPatch struct {
 	WebhookURL *string           `json:"webhook_url"`
 }
 
-func apiV1ProjectMods(w http.ResponseWriter, r *http.Request, projectID int, rest []string) {
+func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID int, rest []string) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
 		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
 		return
 	}
-	proj, err := domain.RequireProjectModOwner(userID, projectID)
+	proj, err := domain.RequireProjectExtensionOwner(userID, projectID)
 	if err != nil {
-		writeProjectModError(w, err)
+		writeProjectExtensionError(w, err)
 		return
 	}
 
@@ -53,13 +53,13 @@ func apiV1ProjectMods(w http.ResponseWriter, r *http.Request, projectID int, res
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 			return
 		}
-		projectModsList(w, projectID)
+		projectExtensionsList(w, projectID)
 		return
 	}
 
-	modID := strings.TrimSpace(rest[0])
-	if modID == "" {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid mod id.")
+	extensionID := strings.TrimSpace(rest[0])
+	if extensionID == "" {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid extension id.")
 		return
 	}
 	if len(rest) == 1 {
@@ -67,7 +67,7 @@ func apiV1ProjectMods(w http.ResponseWriter, r *http.Request, projectID int, res
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 			return
 		}
-		projectModPatchHandler(w, r, projectID, modID)
+		projectExtensionPatchHandler(w, r, projectID, extensionID)
 		return
 	}
 	if len(rest) == 2 && rest[1] == "test" {
@@ -75,44 +75,44 @@ func apiV1ProjectMods(w http.ResponseWriter, r *http.Request, projectID int, res
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 			return
 		}
-		projectModTest(w, r, projectID, modID, proj.Name)
+		projectExtensionTest(w, r, projectID, extensionID, proj.Name)
 		return
 	}
 	utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
 }
 
-func projectModsList(w http.ResponseWriter, projectID int) {
-	entries := mods.Snapshot()
-	out := make([]projectModJSON, 0)
+func projectExtensionsList(w http.ResponseWriter, projectID int) {
+	entries := extensions.Snapshot()
+	out := make([]projectExtensionJSON, 0)
 	for _, e := range entries {
 		if !e.Loaded || !e.Manifest.HasProjectSettings() {
 			continue
 		}
-		item, err := projectModFromEntry(e, projectID)
+		item, err := projectExtensionFromEntry(e, projectID)
 		if err != nil {
-			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load mod settings.")
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 			return
 		}
 		out = append(out, item)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(projectModsListJSON{Mods: out})
+	_ = json.NewEncoder(w).Encode(projectExtensionsListJSON{Extensions: out})
 }
 
-func projectModPatchHandler(w http.ResponseWriter, r *http.Request, projectID int, modID string) {
-	e, ok := mods.Get(modID)
+func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projectID int, extensionID string) {
+	e, ok := extensions.Get(extensionID)
 	if !ok || !e.Loaded || !e.Manifest.HasProjectSettings() {
-		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Mod not found.")
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension not found.")
 		return
 	}
-	var req projectModPatch
+	var req projectExtensionPatch
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON.")
 		return
 	}
-	cur, err := storage.GetModProjectSettings(modID, projectID)
+	cur, err := storage.GetExtensionProjectSettings(extensionID, projectID)
 	if err != nil {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load mod settings.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 		return
 	}
 	if req.Enabled != nil {
@@ -147,32 +147,32 @@ func projectModPatchHandler(w http.ResponseWriter, r *http.Request, projectID in
 		if e.Manifest.Delivery != nil && strings.TrimSpace(e.Manifest.Delivery.URLFrom) != "" {
 			key = strings.TrimSpace(e.Manifest.Delivery.URLFrom)
 		}
-		if err := storage.SetModSecret(modID, projectID, key, url); err != nil {
+		if err := storage.SetExtensionSecret(extensionID, projectID, key, url); err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save webhook URL.")
 			return
 		}
 	}
-	if err := storage.UpsertModProjectSettings(modID, projectID, cur); err != nil {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save mod settings.")
+	if err := storage.UpsertExtensionProjectSettings(extensionID, projectID, cur); err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save extension settings.")
 		return
 	}
-	item, err := projectModFromEntry(e, projectID)
+	item, err := projectExtensionFromEntry(e, projectID)
 	if err != nil {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load mod settings.")
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(item)
 }
 
-func projectModTest(w http.ResponseWriter, r *http.Request, projectID int, modID, projectName string) {
+func projectExtensionTest(w http.ResponseWriter, r *http.Request, projectID int, extensionID, projectName string) {
 	_ = r
-	e, ok := mods.Get(modID)
+	e, ok := extensions.Get(extensionID)
 	if !ok || !e.Loaded || !e.Manifest.HasProjectSettings() {
-		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Mod not found.")
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension not found.")
 		return
 	}
-	if err := hooks.DeliverTest(modID, projectID, projectName); err != nil {
+	if err := hooks.DeliverTest(extensionID, projectID, projectName); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -180,41 +180,41 @@ func projectModTest(w http.ResponseWriter, r *http.Request, projectID int, modID
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "message": "Test message sent."})
 }
 
-func projectModFromEntry(e mods.Entry, projectID int) (projectModJSON, error) {
-	item := projectModJSON{
+func projectExtensionFromEntry(e extensions.Entry, projectID int) (projectExtensionJSON, error) {
+	item := projectExtensionJSON{
 		ID:       e.ID,
 		Name:     e.Manifest.Name,
 		Version:  e.Manifest.Version,
 		HostAPI:  e.Manifest.HostAPI,
 		Manifest: e.Manifest,
 		Secrets:  map[string]bool{},
-		Settings: storage.ModProjectSettings{Triggers: []string{}, Templates: map[string]string{}},
+		Settings: storage.ExtensionProjectSettings{Triggers: []string{}, Templates: map[string]string{}},
 	}
 	if item.Name == "" {
 		item.Name = e.ID
 	}
-	site, err := storage.GetModSettings(e.ID)
+	site, err := storage.GetExtensionSettings(e.ID)
 	if err != nil {
 		return item, err
 	}
 	item.SiteEnabled = site.Enabled
-	s, err := storage.GetModProjectSettings(e.ID, projectID)
+	s, err := storage.GetExtensionProjectSettings(e.ID, projectID)
 	if err != nil {
 		return item, err
 	}
 	item.Settings = s
 	for _, key := range e.Manifest.ProjectSecretKeys() {
-		item.Secrets[key] = storage.ModSecretIsSet(e.ID, projectID, key)
+		item.Secrets[key] = storage.ExtensionSecretIsSet(e.ID, projectID, key)
 	}
 	return item, nil
 }
 
-func writeProjectModError(w http.ResponseWriter, err error) {
+func writeProjectExtensionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
 	case errors.Is(err, domain.ErrForbidden):
-		utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only the project owner can manage mods.")
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only the project owner can manage extensions.")
 	default:
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
 	}

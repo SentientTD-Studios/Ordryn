@@ -3,12 +3,12 @@ import type {
   AdminSettings,
   AdminSettingsPatch,
   AdminUser,
-  AdminModsList,
-  AdminMod,
-  AdminModPatch,
-  ProjectModsList,
-  ProjectMod,
-  ProjectModPatch,
+  AdminExtensionsList,
+  AdminExtension,
+  AdminExtensionPatch,
+  ProjectExtensionsList,
+  ProjectExtension,
+  ProjectExtensionPatch,
   APIKey,
   CalendarInfo,
   CalendarMonth,
@@ -439,20 +439,20 @@ export const api = {
     return request<{ ok: boolean }>(`/api/v1/projects/${projectId}/github`, { method: 'DELETE' })
   },
 
-  listProjectMods(projectId: number) {
-    return request<ProjectModsList>(`/api/v1/projects/${projectId}/mods`)
+  listProjectExtensions(projectId: number) {
+    return request<ProjectExtensionsList>(`/api/v1/projects/${projectId}/extensions`)
   },
 
-  patchProjectMod(projectId: number, modId: string, payload: ProjectModPatch) {
-    return request<ProjectMod>(`/api/v1/projects/${projectId}/mods/${encodeURIComponent(modId)}`, {
+  patchProjectExtension(projectId: number, extensionId: string, payload: ProjectExtensionPatch) {
+    return request<ProjectExtension>(`/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
 
-  testProjectMod(projectId: number, modId: string) {
+  testProjectExtension(projectId: number, extensionId: string) {
     return request<{ ok: boolean; message: string }>(
-      `/api/v1/projects/${projectId}/mods/${encodeURIComponent(modId)}/test`,
+      `/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/test`,
       { method: 'POST' },
     )
   },
@@ -896,12 +896,12 @@ export const api = {
     })
   },
 
-  listAdminMods() {
-    return request<AdminModsList>('/api/v1/admin/mods')
+  listAdminExtensions() {
+    return request<AdminExtensionsList>('/api/v1/admin/extensions')
   },
 
-  patchAdminMod(id: string, payload: AdminModPatch) {
-    return request<AdminMod>(`/api/v1/admin/mods/${encodeURIComponent(id)}`, {
+  patchAdminExtension(id: string, payload: AdminExtensionPatch) {
+    return request<AdminExtension>(`/api/v1/admin/extensions/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })

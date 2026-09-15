@@ -65,7 +65,7 @@ func AfterTaskChange(actorID, taskID int, typ string, extraProjectIDs ...int) {
 	AfterTaskChangeMeta(actorID, taskID, typ, nil, extraProjectIDs...)
 }
 
-// AfterTaskChangeMeta is AfterTaskChange plus optional status-change metadata for mods.
+// AfterTaskChangeMeta is AfterTaskChange plus optional status-change metadata for extensions.
 func AfterTaskChangeMeta(actorID, taskID int, typ string, meta *TaskHookMeta, extraProjectIDs ...int) {
 	if taskID <= 0 {
 		return
