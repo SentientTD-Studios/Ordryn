@@ -12,13 +12,19 @@ const CurrentHostAPI = 1
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,32}$`)
 
 var knownEventHooks = map[string]struct{}{
-	"task.created":    {},
-	"task.updated":    {},
-	"task.deleted":    {},
-	"task.commented":  {},
-	"task.reordered":  {},
-	"project.updated": {},
-	"join.request":    {},
+	"task.created":     {},
+	"task.updated":     {},
+	"task.deleted":     {},
+	"task.commented":   {},
+	"task.reordered":   {},
+	"task.claimed":     {},
+	"task.unclaimed":   {},
+	"task.due_changed": {},
+	"task.moved":       {},
+	"task.tagged":      {},
+	"task.overdue":     {},
+	"project.updated":  {},
+	"join.request":     {},
 }
 
 var knownSettingTypes = map[string]struct{}{
@@ -26,6 +32,8 @@ var knownSettingTypes = map[string]struct{}{
 	"project_ids": {},
 	"hook_select": {},
 	"bool":        {},
+	"string":      {},
+	"int":         {},
 }
 
 var knownFieldTypes = map[string]struct{}{
@@ -55,6 +63,7 @@ const (
 	DeliverySlackWebhook   = "slack.webhook"
 	DeliveryTeamsWebhook   = "teams.webhook"
 	DeliveryHTTPWebhook    = "http.webhook"
+	DeliveryNtfyWebhook    = "ntfy.webhook"
 )
 
 const (
@@ -68,6 +77,7 @@ var knownDeliveryTypes = map[string]struct{}{
 	DeliverySlackWebhook:   {},
 	DeliveryTeamsWebhook:   {},
 	DeliveryHTTPWebhook:    {},
+	DeliveryNtfyWebhook:    {},
 }
 
 var knownDeliveryFormats = map[string]struct{}{
@@ -124,7 +134,7 @@ type Hook struct {
 // Delivery describes how event hooks are sent outbound.
 type Delivery struct {
 	Type    string `json:"type"`
-	URLFrom string `json:"url_from"`
+	URLFrom string `json:"url_from,omitempty"`
 	// Format selects the JSON body for http.webhook: text ({"text"}), content ({"content"}), or json (structured event). Ignored for provider-specific types.
 	Format string `json:"format,omitempty"`
 }
@@ -199,14 +209,17 @@ func ValidateManifest(folderName string, m Manifest) error {
 		if typ == "" {
 			return fmt.Errorf("delivery.type is required")
 		}
+		if typ == "email" {
+			return fmt.Errorf("delivery type %q is not allowed (site email is not available to extensions)", typ)
+		}
 		if _, ok := knownDeliveryTypes[typ]; !ok {
 			return fmt.Errorf("unknown delivery type %q", typ)
 		}
 		m.Delivery.Type = typ
-		if strings.TrimSpace(m.Delivery.URLFrom) == "" {
+		m.Delivery.URLFrom = strings.TrimSpace(m.Delivery.URLFrom)
+		if m.Delivery.URLFrom == "" {
 			return fmt.Errorf("delivery.url_from is required")
 		}
-		m.Delivery.URLFrom = strings.TrimSpace(m.Delivery.URLFrom)
 		format := strings.ToLower(strings.TrimSpace(m.Delivery.Format))
 		if format != "" {
 			if typ != DeliveryHTTPWebhook {
@@ -246,8 +259,10 @@ func ValidateManifest(folderName string, m Manifest) error {
 	}
 	if m.Delivery != nil {
 		from := strings.TrimSpace(m.Delivery.URLFrom)
-		if _, ok := seenKeys[from]; !ok {
-			return fmt.Errorf("delivery.url_from %q is not a settings key", from)
+		if from != "" {
+			if _, ok := seenKeys[from]; !ok {
+				return fmt.Errorf("delivery.url_from %q is not a settings key", from)
+			}
 		}
 	}
 	for on := range m.Templates {
@@ -402,8 +417,28 @@ func (m Manifest) HasFields() bool {
 }
 
 // HasProjectSurface reports whether the extension should appear on the project Extensions tab.
+// Site-only hook extensions (for example join.request) stay in Admin → Extensions.
 func (m Manifest) HasProjectSurface() bool {
 	return m.HasProjectSettings() || m.HasFields()
+}
+
+// DestinationKey is the settings key used to look up the outbound URL.
+func (d *Delivery) DestinationKey() string {
+	if d == nil {
+		return ""
+	}
+	return strings.TrimSpace(d.URLFrom)
+}
+
+// DeclaresHook reports whether the manifest registers on.
+func (m Manifest) DeclaresHook(on string) bool {
+	on = strings.TrimSpace(on)
+	for _, h := range m.Hooks {
+		if strings.TrimSpace(h.On) == on {
+			return true
+		}
+	}
+	return false
 }
 
 // ShowsOnList reports whether a field should appear in list/kanban task JSON.

@@ -347,6 +347,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 
 	oldCompleted := completed
+	oldDueDate := dueDate
 	statusTouched := false
 	completedTouched := in.Completed != nil
 	originalProjectID := projectID
@@ -594,6 +595,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		newSprintID = 0
 	}
 
+	tagsChanged := false
 	if in.TagIDs != nil {
 		beforeTags, err := storage.GetTagsForTask(taskID)
 		if err != nil {
@@ -604,6 +606,9 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		}
 		if afterTags, err := storage.GetTagsForTask(taskID); err == nil {
 			logTagChanges(taskID, userID, beforeTags, afterTags)
+			tagsChanged = !sameTagSet(beforeTags, afterTags)
+		} else {
+			tagsChanged = true
 		}
 	}
 
@@ -644,15 +649,54 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	result.NewProjectID = effectiveProjectID
 	result.PriorityChanged = result.OldPriority != result.NewPriority
 	result.ProjectChanged = projectChanged
+	dueChanged := oldDueDate != dueDate
+	sprintChanged := newSprintID != oldSprintID
+	fieldsChanged := in.Fields != nil
+	changed := make([]string, 0, 6)
+	if statusTouched && newStatusID != oldStatusID {
+		changed = append(changed, "status")
+	}
+	if dueChanged {
+		changed = append(changed, "due_date")
+	}
+	if projectChanged {
+		changed = append(changed, "project")
+	}
+	if sprintChanged {
+		changed = append(changed, "sprint")
+	}
+	if tagsChanged {
+		changed = append(changed, "tags")
+	}
+	if fieldsChanged {
+		changed = append(changed, "fields")
+	}
 	var hookMeta *live.TaskHookMeta
+	if len(changed) > 0 || (statusTouched && newStatusID != oldStatusID) {
+		hookMeta = &live.TaskHookMeta{Changed: changed}
+	}
 	if statusTouched && newStatusID != oldStatusID {
 		from, to := statusHookNames(effectiveProjectID, oldStatusID, newStatusID)
-		hookMeta = &live.TaskHookMeta{StatusChanged: true, OldStatus: from, NewStatus: to}
+		if hookMeta == nil {
+			hookMeta = &live.TaskHookMeta{}
+		}
+		hookMeta.StatusChanged = true
+		hookMeta.OldStatus = from
+		hookMeta.NewStatus = to
 	}
 	if projectChanged {
 		live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskUpdated, hookMeta, result.OldProjectID)
 	} else {
 		live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskUpdated, hookMeta)
+	}
+	if dueChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskDueChanged, hookMeta)
+	}
+	if projectChanged || sprintChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskMoved, hookMeta)
+	}
+	if tagsChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskTagged, hookMeta)
 	}
 	return result, nil
 }
@@ -670,6 +714,21 @@ func logTagChanges(taskID, userID int, before, after []storage.Tag) {
 			_ = storage.LogTaskEvent(taskID, userID, "tag_removed", map[string]interface{}{"tag": t.Name, "tag_id": t.ID})
 		}
 	}
+}
+
+func sameTagSet(a, b []storage.Tag) bool {
+	return len(tagActivityMap(a)) == len(tagActivityMap(b)) && len(tagActivityMap(a)) == len(mergedTagKeys(a, b))
+}
+
+func mergedTagKeys(a, b []storage.Tag) map[string]struct{} {
+	out := make(map[string]struct{})
+	for k := range tagActivityMap(a) {
+		out[k] = struct{}{}
+	}
+	for k := range tagActivityMap(b) {
+		out[k] = struct{}{}
+	}
+	return out
 }
 
 func tagActivityMap(tags []storage.Tag) map[string]storage.Tag {

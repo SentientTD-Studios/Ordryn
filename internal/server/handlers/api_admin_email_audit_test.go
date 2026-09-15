@@ -77,9 +77,19 @@ func TestParseEmailAuditListQuery(t *testing.T) {
 			},
 		},
 		{
+			name:   "rate limited status",
+			rawURL: "/api/v1/admin/email-audit?status=rate_limited",
+			check: func(t *testing.T, f storage.EmailAuditFilter) {
+				t.Helper()
+				if f.Status != mailer.StatusRateLimited {
+					t.Fatalf("status = %q", f.Status)
+				}
+			},
+		},
+		{
 			name:    "bad status",
 			rawURL:  "/api/v1/admin/email-audit?status=nope",
-			wantErr: "status must be sent, failed, or not_configured.",
+			wantErr: "status must be sent, failed, not_configured, or rate_limited.",
 		},
 		{
 			name:    "bad trigger",

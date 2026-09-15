@@ -280,6 +280,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateEmailAuditTable failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateEmailAuditAddRateLimitedStatus(); err != nil {
+		fmt.Printf("migration: MigrateEmailAuditAddRateLimitedStatus failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateSiteSettingsAddUserInvitesAndExpiration(); err != nil {
 		fmt.Printf("migration: MigrateSiteSettingsAddUserInvitesAndExpiration failed: %v\n", err)
 		errCount++

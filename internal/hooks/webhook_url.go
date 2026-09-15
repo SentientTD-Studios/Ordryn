@@ -84,6 +84,10 @@ func validateWebhookURL(deliveryType, raw string) error {
 		}
 	case extensions.DeliveryHTTPWebhook:
 		// Public HTTPS only; host allowlist is the caller's choice.
+	case extensions.DeliveryNtfyWebhook:
+		if path == "" || path == "/" {
+			return fmt.Errorf("ntfy URL must include a topic path")
+		}
 	default:
 		return fmt.Errorf("unsupported delivery %q", deliveryType)
 	}

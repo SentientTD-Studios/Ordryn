@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"testing"
+	"time"
 
 	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
@@ -65,6 +66,84 @@ func TestShouldDeliverFilters(t *testing.T) {
 
 	if ShouldDeliver(m, site, base, Event{Type: "task.deleted", StatusChanged: true}, 3) {
 		t.Fatal("undeclared hook")
+	}
+}
+
+func TestShouldDeliverPriorityTagsClaimedAndSkipSelf(t *testing.T) {
+	m := testManifest()
+	site := storage.ExtensionSettings{Enabled: true}
+	ev := Event{
+		Type:    "task.updated",
+		ActorID: 5,
+		Snapshot: &storage.HookTaskSnapshot{
+			Priority:  1,
+			TagIDs:    []int{2},
+			ClaimedBy: 9,
+		},
+	}
+	team := destFromProject(storage.ExtensionProjectSettings{
+		Enabled:     true,
+		Triggers:    []string{"task.updated"},
+		MinPriority: 2,
+	})
+	if shouldDeliverDest(m, site, team, ev, 3) {
+		t.Fatal("min_priority")
+	}
+	team.MinPriority = 1
+	team.TagIDs = []int{8}
+	if shouldDeliverDest(m, site, team, ev, 3) {
+		t.Fatal("tag filter")
+	}
+	team.TagIDs = []int{2}
+	team.ClaimedOnly = true
+	ev.Snapshot.ClaimedBy = 0
+	if shouldDeliverDest(m, site, team, ev, 3) {
+		t.Fatal("claimed_only")
+	}
+	ev.Snapshot.ClaimedBy = 5
+	skipOff := false
+	mem := destFromMember(storage.ExtensionMemberSettings{
+		Enabled:     true,
+		Triggers:    []string{"task.updated"},
+		ClaimedIsMe: true,
+		SkipSelf:    &skipOff,
+	}, 5, false)
+	if !shouldDeliverDest(m, site, mem, ev, 3) {
+		t.Fatal("claimed_is_me match")
+	}
+	mem.SkipSelf = true
+	if shouldDeliverDest(m, site, mem, ev, 3) {
+		t.Fatal("skip-self")
+	}
+	personal := destFromMember(storage.ExtensionMemberSettings{
+		Enabled:  true,
+		Triggers: []string{"task.updated"},
+		SkipSelf: &skipOff,
+	}, 5, true)
+	if shouldDeliverDest(m, site, personal, ev, 3) {
+		t.Fatal("personal dest must not receive project events")
+	}
+	if !shouldDeliverDest(m, site, personal, ev, 0) {
+		t.Fatal("personal dest should receive inbox events")
+	}
+}
+
+func TestApplyMentions(t *testing.T) {
+	if got := applyMentions("ada", map[string]string{"ada": "<@U1>"}); got != "<@U1>" {
+		t.Fatalf("got %q", got)
+	}
+	if got := applyMentions("ada", nil); got != "ada" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestInQuietHours(t *testing.T) {
+	now := time.Date(2026, 9, 15, 22, 0, 0, 0, time.UTC)
+	if !inQuietHours("21:00", "07:00", "UTC", now) {
+		t.Fatal("expected quiet")
+	}
+	if inQuietHours("08:00", "17:00", "UTC", now) {
+		t.Fatal("not quiet")
 	}
 }
 

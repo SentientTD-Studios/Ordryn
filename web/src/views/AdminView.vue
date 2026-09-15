@@ -358,6 +358,11 @@ onMounted(load)
     <div class="card mb-4">
       <div class="card-header"><h2 class="h5 mb-0">Email</h2></div>
       <div class="card-body">
+		<p class="text-muted small">
+          System mail only: password resets, site invites, project invites, and join-request alerts.
+          Sends are rate-limited per recipient and site-wide.
+          Extensions and project members cannot send through this mailer — use an email relay, ntfy, or a chat webhook instead.
+        </p>
         <form @submit.prevent="saveEmailSettings">
           <div class="mb-3">
             <label class="form-label" for="email-provider">Provider</label>
@@ -447,7 +452,7 @@ onMounted(load)
           </template>
 
           <p v-if="!settings.email_provider" class="text-muted small">
-            Outbound email is disabled. Password resets and notifications will not send until a provider is configured.
+            Outbound email is disabled. Password resets, invites, and join-request alerts will not send until a provider is configured.
           </p>
 
           <div class="mb-3">

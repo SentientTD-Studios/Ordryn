@@ -153,6 +153,11 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 	case "extensions":
 		apiV1ProjectExtensions(w, r, projectID, parts[2:])
 		return true
+	case "inbound":
+		if len(parts) == 2 {
+			apiV1ProjectInbound(w, r, projectID)
+			return true
+		}
 	case "custom-fields":
 		if len(parts) != 2 {
 			return false

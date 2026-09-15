@@ -190,7 +190,7 @@ func AddCommentForUser(ctx context.Context, userID, taskID int, body string) (*s
 	}
 	comment.Links = ResolveCommentTaskLinks(taskID, projectID, userID, comment.Body)
 	NotifyProjectMembersTaskCommented(taskID, userID, projectID, body)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskCommented)
+	live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskCommented, &live.TaskHookMeta{Comment: body})
 	return comment, nil
 }
 

@@ -525,7 +525,7 @@ export type ExtensionManifest = {
   host_api: number
   description?: string
   hooks?: { on: string }[]
-  delivery?: { type: string; url_from: string; format?: string }
+  delivery?: { type: string; url_from?: string; format?: string }
   settings?: ExtensionSettingField[]
   templates?: Record<string, string>
   fields?: ExtensionField[]
@@ -586,6 +586,19 @@ export type AdminExtensionsList = {
 
 export type AdminExtensionPatch = {
   enabled?: boolean
+  webhook_url?: string
+}
+
+export type ExtensionDelivery = {
+  id: number
+  event: string
+  event_id?: string
+  host?: string
+  status: string
+  http_code?: number
+  error?: string
+  attempts: number
+  created_at: string
 }
 
 export type ProjectExtensionSettings = {
@@ -593,8 +606,23 @@ export type ProjectExtensionSettings = {
   triggers: string[]
   templates: Record<string, string>
   status_only: boolean
+  skip_self?: boolean
+  min_priority?: number
+  tag_ids?: number[]
+  claimed_only?: boolean
+  field_key?: string
+  field_value?: string
+  quiet_hours_start?: string
+  quiet_hours_end?: string
+  digest?: string
+  mention_map?: Record<string, string>
   last_error?: string
   last_delivery_at?: string
+}
+
+export type MemberExtensionSettings = ProjectExtensionSettings & {
+  claimed_is_me?: boolean
+  skip_self?: boolean
 }
 
 export type ProjectExtension = {
@@ -606,10 +634,19 @@ export type ProjectExtension = {
   manifest: ExtensionManifest
   settings: ProjectExtensionSettings
   secrets: Record<string, boolean>
+  member?: MemberExtensionSettings
+  member_secrets?: Record<string, boolean>
+  signing_set?: boolean
+  member_signing_set?: boolean
+  signing_secret?: string
+  sample_json?: string
+  deliveries?: ExtensionDelivery[]
+  member_deliveries?: ExtensionDelivery[]
 }
 
 export type ProjectExtensionsList = {
   extensions: ProjectExtension[]
+  is_owner?: boolean
 }
 
 export type ProjectExtensionPatch = {
@@ -617,7 +654,38 @@ export type ProjectExtensionPatch = {
   triggers?: string[]
   templates?: Record<string, string>
   status_only?: boolean
+  skip_self?: boolean
+  min_priority?: number
+  tag_ids?: number[]
+  claimed_only?: boolean
+  claimed_is_me?: boolean
+  field_key?: string
+  field_value?: string
+  quiet_hours_start?: string
+  quiet_hours_end?: string
+  digest?: string
+  mention_map?: Record<string, string>
   webhook_url?: string
+  ntfy_auth?: string
+  rotate_signing?: boolean
+}
+
+export type ProjectInboundWebhook = {
+  enabled: boolean
+  allow_create: boolean
+  allow_comment: boolean
+  secret_set: boolean
+  secret?: string
+  url: string
+  last_error?: string
+  last_delivery_at?: string
+}
+
+export type ProjectInboundPatch = {
+  enabled?: boolean
+  allow_create?: boolean
+  allow_comment?: boolean
+  rotate_secret?: boolean
 }
 
 export type AdminUser = {
@@ -627,7 +695,7 @@ export type AdminUser = {
   is_banned: boolean
 }
 
-export type EmailAuditStatus = 'sent' | 'failed' | 'not_configured'
+export type EmailAuditStatus = 'sent' | 'failed' | 'not_configured' | 'rate_limited'
 
 export type EmailAuditTrigger =
   | 'password_reset'

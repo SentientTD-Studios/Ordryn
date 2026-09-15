@@ -158,6 +158,15 @@ func TestShowsOnList(t *testing.T) {
 	}
 }
 
+func TestValidateManifestEmailDeliveryRejected(t *testing.T) {
+	m := validDiscord()
+	m.Delivery.Type = "email"
+	err := ValidateManifest("discord", m)
+	if err == nil || !strings.Contains(err.Error(), "site email is not available to extensions") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestValidateManifestUnknownDelivery(t *testing.T) {
 	m := validDiscord()
 	m.Delivery.Type = "smtp"
@@ -251,7 +260,7 @@ func TestLoadFailSoftAndSkipMissingManifest(t *testing.T) {
 }
 
 func TestExampleNotificationManifestsValidate(t *testing.T) {
-	ids := []string{"discord", "slack", "teams", "webhook"}
+	ids := []string{"discord", "slack", "teams", "webhook", "ntfy"}
 	for _, id := range ids {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
 		if err != nil {
@@ -272,6 +281,7 @@ func TestExampleNotificationManifestsValidate(t *testing.T) {
 			"slack":   DeliverySlackWebhook,
 			"teams":   DeliveryTeamsWebhook,
 			"webhook": DeliveryHTTPWebhook,
+			"ntfy":    DeliveryNtfyWebhook,
 		}
 		if m.Delivery.Type != wantType[id] {
 			t.Fatalf("%s delivery type=%q want %q", id, m.Delivery.Type, wantType[id])
@@ -299,8 +309,64 @@ func TestExampleNotificationManifestsValidate(t *testing.T) {
 	}
 }
 
+func TestExampleFocusedHookManifestsValidate(t *testing.T) {
+	type want struct {
+		delivery string
+		siteOnly bool
+	}
+	cases := map[string]want{
+		"due-dates":     {delivery: DeliveryNtfyWebhook},
+		"email":         {delivery: DeliveryHTTPWebhook},
+		"comments":      {delivery: DeliveryHTTPWebhook},
+		"claimed":       {delivery: DeliveryNtfyWebhook},
+		"activity":      {delivery: DeliveryHTTPWebhook},
+		"join-requests": {delivery: DeliveryHTTPWebhook, siteOnly: true},
+	}
+	for id, w := range cases {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		var m Manifest
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if err := ValidateManifest(id, m); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if m.Delivery == nil || m.Delivery.Type != w.delivery {
+			t.Fatalf("%s delivery=%v want %s", id, m.Delivery, w.delivery)
+		}
+		if id == "email" {
+			if m.Delivery.Format != DeliveryFormatJSON {
+				t.Fatalf("email relay should use json format, got %q", m.Delivery.Format)
+			}
+			if !strings.Contains(strings.ToLower(m.Description), "admin") {
+				t.Fatalf("email relay description should say it does not use Admin email")
+			}
+		}
+		if w.siteOnly {
+			if m.HasProjectSurface() || m.HasProjectSettings() {
+				t.Fatalf("%s should stay in Admin (no project surface)", id)
+			}
+			if !m.DeclaresHook("join.request") {
+				t.Fatalf("%s should declare join.request", id)
+			}
+			continue
+		}
+		if !m.HasProjectSettings() || !m.HasProjectSurface() {
+			t.Fatalf("%s should appear on the project tab", id)
+		}
+		for _, s := range m.Settings {
+			if s.Description == "" {
+				t.Fatalf("%s setting %s missing description", id, s.Key)
+			}
+		}
+	}
+}
+
 func TestExampleFieldsManifestsValidate(t *testing.T) {
-	for _, id := range []string{"severity", "fields-demo"} {
+	for _, id := range []string{"severity", "fields-demo", "estimate"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
 		if err != nil {
 			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)

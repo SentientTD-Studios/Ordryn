@@ -58,6 +58,50 @@ type TaskHookMeta struct {
 	StatusChanged bool
 	OldStatus     string
 	NewStatus     string
+	Comment       string
+	Changed       []string
+	Count         int
+	JoinEmail     string
+	JoinMessage   string
+}
+
+func hookEvent(actorID, taskID, projectID int, typ string, meta *TaskHookMeta) hooks.Event {
+	ev := hooks.Event{
+		Type:      typ,
+		TaskID:    taskID,
+		ProjectID: projectID,
+		ActorID:   actorID,
+	}
+	if meta != nil {
+		ev.StatusChanged = meta.StatusChanged
+		ev.OldStatus = meta.OldStatus
+		ev.NewStatus = meta.NewStatus
+		ev.Comment = meta.Comment
+		ev.Changed = meta.Changed
+		ev.Count = meta.Count
+		ev.JoinEmail = meta.JoinEmail
+		ev.JoinMessage = meta.JoinMessage
+	}
+	return ev
+}
+
+func dispatchHook(actorID, taskID, projectID int, typ string, meta *TaskHookMeta) {
+	if !hooks.HasWork() {
+		return
+	}
+	go hooks.Dispatch(hookEvent(actorID, taskID, projectID, typ, meta))
+}
+
+// DispatchHook sends an outbound extension event without an extra SSE publish.
+func DispatchHook(actorID, taskID int, typ string, meta *TaskHookMeta) {
+	if taskID <= 0 || !hooks.HasWork() {
+		return
+	}
+	_, projectID, err := storage.TaskOwnerAndProject(taskID)
+	if err != nil {
+		return
+	}
+	dispatchHook(actorID, taskID, projectID, typ, meta)
 }
 
 // AfterTaskChange notifies everyone who can currently see the task.
@@ -88,25 +132,18 @@ func AfterTaskChangeMeta(actorID, taskID int, typ string, meta *TaskHookMeta, ex
 		}, audience(ownerID, projectID, extraProjectIDs...))
 	}
 	if wantHooks {
-		ev := hooks.Event{
-			Type:      typ,
-			TaskID:    taskID,
-			ProjectID: projectID,
-			ActorID:   actorID,
-		}
-		if meta != nil {
-			ev.StatusChanged = meta.StatusChanged
-			ev.OldStatus = meta.OldStatus
-			ev.NewStatus = meta.NewStatus
-		}
+		ev := hookEvent(actorID, taskID, projectID, typ, meta)
+		ev.OwnerID = ownerID
 		go hooks.Dispatch(ev)
 	}
 }
 
-// AfterTasksChange notifies the union of audiences for many tasks (one event).
+// AfterTasksChange notifies the union of audiences for many tasks (one SSE event).
+// Outbound hooks fire per task except task.reordered, which is one project-level event.
 func AfterTasksChange(actorID int, typ string, taskIDs []int, extraProjectIDs ...int) {
 	h := currentHub()
-	if h == nil || len(taskIDs) == 0 {
+	wantHooks := hooks.HasWork()
+	if (h == nil && !wantHooks) || len(taskIDs) == 0 {
 		return
 	}
 	seen := make(map[int]struct{})
@@ -132,19 +169,37 @@ func AfterTasksChange(actorID int, typ string, taskIDs []int, extraProjectIDs ..
 	if len(taskIDs) == 1 {
 		taskID = taskIDs[0]
 	}
-	h.Publish(Event{
-		Type:      typ,
-		TaskID:    taskID,
-		ProjectID: projectID,
-		ActorID:   actorID,
-	}, users)
+	if h != nil {
+		h.Publish(Event{
+			Type:      typ,
+			TaskID:    taskID,
+			ProjectID: projectID,
+			ActorID:   actorID,
+		}, users)
+	}
+	if !wantHooks {
+		return
+	}
+	if typ == TypeTaskReordered {
+		go hooks.Dispatch(hooks.Event{
+			Type:      typ,
+			ProjectID: projectID,
+			ActorID:   actorID,
+			Count:     len(taskIDs),
+		})
+		return
+	}
+	for _, id := range taskIDs {
+		DispatchHook(actorID, id, typ, nil)
+	}
 }
 
 // AfterProjectChange notifies current project members, plus any extra user IDs
 // (for example a member who was just removed).
 func AfterProjectChange(actorID, projectID int, typ string, extraUserIDs ...int) {
 	h := currentHub()
-	if h == nil || projectID <= 0 {
+	wantHooks := hooks.HasWork()
+	if projectID <= 0 || (h == nil && !wantHooks) {
 		return
 	}
 	users, err := storage.ProjectMemberUserIDs(projectID)
@@ -152,11 +207,31 @@ func AfterProjectChange(actorID, projectID int, typ string, extraUserIDs ...int)
 		return
 	}
 	users = append(users, extraUserIDs...)
-	h.Publish(Event{
-		Type:      typ,
-		ProjectID: projectID,
-		ActorID:   actorID,
-	}, users)
+	if h != nil {
+		h.Publish(Event{
+			Type:      typ,
+			ProjectID: projectID,
+			ActorID:   actorID,
+		}, users)
+	}
+	if wantHooks {
+		go hooks.Dispatch(hooks.Event{
+			Type:      typ,
+			ProjectID: projectID,
+			ActorID:   actorID,
+		})
+	}
+}
+
+// AfterJoinRequest notifies admins over SSE and site-level extension hooks.
+func AfterJoinRequest(email, message string) {
+	if hooks.HasWork() {
+		go hooks.Dispatch(hooks.Event{
+			Type:        TypeJoinRequest,
+			JoinEmail:   email,
+			JoinMessage: message,
+		})
+	}
 }
 
 func audience(ownerID, projectID int, extraProjectIDs ...int) []int {

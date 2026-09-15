@@ -20,28 +20,26 @@ func NotifyAdminsOfJoinRequest(email, message string) {
 	ids, err := storage.ListAdminUserIDs()
 	if err != nil {
 		log.Printf("notify join_request: list admins: %v", err)
-		return
 	}
-	if len(ids) == 0 {
-		return
+	if len(ids) > 0 {
+		title := "New join request"
+		body := joinRequestNotificationBody(email, message)
+		items := make([]storage.UserNotification, 0, len(ids))
+		for _, id := range ids {
+			items = append(items, storage.UserNotification{
+				UserID: id,
+				Type:   storage.NotificationJoinRequest,
+				Title:  title,
+				Body:   body,
+			})
+		}
+		if err := storage.CreateUserNotificationsBulk(items); err != nil {
+			log.Printf("notify join_request: insert: %v", err)
+		} else {
+			live.Push(live.Event{Type: live.TypeJoinRequest}, ids)
+		}
 	}
-
-	title := "New join request"
-	body := joinRequestNotificationBody(email, message)
-	items := make([]storage.UserNotification, 0, len(ids))
-	for _, id := range ids {
-		items = append(items, storage.UserNotification{
-			UserID: id,
-			Type:   storage.NotificationJoinRequest,
-			Title:  title,
-			Body:   body,
-		})
-	}
-	if err := storage.CreateUserNotificationsBulk(items); err != nil {
-		log.Printf("notify join_request: insert: %v", err)
-		return
-	}
-	live.Push(live.Event{Type: live.TypeJoinRequest}, ids)
+	live.AfterJoinRequest(email, message)
 }
 
 func joinRequestNotificationBody(email, message string) string {

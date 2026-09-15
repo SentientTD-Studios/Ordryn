@@ -66,3 +66,30 @@ func TestAPIV1ProjectExtensionsListMethodNotAllowed(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestAPIV1InboundWebhookMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/webhooks/inbound", nil)
+	rec := httptest.NewRecorder()
+	APIV1InboundWebhook(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
+func TestAPIV1InboundWebhookInvalidJSON(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound", strings.NewReader(`not-json`))
+	rec := httptest.NewRecorder()
+	APIV1InboundWebhook(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAPIV1MeExtensionsUnauthorized(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me/extensions", nil)
+	rec := httptest.NewRecorder()
+	APIV1MeExtensions(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d", rec.Code)
+	}
+}

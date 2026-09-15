@@ -105,7 +105,14 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/projects/{id}/extensions",
 	"/api/v1/projects/{id}/extensions/{extensionId}",
 	"/api/v1/projects/{id}/extensions/{extensionId}/test",
+	"/api/v1/projects/{id}/extensions/{extensionId}/me",
+	"/api/v1/projects/{id}/extensions/{extensionId}/me/test",
+	"/api/v1/projects/{id}/inbound",
 	"/api/v1/projects/{id}/custom-fields",
+	"/api/v1/me/extensions",
+	"/api/v1/me/extensions/{extensionId}",
+	"/api/v1/me/extensions/{extensionId}/test",
+	"/api/v1/webhooks/inbound",
 }
 
 func moduleRoot(t *testing.T) string {

@@ -9,6 +9,8 @@ import type {
   ProjectExtensionsList,
   ProjectExtension,
   ProjectExtensionPatch,
+  ProjectInboundWebhook,
+  ProjectInboundPatch,
   CustomFieldDefList,
   APIKey,
   CalendarInfo,
@@ -458,10 +460,53 @@ export const api = {
   },
 
   testProjectExtension(projectId: number, extensionId: string) {
-    return request<{ ok: boolean; message: string }>(
+    return request<{ ok: boolean; message: string; sample_json?: string }>(
       `/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/test`,
       { method: 'POST' },
     )
+  },
+
+  patchProjectExtensionMe(projectId: number, extensionId: string, payload: ProjectExtensionPatch) {
+    return request<ProjectExtension>(
+      `/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+    )
+  },
+
+  testProjectExtensionMe(projectId: number, extensionId: string) {
+    return request<{ ok: boolean; message: string; sample_json?: string }>(
+      `/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me/test`,
+      { method: 'POST' },
+    )
+  },
+
+  listMyExtensions() {
+    return request<ProjectExtensionsList>('/api/v1/me/extensions')
+  },
+
+  patchMyExtension(extensionId: string, payload: ProjectExtensionPatch) {
+    return request<ProjectExtension>(`/api/v1/me/extensions/${encodeURIComponent(extensionId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  testMyExtension(extensionId: string) {
+    return request<{ ok: boolean; message: string; sample_json?: string }>(
+      `/api/v1/me/extensions/${encodeURIComponent(extensionId)}/test`,
+      { method: 'POST' },
+    )
+  },
+
+  getProjectInbound(projectId: number) {
+    return request<ProjectInboundWebhook>(`/api/v1/projects/${projectId}/inbound`)
+  },
+
+  patchProjectInbound(projectId: number, payload: ProjectInboundPatch) {
+    return request<ProjectInboundWebhook>(`/api/v1/projects/${projectId}/inbound`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
   },
 
   createTaskGitHubIssue(taskId: number, payload: { title?: string; body?: string } = {}) {

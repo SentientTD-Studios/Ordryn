@@ -121,3 +121,18 @@ func TestIsBlockedIP(t *testing.T) {
 		t.Fatal("8.8.8.8 should be allowed")
 	}
 }
+
+func TestValidateNtfyWebhookURL(t *testing.T) {
+	if err := validateWebhookURL(extensions.DeliveryNtfyWebhook, "https://ntfy.sh/my-topic"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWebhookURL(extensions.DeliveryNtfyWebhook, "https://ntfy.example.com/alerts"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWebhookURL(extensions.DeliveryNtfyWebhook, "https://ntfy.sh/"); err == nil {
+		t.Fatal("expected topic path required")
+	}
+	if err := validateWebhookURL(extensions.DeliveryNtfyWebhook, "https://10.0.0.8/topic"); err == nil {
+		t.Fatal("expected LAN ntfy reject")
+	}
+}

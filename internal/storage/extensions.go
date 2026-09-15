@@ -29,23 +29,70 @@ type ExtensionSettings struct {
 
 // ExtensionProjectSettings is the per-project JSON document for an extension.
 type ExtensionProjectSettings struct {
-	Enabled        bool              `json:"enabled"`
-	Triggers       []string          `json:"triggers"`
-	Templates      map[string]string `json:"templates"`
-	StatusOnly     bool              `json:"status_only"`
-	LastError      string            `json:"last_error,omitempty"`
-	LastDeliveryAt string            `json:"last_delivery_at,omitempty"`
+	Enabled         bool              `json:"enabled"`
+	Triggers        []string          `json:"triggers"`
+	Templates       map[string]string `json:"templates"`
+	StatusOnly      bool              `json:"status_only"`
+	SkipSelf        bool              `json:"skip_self,omitempty"`
+	MinPriority     int               `json:"min_priority,omitempty"`
+	TagIDs          []int             `json:"tag_ids,omitempty"`
+	ClaimedOnly     bool              `json:"claimed_only,omitempty"`
+	FieldKey        string            `json:"field_key,omitempty"`
+	FieldValue      string            `json:"field_value,omitempty"`
+	QuietHoursStart string            `json:"quiet_hours_start,omitempty"`
+	QuietHoursEnd   string            `json:"quiet_hours_end,omitempty"`
+	Digest          string            `json:"digest,omitempty"`
+	MentionMap      map[string]string `json:"mention_map,omitempty"`
+	LastError       string            `json:"last_error,omitempty"`
+	LastDeliveryAt  string            `json:"last_delivery_at,omitempty"`
+}
+
+// ExtensionMemberSettings is per-user destination config (project or personal inbox).
+type ExtensionMemberSettings struct {
+	Enabled         bool              `json:"enabled"`
+	Triggers        []string          `json:"triggers"`
+	Templates       map[string]string `json:"templates"`
+	SkipSelf        *bool             `json:"skip_self,omitempty"`
+	StatusOnly      bool              `json:"status_only,omitempty"`
+	MinPriority     int               `json:"min_priority,omitempty"`
+	TagIDs          []int             `json:"tag_ids,omitempty"`
+	ClaimedOnly     bool              `json:"claimed_only,omitempty"`
+	ClaimedIsMe     bool              `json:"claimed_is_me,omitempty"`
+	FieldKey        string            `json:"field_key,omitempty"`
+	FieldValue      string            `json:"field_value,omitempty"`
+	QuietHoursStart string            `json:"quiet_hours_start,omitempty"`
+	QuietHoursEnd   string            `json:"quiet_hours_end,omitempty"`
+	Digest          string            `json:"digest,omitempty"`
+	LastError       string            `json:"last_error,omitempty"`
+	LastDeliveryAt  string            `json:"last_delivery_at,omitempty"`
+}
+
+// SkipSelfOrDefault is true when skip_self is unset (member/personal default).
+func (s ExtensionMemberSettings) SkipSelfOrDefault() bool {
+	if s.SkipSelf == nil {
+		return true
+	}
+	return *s.SkipSelf
 }
 
 // HookTaskSnapshot is the task view used when rendering hook templates.
 type HookTaskSnapshot struct {
-	ID          int
-	Title       string
-	Completed   bool
-	Priority    int
-	ProjectID   int
-	ProjectName string
-	StatusName  string
+	ID            int
+	Title         string
+	Completed     bool
+	Priority      int
+	ProjectID     int
+	ProjectName   string
+	StatusName    string
+	OwnerID       int
+	ClaimedBy     int
+	ClaimedByName string
+	DueDate       string
+	SprintID      int
+	SprintName    string
+	Tags          []string
+	TagIDs        []int
+	CustomFields  map[string]string
 }
 
 // CreateExtensionTables creates extension settings and secret tables.
@@ -80,6 +127,56 @@ func CreateExtensionTables() error {
 			data JSONB NOT NULL DEFAULT '{}',
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (extension_id, project_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS extension_member_settings (
+			extension_id VARCHAR(64) NOT NULL,
+			project_id INTEGER NOT NULL DEFAULT 0,
+			user_id INTEGER NOT NULL,
+			data JSONB NOT NULL DEFAULT '{}',
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (extension_id, project_id, user_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS hook_overdue_sent (
+			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			due_date DATE NOT NULL,
+			sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (task_id, due_date)
+		)`,
+		`CREATE TABLE IF NOT EXISTS extension_deliveries (
+			id BIGSERIAL PRIMARY KEY,
+			extension_id VARCHAR(64) NOT NULL,
+			project_id INTEGER NOT NULL DEFAULT 0,
+			user_id INTEGER NOT NULL DEFAULT 0,
+			task_id INTEGER NOT NULL DEFAULT 0,
+			event_type VARCHAR(64) NOT NULL DEFAULT '',
+			event_id VARCHAR(64) NOT NULL DEFAULT '',
+			url_host TEXT NOT NULL DEFAULT '',
+			status VARCHAR(32) NOT NULL DEFAULT 'pending',
+			http_code INTEGER NOT NULL DEFAULT 0,
+			error TEXT NOT NULL DEFAULT '',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			coalesce_key TEXT NOT NULL DEFAULT '',
+			payload TEXT NOT NULL DEFAULT '',
+			next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS project_inbound_webhooks (
+			project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+			secret_enc TEXT NOT NULL DEFAULT '',
+			enabled BOOLEAN NOT NULL DEFAULT FALSE,
+			allow_create BOOLEAN NOT NULL DEFAULT TRUE,
+			allow_comment BOOLEAN NOT NULL DEFAULT TRUE,
+			last_error TEXT NOT NULL DEFAULT '',
+			last_delivery_at TIMESTAMPTZ
+		)`,
+		`CREATE TABLE IF NOT EXISTS hook_task_messages (
+			extension_id VARCHAR(64) NOT NULL,
+			project_id INTEGER NOT NULL,
+			task_id INTEGER NOT NULL,
+			message_id TEXT NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (extension_id, project_id, task_id)
 		)`,
 	}
 	for _, q := range stmts {
@@ -121,15 +218,20 @@ func migrateExtensionSecretColumns(pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `ALTER TABLE extension_secrets ADD COLUMN IF NOT EXISTS project_id INTEGER NOT NULL DEFAULT 0`); err != nil {
 		return fmt.Errorf("extension_secrets project_id: %w", err)
 	}
+	if _, err := pool.Exec(ctx, `ALTER TABLE extension_secrets ADD COLUMN IF NOT EXISTS user_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("extension_secrets user_id: %w", err)
+	}
 	if _, err := pool.Exec(ctx, `ALTER TABLE extension_secrets DROP CONSTRAINT IF EXISTS extension_secrets_pkey`); err != nil {
 		return fmt.Errorf("extension_secrets drop pkey: %w", err)
 	}
 	if _, err := pool.Exec(ctx, `ALTER TABLE extension_secrets DROP CONSTRAINT IF EXISTS mod_secrets_pkey`); err != nil {
 		return fmt.Errorf("extension_secrets drop legacy pkey: %w", err)
 	}
-	if _, err := pool.Exec(ctx, `ALTER TABLE extension_secrets ADD PRIMARY KEY (extension_id, project_id, key)`); err != nil {
+	if _, err := pool.Exec(ctx, `ALTER TABLE extension_secrets ADD PRIMARY KEY (extension_id, project_id, user_id, key)`); err != nil {
 		return fmt.Errorf("extension_secrets pkey: %w", err)
 	}
+	_, _ = pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_extension_deliveries_pending ON extension_deliveries (status, next_attempt_at)`)
+	_, _ = pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_extension_deliveries_lookup ON extension_deliveries (extension_id, project_id, user_id, created_at DESC)`)
 	return nil
 }
 
@@ -330,6 +432,17 @@ func writeExtensionProjectSettings(extensionID string, projectID int, data Exten
 	return err
 }
 
+// RecordExtensionSiteDelivery stores last site-level delivery on extension_settings.
+func RecordExtensionSiteDelivery(extensionID, lastErr string) error {
+	s, err := GetExtensionSettings(extensionID)
+	if err != nil {
+		return err
+	}
+	s.LastError = lastErr
+	s.LastDeliveryAt = time.Now().UTC().Format(time.RFC3339)
+	return writeExtensionSettings(extensionID, s)
+}
+
 // RecordExtensionProjectDelivery stores the last hook delivery attempt on the project settings row.
 func RecordExtensionProjectDelivery(extensionID string, projectID int, lastErr string) error {
 	if projectID <= 0 {
@@ -344,15 +457,21 @@ func RecordExtensionProjectDelivery(extensionID string, projectID int, lastErr s
 	return writeExtensionProjectSettings(extensionID, projectID, s)
 }
 
-// SetExtensionSecret encrypts and stores a secret. Empty plaintext is a no-op.
-// projectID 0 is the unused site-level slot.
+const SigningSecretKey = "signing_secret"
+
+// SetExtensionSecret encrypts and stores a team/site secret (user_id 0). Empty plaintext is a no-op.
 func SetExtensionSecret(extensionID string, projectID int, key, plaintext string) error {
+	return SetExtensionSecretForUser(extensionID, projectID, 0, key, plaintext)
+}
+
+// SetExtensionSecretForUser encrypts and stores a secret. userID 0 is the team/site slot.
+func SetExtensionSecretForUser(extensionID string, projectID, userID int, key, plaintext string) error {
 	extensionID = strings.TrimSpace(extensionID)
 	key = strings.TrimSpace(key)
 	if extensionID == "" || key == "" {
 		return fmt.Errorf("extension id and key required")
 	}
-	if projectID < 0 {
+	if projectID < 0 || userID < 0 {
 		return fmt.Errorf("project id required")
 	}
 	plaintext = strings.TrimSpace(plaintext)
@@ -369,14 +488,19 @@ func SetExtensionSecret(extensionID string, projectID int, key, plaintext string
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(), `
-		INSERT INTO extension_secrets (extension_id, project_id, key, value_enc, updated_at) VALUES ($1, $2, $3, $4, NOW())
-		ON CONFLICT (extension_id, project_id, key) DO UPDATE SET value_enc = EXCLUDED.value_enc, updated_at = NOW()`,
-		extensionID, projectID, key, enc)
+		INSERT INTO extension_secrets (extension_id, project_id, user_id, key, value_enc, updated_at) VALUES ($1, $2, $3, $4, $5, NOW())
+		ON CONFLICT (extension_id, project_id, user_id, key) DO UPDATE SET value_enc = EXCLUDED.value_enc, updated_at = NOW()`,
+		extensionID, projectID, userID, key, enc)
 	return err
 }
 
-// GetExtensionSecret decrypts a stored secret. Missing returns "".
+// GetExtensionSecret decrypts a team/site secret (user_id 0). Missing returns "".
 func GetExtensionSecret(extensionID string, projectID int, key string) (string, error) {
+	return GetExtensionSecretForUser(extensionID, projectID, 0, key)
+}
+
+// GetExtensionSecretForUser decrypts a stored secret. Missing returns "".
+func GetExtensionSecretForUser(extensionID string, projectID, userID int, key string) (string, error) {
 	extensionID = strings.TrimSpace(extensionID)
 	key = strings.TrimSpace(key)
 	if extensionID == "" || key == "" {
@@ -389,8 +513,8 @@ func GetExtensionSecret(extensionID string, projectID int, key string) (string, 
 	defer CloseDatabase(pool)
 	var enc string
 	err = pool.QueryRow(context.Background(),
-		`SELECT value_enc FROM extension_secrets WHERE extension_id = $1 AND project_id = $2 AND key = $3`,
-		extensionID, projectID, key).Scan(&enc)
+		`SELECT value_enc FROM extension_secrets WHERE extension_id = $1 AND project_id = $2 AND user_id = $3 AND key = $4`,
+		extensionID, projectID, userID, key).Scan(&enc)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return "", nil
@@ -403,8 +527,13 @@ func GetExtensionSecret(extensionID string, projectID int, key string) (string, 
 	return secret.Decrypt(enc)
 }
 
-// ExtensionSecretIsSet reports whether a secret row exists.
+// ExtensionSecretIsSet reports whether a team/site secret row exists.
 func ExtensionSecretIsSet(extensionID string, projectID int, key string) bool {
+	return ExtensionSecretIsSetForUser(extensionID, projectID, 0, key)
+}
+
+// ExtensionSecretIsSetForUser reports whether a secret row exists.
+func ExtensionSecretIsSetForUser(extensionID string, projectID, userID int, key string) bool {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return false
@@ -412,8 +541,8 @@ func ExtensionSecretIsSet(extensionID string, projectID int, key string) bool {
 	defer CloseDatabase(pool)
 	var n int
 	_ = pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM extension_secrets WHERE extension_id = $1 AND project_id = $2 AND key = $3 AND value_enc <> ''`,
-		extensionID, projectID, key).Scan(&n)
+		`SELECT COUNT(*) FROM extension_secrets WHERE extension_id = $1 AND project_id = $2 AND user_id = $3 AND key = $4 AND value_enc <> ''`,
+		extensionID, projectID, userID, key).Scan(&n)
 	return n > 0
 }
 
@@ -429,12 +558,17 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 	var projectID sql.NullInt64
 	err = pool.QueryRow(context.Background(), `
 		SELECT t.id, t.title, COALESCE(t.completed, false), COALESCE(t.priority, 0),
-		       t.project_id, COALESCE(p.name, ''), COALESCE(ps.name, '')
+		       t.project_id, COALESCE(p.name, ''), COALESCE(ps.name, ''),
+		       t.user_id, COALESCE(t.claimed_by, 0), COALESCE(u.user_name, u.email, ''),
+		       COALESCE(CAST(t.due_date AS TEXT), ''), COALESCE(t.sprint_id, 0), COALESCE(sp.name, '')
 		FROM tasks t
 		LEFT JOIN projects p ON p.id = t.project_id
 		LEFT JOIN project_statuses ps ON ps.id = t.status_id
+		LEFT JOIN users u ON u.id = t.claimed_by
+		LEFT JOIN project_sprints sp ON sp.id = t.sprint_id
 		WHERE t.id = $1`, taskID).Scan(
-		&s.ID, &s.Title, &s.Completed, &s.Priority, &projectID, &s.ProjectName, &s.StatusName)
+		&s.ID, &s.Title, &s.Completed, &s.Priority, &projectID, &s.ProjectName, &s.StatusName,
+		&s.OwnerID, &s.ClaimedBy, &s.ClaimedByName, &s.DueDate, &s.SprintID, &s.SprintName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("task not found")
@@ -443,6 +577,54 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 	}
 	if projectID.Valid {
 		s.ProjectID = int(projectID.Int64)
+	}
+	if tags, err := GetTagsForTask(taskID); err == nil {
+		s.Tags = make([]string, 0, len(tags))
+		s.TagIDs = make([]int, 0, len(tags))
+		for _, tg := range tags {
+			s.Tags = append(s.Tags, tg.Name)
+			s.TagIDs = append(s.TagIDs, tg.ID)
+		}
+	}
+	if fields, err := GetCustomFieldValuesForTasks([]int{taskID}); err == nil {
+		if raw, ok := fields[taskID]; ok {
+			s.CustomFields = customFieldsToStrings(raw)
+		}
+	}
+	return &s, nil
+}
+
+func customFieldsToStrings(raw map[string]json.RawMessage) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		s := strings.TrimSpace(string(v))
+		s = strings.Trim(s, `"`)
+		out[k] = s
+	}
+	return out
+}
+
+// GetHookProjectSnapshot loads project name for project-level hook events.
+func GetHookProjectSnapshot(projectID int) (*HookTaskSnapshot, error) {
+	if projectID <= 0 {
+		return nil, fmt.Errorf("project required")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	var s HookTaskSnapshot
+	err = pool.QueryRow(context.Background(),
+		`SELECT id, name, user_id FROM projects WHERE id = $1`, projectID).Scan(&s.ProjectID, &s.ProjectName, &s.OwnerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("project not found")
+		}
+		return nil, err
 	}
 	return &s, nil
 }

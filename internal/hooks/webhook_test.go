@@ -21,13 +21,28 @@ func TestMarshalWebhookPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONEq(t, raw, map[string]any{"content": "hello"})
+	var discord map[string]any
+	if err := json.Unmarshal(raw, &discord); err != nil {
+		t.Fatal(err)
+	}
+	if discord["content"] != "hello" || discord["embeds"] == nil {
+		t.Fatalf("discord payload=%s", raw)
+	}
+	if !strings.Contains(string(raw), "Open") && !strings.Contains(string(raw), vars["url"]) {
+		t.Fatalf("discord should include task url, got %s", raw)
+	}
 
 	raw, err = marshalWebhookPayload(extensions.DeliverySlackWebhook, "", "hello", "task.updated", vars)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONEq(t, raw, map[string]any{"text": "hello"})
+	var slack map[string]any
+	if err := json.Unmarshal(raw, &slack); err != nil {
+		t.Fatal(err)
+	}
+	if slack["text"] != "hello" || slack["blocks"] == nil {
+		t.Fatalf("slack payload=%s", raw)
+	}
 
 	raw, err = marshalWebhookPayload(extensions.DeliveryHTTPWebhook, "", "hello", "task.updated", vars)
 	if err != nil {
@@ -51,6 +66,20 @@ func TestMarshalWebhookPayloads(t *testing.T) {
 	}
 	if body.Text != "hello" || body.Content != "hello" || body.Event != "task.updated" || body.ID != "9" || body.Project != "Ordryn" {
 		t.Fatalf("json body=%+v", body)
+	}
+	vars["event_id"] = "evt-1"
+	vars["occurred_at"] = "2026-09-15T16:00:00Z"
+	vars["changed"] = "status,due_date"
+	vars["fields_json"] = `{"severity.level":"high"}`
+	raw, err = marshalWebhookPayload(extensions.DeliveryHTTPWebhook, extensions.DeliveryFormatJSON, "hello", "task.updated", vars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.EventID != "evt-1" || len(body.Changed) != 2 || body.Fields["severity.level"] != "high" {
+		t.Fatalf("rich json body=%+v", body)
 	}
 
 	raw, err = marshalWebhookPayload(extensions.DeliveryTeamsWebhook, "", "hello **world**", "task.updated", vars)
@@ -97,6 +126,27 @@ func TestPostJSONSuccessAndError(t *testing.T) {
 	}
 	if err := postJSON(srv.URL+"/fail", []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "webhook HTTP 400") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestPostJSONSignsBody(t *testing.T) {
+	var gotSig string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSig = r.Header.Get("X-Ordryn-Signature")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	prev := webhookHTTPClient
+	webhookHTTPClient = srv.Client()
+	t.Cleanup(func() { webhookHTTPClient = prev })
+
+	body := []byte(`{"text":"hi"}`)
+	if _, _, err := postJSONOpts(srv.URL, body, sendOpts{SigningSecret: "s3cret"}); err != nil {
+		t.Fatal(err)
+	}
+	want := signBody("s3cret", body)
+	if gotSig != want {
+		t.Fatalf("sig=%q want=%q", gotSig, want)
 	}
 }
 

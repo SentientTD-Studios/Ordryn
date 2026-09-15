@@ -12,11 +12,16 @@ const loading = ref(false)
 const extensions = ref<AdminExtension[]>([])
 const busyId = ref<string | null>(null)
 const expanded = reactive<Record<string, boolean>>({})
+const siteSecretDraft = reactive<Record<string, string>>({})
 
 const emptyHint = computed(() => extensions.value.length === 0)
 
 function siteFields(ext: AdminExtension): ExtensionSettingField[] {
   return (ext.manifest.settings || []).filter((f) => !f.scope || f.scope === 'site')
+}
+
+function siteSecretFields(ext: AdminExtension): ExtensionSettingField[] {
+  return siteFields(ext).filter((f) => f.type === 'secret')
 }
 
 function hasProjectSettings(ext: AdminExtension): boolean {
@@ -52,8 +57,11 @@ async function save(ext: AdminExtension) {
   busyId.value = ext.id
   try {
     const payload: AdminExtensionPatch = { enabled: ext.settings.enabled }
+    const draft = siteSecretDraft[ext.id]?.trim()
+    if (draft) payload.webhook_url = draft
     const saved = await api.patchAdminExtension(ext.id, payload)
     replaceExtension(saved)
+    siteSecretDraft[ext.id] = ''
     if (customFields(saved).length) clearCustomFieldDefsCache()
     toast.push('Extension settings saved', 'success')
   } catch (err) {
@@ -72,18 +80,15 @@ onMounted(load)
     <h1>Extensions</h1>
     <p class="text-muted">
       Drop a folder in <code>data/extensions/</code> with <code>manifest.json</code>, then restart.
-      Copy a notification example from <code>examples/extensions/</code> (Discord, Slack, Teams, or
-      generic webhook), or <code>examples/extensions/severity</code> /
-      <code>examples/extensions/fields-demo</code> for custom fields on tasks. Channel, triggers, and
-      messages are configured by project owners under Project settings → Extensions. Custom-field
-      extensions also need Enable for this project.
+      Copy a notification example from <code>examples/extensions/</code> (Discord, Slack, Teams,
+      generic webhook, ntfy, email relay, due-dates, comments, claimed, activity, join-requests), or
+      <code>severity</code> / <code>estimate</code> / <code>fields-demo</code> for custom fields.
     </p>
 
     <p v-if="loading" class="text-muted">Loading…</p>
     <div v-else-if="emptyHint" class="alert alert-secondary">
-      No extensions loaded. Copy a folder from <code>examples/extensions/</code> (Discord, Slack,
-      Teams, generic webhook, or custom fields) into <code>data/extensions/</code> and restart the
-      server.
+      No extensions loaded. Copy a folder from <code>examples/extensions/</code> into
+      <code>data/extensions/</code> and restart the server.
     </div>
 
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
@@ -127,6 +132,9 @@ onMounted(load)
             <p v-else-if="customFields(ext).length" class="small text-muted">
               Project owners enable this per board in Project settings → Extensions. Fields then appear on that project’s tasks.
             </p>
+            <p v-else class="small text-muted">
+              This extension is configured here in Admin (site-wide), not on each project.
+            </p>
             <div v-if="customFields(ext).length" class="mb-3">
               <div class="fw-semibold mb-2">Custom fields</div>
               <ul class="small mb-0 ps-3">
@@ -136,7 +144,20 @@ onMounted(load)
                 </li>
               </ul>
             </div>
-            <div v-for="field in siteFields(ext)" :key="field.key" class="mb-3">
+            <div v-for="field in siteSecretFields(ext)" :key="field.key" class="mb-3">
+              <label class="form-label" :for="`ext-${ext.id}-${field.key}`">{{ field.label }}</label>
+              <input
+                :id="`ext-${ext.id}-${field.key}`"
+                v-model="siteSecretDraft[ext.id]"
+                type="password"
+                class="form-control"
+                autocomplete="off"
+                :placeholder="ext.secrets?.[field.key] ? 'Set — leave blank to keep' : 'https://example.com/hooks/…'"
+              />
+              <div v-if="field.description" class="form-text">{{ field.description }}</div>
+              <div v-if="ext.secrets?.[field.key]" class="form-text text-success">URL is stored.</div>
+            </div>
+            <div v-for="field in siteFields(ext).filter((f) => f.type !== 'secret')" :key="field.key" class="mb-3">
               <div class="fw-semibold">{{ field.label }}</div>
               <div v-if="field.description" class="form-text">{{ field.description }}</div>
             </div>

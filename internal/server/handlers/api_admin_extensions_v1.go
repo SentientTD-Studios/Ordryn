@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"GoTodo/internal/extensions"
+	"GoTodo/internal/hooks"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 )
@@ -27,7 +28,9 @@ type adminExtensionsListJSON struct {
 }
 
 type adminExtensionPatch struct {
-	Enabled *bool `json:"enabled"`
+	Enabled    *bool   `json:"enabled"`
+	WebhookURL *string `json:"webhook_url"`
+	Triggers   *[]string `json:"triggers"`
 }
 
 // APIV1AdminExtensionsRouter handles /api/v1/admin/extensions and /{id}.
@@ -115,6 +118,26 @@ func adminExtensionPatchHandler(w http.ResponseWriter, r *http.Request, id strin
 	}
 	if req.Enabled != nil {
 		cur.Enabled = *req.Enabled
+	}
+	if req.Triggers != nil {
+		cur.Triggers = filterDeclaredTriggers(e.Manifest, *req.Triggers)
+	}
+	if req.WebhookURL != nil && strings.TrimSpace(*req.WebhookURL) != "" {
+		url := strings.TrimSpace(*req.WebhookURL)
+		if e.Manifest.Delivery != nil {
+			if err := hooks.ValidateDeliveryURL(e.Manifest.Delivery, url); err != nil {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error()+".")
+				return
+			}
+			key := e.Manifest.Delivery.DestinationKey()
+			if key == "" {
+				key = "webhook_url"
+			}
+			if err := storage.SetExtensionSecret(id, 0, key, url); err != nil {
+				utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save webhook URL.")
+				return
+			}
+		}
 	}
 	if err := storage.UpsertExtensionSettings(id, cur); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save extension settings.")

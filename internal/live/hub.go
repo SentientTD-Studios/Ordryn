@@ -23,13 +23,19 @@ type Event struct {
 }
 
 const (
-	TypeTaskCreated    = "task.created"
-	TypeTaskUpdated    = "task.updated"
-	TypeTaskDeleted    = "task.deleted"
-	TypeTaskReordered  = "task.reordered"
-	TypeTaskCommented  = "task.commented"
-	TypeProjectUpdated = "project.updated"
-	TypeJoinRequest    = "join.request"
+	TypeTaskCreated     = "task.created"
+	TypeTaskUpdated     = "task.updated"
+	TypeTaskDeleted     = "task.deleted"
+	TypeTaskReordered   = "task.reordered"
+	TypeTaskCommented   = "task.commented"
+	TypeTaskClaimed     = "task.claimed"
+	TypeTaskUnclaimed   = "task.unclaimed"
+	TypeTaskDueChanged  = "task.due_changed"
+	TypeTaskMoved       = "task.moved"
+	TypeTaskTagged      = "task.tagged"
+	TypeTaskOverdue     = "task.overdue"
+	TypeProjectUpdated  = "project.updated"
+	TypeJoinRequest     = "join.request"
 )
 
 // Hub fans events out to in-process SSE subscribers and, when Redis is

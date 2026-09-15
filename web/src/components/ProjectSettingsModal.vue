@@ -44,7 +44,7 @@ const tabs = computed(() => {
   ]
   if (isKanban.value) items.push({ id: 'sprints', label: 'Sprints' })
   items.push({ id: 'tags', label: 'Tags' }, { id: 'github', label: 'GitHub' })
-  if (isOwner.value) items.push({ id: 'extensions', label: 'Extensions' })
+  items.push({ id: 'extensions', label: 'Extensions' })
   items.push({ id: 'sharing', label: 'Sharing' })
   return items
 })
@@ -71,10 +71,6 @@ watch(
 
 watch(isKanban, (kanban) => {
   if (!kanban && tab.value === 'sprints') tab.value = 'details'
-})
-
-watch(isOwner, (owner) => {
-  if (!owner && tab.value === 'extensions') tab.value = 'details'
 })
 
 function close() {
@@ -254,7 +250,7 @@ async function archiveOrRestore() {
           />
 
           <ProjectExtensionsPanel
-            v-else-if="tab === 'extensions' && isOwner"
+            v-else-if="tab === 'extensions'"
             :project="project"
           />
 

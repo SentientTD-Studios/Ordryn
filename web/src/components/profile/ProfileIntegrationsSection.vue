@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '@/api/client'
-import type { CalendarInfo, GitHubConnection } from '@/api/types'
+import type { CalendarInfo, GitHubConnection, ProjectExtension, ProjectExtensionPatch } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useConfirm } from '@/composables/useConfirm'
 import { useSite } from '@/composables/useSite'
@@ -18,15 +18,84 @@ const githubOAuthEnabled = computed(() => !!siteInfo.value?.github_oauth_configu
 
 const calendar = ref<CalendarInfo | null>(null)
 const icsFile = ref<File | null>(null)
+const inbox = ref<ProjectExtension[]>([])
+const inboxBusy = ref<string | null>(null)
+const inboxDraft = reactive<Record<string, string>>({})
+const inboxExpanded = reactive<Record<string, boolean>>({})
 
 async function load() {
   try {
-    const [c, g] = await Promise.all([api.getCalendar(), api.getGitHubConnection()])
+    const [c, g, ext] = await Promise.all([
+      api.getCalendar(),
+      api.getGitHubConnection(),
+      api.listMyExtensions().catch(() => ({ extensions: [] as ProjectExtension[] })),
+    ])
     calendar.value = c
     github.value = g
+    inbox.value = ext.extensions || []
+    for (const e of inbox.value) {
+      if (!e.member) e.member = { enabled: false, triggers: (e.manifest.hooks || []).map((h) => h.on), templates: {}, status_only: false }
+      if (!(e.member.triggers || []).length) e.member.triggers = (e.manifest.hooks || []).map((h) => h.on)
+    }
   } catch (err) {
     push(err instanceof APIError ? err.message : 'Failed to load integrations', 'error')
   }
+}
+
+function destKey(ext: ProjectExtension) {
+  return ext.manifest.delivery?.url_from || 'webhook_url'
+}
+
+function inboxPlaceholder(ext: ProjectExtension) {
+  switch (ext.manifest.delivery?.type) {
+    case 'ntfy.webhook':
+      return 'https://ntfy.sh/my-topic'
+    default:
+      return 'https://example.com/hooks/…'
+  }
+}
+
+async function saveInbox(ext: ProjectExtension) {
+  inboxBusy.value = ext.id
+  try {
+    const payload: ProjectExtensionPatch = {
+      enabled: ext.member?.enabled,
+      triggers: [...(ext.member?.triggers || [])],
+      templates: { ...(ext.member?.templates || {}) },
+      status_only: ext.member?.status_only,
+      skip_self: ext.member?.skip_self !== false,
+    }
+    const draft = inboxDraft[ext.id]?.trim()
+    if (draft) payload.webhook_url = draft
+    const saved = await api.patchMyExtension(ext.id, payload)
+    inbox.value = inbox.value.map((e) => (e.id === saved.id ? saved : e))
+    inboxDraft[ext.id] = ''
+    push('Inbox notifications saved', 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Save failed', 'error')
+  } finally {
+    inboxBusy.value = null
+  }
+}
+
+async function testInbox(ext: ProjectExtension) {
+  inboxBusy.value = `${ext.id}:test`
+  try {
+    const res = await api.testMyExtension(ext.id)
+    push(res.message || 'Test message sent', 'success')
+    await load()
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Test failed', 'error')
+  } finally {
+    inboxBusy.value = null
+  }
+}
+
+function toggleInboxTrigger(ext: ProjectExtension, hook: string, checked: boolean) {
+  const cur = new Set(ext.member?.triggers || [])
+  if (checked) cur.add(hook)
+  else cur.delete(hook)
+  ext.member!.triggers = [...cur]
 }
 
 async function connectGitHubPAT() {
@@ -167,6 +236,60 @@ onMounted(() => {
           </div>
         </form>
       </template>
+    </div>
+  </div>
+
+  <div v-if="inbox.length" id="inbox-hooks" class="card mb-4">
+    <div class="card-header">
+      <h3 class="card-title mb-0">Personal inbox notifications</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small">
+        Destinations for tasks that are not in a project. Site admin must enable the extension first. Skip-self is on by default.
+      </p>
+      <div v-for="ext in inbox" :key="ext.id" class="border rounded p-3 mb-3">
+        <button type="button" class="btn btn-link p-0 text-decoration-none" @click="inboxExpanded[ext.id] = !inboxExpanded[ext.id]">
+          {{ ext.name || ext.id }}
+        </button>
+        <span v-if="ext.site_enabled" class="badge text-bg-success ms-2">Site enabled</span>
+        <span v-else class="badge text-bg-secondary ms-2">Site disabled</span>
+        <form v-if="inboxExpanded[ext.id]" class="mt-3" @submit.prevent="saveInbox(ext)">
+          <fieldset :disabled="!ext.site_enabled">
+            <div class="form-check mb-2">
+              <input v-model="ext.member!.enabled" class="form-check-input" type="checkbox" />
+              <label class="form-check-label">Enable for my inbox</label>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Webhook URL</label>
+              <input
+                v-model="inboxDraft[ext.id]"
+                type="password"
+                class="form-control"
+                autocomplete="off"
+                :placeholder="ext.member_secrets?.[destKey(ext)] ? 'Set — leave blank to keep' : inboxPlaceholder(ext)"
+              />
+            </div>
+            <div v-for="hook in (ext.manifest.hooks || []).map((h) => h.on)" :key="hook" class="form-check">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                :checked="(ext.member?.triggers || []).includes(hook)"
+                @change="toggleInboxTrigger(ext, hook, ($event.target as HTMLInputElement).checked)"
+              />
+              <label class="form-check-label">{{ hook }}</label>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button type="submit" class="btn btn-sm btn-primary" :disabled="inboxBusy === ext.id">
+                {{ inboxBusy === ext.id ? 'Saving…' : 'Save' }}
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!!inboxBusy" @click="testInbox(ext)">
+                Send test
+              </button>
+            </div>
+            <p v-if="ext.member?.last_error" class="small text-warning mt-2 mb-0">{{ ext.member.last_error }}</p>
+          </fieldset>
+        </form>
+      </div>
     </div>
   </div>
 

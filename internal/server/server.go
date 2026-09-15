@@ -3,6 +3,7 @@ package server
 import (
 	"GoTodo/internal/domain"
 	"GoTodo/internal/extensions"
+	"GoTodo/internal/hooks"
 	"GoTodo/internal/live"
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/server/handlers"
@@ -70,6 +71,8 @@ func StartServer() error {
 	mailer.SetAuditor(storage.RecordEmailAudit)
 	storage.StartEmailAuditPurgeWorker()
 	domain.StartAutoSprintWorker()
+	hooks.StartOverdueHookWorker()
+	hooks.StartDeliveryWorker()
 
 	registerAPIV1Routes()
 
@@ -110,8 +113,11 @@ func registerAPIV1Routes() {
 	handleBoth("/api/v1/me/github", utils.AuthSessionChain(handlers.APIV1MeGitHub))
 	handleBoth("/api/v1/me/github/pat", utils.AuthSessionChain(handlers.APIV1MeGitHubPAT))
 	handleBoth("/api/v1/me/github/oauth/start", utils.AuthSessionChain(handlers.APIV1MeGitHubOAuthStart))
+	handleBoth("/api/v1/me/extensions", utils.AuthSessionChain(handlers.APIV1MeExtensions))
+	handleBoth("/api/v1/me/extensions/", utils.AuthSessionChain(handlers.APIV1MeExtensions))
 	handleBoth("/api/v1/auth/github/callback", handlers.APIV1GitHubOAuthCallback)
 	handleBoth("/api/v1/webhooks/github", handlers.APIV1GitHubWebhook)
+	handleBoth("/api/v1/webhooks/inbound", handlers.APIV1InboundWebhook)
 	handleBoth("/api/v1/api-keys", utils.AuthSessionChain(handlers.APIV1APIKeysRouter))
 	handleBoth("/api/v1/api-keys/", utils.AuthSessionChain(handlers.APIV1APIKeysRouter))
 

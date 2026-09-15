@@ -894,6 +894,105 @@ paths:
         "503":
           $ref: "#/components/responses/APIError"
 
+  /api/v1/me/extensions:
+    get:
+      tags: [Extensions]
+      summary: List personal-inbox hook destinations
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Personal destinations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExtensionsList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me/extensions/{extensionId}:
+    parameters:
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Extensions]
+      summary: Get a personal-inbox destination
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Personal destination
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExtension"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Extensions]
+      summary: Update a personal-inbox destination
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectExtensionPatch"
+      responses:
+        "200":
+          description: Updated destination
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExtension"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/me/extensions/{extensionId}/test:
+    parameters:
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Extensions]
+      summary: Send a test event to a personal-inbox destination
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Test sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                  sample_json:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/v1/auth/github/callback:
     get:
       tags: [GitHub]
@@ -930,6 +1029,57 @@ paths:
           in: header
           schema:
             type: string
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/APIError"
+
+  /api/v1/webhooks/inbound:
+    post:
+      tags: [Webhooks]
+      summary: Generic inbound webhook (create a task or comment)
+      security: []
+      parameters:
+        - name: X-Ordryn-Webhook-Secret
+          in: header
+          schema:
+            type: string
+        - name: X-Ordryn-Signature
+          in: header
+          description: HMAC SHA-256 of the raw body, prefixed with sha256=
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [create, comment]
+                title:
+                  type: string
+                description:
+                  type: string
+                task_id:
+                  type: integer
+                comment:
+                  type: string
+                project_id:
+                  type: integer
+                  description: Optional. When omitted, the secret or HMAC identifies the project.
       responses:
         "200":
           description: Accepted
@@ -1594,7 +1744,7 @@ paths:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [Projects]
-      summary: List project-scoped extensions for the owner
+      summary: List project-scoped extensions for members
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1672,6 +1822,145 @@ paths:
                     type: string
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/extensions/{extensionId}/me:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Projects]
+      summary: Get the current member's destination for this project extension
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Member destination
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExtension"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Projects]
+      summary: Update the current member's destination for this project extension
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectExtensionPatch"
+      responses:
+        "200":
+          description: Updated member destination
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExtension"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/extensions/{extensionId}/me/test:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Projects]
+      summary: Send a test event to the current member's destination
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Test sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                  sample_json:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/inbound:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Get the project's inbound webhook (owner)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Inbound webhook settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectInboundWebhook"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Projects]
+      summary: Update the project's inbound webhook (owner)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                allow_create:
+                  type: boolean
+                allow_comment:
+                  type: boolean
+                rotate_secret:
+                  type: boolean
+      responses:
+        "200":
+          description: Inbound webhook settings (secret shown once when rotated)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectInboundWebhook"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -3433,7 +3722,7 @@ paths:
       tags: [Admin]
       summary: Query outbound email audit log
       description: |
-        Lists recent outbound email attempts (success, failure, and not configured).
+        Lists recent outbound email attempts (success, failure, not configured, and rate limited).
         Message bodies are never stored. Rows older than email_audit_retention_days are deleted automatically.
       security:
         - SessionCookie: []
@@ -3443,7 +3732,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [sent, failed, not_configured]
+            enum: [sent, failed, not_configured, rate_limited]
         - name: trigger
           in: query
           schema:
@@ -5434,6 +5723,32 @@ components:
             type: string
         status_only:
           type: boolean
+        skip_self:
+          type: boolean
+        min_priority:
+          type: integer
+        tag_ids:
+          type: array
+          items:
+            type: integer
+        claimed_only:
+          type: boolean
+        claimed_is_me:
+          type: boolean
+        field_key:
+          type: string
+        field_value:
+          type: string
+        quiet_hours_start:
+          type: string
+        quiet_hours_end:
+          type: string
+        digest:
+          type: string
+        mention_map:
+          type: object
+          additionalProperties:
+            type: string
         last_error:
           type: string
         last_delivery_at:
@@ -5461,6 +5776,29 @@ components:
           type: object
           additionalProperties:
             type: boolean
+        member:
+          $ref: "#/components/schemas/ProjectExtensionSettings"
+        member_secrets:
+          type: object
+          additionalProperties:
+            type: boolean
+        signing_set:
+          type: boolean
+        member_signing_set:
+          type: boolean
+        signing_secret:
+          type: string
+          description: Plaintext HMAC secret, shown only immediately after rotate_signing.
+        sample_json:
+          type: string
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtensionDelivery"
+        member_deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtensionDelivery"
 
     ProjectExtensionsList:
       type: object
@@ -5469,6 +5807,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectExtension"
+        is_owner:
+          type: boolean
 
     ProjectExtensionPatch:
       type: object
@@ -5485,9 +5825,85 @@ components:
             type: string
         status_only:
           type: boolean
+        skip_self:
+          type: boolean
+        min_priority:
+          type: integer
+        tag_ids:
+          type: array
+          items:
+            type: integer
+        claimed_only:
+          type: boolean
+        claimed_is_me:
+          type: boolean
+        field_key:
+          type: string
+        field_value:
+          type: string
+        quiet_hours_start:
+          type: string
+        quiet_hours_end:
+          type: string
+        digest:
+          type: string
+          enum: ["", hourly, daily]
+        mention_map:
+          type: object
+          additionalProperties:
+            type: string
         webhook_url:
           type: string
-          description: Write-only incoming webhook URL. Omit or blank to keep the stored secret. Allowed hosts depend on the extension delivery type (Discord, Slack, Teams, or generic HTTPS).
+          description: Write-only incoming webhook URL. Omit or blank to keep the stored secret. Allowed hosts depend on the extension delivery type (Discord, Slack, Teams, ntfy, or generic HTTPS).
+        ntfy_auth:
+          type: string
+        rotate_signing:
+          type: boolean
+
+    ExtensionDelivery:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        event:
+          type: string
+        event_id:
+          type: string
+        host:
+          type: string
+        status:
+          type: string
+        http_code:
+          type: integer
+        error:
+          type: string
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    ProjectInboundWebhook:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        allow_create:
+          type: boolean
+        allow_comment:
+          type: boolean
+        secret_set:
+          type: boolean
+        secret:
+          type: string
+          description: Plaintext inbound secret, shown only immediately after create or rotate.
+        url:
+          type: string
+        last_error:
+          type: string
+        last_delivery_at:
+          type: string
 
     AdminSettings:
       type: object
@@ -5683,7 +6099,7 @@ components:
           type: string
         status:
           type: string
-          enum: [sent, failed, not_configured]
+          enum: [sent, failed, not_configured, rate_limited]
         error:
           type: string
         provider:
