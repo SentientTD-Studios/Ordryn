@@ -525,7 +525,7 @@ export type ExtensionManifest = {
   host_api: number
   description?: string
   hooks?: { on: string }[]
-  delivery?: { type: string; url_from: string }
+  delivery?: { type: string; url_from: string; format?: string }
   settings?: ExtensionSettingField[]
   templates?: Record<string, string>
   fields?: ExtensionField[]

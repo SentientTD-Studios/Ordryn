@@ -158,6 +158,40 @@ func TestShowsOnList(t *testing.T) {
 	}
 }
 
+func TestValidateManifestUnknownDelivery(t *testing.T) {
+	m := validDiscord()
+	m.Delivery.Type = "smtp"
+	err := ValidateManifest("discord", m)
+	if err == nil || !strings.Contains(err.Error(), "unknown delivery type") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateManifestHTTPWebhookFormat(t *testing.T) {
+	m := Manifest{
+		ID:       "webhook",
+		Name:     "Webhook",
+		Version:  "1.0.0",
+		HostAPI:  1,
+		Delivery: &Delivery{Type: DeliveryHTTPWebhook, URLFrom: "webhook_url", Format: DeliveryFormatJSON},
+		Settings: []Setting{{Key: "webhook_url", Type: "secret", Label: "Webhook URL", Required: true, Scope: ScopeProject}},
+	}
+	if err := ValidateManifest("webhook", m); err != nil {
+		t.Fatal(err)
+	}
+	m.Delivery.Format = "xml"
+	err := ValidateManifest("webhook", m)
+	if err == nil || !strings.Contains(err.Error(), "unknown delivery format") {
+		t.Fatalf("err=%v", err)
+	}
+	m.Delivery.Type = DeliverySlackWebhook
+	m.Delivery.Format = DeliveryFormatJSON
+	err = ValidateManifest("webhook", m)
+	if err == nil || !strings.Contains(err.Error(), "delivery.format is only allowed") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestValidateManifestDescriptionTooLong(t *testing.T) {
 	m := validDiscord()
 	m.Description = strings.Repeat("x", maxDescriptionLen+1)
@@ -216,34 +250,52 @@ func TestLoadFailSoftAndSkipMissingManifest(t *testing.T) {
 	}
 }
 
-func TestExampleDiscordManifest(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "discord", "manifest.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m Manifest
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateManifest("discord", m); err != nil {
-		t.Fatal(err)
-	}
-	if !m.HasProjectSettings() {
-		t.Fatal("example discord should be project-scoped")
-	}
-	for _, s := range m.Settings {
-		if s.Key == "project_ids" || s.Type == "project_ids" {
-			t.Fatal("project_ids should be dropped from the example")
+func TestExampleNotificationManifestsValidate(t *testing.T) {
+	ids := []string{"discord", "slack", "teams", "webhook"}
+	for _, id := range ids {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+		if err != nil {
+			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
 		}
-		if s.Key == "webhook_url" && s.ScopeName() != ScopeProject {
-			t.Fatalf("webhook_url scope=%q", s.ScopeName())
+		var m Manifest
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("%s: %v", id, err)
 		}
-		if s.Description == "" {
-			t.Fatalf("example setting %s missing description", s.Key)
+		if err := ValidateManifest(id, m); err != nil {
+			t.Fatalf("%s: %v", id, err)
 		}
-	}
-	if strings.TrimSpace(m.Description) == "" {
-		t.Fatal("example should include an extension description")
+		if m.Delivery == nil {
+			t.Fatalf("%s missing delivery", id)
+		}
+		wantType := map[string]string{
+			"discord": DeliveryDiscordWebhook,
+			"slack":   DeliverySlackWebhook,
+			"teams":   DeliveryTeamsWebhook,
+			"webhook": DeliveryHTTPWebhook,
+		}
+		if m.Delivery.Type != wantType[id] {
+			t.Fatalf("%s delivery type=%q want %q", id, m.Delivery.Type, wantType[id])
+		}
+		if id == "webhook" && m.Delivery.Format != DeliveryFormatJSON {
+			t.Fatalf("generic webhook should use json format, got %q", m.Delivery.Format)
+		}
+		if !m.HasProjectSettings() {
+			t.Fatalf("%s should be project-scoped", id)
+		}
+		if strings.TrimSpace(m.Description) == "" {
+			t.Fatalf("%s should include an extension description", id)
+		}
+		for _, s := range m.Settings {
+			if s.Key == "project_ids" || s.Type == "project_ids" {
+				t.Fatalf("%s: project_ids should not be in the example", id)
+			}
+			if s.Description == "" {
+				t.Fatalf("%s setting %s missing description", id, s.Key)
+			}
+			if s.Key == "webhook_url" && s.ScopeName() != ScopeProject {
+				t.Fatalf("%s webhook_url scope=%q", id, s.ScopeName())
+			}
+		}
 	}
 }
 
@@ -251,7 +303,7 @@ func TestExampleFieldsManifestsValidate(t *testing.T) {
 	for _, id := range []string{"severity", "fields-demo"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
 		if err != nil {
-			t.Fatal(err)
+			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
 		}
 		var m Manifest
 		if err := json.Unmarshal(raw, &m); err != nil {

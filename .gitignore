@@ -19,6 +19,9 @@ data/extensions/*
 data/mods/*
 !data/mods/.gitkeep
 
+# Extension examples live in a separate repo; keep a local copy out of git
+examples/*
+
 # Node/npm
 node_modules/
 npm-debug.log

@@ -137,8 +137,8 @@ func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projec
 	}
 	if req.WebhookURL != nil && strings.TrimSpace(*req.WebhookURL) != "" {
 		url := strings.TrimSpace(*req.WebhookURL)
-		if e.Manifest.Delivery != nil && strings.TrimSpace(e.Manifest.Delivery.Type) == "discord.webhook" {
-			if err := hooks.ValidateDiscordWebhookURL(url); err != nil {
+		if e.Manifest.Delivery != nil {
+			if err := hooks.ValidateDeliveryURL(e.Manifest.Delivery, url); err != nil {
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error()+".")
 				return
 			}

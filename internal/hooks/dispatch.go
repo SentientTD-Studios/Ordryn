@@ -110,7 +110,7 @@ func deliverToExtension(entry extensions.Entry, ev Event) {
 		"priority":   priorityLabel(snap.Priority),
 	}
 	msg := Interpolate(tmpl, vars)
-	sent, err := deliver(entry.Manifest, msg, projectID)
+	sent, err := deliver(entry.Manifest, msg, projectID, ev.Type, vars)
 	if err != nil {
 		log.Printf("hooks: %s: %v", entry.ID, err)
 		_ = storage.RecordExtensionProjectDelivery(entry.ID, projectID, err.Error())
@@ -131,15 +131,16 @@ func snapshotFor(ev Event) (*storage.HookTaskSnapshot, error) {
 	return storage.GetHookTaskSnapshot(ev.TaskID)
 }
 
-func deliver(m extensions.Manifest, msg string, projectID int) (sent bool, err error) {
+func deliver(m extensions.Manifest, msg string, projectID int, eventType string, vars map[string]string) (sent bool, err error) {
 	if m.Delivery == nil {
 		return false, nil
 	}
 	if projectID <= 0 {
 		return false, nil
 	}
-	switch strings.TrimSpace(m.Delivery.Type) {
-	case "discord.webhook":
+	typ := strings.TrimSpace(m.Delivery.Type)
+	switch typ {
+	case extensions.DeliveryDiscordWebhook, extensions.DeliverySlackWebhook, extensions.DeliveryTeamsWebhook, extensions.DeliveryHTTPWebhook:
 		url, err := storage.GetExtensionSecret(m.ID, projectID, strings.TrimSpace(m.Delivery.URLFrom))
 		if err != nil {
 			return false, err
@@ -147,7 +148,7 @@ func deliver(m extensions.Manifest, msg string, projectID int) (sent bool, err e
 		if strings.TrimSpace(url) == "" {
 			return false, nil
 		}
-		return true, postDiscordWebhook(url, msg)
+		return true, sendWebhook(typ, strings.TrimSpace(m.Delivery.Format), url, msg, eventType, vars)
 	default:
 		return false, fmt.Errorf("unsupported delivery %q", m.Delivery.Type)
 	}
@@ -216,7 +217,7 @@ func DeliverTest(extensionID string, projectID int, projectName string) error {
 		"priority":   priorityLabel(ev.Snapshot.Priority),
 	}
 	msg := Interpolate(tmpl, vars)
-	sent, err := deliver(entry.Manifest, msg, projectID)
+	sent, err := deliver(entry.Manifest, msg, projectID, ev.Type, vars)
 	if err != nil {
 		_ = storage.RecordExtensionProjectDelivery(extensionID, projectID, err.Error())
 		return err

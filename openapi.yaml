@@ -5487,7 +5487,7 @@ components:
           type: boolean
         webhook_url:
           type: string
-          description: Write-only Discord incoming webhook URL. Omit or blank to keep the stored secret.
+          description: Write-only incoming webhook URL. Omit or blank to keep the stored secret. Allowed hosts depend on the extension delivery type (Discord, Slack, Teams, or generic HTTPS).
 
     AdminSettings:
       type: object

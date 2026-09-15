@@ -44,6 +44,19 @@ function secretSet(ext: ProjectExtension, key: string): boolean {
   return !!ext.secrets?.[key]
 }
 
+function webhookPlaceholder(ext: ProjectExtension): string {
+  switch (ext.manifest.delivery?.type) {
+    case 'discord.webhook':
+      return 'https://discord.com/api/webhooks/…'
+    case 'slack.webhook':
+      return 'https://hooks.slack.com/services/…'
+    case 'teams.webhook':
+      return 'https://prod-00.example.logic.azure.com/…'
+    default:
+      return 'https://example.com/hooks/…'
+  }
+}
+
 function toggleExpanded(id: string) {
   expanded[id] = !expanded[id]
 }
@@ -139,9 +152,9 @@ watch(
   <div>
     <p v-if="loading" class="text-muted small mb-0">Loading extensions…</p>
     <div v-else-if="!extensions.length" class="alert alert-secondary mb-0">
-      No project extensions are loaded. A site admin can copy
-      <code>examples/extensions/discord</code>, <code>examples/extensions/severity</code>, or
-      <code>examples/extensions/fields-demo</code> into <code>data/extensions/</code> and restart the server.
+      No project extensions are loaded. A site admin can copy a folder from
+      <code>examples/extensions/</code> (Discord, Slack, Teams, generic webhook, or custom fields)
+      into <code>data/extensions/</code> and restart the server.
     </div>
 
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
@@ -206,7 +219,7 @@ watch(
                     type="password"
                     class="form-control"
                     autocomplete="off"
-                    :placeholder="secretSet(ext, field.key) ? 'Set — leave blank to keep' : 'https://discord.com/api/webhooks/…'"
+                    :placeholder="secretSet(ext, field.key) ? 'Set — leave blank to keep' : webhookPlaceholder(ext)"
                   />
                   <div v-if="field.description" class="form-text">{{ field.description }}</div>
                   <div v-if="secretSet(ext, field.key)" class="form-text text-success">Webhook URL is stored.</div>

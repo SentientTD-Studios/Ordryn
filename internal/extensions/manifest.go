@@ -50,8 +50,30 @@ const (
 	ScopeProject = "project"
 )
 
+const (
+	DeliveryDiscordWebhook = "discord.webhook"
+	DeliverySlackWebhook   = "slack.webhook"
+	DeliveryTeamsWebhook   = "teams.webhook"
+	DeliveryHTTPWebhook    = "http.webhook"
+)
+
+const (
+	DeliveryFormatText    = "text"
+	DeliveryFormatContent = "content"
+	DeliveryFormatJSON    = "json"
+)
+
 var knownDeliveryTypes = map[string]struct{}{
-	"discord.webhook": {},
+	DeliveryDiscordWebhook: {},
+	DeliverySlackWebhook:   {},
+	DeliveryTeamsWebhook:   {},
+	DeliveryHTTPWebhook:    {},
+}
+
+var knownDeliveryFormats = map[string]struct{}{
+	DeliveryFormatText:    {},
+	DeliveryFormatContent: {},
+	DeliveryFormatJSON:    {},
 }
 
 const maxDescriptionLen = 400
@@ -103,6 +125,8 @@ type Hook struct {
 type Delivery struct {
 	Type    string `json:"type"`
 	URLFrom string `json:"url_from"`
+	// Format selects the JSON body for http.webhook: text ({"text"}), content ({"content"}), or json (structured event). Ignored for provider-specific types.
+	Format string `json:"format,omitempty"`
 }
 
 // Setting is a schema-driven form field (site admin or project owner).
@@ -178,8 +202,20 @@ func ValidateManifest(folderName string, m Manifest) error {
 		if _, ok := knownDeliveryTypes[typ]; !ok {
 			return fmt.Errorf("unknown delivery type %q", typ)
 		}
+		m.Delivery.Type = typ
 		if strings.TrimSpace(m.Delivery.URLFrom) == "" {
 			return fmt.Errorf("delivery.url_from is required")
+		}
+		m.Delivery.URLFrom = strings.TrimSpace(m.Delivery.URLFrom)
+		format := strings.ToLower(strings.TrimSpace(m.Delivery.Format))
+		if format != "" {
+			if typ != DeliveryHTTPWebhook {
+				return fmt.Errorf("delivery.format is only allowed for %s", DeliveryHTTPWebhook)
+			}
+			if _, ok := knownDeliveryFormats[format]; !ok {
+				return fmt.Errorf("unknown delivery format %q", m.Delivery.Format)
+			}
+			m.Delivery.Format = format
 		}
 	}
 	seenKeys := make(map[string]struct{})

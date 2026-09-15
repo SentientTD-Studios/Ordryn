@@ -21,7 +21,7 @@ func TestDeliverSkipsWithoutProject(t *testing.T) {
 		ID:       "discord",
 		Delivery: &extensions.Delivery{Type: "discord.webhook", URLFrom: "webhook_url"},
 	}
-	sent, err := deliver(m, "hello", 0)
+	sent, err := deliver(m, "hello", 0, "task.updated", nil)
 	if err != nil || sent {
 		t.Fatalf("sent=%v err=%v", sent, err)
 	}

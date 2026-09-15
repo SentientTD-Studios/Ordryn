@@ -72,17 +72,18 @@ onMounted(load)
     <h1>Extensions</h1>
     <p class="text-muted">
       Drop a folder in <code>data/extensions/</code> with <code>manifest.json</code>, then restart.
-      Copy <code>examples/extensions/discord</code> for notifications, or
-      <code>examples/extensions/severity</code> / <code>examples/extensions/fields-demo</code>
-      for custom fields on tasks. Channel, triggers, and messages are configured by project owners
-      under Project settings → Extensions. Custom-field extensions also need Enable for this project.
+      Copy a notification example from <code>examples/extensions/</code> (Discord, Slack, Teams, or
+      generic webhook), or <code>examples/extensions/severity</code> /
+      <code>examples/extensions/fields-demo</code> for custom fields on tasks. Channel, triggers, and
+      messages are configured by project owners under Project settings → Extensions. Custom-field
+      extensions also need Enable for this project.
     </p>
 
     <p v-if="loading" class="text-muted">Loading…</p>
     <div v-else-if="emptyHint" class="alert alert-secondary">
-      No extensions loaded. Copy <code>examples/extensions/discord</code>,
-      <code>examples/extensions/severity</code>, or <code>examples/extensions/fields-demo</code>
-      into <code>data/extensions/</code> and restart the server.
+      No extensions loaded. Copy a folder from <code>examples/extensions/</code> (Discord, Slack,
+      Teams, generic webhook, or custom fields) into <code>data/extensions/</code> and restart the
+      server.
     </div>
 
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
