@@ -1604,12 +1604,13 @@ async function removeTimeEntry(entryId: number) {
             <option :value="3">High</option>
             </select>
         </div>
-        <TaskSidebarFields
-          v-if="projectId !== ''"
-          v-model="customFieldValues"
-          :project-id="Number(projectId)"
-          :read-only="readOnly"
-        />
+        <div v-if="projectId !== ''" class="kanban-order-fields">
+          <TaskSidebarFields
+            v-model="customFieldValues"
+            :project-id="Number(projectId)"
+            :read-only="readOnly"
+          />
+        </div>
         <div class="form-group mt-2 kanban-order-due">
           <label for="due_date">Due Date (optional):</label>
           <input id="due_date" v-model="dueDate" type="date" class="form-control" :disabled="readOnly" :readonly="readOnly" />
@@ -2003,16 +2004,18 @@ textarea.task-description-input {
 .kanban-task-aside :deep(.kanban-order-related) { order: 6; }
 .kanban-task-aside .kanban-order-priority,
 .kanban-task-aside :deep(.kanban-order-priority) { order: 7; }
+.kanban-task-aside .kanban-order-fields,
+.kanban-task-aside :deep(.kanban-order-fields) { order: 8; }
 .kanban-task-aside .kanban-order-estimate,
-.kanban-task-aside :deep(.kanban-order-estimate) { order: 8; }
+.kanban-task-aside :deep(.kanban-order-estimate) { order: 9; }
 .kanban-task-aside .kanban-order-due,
-.kanban-task-aside :deep(.kanban-order-due) { order: 9; }
+.kanban-task-aside :deep(.kanban-order-due) { order: 10; }
 .kanban-task-aside .kanban-order-tags,
-.kanban-task-aside :deep(.kanban-order-tags) { order: 10; }
+.kanban-task-aside :deep(.kanban-order-tags) { order: 11; }
 .kanban-task-aside .kanban-order-github,
-.kanban-task-aside :deep(.kanban-order-github) { order: 11; }
+.kanban-task-aside :deep(.kanban-order-github) { order: 12; }
 .kanban-task-aside .kanban-order-time,
-.kanban-task-aside :deep(.kanban-order-time) { order: 12; }
+.kanban-task-aside :deep(.kanban-order-time) { order: 13; }
 
 .kanban-title-group {
   margin-bottom: 0.75rem;

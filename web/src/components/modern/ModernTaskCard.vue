@@ -256,7 +256,7 @@ function formatMinutes(total: number) {
                 {{ tag.name }}
               </span>
             </template>
-            <TaskFieldBadges :task="task" />
+            <TaskFieldBadges :task="task" surface="list" />
           </div>
 
           <!-- Inline Description Editor or Preview (Comfortable mode only) -->
@@ -378,7 +378,7 @@ function formatMinutes(total: number) {
           >
             {{ priorityLabel(task.priority) }}
           </span>
-          <TaskFieldBadges :task="task" />
+          <TaskFieldBadges :task="task" surface="list" />
         </div>
         <div v-if="canWrite" class="d-flex align-items-center gap-1 flex-shrink-0">
           <button

@@ -6,6 +6,8 @@ import { useCustomFieldDefs } from '@/composables/useCustomFieldDefs'
 const props = defineProps<{
   task: Task
   defs?: CustomFieldDef[]
+  /** When set, only badges whose definition includes this surface are shown. */
+  surface?: 'list' | 'kanban'
 }>()
 
 const { defByKey: loadedByKey } = useCustomFieldDefs(() => props.defs ? null : props.task.project_id)
@@ -45,7 +47,14 @@ function displayValue(def: CustomFieldDef | undefined, value: unknown): string {
   return String(value)
 }
 
+function matchesSurface(def: CustomFieldDef | undefined): boolean {
+  if (!props.surface) return true
+  if (!def) return true
+  return (def.show_on || []).includes(props.surface)
+}
+
 function shouldShow(def: CustomFieldDef | undefined, value: unknown): boolean {
+  if (!matchesSurface(def)) return false
   if (value == null || value === '') return false
   if (typeof value === 'boolean') return value
   if (typeof value === 'object' && value && 'id' in (value as object) && !(value as { id?: number }).id) {

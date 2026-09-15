@@ -5,6 +5,7 @@ import type { AdminExtension, AdminExtensionPatch, ExtensionSettingField } from 
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import AdminSubnav from '@/components/AdminSubnav.vue'
+import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 
 const toast = useToast()
 const loading = ref(false)
@@ -20,6 +21,10 @@ function siteFields(ext: AdminExtension): ExtensionSettingField[] {
 
 function hasProjectSettings(ext: AdminExtension): boolean {
   return (ext.manifest.settings || []).some((f) => f.scope === 'project')
+}
+
+function customFields(ext: AdminExtension) {
+  return ext.manifest.fields || []
 }
 
 function toggleExpanded(id: string) {
@@ -49,6 +54,7 @@ async function save(ext: AdminExtension) {
     const payload: AdminExtensionPatch = { enabled: ext.settings.enabled }
     const saved = await api.patchAdminExtension(ext.id, payload)
     replaceExtension(saved)
+    if (customFields(saved).length) clearCustomFieldDefsCache()
     toast.push('Extension settings saved', 'success')
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Save failed', 'error')
@@ -66,14 +72,17 @@ onMounted(load)
     <h1>Extensions</h1>
     <p class="text-muted">
       Drop a folder in <code>data/extensions/</code> with <code>manifest.json</code>, then restart.
-      Copy <code>examples/extensions/discord</code> to enable Discord notifications. Channel, triggers,
-      and messages are configured by project owners under Project settings → Extensions.
+      Copy <code>examples/extensions/discord</code> for notifications, or
+      <code>examples/extensions/severity</code> / <code>examples/extensions/fields-demo</code>
+      for custom fields on tasks. Channel, triggers, and messages are configured by project owners
+      under Project settings → Extensions. Custom-field extensions also need Enable for this project.
     </p>
 
     <p v-if="loading" class="text-muted">Loading…</p>
     <div v-else-if="emptyHint" class="alert alert-secondary">
-      No extensions loaded. Copy <code>examples/extensions/discord</code> to
-      <code>data/extensions/discord</code> and restart the server.
+      No extensions loaded. Copy <code>examples/extensions/discord</code>,
+      <code>examples/extensions/severity</code>, or <code>examples/extensions/fields-demo</code>
+      into <code>data/extensions/</code> and restart the server.
     </div>
 
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
@@ -114,6 +123,18 @@ onMounted(load)
             <p v-if="hasProjectSettings(ext)" class="small text-muted">
               Webhook, triggers, and message templates are set per project in Project settings → Extensions.
             </p>
+            <p v-else-if="customFields(ext).length" class="small text-muted">
+              Project owners enable this per board in Project settings → Extensions. Fields then appear on that project’s tasks.
+            </p>
+            <div v-if="customFields(ext).length" class="mb-3">
+              <div class="fw-semibold mb-2">Custom fields</div>
+              <ul class="small mb-0 ps-3">
+                <li v-for="field in customFields(ext)" :key="field.key">
+                  {{ field.label }}
+                  <span class="text-muted">({{ field.type }})</span>
+                </li>
+              </ul>
+            </div>
             <div v-for="field in siteFields(ext)" :key="field.key" class="mb-3">
               <div class="fw-semibold">{{ field.label }}</div>
               <div v-if="field.description" class="form-text">{{ field.description }}</div>

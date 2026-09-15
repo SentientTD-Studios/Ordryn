@@ -190,7 +190,7 @@
                     :style="{ backgroundColor: tag.color || '#6c757d' }"
                     :title="tag.name"
                   >{{ tag.name }}</span>
-                  <TaskFieldBadges :task="task" />
+                  <TaskFieldBadges :task="task" surface="kanban" />
                 </div>
 
                 <div v-if="canDrag" class="kanban-claim-row mt-2">

@@ -1,6 +1,7 @@
 *.db
 *.exe
 .env
+.DS_STORE
 GoTodo
 nodemon.json
 config.json

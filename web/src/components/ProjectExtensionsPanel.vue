@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import type { Project, ProjectExtension, ProjectExtensionPatch } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
+import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 
 const props = defineProps<{
   project: Project
@@ -25,6 +26,14 @@ function hookNames(ext: ProjectExtension): string[] {
 
 function projectFields(ext: ProjectExtension) {
   return (ext.manifest.settings || []).filter((f) => f.scope === 'project')
+}
+
+function customFields(ext: ProjectExtension) {
+  return ext.manifest.fields || []
+}
+
+function isHookExtension(ext: ProjectExtension) {
+  return hookNames(ext).length > 0 || !!ext.manifest.delivery
 }
 
 function templateValue(ext: ProjectExtension, hook: string): string {
@@ -83,6 +92,7 @@ async function save(ext: ProjectExtension) {
     if (draft) payload.webhook_url = draft
     const saved = await api.patchProjectExtension(props.project.id, ext.id, payload)
     replaceExtension(saved)
+    if (customFields(saved).length) clearCustomFieldDefsCache(props.project.id)
     toast.push('Extension settings saved', 'success')
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Save failed', 'error')
@@ -129,8 +139,9 @@ watch(
   <div>
     <p v-if="loading" class="text-muted small mb-0">Loading extensions…</p>
     <div v-else-if="!extensions.length" class="alert alert-secondary mb-0">
-      No project extensions are loaded. A site admin can copy <code>examples/extensions/discord</code> to
-      <code>data/extensions/discord</code> and restart the server.
+      No project extensions are loaded. A site admin can copy
+      <code>examples/extensions/discord</code>, <code>examples/extensions/severity</code>, or
+      <code>examples/extensions/fields-demo</code> into <code>data/extensions/</code> and restart the server.
     </div>
 
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
@@ -149,7 +160,8 @@ watch(
       </button>
       <div class="card-body pt-0">
         <div v-if="!ext.site_enabled" class="alert alert-warning">
-          A site admin must enable this extension in Admin → Extensions before this project can send notifications.
+          A site admin must enable this extension in Admin → Extensions before this project can
+          {{ isHookExtension(ext) ? 'send notifications' : 'use its custom fields' }}.
         </div>
         <fieldset :disabled="!ext.site_enabled">
           <form @submit.prevent="save(ext)">
@@ -171,6 +183,19 @@ watch(
 
             <div v-if="expanded[ext.id]">
               <p v-if="ext.manifest.description" class="small text-muted">{{ ext.manifest.description }}</p>
+
+              <div v-if="customFields(ext).length" class="mb-3">
+                <div class="fw-semibold mb-2">Custom fields</div>
+                <ul class="small mb-0 ps-3">
+                  <li v-for="field in customFields(ext)" :key="field.key">
+                    {{ field.label }}
+                    <span class="text-muted">({{ field.type }})</span>
+                  </li>
+                </ul>
+                <p class="form-text mb-0 mt-2">
+                  After enabling, these fields appear on this project’s tasks. Open a task to edit them.
+                </p>
+              </div>
 
               <div v-for="field in projectFields(ext)" :key="field.key" class="mb-3">
                 <template v-if="field.type === 'secret'">
@@ -234,15 +259,21 @@ watch(
                 </div>
               </div>
 
-              <div v-if="ext.settings.last_error" class="alert alert-warning">
+              <div v-if="isHookExtension(ext) && ext.settings.last_error" class="alert alert-warning">
                 Last delivery error: {{ ext.settings.last_error }}
                 <div v-if="ext.settings.last_delivery_at" class="small">{{ ext.settings.last_delivery_at }}</div>
               </div>
-              <p v-else-if="ext.settings.last_delivery_at" class="small text-muted">
+              <p v-else-if="isHookExtension(ext) && ext.settings.last_delivery_at" class="small text-muted">
                 Last delivery: {{ ext.settings.last_delivery_at }}
               </p>
 
-              <button type="button" class="btn btn-outline-secondary" :disabled="testBusyId === ext.id" @click="test(ext)">
+              <button
+                v-if="isHookExtension(ext)"
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="testBusyId === ext.id"
+                @click="test(ext)"
+              >
                 {{ testBusyId === ext.id ? 'Sending…' : 'Send test' }}
               </button>
             </div>
