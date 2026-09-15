@@ -190,6 +190,17 @@ func LoadedCount() int {
 	return n
 }
 
+// FieldExtensionIDs returns loaded extension ids that register custom fields.
+func FieldExtensionIDs() []string {
+	out := make([]string, 0)
+	for _, e := range LoadedEntries() {
+		if e.Manifest.HasFields() {
+			out = append(out, e.ID)
+		}
+	}
+	return out
+}
+
 // LoadedEntries returns only successfully loaded extensions.
 func LoadedEntries() []Entry {
 	mu.RLock()

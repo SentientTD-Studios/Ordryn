@@ -1570,6 +1570,25 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/projects/{id}/custom-fields:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: List custom field definitions that apply to this project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Field definitions from site- and project-enabled extensions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldDefList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/projects/{id}/extensions:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -4626,6 +4645,13 @@ components:
           description: Title of the parent task when this item is a subtask
         github:
           $ref: "#/components/schemas/TaskGitHubIssue"
+        fields:
+          type: object
+          additionalProperties: true
+          description: >
+            Custom field values. List and board responses include only fields
+            marked show_on kanban or list. GET /tasks/{id} includes all values
+            that apply to the task's project.
 
     GitHubConnection:
       type: object
@@ -4788,6 +4814,10 @@ components:
           type: integer
           nullable: true
           description: Assign the task to a sprint in its kanban project; 0 or omit leaves it in the backlog. After a sprint lock date, only the project owner can assign tasks to that sprint.
+        fields:
+          type: object
+          additionalProperties: true
+          description: Custom field values to set on create (merge). JSON null or empty string clears a key.
 
     TaskPatch:
       type: object
@@ -4836,6 +4866,55 @@ components:
           type: integer
           nullable: true
           description: Set a sprint in the task's kanban project. null or 0 moves the task to the backlog; omit to leave the assignment unchanged. After a sprint lock date, only the project owner can assign tasks to that sprint.
+        fields:
+          type: object
+          additionalProperties: true
+          description: Merge custom field values. Omitted keys are unchanged; JSON null clears a key.
+
+    CustomFieldDef:
+      type: object
+      properties:
+        field_key:
+          type: string
+        extension_id:
+          type: string
+        local_key:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [string, number, boolean, enum, url, user]
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              label:
+                type: string
+              color:
+                type: string
+        show_on:
+          type: array
+          items:
+            type: string
+            enum: [sidebar, kanban, list]
+        active:
+          type: boolean
+
+    CustomFieldDefList:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldDef"
 
     TaskReorder:
       type: object

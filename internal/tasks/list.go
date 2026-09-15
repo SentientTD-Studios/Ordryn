@@ -1,9 +1,11 @@
 package tasks
 
 import (
+	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -478,7 +480,134 @@ func attachGitHubFieldsToTasks(taskList []Task) error {
 			applyGitHub(&taskList[i].Children[j])
 		}
 	}
+	return attachCustomFieldsToTasks(taskList)
+}
+
+func attachCustomFieldsToTasks(taskList []Task) error {
+	if len(taskList) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(taskList))
+	for _, t := range taskList {
+		ids = append(ids, t.ID)
+		for _, c := range t.Children {
+			ids = append(ids, c.ID)
+		}
+	}
+	values, err := storage.GetCustomFieldValuesForTasks(ids)
+	if err != nil {
+		return err
+	}
+	defsCache := map[int][]storage.CustomFieldDef{}
+	defsFor := func(projectID int) ([]storage.CustomFieldDef, error) {
+		if projectID <= 0 {
+			return nil, nil
+		}
+		if defs, ok := defsCache[projectID]; ok {
+			return defs, nil
+		}
+		defs, err := storage.ListApplicableCustomFieldDefs(projectID, extensions.FieldExtensionIDs())
+		if err != nil {
+			return nil, err
+		}
+		defsCache[projectID] = defs
+		return defs, nil
+	}
+
+	userIDs := make([]int, 0)
+	seenUsers := map[int]struct{}{}
+	type pending struct {
+		task *Task
+		defs []storage.CustomFieldDef
+	}
+	var work []pending
+	collect := func(t *Task) error {
+		defs, err := defsFor(t.ProjectID)
+		if err != nil {
+			return err
+		}
+		if len(defs) == 0 {
+			return nil
+		}
+		work = append(work, pending{task: t, defs: defs})
+		stored := values[t.ID]
+		for _, d := range defs {
+			if d.Type != "user" {
+				continue
+			}
+			raw, ok := stored[d.FieldKey]
+			if !ok {
+				continue
+			}
+			var id float64
+			if json.Unmarshal(raw, &id) == nil {
+				uid := int(id)
+				if uid > 0 {
+					if _, seen := seenUsers[uid]; !seen {
+						seenUsers[uid] = struct{}{}
+						userIDs = append(userIDs, uid)
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for i := range taskList {
+		if err := collect(&taskList[i]); err != nil {
+			return err
+		}
+		for j := range taskList[i].Children {
+			if err := collect(&taskList[i].Children[j]); err != nil {
+				return err
+			}
+		}
+	}
+	names, err := storage.UserDisplayNames(userIDs)
+	if err != nil {
+		return err
+	}
+	for _, item := range work {
+		stored := values[item.task.ID]
+		if len(stored) == 0 {
+			continue
+		}
+		fields := make([]AttachedField, 0)
+		for _, d := range item.defs {
+			raw, ok := stored[d.FieldKey]
+			if !ok {
+				continue
+			}
+			val := decodeFieldValue(d, raw, names)
+			if val == nil {
+				continue
+			}
+			fields = append(fields, AttachedField{Key: d.FieldKey, Value: val, ShowOn: d.ShowOn})
+		}
+		item.task.Fields = fields
+	}
 	return nil
+}
+
+func decodeFieldValue(def storage.CustomFieldDef, raw []byte, names map[int]string) any {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if def.Type == "user" {
+		var id float64
+		if json.Unmarshal(raw, &id) != nil {
+			return nil
+		}
+		uid := int(id)
+		if uid <= 0 {
+			return nil
+		}
+		return map[string]any{"id": uid, "user_name": names[uid]}
+	}
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		return nil
+	}
+	return v
 }
 
 func scanFavoriteTaskRow(rows interface {

@@ -190,6 +190,7 @@
                     :style="{ backgroundColor: tag.color || '#6c757d' }"
                     :title="tag.name"
                   >{{ tag.name }}</span>
+                  <TaskFieldBadges :task="task" />
                 </div>
 
                 <div v-if="canDrag" class="kanban-claim-row mt-2">
@@ -229,6 +230,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
 import type { ProjectStatus, Task } from '@/api/types'
+import TaskFieldBadges from '@/components/TaskFieldBadges.vue'
 import { APIError } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'

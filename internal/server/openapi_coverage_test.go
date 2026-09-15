@@ -105,6 +105,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/projects/{id}/extensions",
 	"/api/v1/projects/{id}/extensions/{extensionId}",
 	"/api/v1/projects/{id}/extensions/{extensionId}/test",
+	"/api/v1/projects/{id}/custom-fields",
 }
 
 func moduleRoot(t *testing.T) string {

@@ -293,6 +293,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateExtensionTables failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateCustomFieldTables(); err != nil {
+		fmt.Printf("migration: CreateCustomFieldTables failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {

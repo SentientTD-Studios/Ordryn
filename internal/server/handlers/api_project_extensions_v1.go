@@ -85,7 +85,7 @@ func projectExtensionsList(w http.ResponseWriter, projectID int) {
 	entries := extensions.Snapshot()
 	out := make([]projectExtensionJSON, 0)
 	for _, e := range entries {
-		if !e.Loaded || !e.Manifest.HasProjectSettings() {
+		if !e.Loaded || !e.Manifest.HasProjectSurface() {
 			continue
 		}
 		item, err := projectExtensionFromEntry(e, projectID)
@@ -101,7 +101,7 @@ func projectExtensionsList(w http.ResponseWriter, projectID int) {
 
 func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projectID int, extensionID string) {
 	e, ok := extensions.Get(extensionID)
-	if !ok || !e.Loaded || !e.Manifest.HasProjectSettings() {
+	if !ok || !e.Loaded || !e.Manifest.HasProjectSurface() {
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension not found.")
 		return
 	}

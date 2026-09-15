@@ -9,6 +9,7 @@ import type {
   ProjectExtensionsList,
   ProjectExtension,
   ProjectExtensionPatch,
+  CustomFieldDefList,
   APIKey,
   CalendarInfo,
   CalendarMonth,
@@ -310,6 +311,7 @@ export const api = {
     status_id?: number | null
     estimate_points?: number | null
     sprint_id?: number | null
+    fields?: Record<string, unknown>
   }) {
     return request<Task>('/api/v1/tasks', {
       method: 'POST',
@@ -334,6 +336,7 @@ export const api = {
       status_id: number | null
       estimate_points: number | null
       sprint_id: number | null
+      fields: Record<string, unknown>
     }>,
   ) {
     return request<Task>(`/api/v1/tasks/${id}`, {
@@ -437,6 +440,10 @@ export const api = {
 
   unlinkProjectGitHub(projectId: number) {
     return request<{ ok: boolean }>(`/api/v1/projects/${projectId}/github`, { method: 'DELETE' })
+  },
+
+  listProjectCustomFields(projectId: number) {
+    return request<CustomFieldDefList>(`/api/v1/projects/${projectId}/custom-fields`)
   },
 
   listProjectExtensions(projectId: number) {

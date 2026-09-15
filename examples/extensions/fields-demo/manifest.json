@@ -1,0 +1,56 @@
+{
+  "id": "fields-demo",
+  "name": "Custom fields demo",
+  "version": "1.0.0",
+  "host_api": 1,
+  "description": "Registers one custom field of each v1 type so you can try sidebar inputs and list/kanban badges without writing UI.",
+  "fields": [
+    {
+      "key": "ticket",
+      "type": "string",
+      "label": "Ticket",
+      "description": "External ticket id, shown on list rows.",
+      "show_on": ["sidebar", "list"]
+    },
+    {
+      "key": "score",
+      "type": "number",
+      "label": "Score",
+      "description": "Numeric score shown on the board.",
+      "show_on": ["sidebar", "kanban"]
+    },
+    {
+      "key": "blocked",
+      "type": "boolean",
+      "label": "Blocked",
+      "description": "When on, a Blocked badge appears on the board.",
+      "show_on": ["sidebar", "kanban"]
+    },
+    {
+      "key": "size",
+      "type": "enum",
+      "label": "Size",
+      "description": "Relative effort. Distinct from the Severity extension.",
+      "show_on": ["sidebar", "kanban"],
+      "options": [
+        { "value": "s", "label": "S" },
+        { "value": "m", "label": "M" },
+        { "value": "l", "label": "L" }
+      ]
+    },
+    {
+      "key": "spec",
+      "type": "url",
+      "label": "Spec",
+      "description": "Link to a spec or design doc. Sidebar only.",
+      "show_on": ["sidebar"]
+    },
+    {
+      "key": "owner",
+      "type": "user",
+      "label": "Owner",
+      "description": "A project member responsible for this task.",
+      "show_on": ["sidebar", "list"]
+    }
+  ]
+}

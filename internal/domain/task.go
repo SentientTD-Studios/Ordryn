@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,6 +34,7 @@ type CreateTaskInput struct {
 	StatusID       *int
 	EstimatePoints *int
 	SprintID       *int
+	Fields         map[string]json.RawMessage
 }
 
 // UpdateTaskInput is a partial update. Nil pointer fields are left unchanged.
@@ -55,6 +57,8 @@ type UpdateTaskInput struct {
 	EstimatePoints **int
 	// SprintID: nil = leave; non-nil with *nil or 0 = clear; non-nil with id = set.
 	SprintID **int
+	// Fields: nil = leave; non-nil map merges (JSON null clears a key).
+	Fields map[string]json.RawMessage
 }
 
 // UpdateResult summarizes what changed for audit logging in handlers.
@@ -135,6 +139,9 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 				return 0, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 			}
 		}
+		if err := applyCreateFields(newID, userID, projectArg, in.Fields); err != nil {
+			return 0, err
+		}
 		_ = storage.LogTaskEvent(newID, userID, "created", map[string]interface{}{"parent_id": *in.ParentID})
 		if pid, ok := projectArg.(int); ok && pid > 0 {
 			NotifyProjectMembersTaskCreated(newID, userID, pid, title)
@@ -190,6 +197,9 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		if err := storage.SetTaskTags(newID, userID, in.TagIDs); err != nil {
 			return 0, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 		}
+	}
+	if err := applyCreateFields(newID, userID, projectArg, in.Fields); err != nil {
+		return 0, err
 	}
 	_ = storage.LogTaskEvent(newID, userID, "created", nil)
 	if pid, ok := projectArg.(int); ok && pid > 0 {
@@ -286,6 +296,14 @@ func requireWritableRootParent(ctx context.Context, pool interface {
 		}
 	}
 	return projectID, nil
+}
+
+func applyCreateFields(taskID, userID int, projectArg interface{}, fields map[string]json.RawMessage) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	pid, _ := projectArg.(int)
+	return ApplyTaskFields(taskID, pid, userID, fields)
 }
 
 // UpdateTask applies a partial update for an owned task.
@@ -586,6 +604,21 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		}
 		if afterTags, err := storage.GetTagsForTask(taskID); err == nil {
 			logTagChanges(taskID, userID, beforeTags, afterTags)
+		}
+	}
+
+	if in.Fields != nil {
+		if err := ApplyTaskFields(taskID, effectiveProjectID, userID, in.Fields); err != nil {
+			return nil, err
+		}
+	}
+	if projectChanged {
+		childIDs, _ := ChildIDsOf(ctx, []int{taskID})
+		allIDs := append([]int{taskID}, childIDs...)
+		for _, id := range allIDs {
+			if err := PruneInapplicableFieldValues(id, effectiveProjectID); err != nil {
+				return nil, err
+			}
 		}
 	}
 

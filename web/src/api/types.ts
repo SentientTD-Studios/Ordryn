@@ -257,6 +257,7 @@ export type Task = {
   sprint_name?: string
   parent_title?: string
   github?: TaskGitHubIssue | null
+  fields?: Record<string, unknown>
   /** Present on write responses that used the deprecated favorite field. */
   deprecation_notice?: string
 }
@@ -527,6 +528,40 @@ export type ExtensionManifest = {
   delivery?: { type: string; url_from: string }
   settings?: ExtensionSettingField[]
   templates?: Record<string, string>
+  fields?: ExtensionField[]
+}
+
+export type ExtensionField = {
+  key: string
+  type: string
+  label: string
+  description?: string
+  required?: boolean
+  show_on?: string[]
+  options?: CustomFieldOption[]
+}
+
+export type CustomFieldOption = {
+  value: string
+  label?: string
+  color?: string
+}
+
+export type CustomFieldDef = {
+  field_key: string
+  extension_id?: string
+  local_key: string
+  label: string
+  description?: string
+  type: 'string' | 'number' | 'boolean' | 'enum' | 'url' | 'user' | string
+  required?: boolean
+  options?: CustomFieldOption[]
+  show_on?: string[]
+  active?: boolean
+}
+
+export type CustomFieldDefList = {
+  fields: CustomFieldDef[]
 }
 
 export type AdminExtensionSettings = {

@@ -59,6 +59,9 @@ func StartServer() error {
 	}
 
 	extensions.Load()
+	if err := domain.SyncCustomFieldDefs(); err != nil {
+		fmt.Printf("Warning: custom field sync failed: %v\n", err)
+	}
 
 	if err := RunBootstrap(); err != nil {
 		return fmt.Errorf("bootstrap failed: %w", err)

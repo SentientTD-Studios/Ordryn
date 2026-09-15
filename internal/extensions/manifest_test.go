@@ -92,8 +92,69 @@ func TestSettingScopeDefaultsToSite(t *testing.T) {
 	if !m.HasProjectSettings() {
 		t.Fatal("expected project settings")
 	}
+	if m.HasFields() {
+		t.Fatal("discord fixture should not register fields")
+	}
 	if got := m.SettingsForScope(ScopeProject); len(got) != 1 || got[0].Key != "webhook_url" {
 		t.Fatalf("project settings=%v", got)
+	}
+}
+
+func TestValidateManifestFieldsOnly(t *testing.T) {
+	m := Manifest{
+		ID:      "severity",
+		Name:    "Severity",
+		Version: "1.0.0",
+		HostAPI: 1,
+		Fields: []Field{{
+			Key:    "level",
+			Type:   "enum",
+			Label:  "Severity",
+			ShowOn: []string{"sidebar", "kanban"},
+			Options: []FieldOption{
+				{Value: "low", Label: "Low"},
+				{Value: "high", Label: "High"},
+			},
+		}},
+	}
+	if err := ValidateManifest("severity", m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasProjectSurface() || !m.HasFields() {
+		t.Fatal("fields-only extension should appear on the project tab")
+	}
+}
+
+func TestValidateManifestFieldBadType(t *testing.T) {
+	m := Manifest{ID: "severity", Name: "S", Version: "1", HostAPI: 1, Fields: []Field{{Key: "level", Type: "date", Label: "X"}}}
+	err := ValidateManifest("severity", m)
+	if err == nil || !strings.Contains(err.Error(), "unknown fields type") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateManifestEnumRequiresOptions(t *testing.T) {
+	m := Manifest{ID: "severity", Name: "S", Version: "1", HostAPI: 1, Fields: []Field{{Key: "level", Type: "enum", Label: "X"}}}
+	err := ValidateManifest("severity", m)
+	if err == nil || !strings.Contains(err.Error(), "enum requires options") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateManifestShowOnUnknown(t *testing.T) {
+	m := Manifest{ID: "severity", Name: "S", Version: "1", HostAPI: 1, Fields: []Field{{Key: "level", Type: "string", Label: "X", ShowOn: []string{"filter"}}}}
+	err := ValidateManifest("severity", m)
+	if err == nil || !strings.Contains(err.Error(), "show_on") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestShowsOnList(t *testing.T) {
+	if ShowsOnList([]string{"sidebar"}) {
+		t.Fatal("sidebar-only should not be on lists")
+	}
+	if !ShowsOnList([]string{"sidebar", "kanban"}) {
+		t.Fatal("kanban should be on lists")
 	}
 }
 
@@ -183,6 +244,28 @@ func TestExampleDiscordManifest(t *testing.T) {
 	}
 	if strings.TrimSpace(m.Description) == "" {
 		t.Fatal("example should include an extension description")
+	}
+}
+
+func TestExampleFieldsManifestsValidate(t *testing.T) {
+	for _, id := range []string{"severity", "fields-demo"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m Manifest
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateManifest(id, m); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if !m.HasFields() || !m.HasProjectSurface() {
+			t.Fatalf("%s should be fields-only project surface", id)
+		}
+		if m.HasProjectSettings() {
+			t.Fatalf("%s should not need settings", id)
+		}
 	}
 }
 

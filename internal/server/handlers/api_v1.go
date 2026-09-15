@@ -51,6 +51,7 @@ type apiTaskJSON struct {
 	SprintName        string             `json:"sprint_name,omitempty"`
 	ParentTitle       string             `json:"parent_title,omitempty"`
 	GitHub            *apiTaskGitHubJSON `json:"github,omitempty"`
+	Fields            map[string]any     `json:"fields,omitempty"`
 	DeprecationNotice string             `json:"deprecation_notice,omitempty"`
 }
 
@@ -65,34 +66,50 @@ type apiTaskListResponse struct {
 }
 
 type apiTaskCreateRequest struct {
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	DueDate        string `json:"due_date"`
-	ProjectID      *int   `json:"project_id"`
-	ParentID       *int   `json:"parent_id"`
-	Priority       *int   `json:"priority"`
-	Completed      *bool  `json:"completed"`
-	Favorite       *bool  `json:"favorite"`
-	TagIDs         []int  `json:"tag_ids"`
-	StatusID       *int   `json:"status_id"`
-	EstimatePoints *int   `json:"estimate_points"`
-	SprintID       *int   `json:"sprint_id"`
+	Title          string                     `json:"title"`
+	Description    string                     `json:"description"`
+	DueDate        string                     `json:"due_date"`
+	ProjectID      *int                       `json:"project_id"`
+	ParentID       *int                       `json:"parent_id"`
+	Priority       *int                       `json:"priority"`
+	Completed      *bool                      `json:"completed"`
+	Favorite       *bool                      `json:"favorite"`
+	TagIDs         []int                      `json:"tag_ids"`
+	StatusID       *int                       `json:"status_id"`
+	EstimatePoints *int                       `json:"estimate_points"`
+	SprintID       *int                       `json:"sprint_id"`
+	Fields         map[string]json.RawMessage `json:"fields"`
 }
 
 type apiTaskPatchRequest struct {
-	Title          *string     `json:"title"`
-	Description    *string     `json:"description"`
-	DueDate        *string     `json:"due_date"`
-	ProjectID      optionalInt `json:"project_id"`
-	ParentID       **int       `json:"parent_id"`
-	Priority       *int        `json:"priority"`
-	Completed      *bool       `json:"completed"`
-	Favorite       *bool       `json:"favorite"`
-	TagIDs         *[]int      `json:"tag_ids"`
-	ClearDue       *bool       `json:"clear_due_date"`
-	StatusID       **int       `json:"status_id"`
-	EstimatePoints optionalInt `json:"estimate_points"`
-	SprintID       optionalInt `json:"sprint_id"`
+	Title          *string         `json:"title"`
+	Description    *string         `json:"description"`
+	DueDate        *string         `json:"due_date"`
+	ProjectID      optionalInt     `json:"project_id"`
+	ParentID       **int           `json:"parent_id"`
+	Priority       *int            `json:"priority"`
+	Completed      *bool           `json:"completed"`
+	Favorite       *bool           `json:"favorite"`
+	TagIDs         *[]int          `json:"tag_ids"`
+	ClearDue       *bool           `json:"clear_due_date"`
+	StatusID       **int           `json:"status_id"`
+	EstimatePoints optionalInt     `json:"estimate_points"`
+	SprintID       optionalInt     `json:"sprint_id"`
+	Fields         optionalJSONMap `json:"fields"`
+}
+
+// optionalJSONMap distinguishes omitted vs present object for JSON merge patches.
+type optionalJSONMap struct {
+	Set    bool
+	Values map[string]json.RawMessage
+}
+
+func (o *optionalJSONMap) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(b) == "null" {
+		return errors.New("fields must be an object")
+	}
+	return json.Unmarshal(b, &o.Values)
 }
 
 // optionalInt distinguishes omitted / null / value for JSON patch fields.
@@ -252,7 +269,7 @@ func apiUserFromRequest(r *http.Request) (int, bool) {
 	return utils.GetAPIUserID(r)
 }
 
-func taskToAPIJSON(t tasks.Task) apiTaskJSON {
+func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 	tags := make([]apiTagJSON, 0, len(t.Tags))
 	for _, tg := range t.Tags {
 		tags = append(tags, apiTagJSON{ID: tg.ID, Name: tg.Name, Color: tg.Color, ProjectID: tg.ProjectID, Protected: tg.Protected})
@@ -312,13 +329,42 @@ func taskToAPIJSON(t tasks.Task) apiTaskJSON {
 			LastSyncError: t.GitHubLastSyncError,
 		}
 	}
+	if len(t.Fields) > 0 {
+		fields := make(map[string]any, len(t.Fields))
+		for _, f := range t.Fields {
+			if listOnly && !customFieldShowsOnList(f.ShowOn) {
+				continue
+			}
+			fields[f.Key] = f.Value
+		}
+		if len(fields) > 0 {
+			out.Fields = fields
+		}
+	}
 	if len(t.Children) > 0 {
 		out.Children = make([]apiTaskJSON, 0, len(t.Children))
 		for _, c := range t.Children {
-			out.Children = append(out.Children, taskToAPIJSON(c))
+			out.Children = append(out.Children, taskToAPIJSONOpts(c, listOnly))
 		}
 	}
 	return out
+}
+
+func customFieldShowsOnList(showOn []string) bool {
+	for _, s := range showOn {
+		if s == "kanban" || s == "list" {
+			return true
+		}
+	}
+	return false
+}
+
+func taskToAPIJSON(t tasks.Task) apiTaskJSON {
+	return taskToAPIJSONOpts(t, false)
+}
+
+func taskToAPIJSONList(t tasks.Task) apiTaskJSON {
+	return taskToAPIJSONOpts(t, true)
 }
 
 func decodeJSONBody(r *http.Request, dest interface{}) error {
@@ -470,7 +516,7 @@ func apiV1ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]apiTaskJSON, 0, len(taskList))
 	for _, t := range taskList {
-		out = append(out, taskToAPIJSON(t))
+		out = append(out, taskToAPIJSONList(t))
 	}
 	projectFilter := parseProjectFilter(fc.Project)
 	sprintFilter := parseSprintFilter(fc.Sprint)
@@ -542,6 +588,7 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 		StatusID:       req.StatusID,
 		EstimatePoints: req.EstimatePoints,
 		SprintID:       req.SprintID,
+		Fields:         req.Fields,
 	}
 	newID, err := domain.CreateTask(r.Context(), userID, in)
 	if err != nil {
@@ -604,6 +651,9 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 	in.ProjectID = req.ProjectID.toPatchInt(true)
 	in.EstimatePoints = req.EstimatePoints.toPatchInt(false)
 	in.SprintID = req.SprintID.toPatchInt(true)
+	if req.Fields.Set {
+		in.Fields = req.Fields.Values
+	}
 
 	if _, err := domain.UpdateTask(r.Context(), userID, taskID, in); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {

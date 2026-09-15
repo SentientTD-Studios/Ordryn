@@ -28,6 +28,21 @@ var knownSettingTypes = map[string]struct{}{
 	"bool":        {},
 }
 
+var knownFieldTypes = map[string]struct{}{
+	"string":  {},
+	"number":  {},
+	"boolean": {},
+	"enum":    {},
+	"url":     {},
+	"user":    {},
+}
+
+var knownShowOn = map[string]struct{}{
+	"sidebar": {},
+	"kanban":  {},
+	"list":    {},
+}
+
 var settingKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,32}$`)
 
 const (
@@ -53,6 +68,30 @@ type Manifest struct {
 	Delivery    *Delivery         `json:"delivery,omitempty"`
 	Settings    []Setting         `json:"settings,omitempty"`
 	Templates   map[string]string `json:"templates,omitempty"`
+	Fields      []Field           `json:"fields,omitempty"`
+}
+
+// Field registers a core custom field. Stored values use key "{id}.{key}".
+type Field struct {
+	Key         string        `json:"key"`
+	Type        string        `json:"type"`
+	Label       string        `json:"label"`
+	Description string        `json:"description,omitempty"`
+	Required    bool          `json:"required"`
+	ShowOn      []string      `json:"show_on,omitempty"`
+	Options     []FieldOption `json:"options,omitempty"`
+}
+
+// FieldOption is one enum value.
+type FieldOption struct {
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"`
+	Color string `json:"color,omitempty"`
+}
+
+// FieldKey is the persisted custom field key for an extension field.
+func FieldKey(extensionID, localKey string) string {
+	return strings.TrimSpace(extensionID) + "." + strings.TrimSpace(localKey)
 }
 
 // Hook is a registration on a named core extension point.
@@ -180,7 +219,95 @@ func ValidateManifest(folderName string, m Manifest) error {
 			return fmt.Errorf("unknown template hook %q", on)
 		}
 	}
+	seenFields := make(map[string]struct{})
+	for i := range m.Fields {
+		f := &m.Fields[i]
+		key := strings.TrimSpace(f.Key)
+		if !settingKeyPattern.MatchString(key) {
+			return fmt.Errorf("fields key %q is invalid", f.Key)
+		}
+		if _, dup := seenFields[key]; dup {
+			return fmt.Errorf("duplicate fields key %q", key)
+		}
+		seenFields[key] = struct{}{}
+		f.Key = key
+		typ := strings.TrimSpace(f.Type)
+		if _, ok := knownFieldTypes[typ]; !ok {
+			return fmt.Errorf("unknown fields type %q for %s", f.Type, key)
+		}
+		f.Type = typ
+		if strings.TrimSpace(f.Label) == "" {
+			return fmt.Errorf("fields label is required for %s", key)
+		}
+		if len(strings.TrimSpace(f.Description)) > maxDescriptionLen {
+			return fmt.Errorf("fields description is too long for %s", key)
+		}
+		showOn, err := normalizeShowOn(f.ShowOn)
+		if err != nil {
+			return fmt.Errorf("fields %s: %w", key, err)
+		}
+		f.ShowOn = showOn
+		if typ == "enum" {
+			opts, err := normalizeFieldOptions(f.Options)
+			if err != nil {
+				return fmt.Errorf("fields %s: %w", key, err)
+			}
+			f.Options = opts
+		} else if len(f.Options) > 0 {
+			return fmt.Errorf("fields %s: options are only allowed on enum", key)
+		}
+	}
 	return nil
+}
+
+func normalizeShowOn(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return []string{"sidebar"}, nil
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{})
+	for _, raw := range in {
+		v := strings.ToLower(strings.TrimSpace(raw))
+		if v == "" {
+			continue
+		}
+		if _, ok := knownShowOn[v]; !ok {
+			return nil, fmt.Errorf("unknown show_on %q", raw)
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return []string{"sidebar"}, nil
+	}
+	return out, nil
+}
+
+func normalizeFieldOptions(in []FieldOption) ([]FieldOption, error) {
+	if len(in) == 0 {
+		return nil, fmt.Errorf("enum requires options")
+	}
+	out := make([]FieldOption, 0, len(in))
+	seen := make(map[string]struct{})
+	for _, opt := range in {
+		val := strings.TrimSpace(opt.Value)
+		if val == "" {
+			return nil, fmt.Errorf("option value is required")
+		}
+		if _, dup := seen[val]; dup {
+			return nil, fmt.Errorf("duplicate option %q", val)
+		}
+		seen[val] = struct{}{}
+		label := strings.TrimSpace(opt.Label)
+		if label == "" {
+			label = val
+		}
+		out = append(out, FieldOption{Value: val, Label: label, Color: strings.TrimSpace(opt.Color)})
+	}
+	return out, nil
 }
 
 // EventHooks returns the registered event hook names.
@@ -227,6 +354,26 @@ func (m Manifest) secretKeys(scope string) []string {
 func (m Manifest) HasProjectSettings() bool {
 	for _, s := range m.Settings {
 		if s.ScopeName() == ScopeProject {
+			return true
+		}
+	}
+	return false
+}
+
+// HasFields reports whether the manifest registers custom fields.
+func (m Manifest) HasFields() bool {
+	return len(m.Fields) > 0
+}
+
+// HasProjectSurface reports whether the extension should appear on the project Extensions tab.
+func (m Manifest) HasProjectSurface() bool {
+	return m.HasProjectSettings() || m.HasFields()
+}
+
+// ShowsOnList reports whether a field should appear in list/kanban task JSON.
+func ShowsOnList(showOn []string) bool {
+	for _, s := range showOn {
+		if s == "kanban" || s == "list" {
 			return true
 		}
 	}
