@@ -611,10 +611,15 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	result.NewProjectID = effectiveProjectID
 	result.PriorityChanged = result.OldPriority != result.NewPriority
 	result.ProjectChanged = projectChanged
+	var hookMeta *live.TaskHookMeta
+	if statusTouched && newStatusID != oldStatusID {
+		from, to := statusHookNames(effectiveProjectID, oldStatusID, newStatusID)
+		hookMeta = &live.TaskHookMeta{StatusChanged: true, OldStatus: from, NewStatus: to}
+	}
 	if projectChanged {
-		live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated, result.OldProjectID)
+		live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskUpdated, hookMeta, result.OldProjectID)
 	} else {
-		live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+		live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskUpdated, hookMeta)
 	}
 	return result, nil
 }
@@ -651,19 +656,30 @@ func tagActivityMap(tags []storage.Tag) map[string]storage.Tag {
 
 func statusChangeMetadata(projectID, oldStatusID, newStatusID int) map[string]interface{} {
 	meta := map[string]interface{}{}
+	from, to := statusHookNames(projectID, oldStatusID, newStatusID)
+	if to != "" {
+		meta["to"] = to
+		meta["to_id"] = newStatusID
+	}
+	if from != "" {
+		meta["from"] = from
+		meta["from_id"] = oldStatusID
+	}
+	return meta
+}
+
+func statusHookNames(projectID, oldStatusID, newStatusID int) (from, to string) {
 	if newStatusID > 0 {
 		if st, err := storage.GetProjectStatus(projectID, newStatusID); err == nil && st != nil {
-			meta["to"] = st.Name
-			meta["to_id"] = st.ID
+			to = st.Name
 		}
 	}
 	if oldStatusID > 0 {
 		if st, err := storage.GetProjectStatus(projectID, oldStatusID); err == nil && st != nil {
-			meta["from"] = st.Name
-			meta["from_id"] = st.ID
+			from = st.Name
 		}
 	}
-	return meta
+	return from, to
 }
 
 func sprintChangeMetadata(projectID, oldSprintID, newSprintID int) map[string]interface{} {

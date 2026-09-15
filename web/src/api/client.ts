@@ -3,6 +3,12 @@ import type {
   AdminSettings,
   AdminSettingsPatch,
   AdminUser,
+  AdminModsList,
+  AdminMod,
+  AdminModPatch,
+  ProjectModsList,
+  ProjectMod,
+  ProjectModPatch,
   APIKey,
   CalendarInfo,
   CalendarMonth,
@@ -431,6 +437,24 @@ export const api = {
 
   unlinkProjectGitHub(projectId: number) {
     return request<{ ok: boolean }>(`/api/v1/projects/${projectId}/github`, { method: 'DELETE' })
+  },
+
+  listProjectMods(projectId: number) {
+    return request<ProjectModsList>(`/api/v1/projects/${projectId}/mods`)
+  },
+
+  patchProjectMod(projectId: number, modId: string, payload: ProjectModPatch) {
+    return request<ProjectMod>(`/api/v1/projects/${projectId}/mods/${encodeURIComponent(modId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  testProjectMod(projectId: number, modId: string) {
+    return request<{ ok: boolean; message: string }>(
+      `/api/v1/projects/${projectId}/mods/${encodeURIComponent(modId)}/test`,
+      { method: 'POST' },
+    )
   },
 
   createTaskGitHubIssue(taskId: number, payload: { title?: string; body?: string } = {}) {
@@ -868,6 +892,17 @@ export const api = {
   testImageHosting(payload: AdminSettingsPatch) {
     return request<ImageHostingTestResult>('/api/v1/admin/image-hosting/test', {
       method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listAdminMods() {
+    return request<AdminModsList>('/api/v1/admin/mods')
+  },
+
+  patchAdminMod(id: string, payload: AdminModPatch) {
+    return request<AdminMod>(`/api/v1/admin/mods/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },

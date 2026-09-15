@@ -407,6 +407,12 @@ func applyKanbanColumnMove(userID, taskID, projectID, newStatusID, oldStatusID i
 		}
 	}
 	go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, st.IsDone)
+	from, to := statusHookNames(projectID, oldStatusID, newStatusID)
+	live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskUpdated, &live.TaskHookMeta{
+		StatusChanged: true,
+		OldStatus:     from,
+		NewStatus:     to,
+	})
 	return nil
 }
 

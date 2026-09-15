@@ -1570,6 +1570,94 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/projects/{id}/mods:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: List project-scoped mods for the owner
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Mods with this project's settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectModsList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/mods/{modId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: modId
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      tags: [Projects]
+      summary: Update this project's mod settings (owner)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectModPatch"
+      responses:
+        "200":
+          description: Updated project mod
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMod"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/mods/{modId}/test:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: modId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Projects]
+      summary: Send a test Discord webhook message to this project's channel
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Test sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/projects/{id}/statuses:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -3447,6 +3535,67 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/admin/mods:
+    get:
+      tags: [Admin]
+      summary: List loaded mods
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Mods with site-level enable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminModsList"
+
+  /api/v1/admin/mods/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Admin]
+      summary: Get one mod and its settings
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Mod
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMod"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Admin]
+      summary: Enable or disable a mod for the site
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminModPatch"
+      responses:
+        "200":
+          description: Updated mod
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMod"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/admin/join-requests:
     get:
       tags: [Admin]
@@ -5134,6 +5283,132 @@ components:
           type: integer
         invite_token:
           type: string
+
+    AdminProjectRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        archived:
+          type: boolean
+
+    AdminModSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+
+    AdminMod:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        host_api:
+          type: integer
+        status:
+          type: string
+          enum: [loaded, failed]
+        error:
+          type: string
+        manifest:
+          type: object
+          additionalProperties: true
+        settings:
+          $ref: "#/components/schemas/AdminModSettings"
+        secrets:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    AdminModsList:
+      type: object
+      properties:
+        mods:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminMod"
+
+    AdminModPatch:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+
+    ProjectModSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        triggers:
+          type: array
+          items:
+            type: string
+        templates:
+          type: object
+          additionalProperties:
+            type: string
+        status_only:
+          type: boolean
+        last_error:
+          type: string
+        last_delivery_at:
+          type: string
+
+    ProjectMod:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        host_api:
+          type: integer
+        site_enabled:
+          type: boolean
+        manifest:
+          type: object
+          additionalProperties: true
+        settings:
+          $ref: "#/components/schemas/ProjectModSettings"
+        secrets:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    ProjectModsList:
+      type: object
+      properties:
+        mods:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMod"
+
+    ProjectModPatch:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        triggers:
+          type: array
+          items:
+            type: string
+        templates:
+          type: object
+          additionalProperties:
+            type: string
+        status_only:
+          type: boolean
+        webhook_url:
+          type: string
+          description: Write-only Discord incoming webhook URL. Omit or blank to keep the stored secret.
 
     AdminSettings:
       type: object

@@ -12,6 +12,10 @@ docs/*
 # Uploaded images when using local hosting
 data/uploads/
 
+# Operator-installed mods (keep the folder)
+data/mods/*
+!data/mods/.gitkeep
+
 # Node/npm
 node_modules/
 npm-debug.log

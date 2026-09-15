@@ -44,6 +44,7 @@ func TestOpenAPISpecIncludesSavedViews(t *testing.T) {
 		"/api/v1/me/github",
 		"/api/v1/me/github/pat",
 		"/api/v1/projects/{id}/github",
+		"/api/v1/projects/{id}/mods",
 		"/api/v1/projects/{id}/sprints",
 		"/api/v1/tasks/{id}/github-issue",
 		"/api/v1/webhooks/github",

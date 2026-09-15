@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"GoTodo/internal/hooks"
 	"GoTodo/internal/storage"
 
 	"github.com/redis/go-redis/v9"
@@ -52,22 +53,54 @@ func SubscribeUser(ctx context.Context, userID int) <-chan []byte {
 	return h.Subscribe(ctx, UserChannelKey(userID))
 }
 
+// TaskHookMeta is extra detail for outbound event hooks (not sent over SSE).
+type TaskHookMeta struct {
+	StatusChanged bool
+	OldStatus     string
+	NewStatus     string
+}
+
 // AfterTaskChange notifies everyone who can currently see the task.
 func AfterTaskChange(actorID, taskID int, typ string, extraProjectIDs ...int) {
+	AfterTaskChangeMeta(actorID, taskID, typ, nil, extraProjectIDs...)
+}
+
+// AfterTaskChangeMeta is AfterTaskChange plus optional status-change metadata for mods.
+func AfterTaskChangeMeta(actorID, taskID int, typ string, meta *TaskHookMeta, extraProjectIDs ...int) {
+	if taskID <= 0 {
+		return
+	}
 	h := currentHub()
-	if h == nil || taskID <= 0 {
+	wantHooks := hooks.HasWork()
+	if h == nil && !wantHooks {
 		return
 	}
 	ownerID, projectID, err := storage.TaskOwnerAndProject(taskID)
 	if err != nil {
 		return
 	}
-	h.Publish(Event{
-		Type:      typ,
-		TaskID:    taskID,
-		ProjectID: projectID,
-		ActorID:   actorID,
-	}, audience(ownerID, projectID, extraProjectIDs...))
+	if h != nil {
+		h.Publish(Event{
+			Type:      typ,
+			TaskID:    taskID,
+			ProjectID: projectID,
+			ActorID:   actorID,
+		}, audience(ownerID, projectID, extraProjectIDs...))
+	}
+	if wantHooks {
+		ev := hooks.Event{
+			Type:      typ,
+			TaskID:    taskID,
+			ProjectID: projectID,
+			ActorID:   actorID,
+		}
+		if meta != nil {
+			ev.StatusChanged = meta.StatusChanged
+			ev.OldStatus = meta.OldStatus
+			ev.NewStatus = meta.NewStatus
+		}
+		go hooks.Dispatch(ev)
+	}
 }
 
 // AfterTasksChange notifies the union of audiences for many tasks (one event).

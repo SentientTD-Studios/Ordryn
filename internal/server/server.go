@@ -4,6 +4,7 @@ import (
 	"GoTodo/internal/domain"
 	"GoTodo/internal/live"
 	"GoTodo/internal/mailer"
+	"GoTodo/internal/mods"
 	"GoTodo/internal/server/handlers"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
@@ -56,6 +57,8 @@ func StartServer() error {
 	if err := storage.RunMigrations(); err != nil {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
 	}
+
+	mods.Load()
 
 	if err := RunBootstrap(); err != nil {
 		return fmt.Errorf("bootstrap failed: %w", err)
@@ -155,6 +158,8 @@ func registerAPIV1Routes() {
 	handleBoth("/api/v1/admin/email-audit", utils.AdminAPIChain(handlers.APIV1AdminEmailAudit))
 	handleBoth("/api/v1/admin/comment-audit", utils.AdminAPIChain(handlers.APIV1AdminCommentAuditRouter))
 	handleBoth("/api/v1/admin/comment-audit/", utils.AdminAPIChain(handlers.APIV1AdminCommentAuditRouter))
+	handleBoth("/api/v1/admin/mods", utils.AdminAPIChain(handlers.APIV1AdminModsRouter))
+	handleBoth("/api/v1/admin/mods/", utils.AdminAPIChain(handlers.APIV1AdminModsRouter))
 	handleBoth("/api/v1/announcements/dismiss", utils.AuthSessionChain(handlers.APIV1DismissAnnouncement))
 
 	handleBoth("/cal/", handlers.CalendarFeedHandler)

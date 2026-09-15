@@ -150,6 +150,9 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 			apiV1ProjectGitHub(w, r, projectID)
 			return true
 		}
+	case "mods":
+		apiV1ProjectMods(w, r, projectID, parts[2:])
+		return true
 	case "archive":
 		if len(parts) != 2 {
 			return false

@@ -502,6 +502,87 @@ export type ImageHostingTestResult = {
   public_url_ok: boolean
 }
 
+export type AdminProjectRef = {
+  id: number
+  name: string
+  archived: boolean
+}
+
+export type AdminModSettingField = {
+  key: string
+  type: 'secret' | 'project_ids' | 'hook_select' | 'bool' | string
+  label: string
+  required?: boolean
+  scope?: 'site' | 'project' | string
+}
+
+export type AdminModManifest = {
+  id: string
+  name: string
+  version: string
+  host_api: number
+  hooks?: { on: string }[]
+  delivery?: { type: string; url_from: string }
+  settings?: AdminModSettingField[]
+  templates?: Record<string, string>
+}
+
+export type AdminModSettings = {
+  enabled: boolean
+}
+
+export type AdminMod = {
+  id: string
+  name: string
+  version: string
+  host_api: number
+  status: 'loaded' | 'failed' | string
+  error?: string
+  manifest: AdminModManifest
+  settings: AdminModSettings
+  secrets: Record<string, boolean>
+}
+
+export type AdminModsList = {
+  mods: AdminMod[]
+}
+
+export type AdminModPatch = {
+  enabled?: boolean
+}
+
+export type ProjectModSettings = {
+  enabled: boolean
+  triggers: string[]
+  templates: Record<string, string>
+  status_only: boolean
+  last_error?: string
+  last_delivery_at?: string
+}
+
+export type ProjectMod = {
+  id: string
+  name: string
+  version: string
+  host_api: number
+  site_enabled: boolean
+  manifest: AdminModManifest
+  settings: ProjectModSettings
+  secrets: Record<string, boolean>
+}
+
+export type ProjectModsList = {
+  mods: ProjectMod[]
+}
+
+export type ProjectModPatch = {
+  enabled?: boolean
+  triggers?: string[]
+  templates?: Record<string, string>
+  status_only?: boolean
+  webhook_url?: string
+}
+
 export type AdminUser = {
   id: number
   email: string

@@ -289,6 +289,11 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := CreateModTables(); err != nil {
+		fmt.Printf("migration: CreateModTables failed: %v\n", err)
+		errCount++
+	}
+
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {
 		fmt.Printf("migration: CreatePasswordResetTable failed: %v\n", err)
