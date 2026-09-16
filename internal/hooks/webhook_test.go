@@ -106,6 +106,7 @@ func TestPostJSONSuccessAndError(t *testing.T) {
 		gotBody, _ = io.ReadAll(r.Body)
 		if r.URL.Path == "/fail" {
 			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"Unknown name \"content\""}}`))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -124,8 +125,57 @@ func TestPostJSONSuccessAndError(t *testing.T) {
 	if string(gotBody) != `{"text":"hi"}` {
 		t.Fatalf("body=%s", gotBody)
 	}
-	if err := postJSON(srv.URL+"/fail", []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "webhook HTTP 400") {
+	err := postJSON(srv.URL+"/fail", []byte(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "webhook HTTP 400") || !strings.Contains(err.Error(), "Unknown name") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestGoogleChatWebhookPayloadAndURL(t *testing.T) {
+	ok := "https://chat.googleapis.com/v1/spaces/AAAAexample/messages?key=abc&token=def"
+	if err := validateWebhookURL(extensions.DeliveryGoogleChatWebhook, ok); err != nil {
+		t.Fatal(err)
+	}
+	rejects := []string{
+		"https://example.com/v1/spaces/AAA/messages?key=a&token=b",
+		"https://chat.googleapis.com/v1/spaces/AAA",
+		"https://chat.googleapis.com/v1/spaces/AAA/messages",
+		"https://chat.googleapis.com/v1/media/AAA?key=a",
+		"https://chat.googleapis.com.evil.com/v1/spaces/AAA/messages?key=a&token=b",
+	}
+	for _, raw := range rejects {
+		if err := validateWebhookURL(extensions.DeliveryGoogleChatWebhook, raw); err == nil {
+			t.Fatalf("expected reject %q", raw)
+		}
+	}
+
+	vars := map[string]string{
+		"id": "9", "name": "Ship", "status": "Done", "project": "Ordryn",
+		"actor": "ada", "url": "https://x/tasks/9", "priority": "High",
+	}
+	raw, err := marshalWebhookPayload(extensions.DeliveryGoogleChatWebhook, "", "Task *Ship* updated", "task.updated", vars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["text"] != "Task *Ship* updated" {
+		t.Fatalf("text=%v", body["text"])
+	}
+	if _, ok := body["cardsV2"]; !ok {
+		t.Fatalf("missing cardsV2: %s", raw)
+	}
+	if !strings.Contains(string(raw), "Open") || !strings.Contains(string(raw), vars["url"]) {
+		t.Fatalf("card should include Open url, got %s", raw)
+	}
+	if gchatHTML("Task *Ship* updated") != "Task <b>Ship</b> updated" {
+		t.Fatalf("gchatHTML=%q", gchatHTML("Task *Ship* updated"))
+	}
+	thread, _ := body["thread"].(map[string]any)
+	if thread["threadKey"] != "ordryn-task-9" {
+		t.Fatalf("thread=%v", body["thread"])
 	}
 }
 

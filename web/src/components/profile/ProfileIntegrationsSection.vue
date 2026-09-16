@@ -70,6 +70,8 @@ function inboxPlaceholder(ext: ProjectExtension, key: string) {
       return 'https://ntfy.sh/my-topic'
     case 'discord.webhook':
       return 'https://discord.com/api/webhooks/…'
+    case 'googlechat.webhook':
+      return 'https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…'
     default:
       return 'https://example.com/hooks/…'
   }

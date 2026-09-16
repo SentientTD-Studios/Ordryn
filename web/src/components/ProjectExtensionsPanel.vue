@@ -170,6 +170,8 @@ function webhookPlaceholder(ext: ProjectExtension, key: string): string {
       return 'https://hooks.slack.com/services/…'
     case 'teams.webhook':
       return 'https://prod-00.example.logic.azure.com/…'
+    case 'googlechat.webhook':
+      return 'https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…'
     case 'ntfy.webhook':
       return 'https://ntfy.sh/my-topic'
     default:

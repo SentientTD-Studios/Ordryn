@@ -357,7 +357,7 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 		}
 		auth, _ := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, "ntfy_auth")
 		return "", sendNtfy(u, auth, ctx.Message, ctx.Vars, signing)
-	case extensions.DeliveryDiscordWebhook, extensions.DeliverySlackWebhook, extensions.DeliveryTeamsWebhook, extensions.DeliveryHTTPWebhook:
+	case extensions.DeliveryDiscordWebhook, extensions.DeliverySlackWebhook, extensions.DeliveryTeamsWebhook, extensions.DeliveryGoogleChatWebhook, extensions.DeliveryHTTPWebhook:
 		u, err := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, key)
 		if err != nil {
 			return "", err

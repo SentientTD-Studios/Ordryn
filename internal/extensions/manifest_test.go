@@ -232,6 +232,38 @@ func TestValidateManifestEmailDeliveryRejected(t *testing.T) {
 	}
 }
 
+func TestDueDatesRelayManifestValidates(t *testing.T) {
+	m := Manifest{
+		ID:          "due-dates",
+		Name:        "Due dates",
+		Version:     "1.2.0",
+		HostAPI:     1,
+		Description: "POST due-date events to your own HTTPS relay. Does not use Admin email.",
+		Hooks: []Hook{
+			{On: "task.due_changed"},
+			{On: "task.overdue"},
+		},
+		Delivery: &Delivery{Type: DeliveryHTTPWebhook, URLFrom: "webhook_url", Format: DeliveryFormatJSON},
+		Settings: []Setting{
+			{Key: "webhook_url", Type: "secret", Label: "Relay URL", Description: "Public HTTPS URL of your email relay.", Required: true, Scope: ScopeProject},
+			{Key: "triggers", Type: "hook_select", Label: "Triggers", Description: "Choose due-date events.", Scope: ScopeProject},
+		},
+		Templates: map[string]string{
+			"task.due_changed": "Due date for {name} is now {due_date}",
+			"task.overdue":     "{name} is overdue ({due_date})",
+		},
+	}
+	if err := ValidateManifest("due-dates", m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Delivery.Type != DeliveryHTTPWebhook || m.Delivery.Format != DeliveryFormatJSON {
+		t.Fatalf("due-dates should post JSON to a custom relay, got %#v", m.Delivery)
+	}
+	if !m.HasProjectSettings() || !m.HasProjectSurface() {
+		t.Fatal("due-dates should appear on the project tab")
+	}
+}
+
 func TestValidateManifestUnknownDelivery(t *testing.T) {
 	m := validDiscord()
 	m.Delivery.Type = "smtp"
@@ -325,52 +357,58 @@ func TestLoadFailSoftAndSkipMissingManifest(t *testing.T) {
 }
 
 func TestExampleNotificationManifestsValidate(t *testing.T) {
-	ids := []string{"discord", "slack", "teams", "webhook", "ntfy"}
+	ids := []string{"discord", "slack", "teams", "google-chat", "webhook", "ntfy"}
+	wantType := map[string]string{
+		"discord":     DeliveryDiscordWebhook,
+		"slack":       DeliverySlackWebhook,
+		"teams":       DeliveryTeamsWebhook,
+		"google-chat": DeliveryGoogleChatWebhook,
+		"webhook":     DeliveryHTTPWebhook,
+		"ntfy":        DeliveryNtfyWebhook,
+	}
 	for _, id := range ids {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
-		if err != nil {
-			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
-		}
-		var m Manifest
-		if err := json.Unmarshal(raw, &m); err != nil {
-			t.Fatalf("%s: %v", id, err)
-		}
-		if err := ValidateManifest(id, m); err != nil {
-			t.Fatalf("%s: %v", id, err)
-		}
-		if m.Delivery == nil {
-			t.Fatalf("%s missing delivery", id)
-		}
-		wantType := map[string]string{
-			"discord": DeliveryDiscordWebhook,
-			"slack":   DeliverySlackWebhook,
-			"teams":   DeliveryTeamsWebhook,
-			"webhook": DeliveryHTTPWebhook,
-			"ntfy":    DeliveryNtfyWebhook,
-		}
-		if m.Delivery.Type != wantType[id] {
-			t.Fatalf("%s delivery type=%q want %q", id, m.Delivery.Type, wantType[id])
-		}
-		if id == "webhook" && m.Delivery.Format != DeliveryFormatJSON {
-			t.Fatalf("generic webhook should use json format, got %q", m.Delivery.Format)
-		}
-		if !m.HasProjectSettings() {
-			t.Fatalf("%s should be project-scoped", id)
-		}
-		if strings.TrimSpace(m.Description) == "" {
-			t.Fatalf("%s should include an extension description", id)
-		}
-		for _, s := range m.Settings {
-			if s.Key == "project_ids" || s.Type == "project_ids" {
-				t.Fatalf("%s: project_ids should not be in the example", id)
+		t.Run(id, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+			if err != nil {
+				raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", id, "manifest.json"))
 			}
-			if s.Description == "" {
-				t.Fatalf("%s setting %s missing description", id, s.Key)
+			if err != nil {
+				t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
 			}
-			if s.Key == "webhook_url" && s.ScopeName() != ScopeProject {
-				t.Fatalf("%s webhook_url scope=%q", id, s.ScopeName())
+			var m Manifest
+			if err := json.Unmarshal(raw, &m); err != nil {
+				t.Fatalf("%s: %v", id, err)
 			}
-		}
+			if err := ValidateManifest(id, m); err != nil {
+				t.Fatalf("%s: %v", id, err)
+			}
+			if m.Delivery == nil {
+				t.Fatalf("%s missing delivery", id)
+			}
+			if m.Delivery.Type != wantType[id] {
+				t.Fatalf("%s delivery type=%q want %q", id, m.Delivery.Type, wantType[id])
+			}
+			if id == "webhook" && m.Delivery.Format != DeliveryFormatJSON {
+				t.Fatalf("generic webhook should use json format, got %q", m.Delivery.Format)
+			}
+			if !m.HasProjectSettings() {
+				t.Fatalf("%s should be project-scoped", id)
+			}
+			if strings.TrimSpace(m.Description) == "" {
+				t.Fatalf("%s should include an extension description", id)
+			}
+			for _, s := range m.Settings {
+				if s.Key == "project_ids" || s.Type == "project_ids" {
+					t.Fatalf("%s: project_ids should not be in the example", id)
+				}
+				if s.Description == "" {
+					t.Fatalf("%s setting %s missing description", id, s.Key)
+				}
+				if s.Key == "webhook_url" && s.ScopeName() != ScopeProject {
+					t.Fatalf("%s webhook_url scope=%q", id, s.ScopeName())
+				}
+			}
+		})
 	}
 }
 
@@ -380,7 +418,7 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 		siteOnly bool
 	}
 	cases := map[string]want{
-		"due-dates":     {delivery: DeliveryNtfyWebhook},
+		"due-dates":     {delivery: DeliveryHTTPWebhook},
 		"email":         {delivery: DeliveryHTTPWebhook},
 		"comments":      {delivery: DeliveryHTTPWebhook},
 		"claimed":       {delivery: DeliveryNtfyWebhook},
@@ -388,45 +426,50 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 		"join-requests": {delivery: DeliveryHTTPWebhook, siteOnly: true},
 	}
 	for id, w := range cases {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
-		if err != nil {
-			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
-		}
-		var m Manifest
-		if err := json.Unmarshal(raw, &m); err != nil {
-			t.Fatalf("%s: %v", id, err)
-		}
-		if err := ValidateManifest(id, m); err != nil {
-			t.Fatalf("%s: %v", id, err)
-		}
-		if m.Delivery == nil || m.Delivery.Type != w.delivery {
-			t.Fatalf("%s delivery=%v want %s", id, m.Delivery, w.delivery)
-		}
-		if id == "email" {
-			if m.Delivery.Format != DeliveryFormatJSON {
-				t.Fatalf("email relay should use json format, got %q", m.Delivery.Format)
+		t.Run(id, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+			if err != nil {
+				raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", id, "manifest.json"))
 			}
-			if !strings.Contains(strings.ToLower(m.Description), "admin") {
-				t.Fatalf("email relay description should say it does not use Admin email")
+			if err != nil {
+				t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
 			}
-		}
-		if w.siteOnly {
-			if m.HasProjectSurface() || m.HasProjectSettings() {
-				t.Fatalf("%s should stay in Admin (no project surface)", id)
+			var m Manifest
+			if err := json.Unmarshal(raw, &m); err != nil {
+				t.Fatalf("%s: %v", id, err)
 			}
-			if !m.DeclaresHook("join.request") {
-				t.Fatalf("%s should declare join.request", id)
+			if err := ValidateManifest(id, m); err != nil {
+				t.Fatalf("%s: %v", id, err)
 			}
-			continue
-		}
-		if !m.HasProjectSettings() || !m.HasProjectSurface() {
-			t.Fatalf("%s should appear on the project tab", id)
-		}
-		for _, s := range m.Settings {
-			if s.Description == "" {
-				t.Fatalf("%s setting %s missing description", id, s.Key)
+			if m.Delivery == nil || m.Delivery.Type != w.delivery {
+				t.Fatalf("%s delivery=%v want %s", id, m.Delivery, w.delivery)
 			}
-		}
+			if id == "email" || id == "due-dates" {
+				if m.Delivery.Format != DeliveryFormatJSON {
+					t.Fatalf("%s relay should use json format, got %q", id, m.Delivery.Format)
+				}
+				if !strings.Contains(strings.ToLower(m.Description), "admin") {
+					t.Fatalf("%s relay description should say it does not use Admin email", id)
+				}
+			}
+			if w.siteOnly {
+				if m.HasProjectSurface() || m.HasProjectSettings() {
+					t.Fatalf("%s should stay in Admin (no project surface)", id)
+				}
+				if !m.DeclaresHook("join.request") {
+					t.Fatalf("%s should declare join.request", id)
+				}
+				return
+			}
+			if !m.HasProjectSettings() || !m.HasProjectSurface() {
+				t.Fatalf("%s should appear on the project tab", id)
+			}
+			for _, s := range m.Settings {
+				if s.Description == "" {
+					t.Fatalf("%s setting %s missing description", id, s.Key)
+				}
+			}
+		})
 	}
 }
 

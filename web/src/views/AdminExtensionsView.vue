@@ -81,7 +81,8 @@ onMounted(load)
     <p class="text-muted">
       Drop a folder in <code>data/extensions/</code> with <code>manifest.json</code>, then restart.
       Copy a notification example from <code>examples/extensions/</code> (Discord, Slack, Teams,
-      generic webhook, ntfy, email relay, due-dates, comments, claimed, activity, join-requests), or
+      Google Chat, generic webhook, ntfy, email relay, due-dates, comments, claimed, activity,
+      join-requests), or
       <code>severity</code> / <code>estimate</code> / <code>fields-demo</code> for custom fields.
     </p>
 

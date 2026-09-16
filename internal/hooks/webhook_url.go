@@ -82,6 +82,16 @@ func validateWebhookURL(deliveryType, raw string) error {
 		if path == "" || path == "/" {
 			return fmt.Errorf("webhook URL path is not a Teams webhook")
 		}
+	case extensions.DeliveryGoogleChatWebhook:
+		if !hostMatches(host, "chat.googleapis.com") {
+			return fmt.Errorf("webhook URL host is not allowed")
+		}
+		if !gchatPathAllowed(path) {
+			return fmt.Errorf("webhook URL path is not a Google Chat webhook")
+		}
+		if u.RawQuery == "" {
+			return fmt.Errorf("webhook URL must include key and token query parameters")
+		}
 	case extensions.DeliveryHTTPWebhook:
 		// Public HTTPS only; host allowlist is the caller's choice.
 	case extensions.DeliveryNtfyWebhook:
@@ -144,6 +154,18 @@ func teamsHostAllowed(host string) bool {
 		hostMatches(host, "outlook.office365.com") ||
 		hostMatches(host, "logic.azure.com") ||
 		hostMatches(host, "api.powerplatform.com")
+}
+
+func gchatPathAllowed(path string) bool {
+	if !strings.HasPrefix(path, "/v1/spaces/") {
+		return false
+	}
+	rest := strings.TrimPrefix(path, "/v1/spaces/")
+	space, after, ok := strings.Cut(rest, "/")
+	if !ok || space == "" || strings.Contains(space, "..") {
+		return false
+	}
+	return after == "messages"
 }
 
 func hostMatches(host, domain string) bool {

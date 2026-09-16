@@ -75,11 +75,12 @@ const (
 )
 
 const (
-	DeliveryDiscordWebhook = "discord.webhook"
-	DeliverySlackWebhook   = "slack.webhook"
-	DeliveryTeamsWebhook   = "teams.webhook"
-	DeliveryHTTPWebhook    = "http.webhook"
-	DeliveryNtfyWebhook    = "ntfy.webhook"
+	DeliveryDiscordWebhook    = "discord.webhook"
+	DeliverySlackWebhook      = "slack.webhook"
+	DeliveryTeamsWebhook      = "teams.webhook"
+	DeliveryGoogleChatWebhook = "googlechat.webhook"
+	DeliveryHTTPWebhook       = "http.webhook"
+	DeliveryNtfyWebhook       = "ntfy.webhook"
 )
 
 const (
@@ -89,11 +90,12 @@ const (
 )
 
 var knownDeliveryTypes = map[string]struct{}{
-	DeliveryDiscordWebhook: {},
-	DeliverySlackWebhook:   {},
-	DeliveryTeamsWebhook:   {},
-	DeliveryHTTPWebhook:    {},
-	DeliveryNtfyWebhook:    {},
+	DeliveryDiscordWebhook:    {},
+	DeliverySlackWebhook:      {},
+	DeliveryTeamsWebhook:      {},
+	DeliveryGoogleChatWebhook: {},
+	DeliveryHTTPWebhook:       {},
+	DeliveryNtfyWebhook:       {},
 }
 
 var knownDeliveryFormats = map[string]struct{}{

@@ -8,9 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -117,6 +119,9 @@ func sendWebhookOpts(deliveryType, format, webhookURL, content, eventType string
 			u = withQueryValue(u, "thread_id", opts.ThreadID)
 		}
 	}
+	if deliveryType == extensions.DeliveryGoogleChatWebhook {
+		u = withQueryValue(u, "messageReplyOption", "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD")
+	}
 	respBody, status, err := postJSONOpts(u, body, opts)
 	if err != nil {
 		return "", err
@@ -156,6 +161,8 @@ func marshalWebhookPayload(deliveryType, format, content, eventType string, vars
 		return json.Marshal(slackPayload(content, vars))
 	case extensions.DeliveryTeamsWebhook:
 		return json.Marshal(teamsPayload(content, vars))
+	case extensions.DeliveryGoogleChatWebhook:
+		return json.Marshal(gchatPayload(content, vars))
 	case extensions.DeliveryHTTPWebhook:
 		return json.Marshal(httpWebhookPayload(format, content, eventType, vars))
 	default:
@@ -317,6 +324,76 @@ func teamsPayload(content string, vars map[string]string) map[string]any {
 	}
 }
 
+var gchatStarBold = regexp.MustCompile(`\*(.+?)\*`)
+var gchatStarStarBold = regexp.MustCompile(`\*\*(.+?)\*\*`)
+
+func gchatPayload(content string, vars map[string]string) map[string]any {
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	widgets := []map[string]any{
+		{"textParagraph": map[string]any{"text": gchatHTML(content)}},
+	}
+	for _, row := range []struct{ label, key string }{
+		{"Status", "status"},
+		{"Actor", "actor"},
+		{"Priority", "priority"},
+		{"Due", "due_date"},
+	} {
+		if v := strings.TrimSpace(vars[row.key]); v != "" {
+			widgets = append(widgets, map[string]any{
+				"decoratedText": map[string]any{
+					"topLabel": row.label,
+					"text":     html.EscapeString(v),
+				},
+			})
+		}
+	}
+	if u := strings.TrimSpace(vars["url"]); u != "" {
+		widgets = append(widgets, map[string]any{
+			"buttonList": map[string]any{
+				"buttons": []map[string]any{{
+					"text": "Open",
+					"onClick": map[string]any{
+						"openLink": map[string]any{"url": u},
+					},
+				}},
+			},
+		})
+	}
+	card := map[string]any{
+		"sections": []map[string]any{{"widgets": widgets}},
+	}
+	header := map[string]any{}
+	if name := strings.TrimSpace(vars["name"]); name != "" {
+		header["title"] = name
+	}
+	if project := strings.TrimSpace(vars["project"]); project != "" {
+		header["subtitle"] = project
+	}
+	if len(header) > 0 {
+		card["header"] = header
+	}
+	out := map[string]any{
+		"text": content,
+		"cardsV2": []map[string]any{{
+			"cardId": "ordryn",
+			"card":   card,
+		}},
+	}
+	if id := strings.TrimSpace(vars["id"]); id != "" {
+		out["thread"] = map[string]any{"threadKey": "ordryn-task-" + id}
+	}
+	return out
+}
+
+func gchatHTML(s string) string {
+	s = html.EscapeString(s)
+	s = strings.ReplaceAll(s, "\n", "<br>")
+	s = gchatStarStarBold.ReplaceAllString(s, "<b>$1</b>")
+	return gchatStarBold.ReplaceAllString(s, "<b>$1</b>")
+}
+
 func sendNtfy(webhookURL, auth, content string, vars map[string]string, signing string) error {
 	if err := validateWebhookURL(extensions.DeliveryNtfyWebhook, webhookURL); err != nil {
 		return err
@@ -391,9 +468,17 @@ func postJSONOpts(webhookURL string, body []byte, opts sendOpts) (respBody []byt
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxWebhookResponseBytes))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return raw, resp.StatusCode, fmt.Errorf("webhook HTTP %d", resp.StatusCode)
+		return raw, resp.StatusCode, webhookStatusError(resp.StatusCode, raw)
 	}
 	return raw, resp.StatusCode, nil
+}
+
+func webhookStatusError(status int, body []byte) error {
+	snippet := strings.Join(strings.Fields(strings.TrimSpace(string(body))), " ")
+	if snippet == "" {
+		return fmt.Errorf("webhook HTTP %d", status)
+	}
+	return fmt.Errorf("webhook HTTP %d: %s", status, truncateRunes(snippet, 240))
 }
 
 func parseProviderMessageID(deliveryType string, body []byte) string {
@@ -412,6 +497,10 @@ func parseProviderMessageID(deliveryType string, body []byte) string {
 	case extensions.DeliverySlackWebhook:
 		if ts, _ := obj["ts"].(string); ts != "" {
 			return ts
+		}
+	case extensions.DeliveryGoogleChatWebhook:
+		if name, _ := obj["name"].(string); name != "" {
+			return name
 		}
 	}
 	return ""
