@@ -227,6 +227,7 @@ func ArchiveProject(ctx context.Context, userID, projectID int) (*storage.Projec
 	}
 	_ = storage.LogProjectEvent(projectID, userID, "archived", nil)
 	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, projectID, live.TypeProjectArchived, nil)
 	return storage.GetProjectByID(projectID, proj.OwnerUserID)
 }
 
@@ -251,6 +252,7 @@ func RestoreProject(ctx context.Context, userID, projectID int) (*storage.Projec
 	}
 	_ = storage.LogProjectEvent(projectID, userID, "restored", nil)
 	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, projectID, live.TypeProjectRestored, nil)
 	return storage.GetProjectByID(projectID, proj.OwnerUserID)
 }
 

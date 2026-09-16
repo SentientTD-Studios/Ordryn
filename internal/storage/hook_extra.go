@@ -218,6 +218,59 @@ func MarkOverdueHookSent(taskID int) error {
 	return err
 }
 
+// ListDueSoonHookTasks returns incomplete project tasks due tomorrow that have not been notified.
+func ListDueSoonHookTasks(limit int) ([]int, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	rows, err := pool.Query(context.Background(), `
+		SELECT t.id FROM tasks t
+		WHERE t.project_id IS NOT NULL
+		  AND t.due_date IS NOT NULL
+		  AND t.due_date = CURRENT_DATE + 1
+		  AND COALESCE(t.completed, false) = false
+		  AND NOT EXISTS (
+		    SELECT 1 FROM hook_due_soon_sent s WHERE s.task_id = t.id AND s.due_date = t.due_date
+		  )
+		ORDER BY t.due_date, t.id
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// MarkDueSoonHookSent records that due-soon was sent for this task's current due date.
+func MarkDueSoonHookSent(taskID int) error {
+	if taskID <= 0 {
+		return fmt.Errorf("task required")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO hook_due_soon_sent (task_id, due_date, sent_at)
+		SELECT id, due_date, NOW() FROM tasks WHERE id = $1 AND due_date IS NOT NULL
+		ON CONFLICT (task_id, due_date) DO NOTHING`, taskID)
+	return err
+}
+
 // ExtensionDelivery is one outbound attempt (or queued retry).
 type ExtensionDelivery struct {
 	ID            int64
@@ -690,4 +743,75 @@ func UserTimezone(userID int) string {
 		return "UTC"
 	}
 	return tz
+}
+
+// SprintHookRow is a sprint due for a lifecycle hook today.
+type SprintHookRow struct {
+	SprintID  int
+	ProjectID int
+	Name      string
+}
+
+// ListSprintLifecycleHooks returns dated sprints whose start or end is today and not yet notified.
+func ListSprintLifecycleHooks(eventType string, limit int) ([]SprintHookRow, error) {
+	col := ""
+	switch eventType {
+	case "sprint.started":
+		col = "start_date"
+	case "sprint.ended":
+		col = "end_date"
+	default:
+		return nil, fmt.Errorf("unknown sprint event")
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	q := fmt.Sprintf(`
+		SELECT s.id, s.project_id, s.name
+		FROM project_sprints s
+		WHERE s.%s IS NOT NULL AND s.%s = CURRENT_DATE
+		  AND NOT EXISTS (
+		    SELECT 1 FROM hook_sprint_sent x WHERE x.sprint_id = s.id AND x.event_type = $1
+		  )
+		ORDER BY s.id
+		LIMIT $2`, col, col)
+	rows, err := pool.Query(context.Background(), q, eventType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SprintHookRow
+	for rows.Next() {
+		var r SprintHookRow
+		if err := rows.Scan(&r.SprintID, &r.ProjectID, &r.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// TryMarkSprintHookSent records a sprint lifecycle send. Returns true when this caller owns the send.
+func TryMarkSprintHookSent(sprintID int, eventType string) (bool, error) {
+	if sprintID <= 0 || strings.TrimSpace(eventType) == "" {
+		return false, fmt.Errorf("sprint and event required")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return false, err
+	}
+	defer CloseDatabase(pool)
+	tag, err := pool.Exec(context.Background(), `
+		INSERT INTO hook_sprint_sent (sprint_id, event_type, sent_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (sprint_id, event_type) DO NOTHING`, sprintID, eventType)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }

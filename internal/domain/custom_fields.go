@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
@@ -200,6 +201,34 @@ func normalizeFieldValue(def storage.CustomFieldDef, projectID int, raw json.Raw
 			return nil, false, err
 		}
 		out, _ := json.Marshal(id)
+		return out, false, nil
+	case "date":
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, false, fmt.Errorf("must be a string")
+		}
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return nil, true, nil
+		}
+		if _, err := time.Parse("2006-01-02", s); err != nil {
+			return nil, false, fmt.Errorf("must be YYYY-MM-DD")
+		}
+		out, _ := json.Marshal(s)
+		return out, false, nil
+	case "markdown":
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, false, fmt.Errorf("must be a string")
+		}
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return nil, true, nil
+		}
+		if len(s) > 8000 {
+			return nil, false, fmt.Errorf("must be 8000 characters or less")
+		}
+		out, _ := json.Marshal(s)
 		return out, false, nil
 	default:
 		return nil, false, fmt.Errorf("unsupported type")

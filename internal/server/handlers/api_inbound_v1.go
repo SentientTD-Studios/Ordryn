@@ -18,6 +18,8 @@ type inboundWebhookBody struct {
 	Description string `json:"description"`
 	TaskID      int    `json:"task_id"`
 	Comment     string `json:"comment"`
+	Field       string `json:"field"`
+	Value       string `json:"value"`
 }
 
 const inboundWebhookSecretHdr = "X-Ordryn-Webhook-Secret"
@@ -47,6 +49,8 @@ func APIV1InboundWebhook(w http.ResponseWriter, r *http.Request) {
 		Description: payload.Description,
 		TaskID:      payload.TaskID,
 		Comment:     payload.Comment,
+		Field:       payload.Field,
+		Value:       payload.Value,
 	})
 	if err != nil {
 		writeInboundDomainError(w, err)

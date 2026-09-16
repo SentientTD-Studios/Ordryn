@@ -405,6 +405,7 @@ func applyKanbanColumnMove(userID, taskID, projectID, newStatusID, oldStatusID i
 		} else {
 			_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 		}
+		dispatchCompletedHook(userID, taskID, st.IsDone)
 	}
 	go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, st.IsDone)
 	from, to := statusHookNames(projectID, oldStatusID, newStatusID)

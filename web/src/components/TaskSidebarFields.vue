@@ -130,6 +130,28 @@ function memberLabel(m: ProjectMember): string {
         <option v-for="m in members" :key="m.user_id" :value="m.user_id">{{ memberLabel(m) }}</option>
       </select>
 
+      <input
+        v-else-if="def.type === 'date'"
+        :id="`cf-${def.field_key}`"
+        type="date"
+        class="form-control"
+        :disabled="readOnly"
+        :readonly="readOnly"
+        :value="stringValue(def)"
+        @input="setField(def, ($event.target as HTMLInputElement).value || null)"
+      />
+
+      <textarea
+        v-else-if="def.type === 'markdown'"
+        :id="`cf-${def.field_key}`"
+        class="form-control"
+        rows="4"
+        :disabled="readOnly"
+        :readonly="readOnly"
+        :value="stringValue(def)"
+        @input="setField(def, ($event.target as HTMLTextAreaElement).value)"
+      />
+
       <div v-else-if="def.type === 'boolean'" class="form-check">
         <input
           :id="`cf-${def.field_key}`"

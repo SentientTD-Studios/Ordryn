@@ -118,6 +118,7 @@ func registerAPIV1Routes() {
 	handleBoth("/api/v1/auth/github/callback", handlers.APIV1GitHubOAuthCallback)
 	handleBoth("/api/v1/webhooks/github", handlers.APIV1GitHubWebhook)
 	handleBoth("/api/v1/webhooks/inbound", handlers.APIV1InboundWebhook)
+	handleBoth("/api/v1/ext/callback", handlers.APIV1ExtCallback)
 	handleBoth("/api/v1/api-keys", utils.AuthSessionChain(handlers.APIV1APIKeysRouter))
 	handleBoth("/api/v1/api-keys/", utils.AuthSessionChain(handlers.APIV1APIKeysRouter))
 
@@ -169,6 +170,7 @@ func registerAPIV1Routes() {
 	handleBoth("/api/v1/admin/comment-audit/", utils.AdminAPIChain(handlers.APIV1AdminCommentAuditRouter))
 	handleBoth("/api/v1/admin/extensions", utils.AdminAPIChain(handlers.APIV1AdminExtensionsRouter))
 	handleBoth("/api/v1/admin/extensions/", utils.AdminAPIChain(handlers.APIV1AdminExtensionsRouter))
+	handleBoth("/api/v1/extensions/", v1(handlers.APIV1ExtensionsStatic))
 	handleBoth("/api/v1/announcements/dismiss", utils.AuthSessionChain(handlers.APIV1DismissAnnouncement))
 
 	handleBoth("/cal/", handlers.CalendarFeedHandler)

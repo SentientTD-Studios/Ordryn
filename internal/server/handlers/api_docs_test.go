@@ -52,6 +52,9 @@ func TestOpenAPISpecIncludesSavedViews(t *testing.T) {
 		"/api/v1/tasks/{id}/github-issue",
 		"/api/v1/webhooks/github",
 		"/api/v1/webhooks/inbound",
+		"/api/v1/ext/callback",
+		"/api/v1/extensions/{id}/icon",
+		"/api/v1/projects/{id}/extensions/{extensionId}/ui",
 		"deprecated: true",
 		"will be removed in API v2",
 	}

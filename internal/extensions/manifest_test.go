@@ -44,12 +44,84 @@ func TestValidateManifestIDMismatch(t *testing.T) {
 	}
 }
 
+func TestValidateManifestNewEventHooks(t *testing.T) {
+	m := validDiscord()
+	m.Hooks = []Hook{
+		{On: "task.mentioned"},
+		{On: "task.completed"},
+		{On: "task.reopened"},
+		{On: "task.due_soon"},
+		{On: "project.member_joined"},
+		{On: "project.member_left"},
+		{On: "join.approved"},
+		{On: "join.denied"},
+		{On: "sprint.created"},
+		{On: "sprint.started"},
+		{On: "sprint.ended"},
+		{On: "task.archived"},
+		{On: "task.restored"},
+		{On: "project.archived"},
+		{On: "project.restored"},
+		{On: "task.project_changed"},
+		{On: "task.sprint_changed"},
+	}
+	if err := ValidateManifest("discord", m); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateManifestUnknownHook(t *testing.T) {
 	m := validDiscord()
 	m.Hooks = append(m.Hooks, Hook{On: "task.exploded"})
 	err := ValidateManifest("discord", m)
 	if err == nil || !strings.Contains(err.Error(), "unknown hook") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestHookLabelCatalog(t *testing.T) {
+	if HookLabel("task.due_soon") != "Due tomorrow" {
+		t.Fatalf("label=%q", HookLabel("task.due_soon"))
+	}
+	if HookLabel("sprint.started") != "Sprint started" {
+		t.Fatalf("label=%q", HookLabel("sprint.started"))
+	}
+}
+
+func TestValidateManifestIdentityAndSelect(t *testing.T) {
+	m := validDiscord()
+	m.Author = "Ada"
+	m.License = "MIT"
+	m.Homepage = "https://example.com/ext"
+	m.Permissions = []string{"tasks:read", "tasks:write"}
+	m.Actions = []string{"complete", "set_field"}
+	m.Settings = append(m.Settings, Setting{
+		Key: "severity", Type: "select", Label: "Severity", Scope: ScopeProject,
+		Options: []FieldOption{{Value: "high", Label: "High"}},
+	})
+	m.Fields = append(m.Fields, Field{Key: "due", Type: "date", Label: "Review date"})
+	m.Fields = append(m.Fields, Field{Key: "notes", Type: "markdown", Label: "Notes"})
+	if err := ValidateManifest("discord", m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Hooks[0].Label == "" {
+		t.Fatal("expected default hook label")
+	}
+	if !m.HasPermission(PermTasksRead) || !m.DeclaresAction(ActionComplete) {
+		t.Fatal("expected permission and action")
+	}
+}
+
+func TestValidateManifestBadHomepageAndSelect(t *testing.T) {
+	m := validDiscord()
+	m.Homepage = "javascript:alert(1)"
+	if err := ValidateManifest("discord", m); err == nil {
+		t.Fatal("expected homepage error")
+	}
+	m = validDiscord()
+	m.Settings = append(m.Settings, Setting{Key: "choice", Type: "select", Label: "Choice", Scope: ScopeProject})
+	if err := ValidateManifest("discord", m); err == nil {
+		t.Fatal("expected select options error")
 	}
 }
 
@@ -191,7 +263,7 @@ func TestValidateManifestFieldsOnly(t *testing.T) {
 }
 
 func TestValidateManifestFieldBadType(t *testing.T) {
-	m := Manifest{ID: "severity", Name: "S", Version: "1", HostAPI: 1, Fields: []Field{{Key: "level", Type: "date", Label: "X"}}}
+	m := Manifest{ID: "severity", Name: "S", Version: "1", HostAPI: 1, Fields: []Field{{Key: "level", Type: "datetime", Label: "X"}}}
 	err := ValidateManifest("severity", m)
 	if err == nil || !strings.Contains(err.Error(), "unknown fields type") {
 		t.Fatalf("err=%v", err)
@@ -394,8 +466,17 @@ func TestExampleNotificationManifestsValidate(t *testing.T) {
 			if !m.HasProjectSettings() {
 				t.Fatalf("%s should be project-scoped", id)
 			}
-			if strings.TrimSpace(m.Description) == "" {
-				t.Fatalf("%s should include an extension description", id)
+			if strings.TrimSpace(m.Author) == "" || strings.TrimSpace(m.License) == "" || strings.TrimSpace(m.Homepage) == "" {
+				t.Fatalf("%s should include author, homepage, and license", id)
+			}
+			if strings.TrimSpace(m.Icon) == "" {
+				t.Fatalf("%s should declare an icon", id)
+			}
+			if !m.DeclaresHook("task.completed") || !m.DeclaresHook("task.mentioned") || !m.DeclaresHook("task.due_soon") {
+				t.Fatalf("%s should declare completed/mentioned/due_soon", id)
+			}
+			if id == "webhook" && (!m.DeclaresHook("join.approved") || !m.DeclaresHook("join.denied")) {
+				t.Fatalf("generic webhook should declare join.approved and join.denied")
 			}
 			for _, s := range m.Settings {
 				if s.Key == "project_ids" || s.Type == "project_ids" {
@@ -424,6 +505,8 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 		"claimed":       {delivery: DeliveryNtfyWebhook},
 		"activity":      {delivery: DeliveryHTTPWebhook},
 		"join-requests": {delivery: DeliveryHTTPWebhook, siteOnly: true},
+		"lifecycle":     {delivery: DeliveryHTTPWebhook},
+		"mentions":      {delivery: DeliveryNtfyWebhook},
 	}
 	for id, w := range cases {
 		t.Run(id, func(t *testing.T) {
@@ -456,13 +539,35 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 				if m.HasProjectSurface() || m.HasProjectSettings() {
 					t.Fatalf("%s should stay in Admin (no project surface)", id)
 				}
-				if !m.DeclaresHook("join.request") {
-					t.Fatalf("%s should declare join.request", id)
+				if !m.DeclaresHook("join.request") || !m.DeclaresHook("join.approved") || !m.DeclaresHook("join.denied") {
+					t.Fatalf("%s should declare join.request/approved/denied", id)
 				}
 				return
 			}
 			if !m.HasProjectSettings() || !m.HasProjectSurface() {
 				t.Fatalf("%s should appear on the project tab", id)
+			}
+			switch id {
+			case "due-dates":
+				if !m.DeclaresHook("task.due_soon") {
+					t.Fatalf("due-dates should declare task.due_soon")
+				}
+			case "comments":
+				if !m.DeclaresHook("task.mentioned") {
+					t.Fatalf("comments should declare task.mentioned")
+				}
+			case "claimed":
+				if !m.HasMemberSettings() || !m.HasSetting("claimed_is_me") {
+					t.Fatalf("claimed should expose claimed_is_me for Notify me")
+				}
+			case "activity", "lifecycle":
+				if !m.DeclaresHook("task.project_changed") || !m.DeclaresHook("sprint.started") || !m.DeclaresHook("project.member_joined") {
+					t.Fatalf("%s should declare project/sprint/member lifecycle hooks", id)
+				}
+			case "mentions":
+				if !m.DeclaresHook("task.mentioned") || !m.HasMemberSettings() {
+					t.Fatalf("mentions should be a Notify-me task.mentioned example")
+				}
 			}
 			for _, s := range m.Settings {
 				if s.Description == "" {
@@ -476,6 +581,9 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 func TestExampleFieldsManifestsValidate(t *testing.T) {
 	for _, id := range []string{"severity", "fields-demo", "estimate"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+		if err != nil {
+			raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", id, "manifest.json"))
+		}
 		if err != nil {
 			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
 		}
@@ -492,6 +600,68 @@ func TestExampleFieldsManifestsValidate(t *testing.T) {
 		if m.HasProjectSettings() {
 			t.Fatalf("%s should not need settings", id)
 		}
+		if id == "fields-demo" {
+			var sawDate, sawMarkdown bool
+			for _, f := range m.Fields {
+				if f.Type == "date" {
+					sawDate = true
+				}
+				if f.Type == "markdown" {
+					sawMarkdown = true
+				}
+			}
+			if !sawDate || !sawMarkdown {
+				t.Fatal("fields-demo should include date and markdown fields")
+			}
+		}
+	}
+}
+
+func TestExampleCallbackBotManifestValidate(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "callback-bot", "manifest.json"))
+	if err != nil {
+		raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", "callback-bot", "manifest.json"))
+	}
+	if err != nil {
+		t.Skipf("callback-bot example not present: %v", err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateManifest("callback-bot", m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasUI() || strings.TrimSpace(m.Icon) == "" {
+		t.Fatal("callback-bot should declare ui and icon")
+	}
+	if !m.HasCallbackPermissions() || !m.DeclaresAction(ActionComplete) || !m.DeclaresAction(ActionSetField) {
+		t.Fatal("callback-bot should declare callback permissions and inbound actions")
+	}
+	if !m.HasFields() || !m.HasProjectSettings() {
+		t.Fatal("callback-bot should combine fields and project settings")
+	}
+	var sawSelect, sawStatus, sawUser, sawDate, sawMarkdown bool
+	for _, s := range m.Settings {
+		switch s.Type {
+		case "select":
+			sawSelect = true
+		case "status":
+			sawStatus = true
+		case "user":
+			sawUser = true
+		}
+	}
+	for _, f := range m.Fields {
+		if f.Type == "date" {
+			sawDate = true
+		}
+		if f.Type == "markdown" {
+			sawMarkdown = true
+		}
+	}
+	if !sawSelect || !sawStatus || !sawUser || !sawDate || !sawMarkdown {
+		t.Fatal("callback-bot should demo select/status/user settings and date/markdown fields")
 	}
 }
 

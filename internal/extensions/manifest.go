@@ -2,6 +2,7 @@ package extensions
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -12,19 +13,36 @@ const CurrentHostAPI = 1
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,32}$`)
 
 var knownEventHooks = map[string]struct{}{
-	"task.created":     {},
-	"task.updated":     {},
-	"task.deleted":     {},
-	"task.commented":   {},
-	"task.reordered":   {},
-	"task.claimed":     {},
-	"task.unclaimed":   {},
-	"task.due_changed": {},
-	"task.moved":       {},
-	"task.tagged":      {},
-	"task.overdue":     {},
-	"project.updated":  {},
-	"join.request":     {},
+	"task.created":          {},
+	"task.updated":          {},
+	"task.deleted":          {},
+	"task.commented":        {},
+	"task.reordered":        {},
+	"task.claimed":          {},
+	"task.unclaimed":        {},
+	"task.due_changed":      {},
+	"task.moved":            {},
+	"task.project_changed":  {},
+	"task.sprint_changed":   {},
+	"task.tagged":           {},
+	"task.overdue":          {},
+	"task.mentioned":        {},
+	"task.completed":        {},
+	"task.reopened":         {},
+	"task.due_soon":         {},
+	"task.archived":         {},
+	"task.restored":         {},
+	"project.updated":       {},
+	"project.archived":      {},
+	"project.restored":      {},
+	"project.member_joined": {},
+	"project.member_left":   {},
+	"sprint.created":        {},
+	"sprint.started":        {},
+	"sprint.ended":          {},
+	"join.request":          {},
+	"join.approved":         {},
+	"join.denied":           {},
 }
 
 var knownSettingTypes = map[string]struct{}{
@@ -34,6 +52,9 @@ var knownSettingTypes = map[string]struct{}{
 	"bool":         {},
 	"string":       {},
 	"int":          {},
+	"select":       {},
+	"status":       {},
+	"user":         {},
 	"priority":     {},
 	"tag_ids":      {},
 	"time":         {},
@@ -52,12 +73,14 @@ var wellKnownSettingKeys = map[string]string{
 }
 
 var knownFieldTypes = map[string]struct{}{
-	"string":  {},
-	"number":  {},
-	"boolean": {},
-	"enum":    {},
-	"url":     {},
-	"user":    {},
+	"string":   {},
+	"number":   {},
+	"boolean":  {},
+	"enum":     {},
+	"url":      {},
+	"user":     {},
+	"date":     {},
+	"markdown": {},
 }
 
 var knownShowOn = map[string]struct{}{
@@ -105,18 +128,48 @@ var knownDeliveryFormats = map[string]struct{}{
 }
 
 const (
-	ControlSendTest      = "send_test"
-	ControlRotateSigning = "rotate_signing"
-	ControlSampleJSON    = "sample_json"
+	ControlSendTest       = "send_test"
+	ControlRotateSigning  = "rotate_signing"
+	ControlSampleJSON     = "sample_json"
+	ControlRotateCallback = "rotate_callback"
 )
 
+const (
+	PermTasksRead     = "tasks:read"
+	PermTasksWrite    = "tasks:write"
+	PermCommentsWrite = "comments:write"
+)
+
+var knownPermissions = map[string]struct{}{
+	PermTasksRead:     {},
+	PermTasksWrite:    {},
+	PermCommentsWrite: {},
+}
+
+const (
+	ActionComplete = "complete"
+	ActionComment  = "comment"
+	ActionSetField = "set_field"
+)
+
+var knownActions = map[string]struct{}{
+	ActionComplete: {},
+	ActionComment:  {},
+	ActionSetField: {},
+}
+
 var knownControls = map[string]struct{}{
-	ControlSendTest:      {},
-	ControlRotateSigning: {},
-	ControlSampleJSON:    {},
+	ControlSendTest:       {},
+	ControlRotateSigning:  {},
+	ControlSampleJSON:     {},
+	ControlRotateCallback: {},
 }
 
 const maxDescriptionLen = 400
+const maxAuthorLen = 80
+const maxLicenseLen = 64
+const maxHomepageLen = 200
+const maxHookLabelLen = 80
 
 // Manifest is the required data/extensions/<id>/manifest.json document.
 type Manifest struct {
@@ -125,6 +178,10 @@ type Manifest struct {
 	Version     string            `json:"version"`
 	HostAPI     int               `json:"host_api"`
 	Description string            `json:"description,omitempty"`
+	Author      string            `json:"author,omitempty"`
+	Homepage    string            `json:"homepage,omitempty"`
+	License     string            `json:"license,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
 	UI          string            `json:"ui,omitempty"`
 	Hooks       []Hook            `json:"hooks,omitempty"`
 	Delivery    *Delivery         `json:"delivery,omitempty"`
@@ -132,6 +189,8 @@ type Manifest struct {
 	Templates   map[string]string `json:"templates,omitempty"`
 	Fields      []Field           `json:"fields,omitempty"`
 	Controls    []string          `json:"controls,omitempty"`
+	Permissions []string          `json:"permissions,omitempty"`
+	Actions     []string          `json:"actions,omitempty"`
 }
 
 // Field registers a core custom field. Stored values use key "{id}.{key}".
@@ -159,7 +218,8 @@ func FieldKey(extensionID, localKey string) string {
 
 // Hook is a registration on a named core extension point.
 type Hook struct {
-	On string `json:"on"`
+	On    string `json:"on"`
+	Label string `json:"label,omitempty"`
 }
 
 // Delivery describes how event hooks are sent outbound.
@@ -175,12 +235,13 @@ type Delivery struct {
 // claimed_is_me, min_priority, tag_ids, quiet_hours_start, quiet_hours_end,
 // digest, field_key, field_value, field_filter, mention_map, status_only, and triggers.
 type Setting struct {
-	Key         string `json:"key"`
-	Type        string `json:"type"`
-	Label       string `json:"label"`
-	Description string `json:"description,omitempty"`
-	Required    bool   `json:"required"`
-	Scope       string `json:"scope,omitempty"`
+	Key         string        `json:"key"`
+	Type        string        `json:"type"`
+	Label       string        `json:"label"`
+	Description string        `json:"description,omitempty"`
+	Required    bool          `json:"required"`
+	Scope       string        `json:"scope,omitempty"`
+	Options     []FieldOption `json:"options,omitempty"`
 }
 
 // ScopeName returns site (default), project (team channel), or member (Notify me).
@@ -221,14 +282,30 @@ func ValidateManifest(folderName string, m Manifest) error {
 	if m.HostAPI > CurrentHostAPI {
 		return fmt.Errorf("needs Ordryn that supports host_api %d (this build supports %d)", m.HostAPI, CurrentHostAPI)
 	}
-	if ui := strings.TrimSpace(m.UI); ui != "" {
-		if strings.Contains(ui, "..") || strings.HasPrefix(ui, "/") || strings.Contains(ui, ":") {
-			return fmt.Errorf("ui path %q is not allowed", m.UI)
+	if err := validateRelPath("ui", m.UI); err != nil {
+		return err
+	}
+	if err := validateRelPath("icon", m.Icon); err != nil {
+		return err
+	}
+	if author := strings.TrimSpace(m.Author); len(author) > maxAuthorLen {
+		return fmt.Errorf("author must be %d characters or less", maxAuthorLen)
+	}
+	if license := strings.TrimSpace(m.License); len(license) > maxLicenseLen {
+		return fmt.Errorf("license must be %d characters or less", maxLicenseLen)
+	}
+	if homepage := strings.TrimSpace(m.Homepage); homepage != "" {
+		if len(homepage) > maxHomepageLen {
+			return fmt.Errorf("homepage must be %d characters or less", maxHomepageLen)
+		}
+		u, err := url.Parse(homepage)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("homepage must be an http(s) URL")
 		}
 	}
 	seenOn := make(map[string]struct{})
-	for _, h := range m.Hooks {
-		on := strings.TrimSpace(h.On)
+	for i := range m.Hooks {
+		on := strings.TrimSpace(m.Hooks[i].On)
 		if on == "" {
 			return fmt.Errorf("hooks.on is required")
 		}
@@ -239,6 +316,15 @@ func ValidateManifest(folderName string, m Manifest) error {
 			return fmt.Errorf("duplicate hook %q", on)
 		}
 		seenOn[on] = struct{}{}
+		label := strings.TrimSpace(m.Hooks[i].Label)
+		if label == "" {
+			label = HookLabel(on)
+		}
+		if len(label) > maxHookLabelLen {
+			return fmt.Errorf("hooks.label is too long for %s", on)
+		}
+		m.Hooks[i].On = on
+		m.Hooks[i].Label = label
 	}
 	if m.Delivery != nil {
 		typ := strings.TrimSpace(m.Delivery.Type)
@@ -268,7 +354,8 @@ func ValidateManifest(folderName string, m Manifest) error {
 		}
 	}
 	seenKeys := make(map[string]struct{})
-	for _, s := range m.Settings {
+	for i := range m.Settings {
+		s := &m.Settings[i]
 		key := strings.TrimSpace(s.Key)
 		if !settingKeyPattern.MatchString(key) {
 			return fmt.Errorf("settings key %q is invalid", s.Key)
@@ -277,10 +364,12 @@ func ValidateManifest(folderName string, m Manifest) error {
 			return fmt.Errorf("duplicate settings key %q", key)
 		}
 		seenKeys[key] = struct{}{}
+		s.Key = key
 		typ := strings.TrimSpace(s.Type)
 		if _, ok := knownSettingTypes[typ]; !ok {
 			return fmt.Errorf("unknown settings type %q for %s", s.Type, key)
 		}
+		s.Type = typ
 		if strings.TrimSpace(s.Label) == "" {
 			return fmt.Errorf("settings label is required for %s", key)
 		}
@@ -294,6 +383,15 @@ func ValidateManifest(folderName string, m Manifest) error {
 		case ScopeSite, ScopeProject, ScopeMember:
 		default:
 			return fmt.Errorf("unknown settings scope %q for %s", s.Scope, key)
+		}
+		if typ == "select" {
+			opts, err := normalizeFieldOptions(s.Options)
+			if err != nil {
+				return fmt.Errorf("settings %s: %w", key, err)
+			}
+			s.Options = opts
+		} else if len(s.Options) > 0 {
+			return fmt.Errorf("settings %s: options are only allowed on select", key)
 		}
 	}
 	if m.Delivery != nil {
@@ -361,6 +459,47 @@ func ValidateManifest(folderName string, m Manifest) error {
 		} else if len(f.Options) > 0 {
 			return fmt.Errorf("fields %s: options are only allowed on enum", key)
 		}
+	}
+	seenPerms := make(map[string]struct{})
+	for i, raw := range m.Permissions {
+		p := strings.ToLower(strings.TrimSpace(raw))
+		if p == "" {
+			continue
+		}
+		if _, ok := knownPermissions[p]; !ok {
+			return fmt.Errorf("unknown permission %q", raw)
+		}
+		if _, dup := seenPerms[p]; dup {
+			return fmt.Errorf("duplicate permission %q", raw)
+		}
+		seenPerms[p] = struct{}{}
+		m.Permissions[i] = p
+	}
+	seenActions := make(map[string]struct{})
+	for i, raw := range m.Actions {
+		a := strings.ToLower(strings.TrimSpace(raw))
+		if a == "" {
+			continue
+		}
+		if _, ok := knownActions[a]; !ok {
+			return fmt.Errorf("unknown action %q", raw)
+		}
+		if _, dup := seenActions[a]; dup {
+			return fmt.Errorf("duplicate action %q", raw)
+		}
+		seenActions[a] = struct{}{}
+		m.Actions[i] = a
+	}
+	return nil
+}
+
+func validateRelPath(field, rel string) error {
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return nil
+	}
+	if strings.Contains(rel, "..") || strings.HasPrefix(rel, "/") || strings.Contains(rel, ":") {
+		return fmt.Errorf("%s path %q is not allowed", field, rel)
 	}
 	return nil
 }
@@ -483,7 +622,12 @@ func (m Manifest) HasFields() bool {
 // HasProjectSurface reports whether the extension should appear on the project Extensions tab.
 // Site-only hook extensions (for example join.request) stay in Admin → Extensions.
 func (m Manifest) HasProjectSurface() bool {
-	return m.HasProjectSettings() || m.HasMemberSettings() || m.HasFields()
+	return m.HasProjectSettings() || m.HasMemberSettings() || m.HasFields() || m.HasUI()
+}
+
+// HasUI reports whether the manifest declares a sandboxed panel.
+func (m Manifest) HasUI() bool {
+	return strings.TrimSpace(m.UI) != ""
 }
 
 // DestinationKey is the settings key used to look up the outbound URL.
@@ -561,4 +705,51 @@ func (m Manifest) HasControl(name string) bool {
 		}
 	}
 	return false
+}
+
+// HasPermission reports whether the manifest requests a callback permission.
+func (m Manifest) HasPermission(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, p := range m.Permissions {
+		if strings.ToLower(strings.TrimSpace(p)) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// DeclaresAction reports whether the manifest opts into an inbound action.
+func (m Manifest) DeclaresAction(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, a := range m.Actions {
+		if strings.ToLower(strings.TrimSpace(a)) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// HasCallbackPermissions reports whether outbound JSON payloads may include a callback token.
+func (m Manifest) HasCallbackPermissions() bool {
+	for _, p := range m.Permissions {
+		if strings.TrimSpace(p) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// ValueSettingKeys returns setting keys stored in the extra values map (select/status/user/string/int).
+func (m Manifest) ValueSettingKeys() map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, s := range m.Settings {
+		switch strings.TrimSpace(s.Type) {
+		case "select", "status", "user", "string", "int":
+			if _, wellKnown := wellKnownSettingKeys[s.Type]; wellKnown {
+				continue
+			}
+			out[strings.TrimSpace(s.Key)] = struct{}{}
+		}
+	}
+	return out
 }

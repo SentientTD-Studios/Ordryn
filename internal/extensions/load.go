@@ -139,14 +139,15 @@ func loadFolder(root, folder string) Entry {
 		return e
 	}
 	if ui := strings.TrimSpace(m.UI); ui != "" {
-		uiPath := filepath.Join(dir, filepath.Clean(ui))
-		if !strings.HasPrefix(uiPath, dir+string(os.PathSeparator)) && uiPath != dir {
-			e.Error = "ui path is outside the extension folder"
+		if err := requireFileInFolder(dir, ui, "ui"); err != nil {
+			e.Error = err.Error()
 			e.Manifest = m
 			return e
 		}
-		if st, err := os.Stat(uiPath); err != nil || st.IsDir() {
-			e.Error = fmt.Sprintf("ui file %q is missing", ui)
+	}
+	if icon := strings.TrimSpace(m.Icon); icon != "" {
+		if err := requireFileInFolder(dir, icon, "icon"); err != nil {
+			e.Error = err.Error()
 			e.Manifest = m
 			return e
 		}
@@ -154,6 +155,34 @@ func loadFolder(root, folder string) Entry {
 	e.Manifest = m
 	e.Loaded = true
 	return e
+}
+
+func requireFileInFolder(dir, rel, field string) error {
+	full, err := ResolveFile(dir, rel)
+	if err != nil {
+		return fmt.Errorf("%s path is outside the extension folder", field)
+	}
+	st, err := os.Stat(full)
+	if err != nil || st.IsDir() {
+		return fmt.Errorf("%s file %q is missing", field, rel)
+	}
+	return nil
+}
+
+// ResolveFile returns an absolute path under dir for a validated relative file.
+func ResolveFile(dir, rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if strings.Contains(rel, "..") || strings.HasPrefix(rel, "/") || strings.Contains(rel, ":") {
+		return "", fmt.Errorf("path is not allowed")
+	}
+	full := filepath.Join(dir, filepath.Clean(rel))
+	if !strings.HasPrefix(full, dir+string(os.PathSeparator)) && full != dir {
+		return "", fmt.Errorf("path is outside the extension folder")
+	}
+	return full, nil
 }
 
 // Snapshot returns a copy of the current registry.

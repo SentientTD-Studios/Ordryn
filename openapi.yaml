@@ -1047,8 +1047,8 @@ paths:
   /api/v1/webhooks/inbound:
     post:
       tags: [Webhooks]
-      summary: Generic inbound webhook (create a task or comment)
-      description: Public HMAC or shared-secret receiver. Returns 403 until an admin enables inbound webhooks.
+      summary: Generic inbound webhook (create, comment, complete, or set_field)
+      description: Public HMAC or shared-secret receiver. Returns 403 until an admin enables inbound webhooks. complete and set_field require an enabled extension on the project that declares those actions.
       security: []
       parameters:
         - name: X-Ordryn-Webhook-Secret
@@ -1070,7 +1070,7 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [create, comment]
+                  enum: [create, comment, complete, set_field]
                 title:
                   type: string
                 description:
@@ -1078,6 +1078,11 @@ paths:
                 task_id:
                   type: integer
                 comment:
+                  type: string
+                field:
+                  type: string
+                  description: Custom field key for set_field (extension_id.local_key).
+                value:
                   type: string
                 project_id:
                   type: integer
@@ -1095,6 +1100,72 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/APIError"
+
+  /api/v1/ext/callback:
+    post:
+      tags: [Webhooks]
+      summary: Extension callback (scoped token)
+      description: Bearer token from an outbound JSON webhook. Permissions come from the extension manifest, not from a user API key. The iframe UI never receives this token.
+      security: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Bearer odycb_…
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [get, complete, comment, set_field]
+                task_id:
+                  type: integer
+                comment:
+                  type: string
+                field:
+                  type: string
+                value:
+                  type: string
+      responses:
+        "200":
+          description: Action result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/APIError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/extensions/{id}/icon:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Extension icon
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Image bytes
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/api-keys:
     get:
@@ -1916,6 +1987,28 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/extensions/{extensionId}/ui:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Projects]
+      summary: Sandboxed extension HTML panel (and sibling files under /ui/)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: HTML or static asset from the extension folder
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -5758,6 +5851,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        values:
+          type: object
+          additionalProperties:
+            type: string
         last_error:
           type: string
         last_delivery_at:
@@ -5868,6 +5965,12 @@ components:
           type: string
         rotate_signing:
           type: boolean
+        rotate_callback:
+          type: boolean
+        values:
+          type: object
+          additionalProperties:
+            type: string
 
     ExtensionDelivery:
       type: object

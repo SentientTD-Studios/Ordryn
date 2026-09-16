@@ -15,22 +15,25 @@ import (
 )
 
 type projectExtensionJSON struct {
-	ID               string                           `json:"id"`
-	Name             string                           `json:"name"`
-	Version          string                           `json:"version"`
-	HostAPI          int                              `json:"host_api"`
-	SiteEnabled      bool                             `json:"site_enabled"`
-	Manifest         extensions.Manifest              `json:"manifest"`
-	Settings         storage.ExtensionProjectSettings `json:"settings"`
-	Secrets          map[string]bool                  `json:"secrets"`
-	Member           storage.ExtensionMemberSettings  `json:"member"`
-	MemberSecrets    map[string]bool                  `json:"member_secrets"`
-	SigningSet       bool                             `json:"signing_set"`
-	MemberSigningSet bool                             `json:"member_signing_set"`
-	SigningSecret    string                           `json:"signing_secret,omitempty"`
-	SampleJSON       string                           `json:"sample_json,omitempty"`
-	Deliveries       []extensionDeliveryJSON          `json:"deliveries,omitempty"`
-	MemberDeliveries []extensionDeliveryJSON          `json:"member_deliveries,omitempty"`
+	ID                string                           `json:"id"`
+	Name              string                           `json:"name"`
+	Version           string                           `json:"version"`
+	HostAPI           int                              `json:"host_api"`
+	SiteEnabled       bool                             `json:"site_enabled"`
+	Manifest          extensions.Manifest              `json:"manifest"`
+	Settings          storage.ExtensionProjectSettings `json:"settings"`
+	Secrets           map[string]bool                  `json:"secrets"`
+	Member            storage.ExtensionMemberSettings  `json:"member"`
+	MemberSecrets     map[string]bool                  `json:"member_secrets"`
+	SigningSet        bool                             `json:"signing_set"`
+	MemberSigningSet  bool                             `json:"member_signing_set"`
+	SigningSecret     string                           `json:"signing_secret,omitempty"`
+	CallbackToken     string                           `json:"callback_token,omitempty"`
+	SampleJSON        string                           `json:"sample_json,omitempty"`
+	CallbackSet       bool                             `json:"callback_set,omitempty"`
+	MemberCallbackSet bool                             `json:"member_callback_set,omitempty"`
+	Deliveries        []extensionDeliveryJSON          `json:"deliveries,omitempty"`
+	MemberDeliveries  []extensionDeliveryJSON          `json:"member_deliveries,omitempty"`
 }
 
 type extensionDeliveryJSON struct {
@@ -69,6 +72,8 @@ type projectExtensionPatch struct {
 	WebhookURL      *string           `json:"webhook_url"`
 	NtfyAuth        *string           `json:"ntfy_auth"`
 	RotateSigning   *bool             `json:"rotate_signing"`
+	RotateCallback  *bool             `json:"rotate_callback"`
+	Values          map[string]string `json:"values"`
 }
 
 func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID int, rest []string) {
@@ -108,6 +113,10 @@ func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID in
 			return
 		}
 		projectExtensionPatchHandler(w, r, projectID, extensionID, userID, true)
+		return
+	}
+	if rest[1] == "ui" {
+		projectExtensionUI(w, r, projectID, extensionID, rest[2:])
 		return
 	}
 	if rest[1] == "test" && len(rest) == 2 {
@@ -212,6 +221,7 @@ func applyHookFiltersToProject(m extensions.Manifest, cur *storage.ExtensionProj
 	if req.MentionMap != nil && m.HasSetting("mention_map") {
 		cur.MentionMap = req.MentionMap
 	}
+	applySettingValues(m, &cur.Values, req.Values)
 }
 
 func applyHookFiltersToMember(m extensions.Manifest, cur *storage.ExtensionMemberSettings, req projectExtensionPatch) {
@@ -253,9 +263,31 @@ func applyHookFiltersToMember(m extensions.Manifest, cur *storage.ExtensionMembe
 	if req.Digest != nil && m.HasSetting("digest") {
 		cur.Digest = strings.ToLower(strings.TrimSpace(*req.Digest))
 	}
+	applySettingValues(m, &cur.Values, req.Values)
 }
 
-func saveDeliverySecrets(w http.ResponseWriter, e extensions.Entry, projectID, userID int, req projectExtensionPatch) (shownSecret string, ok bool) {
+func applySettingValues(m extensions.Manifest, dest *map[string]string, req map[string]string) {
+	if req == nil {
+		return
+	}
+	allowed := m.ValueSettingKeys()
+	if *dest == nil {
+		*dest = map[string]string{}
+	}
+	for k, v := range req {
+		if _, ok := allowed[k]; !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		if v == "" {
+			delete(*dest, k)
+			continue
+		}
+		(*dest)[k] = v
+	}
+}
+
+func saveDeliverySecrets(w http.ResponseWriter, e extensions.Entry, projectID, userID int, req projectExtensionPatch) (shownSigning, shownCallback string, ok bool) {
 	key := "webhook_url"
 	if e.Manifest.Delivery != nil {
 		if k := e.Manifest.Delivery.DestinationKey(); k != "" {
@@ -267,33 +299,45 @@ func saveDeliverySecrets(w http.ResponseWriter, e extensions.Entry, projectID, u
 		if e.Manifest.Delivery != nil {
 			if err := hooks.ValidateDeliveryURL(e.Manifest.Delivery, url); err != nil {
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error()+".")
-				return "", false
+				return "", "", false
 			}
 		}
 		if err := storage.SetExtensionSecretForUser(e.ID, projectID, userID, key, url); err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save webhook URL.")
-			return "", false
+			return "", "", false
 		}
 	}
 	if req.NtfyAuth != nil && strings.TrimSpace(*req.NtfyAuth) != "" {
 		if err := storage.SetExtensionSecretForUser(e.ID, projectID, userID, "ntfy_auth", strings.TrimSpace(*req.NtfyAuth)); err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save ntfy token.")
-			return "", false
+			return "", "", false
 		}
 	}
 	if req.RotateSigning != nil && *req.RotateSigning {
 		if !e.Manifest.HasControl(extensions.ControlRotateSigning) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "This extension does not expose signing secret rotation.")
-			return "", false
+			return "", "", false
 		}
 		sec, err := hooks.RotateSigningSecret(e.ID, projectID, userID)
 		if err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to rotate signing secret.")
-			return "", false
+			return "", "", false
 		}
-		shownSecret = sec
+		shownSigning = sec
 	}
-	return shownSecret, true
+	if req.RotateCallback != nil && *req.RotateCallback {
+		if !e.Manifest.HasControl(extensions.ControlRotateCallback) && !e.Manifest.HasCallbackPermissions() {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "This extension does not expose callback token rotation.")
+			return "", "", false
+		}
+		tok, err := hooks.RotateCallbackToken(e.ID, projectID, userID)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to rotate callback token.")
+			return "", "", false
+		}
+		shownCallback = tok
+	}
+	return shownSigning, shownCallback, true
 }
 
 func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projectID int, extensionID string, userID int, isOwner bool) {
@@ -336,7 +380,7 @@ func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projec
 			cur.Templates[k] = v
 		}
 	}
-	sec, ok := saveDeliverySecrets(w, e, projectID, 0, req)
+	sec, callback, ok := saveDeliverySecrets(w, e, projectID, 0, req)
 	if !ok {
 		return
 	}
@@ -350,6 +394,7 @@ func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projec
 		return
 	}
 	item.SigningSecret = sec
+	item.CallbackToken = callback
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(item)
 }
@@ -428,7 +473,7 @@ func projectMemberExtensionPatch(w http.ResponseWriter, r *http.Request, project
 			cur.Templates[k] = v
 		}
 	}
-	sec, ok := saveDeliverySecrets(w, e, projectID, userID, req)
+	sec, callback, ok := saveDeliverySecrets(w, e, projectID, userID, req)
 	if !ok {
 		return
 	}
@@ -442,6 +487,7 @@ func projectMemberExtensionPatch(w http.ResponseWriter, r *http.Request, project
 		return
 	}
 	item.SigningSecret = sec
+	item.CallbackToken = callback
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(item)
 }
@@ -508,6 +554,7 @@ func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwne
 				item.Secrets[key] = storage.ExtensionSecretIsSet(e.ID, projectID, key)
 			}
 			item.SigningSet = storage.ExtensionSecretIsSet(e.ID, projectID, storage.SigningSecretKey)
+			item.CallbackSet = storage.CallbackTokenIsSet(e.ID, projectID, 0)
 			if rows, err := storage.ListRecentDeliveries(e.ID, projectID, 0, 10); err == nil {
 				item.Deliveries = deliveryJSON(rows)
 			}
@@ -526,6 +573,7 @@ func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwne
 			item.MemberDeliveries = deliveryJSON(rows)
 		}
 		item.MemberSigningSet = storage.ExtensionSecretIsSetForUser(e.ID, projectID, userID, storage.SigningSecretKey)
+		item.MemberCallbackSet = storage.CallbackTokenIsSet(e.ID, projectID, userID)
 	}
 	return item, nil
 }
@@ -557,4 +605,45 @@ func writeProjectExtensionError(w http.ResponseWriter, err error) {
 	default:
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
 	}
+}
+
+func projectExtensionUI(w http.ResponseWriter, r *http.Request, projectID int, extensionID string, extra []string) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	e, ok := extensions.Get(extensionID)
+	if !ok || !e.Loaded {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension not found.")
+		return
+	}
+	visible, err := projectExtensionVisible(e)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
+		return
+	}
+	if !visible || !e.Manifest.HasUI() {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension UI not found.")
+		return
+	}
+	ui := strings.TrimSpace(e.Manifest.UI)
+	rel := ui
+	asPanel := true
+	if len(extra) > 0 {
+		asPanel = false
+		joined := strings.Trim(strings.Join(extra, "/"), "/")
+		base := strings.TrimSuffix(strings.ReplaceAll(ui, "\\", "/"), "/")
+		if i := strings.LastIndex(base, "/"); i >= 0 {
+			base = base[:i]
+		} else {
+			base = ""
+		}
+		if base != "" {
+			rel = base + "/" + joined
+		} else {
+			rel = joined
+		}
+	}
+	_ = projectID
+	serveExtensionFile(w, r, e.Dir, rel, asPanel)
 }

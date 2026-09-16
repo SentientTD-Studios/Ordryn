@@ -58,6 +58,7 @@ type destFilter struct {
 	MentionMap      map[string]string
 	SubscriberID    int
 	Personal        bool
+	Values          map[string]string
 }
 
 func destFromProject(m extensions.Manifest, p storage.ExtensionProjectSettings) destFilter {
@@ -65,6 +66,7 @@ func destFromProject(m extensions.Manifest, p storage.ExtensionProjectSettings) 
 		Enabled:   p.Enabled,
 		Triggers:  p.Triggers,
 		Templates: p.Templates,
+		Values:    p.Values,
 	}
 	copyDeclaredFilters(&d, m, storedFilters{
 		StatusOnly:      p.StatusOnly,
@@ -89,6 +91,7 @@ func destFromMember(m extensions.Manifest, s storage.ExtensionMemberSettings, us
 		Templates:    s.Templates,
 		SubscriberID: userID,
 		Personal:     personal,
+		Values:       s.Values,
 	}
 	skipSelf := false
 	if m.HasSetting("skip_self") {
@@ -208,6 +211,12 @@ func shouldDeliverDest(m extensions.Manifest, site storage.ExtensionSettings, de
 	if dest.ClaimedIsMe && dest.SubscriberID > 0 && snap != nil && snap.ClaimedBy != dest.SubscriberID {
 		return false
 	}
+	if ev.Type == EventTaskMentioned && dest.SubscriberID > 0 && !containsInt(ev.MentionedUserIDs, dest.SubscriberID) {
+		return false
+	}
+	if ev.Type == EventProjectMemberLeft && dest.SubscriberID > 0 && ev.MemberID > 0 && dest.SubscriberID == ev.MemberID {
+		return false
+	}
 	if strings.TrimSpace(dest.FieldKey) != "" && snap != nil {
 		got := ""
 		if snap.CustomFields != nil {
@@ -254,6 +263,15 @@ func tagOverlap(want, have []int) bool {
 	}
 	for _, id := range want {
 		if _, ok := set[id]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func containsInt(ids []int, want int) bool {
+	for _, id := range ids {
+		if id == want {
 			return true
 		}
 	}

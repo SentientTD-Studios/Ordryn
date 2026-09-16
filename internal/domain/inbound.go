@@ -5,9 +5,11 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
 )
 
@@ -18,6 +20,8 @@ type InboundWebhookInput struct {
 	Description string
 	TaskID      int
 	Comment     string
+	Field       string
+	Value       string
 }
 
 // ApplyInboundWebhook creates a task or comment using the project's inbound secret.
@@ -106,9 +110,76 @@ func applyInboundWithConfig(ctx context.Context, cfg *storage.ProjectInboundWebh
 		}
 		_ = storage.RecordProjectInboundDelivery(cfg.ProjectID, "")
 		return nil
+	case extensions.ActionComplete:
+		if !projectDeclaresInboundAction(cfg.ProjectID, extensions.ActionComplete) {
+			return fmt.Errorf("%w: action must be create or comment", ErrValidation)
+		}
+		if in.TaskID <= 0 {
+			return fmt.Errorf("%w: task_id is required", ErrValidation)
+		}
+		if err := requireInboundTaskInProject(in.TaskID, cfg.ProjectID); err != nil {
+			return err
+		}
+		if err := SetTaskCompleted(ctx, cfg.ProjectOwnerID(), in.TaskID, true); err != nil {
+			_ = storage.RecordProjectInboundDelivery(cfg.ProjectID, err.Error())
+			return err
+		}
+		_ = storage.RecordProjectInboundDelivery(cfg.ProjectID, "")
+		return nil
+	case extensions.ActionSetField:
+		if !projectDeclaresInboundAction(cfg.ProjectID, extensions.ActionSetField) {
+			return fmt.Errorf("%w: action must be create or comment", ErrValidation)
+		}
+		if in.TaskID <= 0 || strings.TrimSpace(in.Field) == "" {
+			return fmt.Errorf("%w: task_id and field are required", ErrValidation)
+		}
+		if err := requireInboundTaskInProject(in.TaskID, cfg.ProjectID); err != nil {
+			return err
+		}
+		raw, err := json.Marshal(strings.TrimSpace(in.Value))
+		if err != nil {
+			return fmt.Errorf("%w: invalid field value", ErrValidation)
+		}
+		if strings.TrimSpace(in.Value) == "" {
+			raw = []byte("null")
+		}
+		if err := ApplyTaskFields(in.TaskID, cfg.ProjectID, cfg.ProjectOwnerID(), map[string]json.RawMessage{
+			strings.TrimSpace(in.Field): raw,
+		}); err != nil {
+			_ = storage.RecordProjectInboundDelivery(cfg.ProjectID, err.Error())
+			return err
+		}
+		_ = storage.RecordProjectInboundDelivery(cfg.ProjectID, "")
+		return nil
 	default:
 		return fmt.Errorf("%w: action must be create or comment", ErrValidation)
 	}
+}
+
+func requireInboundTaskInProject(taskID, projectID int) error {
+	_, pid, err := storage.TaskOwnerAndProject(taskID)
+	if err != nil || pid != projectID {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func projectDeclaresInboundAction(projectID int, action string) bool {
+	for _, e := range extensions.LoadedEntries() {
+		if !e.Manifest.DeclaresAction(action) {
+			continue
+		}
+		site, err := storage.GetExtensionSettings(e.ID)
+		if err != nil || !site.Enabled {
+			continue
+		}
+		proj, err := storage.GetExtensionProjectSettings(e.ID, projectID)
+		if err != nil || !proj.Enabled {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func verifyInboundAuth(secret, customHeader, hmacHeader string, body []byte) error {

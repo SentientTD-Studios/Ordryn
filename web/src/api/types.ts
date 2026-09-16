@@ -520,6 +520,9 @@ export type ExtensionSettingField = {
     | 'bool'
     | 'string'
     | 'int'
+    | 'select'
+    | 'status'
+    | 'user'
     | 'priority'
     | 'tag_ids'
     | 'time'
@@ -531,6 +534,12 @@ export type ExtensionSettingField = {
   description?: string
   required?: boolean
   scope?: 'site' | 'project' | 'member' | string
+  options?: CustomFieldOption[]
+}
+
+export type ExtensionHook = {
+  on: string
+  label?: string
 }
 
 export type ExtensionManifest = {
@@ -539,12 +548,19 @@ export type ExtensionManifest = {
   version: string
   host_api: number
   description?: string
-  hooks?: { on: string }[]
+  author?: string
+  homepage?: string
+  license?: string
+  icon?: string
+  ui?: string
+  hooks?: ExtensionHook[]
   delivery?: { type: string; url_from?: string; format?: string }
   settings?: ExtensionSettingField[]
   templates?: Record<string, string>
   fields?: ExtensionField[]
   controls?: string[]
+  permissions?: string[]
+  actions?: string[]
 }
 
 export type ExtensionField = {
@@ -569,7 +585,7 @@ export type CustomFieldDef = {
   local_key: string
   label: string
   description?: string
-  type: 'string' | 'number' | 'boolean' | 'enum' | 'url' | 'user' | string
+  type: 'string' | 'number' | 'boolean' | 'enum' | 'url' | 'user' | 'date' | 'markdown' | string
   required?: boolean
   options?: CustomFieldOption[]
   show_on?: string[]
@@ -632,6 +648,7 @@ export type ProjectExtensionSettings = {
   quiet_hours_end?: string
   digest?: string
   mention_map?: Record<string, string>
+  values?: Record<string, string>
   last_error?: string
   last_delivery_at?: string
 }
@@ -655,7 +672,10 @@ export type ProjectExtension = {
   signing_set?: boolean
   member_signing_set?: boolean
   signing_secret?: string
+  callback_token?: string
   sample_json?: string
+  callback_set?: boolean
+  member_callback_set?: boolean
   deliveries?: ExtensionDelivery[]
   member_deliveries?: ExtensionDelivery[]
 }
@@ -684,6 +704,8 @@ export type ProjectExtensionPatch = {
   webhook_url?: string
   ntfy_auth?: string
   rotate_signing?: boolean
+  rotate_callback?: boolean
+  values?: Record<string, string>
 }
 
 export type ProjectInboundWebhook = {

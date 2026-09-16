@@ -116,7 +116,14 @@ func deliverSite(entry extensions.Entry, site storage.ExtensionSettings, ev Even
 		tmpl = templateFor(entry.Manifest, nil, ev.Type)
 	}
 	if strings.TrimSpace(tmpl) == "" {
-		tmpl = "New join request from {join_email}"
+		switch ev.Type {
+		case EventJoinApproved:
+			tmpl = "Join request approved for {join_email}"
+		case EventJoinDenied:
+			tmpl = "Join request denied for {join_email}"
+		default:
+			tmpl = "New join request from {join_email}"
+		}
 	}
 	actor := resolveActor(ev)
 	vars := eventVars(ev, ev.Snapshot, actor)
@@ -340,6 +347,21 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 	typ := strings.TrimSpace(m.Delivery.Type)
 	key := m.Delivery.DestinationKey()
 	signing, _ := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, storage.SigningSecretKey)
+	vars := ctx.Vars
+	if len(ctx.Dest.Values) > 0 || m.HasCallbackPermissions() {
+		vars = cloneVars(ctx.Vars)
+	}
+	if len(ctx.Dest.Values) > 0 {
+		if raw, err := json.Marshal(ctx.Dest.Values); err == nil {
+			vars["config_json"] = string(raw)
+		}
+	}
+	if m.HasCallbackPermissions() {
+		if tok, err := storage.EnsureCallbackToken(m.ID, ctx.ProjectID, ctx.UserID); err == nil && tok != "" {
+			vars["callback_token"] = tok
+			vars["callback_url"] = publicCallbackURL()
+		}
+	}
 	threadID := ""
 	if ctx.Event.Type == EventTaskCommented && ctx.Event.TaskID > 0 && ctx.ProjectID > 0 {
 		threadID, _ = storage.GetHookTaskMessageID(m.ID, ctx.ProjectID, ctx.Event.TaskID)
@@ -356,7 +378,7 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 			return "", fmt.Errorf("webhook URL is not set")
 		}
 		auth, _ := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, "ntfy_auth")
-		return "", sendNtfy(u, auth, ctx.Message, ctx.Vars, signing)
+		return "", sendNtfy(u, auth, ctx.Message, vars, signing)
 	case extensions.DeliveryDiscordWebhook, extensions.DeliverySlackWebhook, extensions.DeliveryTeamsWebhook, extensions.DeliveryGoogleChatWebhook, extensions.DeliveryHTTPWebhook:
 		u, err := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, key)
 		if err != nil {
@@ -365,7 +387,7 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 		if strings.TrimSpace(u) == "" {
 			return "", fmt.Errorf("webhook URL is not set")
 		}
-		messageID, err := sendWebhookOpts(typ, strings.TrimSpace(m.Delivery.Format), u, ctx.Message, ctx.Event.Type, ctx.Vars, sendOpts{
+		messageID, err := sendWebhookOpts(typ, strings.TrimSpace(m.Delivery.Format), u, ctx.Message, ctx.Event.Type, vars, sendOpts{
 			SigningSecret: signing,
 			Wait:          wait,
 			ThreadID:      threadID,
@@ -404,6 +426,22 @@ func publicAdminJoinURL() string {
 		return ""
 	}
 	return base + "/admin/join-requests"
+}
+
+func publicCallbackURL() string {
+	base := publicBaseURL()
+	if base == "" {
+		return "/api/v1/ext/callback"
+	}
+	return base + "/api/v1/ext/callback"
+}
+
+func cloneVars(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in)+4)
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func publicBaseURL() string {
@@ -563,6 +601,11 @@ func EnsureSigningSecret(extensionID string, projectID, userID int) (string, err
 		return "", err
 	}
 	return sec, nil
+}
+
+// RotateCallbackToken replaces the scoped callback token and returns the new value (show once).
+func RotateCallbackToken(extensionID string, projectID, userID int) (string, error) {
+	return storage.RotateCallbackToken(extensionID, projectID, userID)
 }
 
 // SampleJSONBody returns the structured JSON payload used by http.webhook format=json.

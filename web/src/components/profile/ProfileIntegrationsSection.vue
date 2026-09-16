@@ -42,12 +42,22 @@ async function load() {
   }
 }
 
+function destKey(ext: ProjectExtension) {
+  return ext.manifest.delivery?.url_from || 'webhook_url'
+}
+
 function memberFields(ext: ProjectExtension) {
-  return (ext.manifest.settings || []).filter((f) => f.scope === 'member')
+  const all = ext.manifest.settings || []
+  const fields = all.filter((f) => f.scope === 'member')
+  const dest = all.find((f) => f.key === destKey(ext) && f.type === 'secret')
+  if (dest && !fields.some((f) => f.key === dest.key)) {
+    return [dest, ...fields]
+  }
+  return fields
 }
 
 function hasMemberSettings(ext: ProjectExtension) {
-  return memberFields(ext).length > 0
+  return (ext.manifest.settings || []).some((f) => f.scope === 'member')
 }
 
 function hasMemberSetting(ext: ProjectExtension, key: string) {
@@ -79,6 +89,11 @@ function inboxPlaceholder(ext: ProjectExtension, key: string) {
 
 function hookNames(ext: ProjectExtension) {
   return (ext.manifest.hooks || []).map((h) => h.on)
+}
+
+function hookLabel(ext: ProjectExtension, on: string) {
+  const hook = (ext.manifest.hooks || []).find((h) => h.on === on)
+  return hook?.label || on
 }
 
 function boolValue(ext: ProjectExtension, key: string): boolean {
@@ -340,7 +355,7 @@ onMounted(() => {
                     :checked="(ext.member?.triggers || []).includes(hook)"
                     @change="toggleInboxTrigger(ext, hook, ($event.target as HTMLInputElement).checked)"
                   />
-                  <label class="form-check-label">{{ hook }}</label>
+                  <label class="form-check-label">{{ hookLabel(ext, hook) }}</label>
                 </div>
               </template>
               <template v-else-if="field.type === 'bool'">

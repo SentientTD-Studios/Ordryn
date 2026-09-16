@@ -503,12 +503,18 @@ func ApplyGitHubIssueWebhookState(ctx context.Context, owner, repoName string, i
 	if err != nil || projectID <= 0 {
 		return nil
 	}
+	oldCompleted, lookupErr := lookupTaskCompleted(issue.TaskID)
+	if lookupErr != nil {
+		log.Printf("github webhook completed lookup task=%d: %v", issue.TaskID, lookupErr)
+	}
 	allow, err := kanbanAllowsGitHubStatusSync(issue.TaskID, projectID)
 	if err != nil {
 		log.Printf("github webhook status sync task=%d: %v", issue.TaskID, err)
 	} else if allow {
 		if err := ApplyCompletedStatusSync(issue.TaskID, projectID, completed); err != nil {
 			log.Printf("github webhook status sync task=%d: %v", issue.TaskID, err)
+		} else if lookupErr == nil && oldCompleted != completed {
+			dispatchCompletedHook(0, issue.TaskID, completed)
 		}
 	}
 	_ = storage.LogTaskEvent(issue.TaskID, 0, "github_issue_synced", map[string]interface{}{

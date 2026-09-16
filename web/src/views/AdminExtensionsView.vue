@@ -6,6 +6,7 @@ import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import AdminSubnav from '@/components/AdminSubnav.vue'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
+import { withBase } from '@/base'
 
 const toast = useToast()
 const loading = ref(false)
@@ -78,14 +79,6 @@ onMounted(load)
   <div class="container mt-3">
     <AdminSubnav />
     <h1>Extensions</h1>
-    <p class="text-muted">
-      Drop a folder in <code>data/extensions/</code> with <code>manifest.json</code>, then restart.
-      Copy a notification example from <code>examples/extensions/</code> (Discord, Slack, Teams,
-      Google Chat, generic webhook, ntfy, email relay, due-dates, comments, claimed, activity,
-      join-requests), or
-      <code>severity</code> / <code>estimate</code> / <code>fields-demo</code> for custom fields.
-    </p>
-
     <p v-if="loading" class="text-muted">Loading…</p>
     <div v-else-if="emptyHint" class="alert alert-secondary">
       No extensions loaded. Copy a folder from <code>examples/extensions/</code> into
@@ -101,6 +94,14 @@ onMounted(load)
       >
         <span class="d-flex align-items-center gap-2">
           <i class="bi" :class="expanded[ext.id] ? 'bi-chevron-down' : 'bi-chevron-right'" aria-hidden="true" />
+          <img
+            v-if="ext.manifest.icon"
+            :src="withBase(`/api/v1/extensions/${ext.id}/icon`)"
+            alt=""
+            width="20"
+            height="20"
+            class="rounded"
+          />
           <span class="h5 mb-0">{{ ext.name || ext.id }}</span>
         </span>
         <span v-if="ext.status === 'loaded'" class="badge text-bg-success">Loaded {{ ext.version }}</span>
@@ -127,6 +128,11 @@ onMounted(load)
 
           <div v-if="expanded[ext.id]">
             <p v-if="ext.manifest.description" class="small text-muted">{{ ext.manifest.description }}</p>
+            <p v-if="ext.manifest.author || ext.manifest.license || ext.manifest.homepage" class="small text-muted">
+              <span v-if="ext.manifest.author">{{ ext.manifest.author }}</span>
+              <span v-if="ext.manifest.license"> · {{ ext.manifest.license }}</span><br />
+              <span v-if="ext.manifest.homepage"><a v-if="ext.manifest.homepage" :href="ext.manifest.homepage" target="_blank" rel="noopener noreferrer">Homepage</a></span>
+            </p>
             <p v-if="hasProjectSettings(ext)" class="small text-muted">
               Webhook, triggers, and message templates are set per project in Project settings → Extensions.
             </p>

@@ -13,7 +13,16 @@ import (
 var (
 	hubMu sync.RWMutex
 	hub   *Hub
+
+	hookListenMu     sync.Mutex
+	hookListeners    []hookListener
+	nextHookListenID int
 )
+
+type hookListener struct {
+	id int
+	fn func(hooks.Event)
+}
 
 // Init installs the process-wide hub. A nil Redis client keeps fan-out in-process
 // (unit tests). Production always has Redis from server startup.
@@ -55,14 +64,20 @@ func SubscribeUser(ctx context.Context, userID int) <-chan []byte {
 
 // TaskHookMeta is extra detail for outbound event hooks (not sent over SSE).
 type TaskHookMeta struct {
-	StatusChanged bool
-	OldStatus     string
-	NewStatus     string
-	Comment       string
-	Changed       []string
-	Count         int
-	JoinEmail     string
-	JoinMessage   string
+	StatusChanged    bool
+	OldStatus        string
+	NewStatus        string
+	Comment          string
+	Changed          []string
+	Count            int
+	JoinEmail        string
+	JoinMessage      string
+	MentionedUserIDs []int
+	Mentions         []string
+	MemberID         int
+	MemberName       string
+	SprintID         int
+	SprintName       string
 }
 
 func hookEvent(actorID, taskID, projectID int, typ string, meta *TaskHookMeta) hooks.Event {
@@ -81,20 +96,76 @@ func hookEvent(actorID, taskID, projectID int, typ string, meta *TaskHookMeta) h
 		ev.Count = meta.Count
 		ev.JoinEmail = meta.JoinEmail
 		ev.JoinMessage = meta.JoinMessage
+		ev.MentionedUserIDs = meta.MentionedUserIDs
+		ev.Mentions = meta.Mentions
+		ev.MemberID = meta.MemberID
+		ev.MemberName = meta.MemberName
+		ev.SprintID = meta.SprintID
+		ev.SprintName = meta.SprintName
 	}
 	return ev
 }
 
+func hasHookListeners() bool {
+	hookListenMu.Lock()
+	defer hookListenMu.Unlock()
+	return len(hookListeners) > 0
+}
+
+func notifyHookListeners(ev hooks.Event) {
+	hookListenMu.Lock()
+	listeners := append([]hookListener{}, hookListeners...)
+	hookListenMu.Unlock()
+	for _, l := range listeners {
+		l.fn(ev)
+	}
+}
+
+// ListenHooks records outbound extension events for tests. The returned stop
+// function removes the listener.
+func ListenHooks(fn func(hooks.Event)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	hookListenMu.Lock()
+	nextHookListenID++
+	id := nextHookListenID
+	hookListeners = append(hookListeners, hookListener{id: id, fn: fn})
+	hookListenMu.Unlock()
+	return func() {
+		hookListenMu.Lock()
+		defer hookListenMu.Unlock()
+		kept := hookListeners[:0]
+		for _, l := range hookListeners {
+			if l.id != id {
+				kept = append(kept, l)
+			}
+		}
+		hookListeners = kept
+	}
+}
+
+func emitHook(ev hooks.Event) {
+	notifyHookListeners(ev)
+	if hooks.HasWork() {
+		go hooks.Dispatch(ev)
+	}
+}
+
+func wantOutboundHooks() bool {
+	return hooks.HasWork() || hasHookListeners()
+}
+
 func dispatchHook(actorID, taskID, projectID int, typ string, meta *TaskHookMeta) {
-	if !hooks.HasWork() {
+	if !wantOutboundHooks() {
 		return
 	}
-	go hooks.Dispatch(hookEvent(actorID, taskID, projectID, typ, meta))
+	emitHook(hookEvent(actorID, taskID, projectID, typ, meta))
 }
 
 // DispatchHook sends an outbound extension event without an extra SSE publish.
 func DispatchHook(actorID, taskID int, typ string, meta *TaskHookMeta) {
-	if taskID <= 0 || !hooks.HasWork() {
+	if taskID <= 0 || !wantOutboundHooks() {
 		return
 	}
 	_, projectID, err := storage.TaskOwnerAndProject(taskID)
@@ -102,6 +173,14 @@ func DispatchHook(actorID, taskID int, typ string, meta *TaskHookMeta) {
 		return
 	}
 	dispatchHook(actorID, taskID, projectID, typ, meta)
+}
+
+// DispatchProjectHook sends a project-level outbound extension event without SSE.
+func DispatchProjectHook(actorID, projectID int, typ string, meta *TaskHookMeta) {
+	if projectID <= 0 || !wantOutboundHooks() {
+		return
+	}
+	emitHook(hookEvent(actorID, 0, projectID, typ, meta))
 }
 
 // AfterTaskChange notifies everyone who can currently see the task.
@@ -115,7 +194,7 @@ func AfterTaskChangeMeta(actorID, taskID int, typ string, meta *TaskHookMeta, ex
 		return
 	}
 	h := currentHub()
-	wantHooks := hooks.HasWork()
+	wantHooks := wantOutboundHooks()
 	if h == nil && !wantHooks {
 		return
 	}
@@ -134,7 +213,7 @@ func AfterTaskChangeMeta(actorID, taskID int, typ string, meta *TaskHookMeta, ex
 	if wantHooks {
 		ev := hookEvent(actorID, taskID, projectID, typ, meta)
 		ev.OwnerID = ownerID
-		go hooks.Dispatch(ev)
+		emitHook(ev)
 	}
 }
 
@@ -151,7 +230,7 @@ func AfterTasksChangeLive(actorID int, typ string, taskIDs []int) {
 
 func publishTasksChange(actorID int, typ string, taskIDs []int, emitHooks bool, extraProjectIDs ...int) {
 	h := currentHub()
-	wantHooks := emitHooks && hooks.HasWork()
+	wantHooks := emitHooks && wantOutboundHooks()
 	if (h == nil && !wantHooks) || len(taskIDs) == 0 {
 		return
 	}
@@ -190,7 +269,7 @@ func publishTasksChange(actorID int, typ string, taskIDs []int, emitHooks bool, 
 		return
 	}
 	if typ == TypeTaskReordered {
-		go hooks.Dispatch(hooks.Event{
+		emitHook(hooks.Event{
 			Type:      typ,
 			ProjectID: projectID,
 			ActorID:   actorID,
@@ -207,7 +286,7 @@ func publishTasksChange(actorID int, typ string, taskIDs []int, emitHooks bool, 
 // (for example a member who was just removed).
 func AfterProjectChange(actorID, projectID int, typ string, extraUserIDs ...int) {
 	h := currentHub()
-	wantHooks := hooks.HasWork()
+	wantHooks := wantOutboundHooks()
 	if projectID <= 0 || (h == nil && !wantHooks) {
 		return
 	}
@@ -224,7 +303,7 @@ func AfterProjectChange(actorID, projectID int, typ string, extraUserIDs ...int)
 		}, users)
 	}
 	if wantHooks {
-		go hooks.Dispatch(hooks.Event{
+		emitHook(hooks.Event{
 			Type:      typ,
 			ProjectID: projectID,
 			ActorID:   actorID,
@@ -234,13 +313,30 @@ func AfterProjectChange(actorID, projectID int, typ string, extraUserIDs ...int)
 
 // AfterJoinRequest notifies admins over SSE and site-level extension hooks.
 func AfterJoinRequest(email, message string) {
-	if hooks.HasWork() {
-		go hooks.Dispatch(hooks.Event{
-			Type:        TypeJoinRequest,
-			JoinEmail:   email,
-			JoinMessage: message,
-		})
+	if !wantOutboundHooks() {
+		return
 	}
+	emitHook(hooks.Event{
+		Type:        TypeJoinRequest,
+		JoinEmail:   email,
+		JoinMessage: message,
+	})
+}
+
+// AfterJoinReviewed sends a site-level hook after an admin approves or denies a join request.
+func AfterJoinReviewed(email, message string, approved bool) {
+	if !wantOutboundHooks() {
+		return
+	}
+	typ := TypeJoinDenied
+	if approved {
+		typ = TypeJoinApproved
+	}
+	emitHook(hooks.Event{
+		Type:        typ,
+		JoinEmail:   email,
+		JoinMessage: message,
+	})
 }
 
 func audience(ownerID, projectID int, extraProjectIDs ...int) []int {

@@ -113,6 +113,8 @@ var requiredOpenAPIPaths = []string{
 	"/api/v1/me/extensions/{extensionId}",
 	"/api/v1/me/extensions/{extensionId}/test",
 	"/api/v1/webhooks/inbound",
+	"/api/v1/ext/callback",
+	"/api/v1/extensions/{id}/icon",
 }
 
 func moduleRoot(t *testing.T) string {

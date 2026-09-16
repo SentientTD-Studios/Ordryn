@@ -43,6 +43,7 @@ type ExtensionProjectSettings struct {
 	QuietHoursEnd   string            `json:"quiet_hours_end,omitempty"`
 	Digest          string            `json:"digest,omitempty"`
 	MentionMap      map[string]string `json:"mention_map,omitempty"`
+	Values          map[string]string `json:"values,omitempty"`
 	LastError       string            `json:"last_error,omitempty"`
 	LastDeliveryAt  string            `json:"last_delivery_at,omitempty"`
 }
@@ -63,6 +64,7 @@ type ExtensionMemberSettings struct {
 	QuietHoursStart string            `json:"quiet_hours_start,omitempty"`
 	QuietHoursEnd   string            `json:"quiet_hours_end,omitempty"`
 	Digest          string            `json:"digest,omitempty"`
+	Values          map[string]string `json:"values,omitempty"`
 	LastError       string            `json:"last_error,omitempty"`
 	LastDeliveryAt  string            `json:"last_delivery_at,omitempty"`
 }
@@ -143,6 +145,25 @@ func CreateExtensionTables() error {
 			sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (task_id, due_date)
 		)`,
+		`CREATE TABLE IF NOT EXISTS hook_due_soon_sent (
+			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			due_date DATE NOT NULL,
+			sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (task_id, due_date)
+		)`,
+		`CREATE TABLE IF NOT EXISTS hook_sprint_sent (
+			sprint_id INTEGER NOT NULL REFERENCES project_sprints(id) ON DELETE CASCADE,
+			event_type VARCHAR(64) NOT NULL,
+			sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (sprint_id, event_type)
+		)`,
+		`CREATE TABLE IF NOT EXISTS extension_callback_tokens (
+			token_hash TEXT PRIMARY KEY,
+			extension_id VARCHAR(64) NOT NULL,
+			project_id INTEGER NOT NULL DEFAULT 0,
+			user_id INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
 		`CREATE TABLE IF NOT EXISTS extension_deliveries (
 			id BIGSERIAL PRIMARY KEY,
 			extension_id VARCHAR(64) NOT NULL,
@@ -187,6 +208,10 @@ func CreateExtensionTables() error {
 	}
 	if err := migrateExtensionSecretColumns(pool); err != nil {
 		return err
+	}
+	if _, err := pool.Exec(context.Background(),
+		`CREATE INDEX IF NOT EXISTS extension_callback_tokens_dest ON extension_callback_tokens (extension_id, project_id, user_id)`); err != nil {
+		return fmt.Errorf("create callback token index: %w", err)
 	}
 	return nil
 }
@@ -459,6 +484,7 @@ func RecordExtensionProjectDelivery(extensionID string, projectID int, lastErr s
 }
 
 const SigningSecretKey = "signing_secret"
+const CallbackSecretKey = "callback_token"
 
 // SetExtensionSecret encrypts and stores a team/site secret (user_id 0). Empty plaintext is a no-op.
 func SetExtensionSecret(extensionID string, projectID int, key, plaintext string) error {

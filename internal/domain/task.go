@@ -634,6 +634,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 			_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 		}
 		go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
+		dispatchCompletedHook(userID, taskID, completed)
 	}
 	if statusTouched && newStatusID != oldStatusID {
 		_ = storage.LogTaskEvent(taskID, userID, "status_changed", statusChangeMetadata(effectiveProjectID, oldStatusID, newStatusID))
@@ -691,6 +692,12 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 	if dueChanged {
 		live.DispatchHook(userID, taskID, live.TypeTaskDueChanged, hookMeta)
+	}
+	if projectChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskProjectChanged, hookMeta)
+	}
+	if sprintChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskSprintChanged, hookMeta)
 	}
 	if projectChanged || sprintChanged {
 		live.DispatchHook(userID, taskID, live.TypeTaskMoved, hookMeta)
@@ -875,6 +882,7 @@ func ArchiveTask(ctx context.Context, userID, taskID int) error {
 		}
 		_ = storage.LogTaskEvent(id, userID, "archived", nil)
 		live.AfterTaskChange(userID, id, live.TypeTaskUpdated)
+		live.DispatchHook(userID, id, live.TypeTaskArchived, &live.TaskHookMeta{Changed: []string{"archived"}})
 	}
 	return nil
 }
@@ -894,6 +902,7 @@ func RestoreTask(ctx context.Context, userID, taskID int) error {
 		}
 		_ = storage.LogTaskEvent(id, userID, "restored", nil)
 		live.AfterTaskChange(userID, id, live.TypeTaskUpdated)
+		live.DispatchHook(userID, id, live.TypeTaskRestored, &live.TaskHookMeta{Changed: []string{"archived"}})
 	}
 	return nil
 }
@@ -914,6 +923,14 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 		return ErrNotFound
 	}
 
+	var oldCompleted bool
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(completed, false) FROM tasks WHERE id = $1`, taskID).Scan(&oldCompleted); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
 	if projectID > 0 {
 		mode, err := storage.GetProjectWorkflowMode(projectID)
 		if err != nil {
@@ -930,6 +947,9 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 			}
 			go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
 			live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+			if oldCompleted != completed {
+				dispatchCompletedHook(userID, taskID, completed)
+			}
 			return nil
 		}
 	}
@@ -950,7 +970,35 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 	}
 	go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
 	live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+	if oldCompleted != completed {
+		dispatchCompletedHook(userID, taskID, completed)
+	}
 	return nil
+}
+
+func dispatchCompletedHook(userID, taskID int, completed bool) {
+	typ := live.TypeTaskReopened
+	if completed {
+		typ = live.TypeTaskCompleted
+	}
+	live.DispatchHook(userID, taskID, typ, &live.TaskHookMeta{
+		StatusChanged: true,
+		Changed:       []string{"status"},
+	})
+}
+
+func lookupTaskCompleted(taskID int) (bool, error) {
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return false, err
+	}
+	defer storage.CloseDatabase(pool)
+	var completed bool
+	err = pool.QueryRow(context.Background(), `SELECT COALESCE(completed, false) FROM tasks WHERE id = $1`, taskID).Scan(&completed)
+	if err != nil {
+		return false, err
+	}
+	return completed, nil
 }
 
 // ToggleTaskCompleted flips completed for a writable task.

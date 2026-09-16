@@ -197,9 +197,19 @@ func httpWebhookPayload(format, content, eventType string, vars map[string]strin
 			OccurredAt: vars["occurred_at"],
 			Changed:    splitCSV(vars["changed"]),
 			Count:      vars["count"],
+			Mentions:   vars["mentions"],
+			Member:     vars["member"],
+			JoinEmail:  vars["join_email"],
 		}
 		if raw := strings.TrimSpace(vars["fields_json"]); raw != "" {
 			_ = json.Unmarshal([]byte(raw), &body.Fields)
+		}
+		if raw := strings.TrimSpace(vars["config_json"]); raw != "" {
+			_ = json.Unmarshal([]byte(raw), &body.Config)
+		}
+		if tok := strings.TrimSpace(vars["callback_token"]); tok != "" {
+			body.CallbackToken = tok
+			body.CallbackURL = vars["callback_url"]
 		}
 		return body
 	default:
@@ -208,28 +218,34 @@ func httpWebhookPayload(format, content, eventType string, vars map[string]strin
 }
 
 type webhookJSONBody struct {
-	Text       string            `json:"text"`
-	Content    string            `json:"content"`
-	Event      string            `json:"event,omitempty"`
-	ID         string            `json:"id,omitempty"`
-	Name       string            `json:"name,omitempty"`
-	Task       string            `json:"task,omitempty"`
-	Status     string            `json:"status,omitempty"`
-	OldStatus  string            `json:"old_status,omitempty"`
-	Project    string            `json:"project,omitempty"`
-	Actor      string            `json:"actor,omitempty"`
-	URL        string            `json:"url,omitempty"`
-	Priority   string            `json:"priority,omitempty"`
-	Comment    string            `json:"comment,omitempty"`
-	ClaimedBy  string            `json:"claimed_by,omitempty"`
-	DueDate    string            `json:"due_date,omitempty"`
-	Sprint     string            `json:"sprint,omitempty"`
-	Tags       string            `json:"tags,omitempty"`
-	EventID    string            `json:"event_id,omitempty"`
-	OccurredAt string            `json:"occurred_at,omitempty"`
-	Changed    []string          `json:"changed,omitempty"`
-	Count      string            `json:"count,omitempty"`
-	Fields     map[string]string `json:"fields,omitempty"`
+	Text          string            `json:"text"`
+	Content       string            `json:"content"`
+	Event         string            `json:"event,omitempty"`
+	ID            string            `json:"id,omitempty"`
+	Name          string            `json:"name,omitempty"`
+	Task          string            `json:"task,omitempty"`
+	Status        string            `json:"status,omitempty"`
+	OldStatus     string            `json:"old_status,omitempty"`
+	Project       string            `json:"project,omitempty"`
+	Actor         string            `json:"actor,omitempty"`
+	URL           string            `json:"url,omitempty"`
+	Priority      string            `json:"priority,omitempty"`
+	Comment       string            `json:"comment,omitempty"`
+	ClaimedBy     string            `json:"claimed_by,omitempty"`
+	DueDate       string            `json:"due_date,omitempty"`
+	Sprint        string            `json:"sprint,omitempty"`
+	Tags          string            `json:"tags,omitempty"`
+	EventID       string            `json:"event_id,omitempty"`
+	OccurredAt    string            `json:"occurred_at,omitempty"`
+	Changed       []string          `json:"changed,omitempty"`
+	Count         string            `json:"count,omitempty"`
+	Mentions      string            `json:"mentions,omitempty"`
+	Member        string            `json:"member,omitempty"`
+	JoinEmail     string            `json:"join_email,omitempty"`
+	Fields        map[string]string `json:"fields,omitempty"`
+	Config        map[string]string `json:"config,omitempty"`
+	CallbackToken string            `json:"callback_token,omitempty"`
+	CallbackURL   string            `json:"callback_url,omitempty"`
 }
 
 func splitCSV(s string) []string {

@@ -142,7 +142,12 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 	_ = storage.LogProjectEvent(projectID, actorUserID, event, map[string]interface{}{
 		"user_id": memberUserID,
 	})
+	memberName := hookDisplayName(memberUserID)
 	live.AfterProjectChange(actorUserID, projectID, live.TypeProjectUpdated, memberUserID)
+	live.DispatchProjectHook(actorUserID, projectID, live.TypeProjectMemberLeft, &live.TaskHookMeta{
+		MemberID:   memberUserID,
+		MemberName: memberName,
+	})
 	return nil
 }
 
@@ -163,6 +168,10 @@ func AcceptProjectInvite(ctx context.Context, userID int, userEmail string, invi
 		"invite_id": inviteID, "role": inv.Role,
 	})
 	live.AfterProjectChange(userID, inv.ProjectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, inv.ProjectID, live.TypeProjectMemberJoined, &live.TaskHookMeta{
+		MemberID:   userID,
+		MemberName: hookDisplayName(userID),
+	})
 	return nil
 }
 
@@ -250,4 +259,18 @@ func PublicSharePathForTask(taskID int) string {
 		return ""
 	}
 	return "/s/" + link.Token + "?task=" + strconv.Itoa(taskID)
+}
+
+func hookDisplayName(userID int) string {
+	if userID <= 0 {
+		return ""
+	}
+	p, err := storage.GetUserProfileByID(userID)
+	if err != nil || p == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(p.UserName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(p.Email)
 }

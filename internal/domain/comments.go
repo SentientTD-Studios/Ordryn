@@ -191,7 +191,40 @@ func AddCommentForUser(ctx context.Context, userID, taskID int, body string) (*s
 	comment.Links = ResolveCommentTaskLinks(taskID, projectID, userID, comment.Body)
 	NotifyProjectMembersTaskCommented(taskID, userID, projectID, body)
 	live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskCommented, &live.TaskHookMeta{Comment: body})
+	if meta := mentionHookMeta(projectID, userID, body); meta != nil {
+		live.DispatchHook(userID, taskID, live.TypeTaskMentioned, meta)
+	}
 	return comment, nil
+}
+
+func mentionHookMeta(projectID, actorUserID int, body string) *live.TaskHookMeta {
+	mentioned := ResolveCommentMentions(projectID, body)
+	if len(mentioned) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(mentioned))
+	names := make([]string, 0, len(mentioned))
+	for _, m := range mentioned {
+		if m.UserID == actorUserID {
+			continue
+		}
+		ids = append(ids, m.UserID)
+		name := strings.TrimSpace(m.UserName)
+		if name == "" {
+			name = strings.TrimSpace(m.Email)
+		}
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return &live.TaskHookMeta{
+		Comment:          body,
+		MentionedUserIDs: ids,
+		Mentions:         names,
+	}
 }
 
 // DeleteCommentForUser soft-deletes a comment. Authors delete as "user";

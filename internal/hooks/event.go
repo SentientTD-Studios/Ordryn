@@ -10,49 +10,84 @@ import (
 )
 
 const (
-	EventTaskCreated    = "task.created"
-	EventTaskUpdated    = "task.updated"
-	EventTaskDeleted    = "task.deleted"
-	EventTaskCommented  = "task.commented"
-	EventTaskReordered  = "task.reordered"
-	EventTaskClaimed    = "task.claimed"
-	EventTaskUnclaimed  = "task.unclaimed"
-	EventTaskDueChanged = "task.due_changed"
-	EventTaskMoved      = "task.moved"
-	EventTaskTagged     = "task.tagged"
-	EventTaskOverdue    = "task.overdue"
-	EventProjectUpdated = "project.updated"
-	EventJoinRequest    = "join.request"
+	EventTaskCreated         = "task.created"
+	EventTaskUpdated         = "task.updated"
+	EventTaskDeleted         = "task.deleted"
+	EventTaskCommented       = "task.commented"
+	EventTaskReordered       = "task.reordered"
+	EventTaskClaimed         = "task.claimed"
+	EventTaskUnclaimed       = "task.unclaimed"
+	EventTaskDueChanged      = "task.due_changed"
+	EventTaskMoved           = "task.moved"
+	EventTaskProjectChanged  = "task.project_changed"
+	EventTaskSprintChanged   = "task.sprint_changed"
+	EventTaskTagged          = "task.tagged"
+	EventTaskOverdue         = "task.overdue"
+	EventTaskMentioned       = "task.mentioned"
+	EventTaskCompleted       = "task.completed"
+	EventTaskReopened        = "task.reopened"
+	EventTaskDueSoon         = "task.due_soon"
+	EventTaskArchived        = "task.archived"
+	EventTaskRestored        = "task.restored"
+	EventProjectUpdated      = "project.updated"
+	EventProjectArchived     = "project.archived"
+	EventProjectRestored     = "project.restored"
+	EventProjectMemberJoined = "project.member_joined"
+	EventProjectMemberLeft   = "project.member_left"
+	EventSprintCreated       = "sprint.created"
+	EventSprintStarted       = "sprint.started"
+	EventSprintEnded         = "sprint.ended"
+	EventJoinRequest         = "join.request"
+	EventJoinApproved        = "join.approved"
+	EventJoinDenied          = "join.denied"
 )
 
 // Event is a domain change delivered to loaded extensions.
 type Event struct {
-	Type          string
-	TaskID        int
-	ProjectID     int
-	ActorID       int
-	OwnerID       int
-	StatusChanged bool
-	OldStatus     string
-	NewStatus     string
-	Comment       string
-	Count         int
-	Changed       []string
-	JoinEmail     string
-	JoinMessage   string
-	Snapshot      *storage.HookTaskSnapshot
-	Actor         string
-	EventID       string
-	OccurredAt    time.Time
-	Immediate     bool // skip coalesce/quiet hours (test sends)
+	Type             string
+	TaskID           int
+	ProjectID        int
+	ActorID          int
+	OwnerID          int
+	StatusChanged    bool
+	OldStatus        string
+	NewStatus        string
+	Comment          string
+	Count            int
+	Changed          []string
+	JoinEmail        string
+	JoinMessage      string
+	MentionedUserIDs []int
+	Mentions         []string
+	MemberID         int
+	MemberName       string
+	SprintID         int
+	SprintName       string
+	Snapshot         *storage.HookTaskSnapshot
+	Actor            string
+	EventID          string
+	OccurredAt       time.Time
+	Immediate        bool // skip coalesce/quiet hours (test sends)
 }
 
 func (ev Event) isSiteEvent() bool {
-	return ev.Type == EventJoinRequest
+	switch ev.Type {
+	case EventJoinRequest, EventJoinApproved, EventJoinDenied:
+		return true
+	default:
+		return false
+	}
 }
 
 func (ev Event) isProjectLevel() bool {
-	return ev.Type == EventProjectUpdated || ev.Type == EventTaskReordered
+	switch ev.Type {
+	case EventProjectUpdated, EventProjectArchived, EventProjectRestored,
+		EventTaskReordered, EventProjectMemberJoined, EventProjectMemberLeft,
+		EventSprintCreated, EventSprintStarted, EventSprintEnded:
+		return true
+	default:
+		return false
+	}
 }
 
 func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[string]string {
@@ -100,10 +135,15 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 		"count":        strconv.Itoa(count),
 		"join_email":   ev.JoinEmail,
 		"join_message": truncateRunes(ev.JoinMessage, 200),
+		"mentions":     strings.Join(ev.Mentions, ", "),
+		"member":       ev.MemberName,
 		"event":        ev.Type,
 		"event_id":     ev.EventID,
 		"occurred_at":  formatOccurred(ev.OccurredAt),
 		"changed":      strings.Join(ev.Changed, ","),
+	}
+	if ev.SprintName != "" {
+		vars["sprint"] = ev.SprintName
 	}
 	if len(snap.CustomFields) > 0 {
 		if raw, err := json.Marshal(snap.CustomFields); err == nil {
@@ -114,7 +154,7 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 	if snap.ProjectID > 0 && (id <= 0 || ev.isProjectLevel()) {
 		vars["url"] = publicProjectURL(snap.ProjectID)
 	}
-	if ev.Type == EventJoinRequest {
+	if ev.isSiteEvent() {
 		vars["url"] = publicAdminJoinURL()
 		if vars["name"] == "" {
 			vars["name"] = ev.JoinEmail

@@ -167,6 +167,7 @@ func createProjectSprintRecord(projectID, actorUserID int, in CreateProjectSprin
 	}
 	_ = storage.LogProjectEvent(projectID, actorUserID, "sprint_added", meta)
 	live.AfterProjectChange(actorUserID, projectID, live.TypeProjectUpdated)
+	dispatchSprintLifecycleHooks(actorUserID, projectID, s, true)
 	return s, nil
 }
 
@@ -259,6 +260,7 @@ func UpdateProjectSprintForUser(ctx context.Context, userID, projectID, sprintID
 		"sprint_id": s.ID, "name": s.Name,
 	})
 	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	dispatchSprintLifecycleHooks(userID, projectID, s, false)
 	return s, nil
 }
 
@@ -355,4 +357,27 @@ func applyTaskSprint(taskID, projectID, userID int, sprintID *int) error {
 		}
 	}
 	return storage.SetTaskSprintID(taskID, sprintID)
+}
+
+func dispatchSprintLifecycleHooks(actorID, projectID int, s *storage.ProjectSprint, created bool) {
+	if s == nil {
+		return
+	}
+	meta := &live.TaskHookMeta{SprintID: s.ID, SprintName: s.Name}
+	if created {
+		live.DispatchProjectHook(actorID, projectID, live.TypeSprintCreated, meta)
+	}
+	today := time.Now().UTC().Format("2006-01-02")
+	if s.StartDate != nil && storage.FormatSprintDate(*s.StartDate) == today {
+		ok, err := storage.TryMarkSprintHookSent(s.ID, live.TypeSprintStarted)
+		if err == nil && ok {
+			live.DispatchProjectHook(actorID, projectID, live.TypeSprintStarted, meta)
+		}
+	}
+	if s.EndDate != nil && storage.FormatSprintDate(*s.EndDate) == today {
+		ok, err := storage.TryMarkSprintHookSent(s.ID, live.TypeSprintEnded)
+		if err == nil && ok {
+			live.DispatchProjectHook(actorID, projectID, live.TypeSprintEnded, meta)
+		}
+	}
 }

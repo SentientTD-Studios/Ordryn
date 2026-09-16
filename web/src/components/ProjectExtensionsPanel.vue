@@ -6,12 +6,15 @@ import type {
   ProjectExtension,
   ProjectExtensionPatch,
   ProjectInboundWebhook,
+  ProjectMember,
+  ProjectStatus,
   Tag,
 } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useSite } from '@/composables/useSite'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
+import { withBase } from '@/base'
 
 const props = defineProps<{
   project: Project
@@ -23,6 +26,8 @@ const inboundAllowed = computed(() => !!siteInfo.value?.enable_inbound_webhooks)
 const loading = ref(false)
 const extensions = ref<ProjectExtension[]>([])
 const tags = ref<Tag[]>([])
+const members = ref<ProjectMember[]>([])
+const statuses = ref<ProjectStatus[]>([])
 const inbound = ref<ProjectInboundWebhook | null>(null)
 const inboundBusy = ref(false)
 const shownInboundSecret = ref('')
@@ -31,6 +36,7 @@ const testBusyId = ref<string | null>(null)
 const secretDraft = reactive<Record<string, string>>({})
 const mentionDraft = reactive<Record<string, string>>({})
 const shownSigning = reactive<Record<string, string>>({})
+const shownCallback = reactive<Record<string, string>>({})
 const sampleJSON = reactive<Record<string, string>>({})
 const expanded = reactive<Record<string, boolean>>({})
 const listIsOwner = ref(false)
@@ -42,13 +48,55 @@ function hookNames(ext: ProjectExtension): string[] {
   return (ext.manifest.hooks || []).map((h) => h.on)
 }
 
+function hookLabel(ext: ProjectExtension, on: string): string {
+  const hook = (ext.manifest.hooks || []).find((h) => h.on === on)
+  return hook?.label || on
+}
+
+function hasUI(ext: ProjectExtension) {
+  return !!ext.manifest.ui
+}
+
+function iconSrc(ext: ProjectExtension) {
+  return ext.manifest.icon ? withBase(`/api/v1/extensions/${ext.id}/icon`) : ''
+}
+
+function uiSrc(ext: ProjectExtension) {
+  return withBase(`/api/v1/projects/${props.project.id}/extensions/${ext.id}/ui`)
+}
+
+function canRotateCallback(ext: ProjectExtension) {
+  return hasControl(ext, 'rotate_callback') || (ext.manifest.permissions || []).length > 0
+}
+
+function valueOf(src: FilterSource, key: string): string {
+  return src.values?.[key] || ''
+}
+
+function setValue(src: FilterSource, key: string, value: string) {
+  if (!src.values) src.values = {}
+  src.values[key] = value
+}
+
+function memberLabel(m: ProjectMember): string {
+  return m.user_name || m.email || String(m.user_id)
+}
+
 function settingScope(field: { scope?: string }) {
   return field.scope || 'site'
 }
 
 function settingsForForm(ext: ProjectExtension, member: boolean) {
   const scope = member ? 'member' : 'project'
-  return (ext.manifest.settings || []).filter((f) => settingScope(f) === scope)
+  const all = ext.manifest.settings || []
+  const fields = all.filter((f) => settingScope(f) === scope)
+  if (!member || fields.length === 0) return fields
+  const extras: typeof fields = []
+  for (const key of [destKey(ext), 'ntfy_auth']) {
+    const field = all.find((f) => f.key === key && f.type === 'secret')
+    if (field && !fields.some((f) => f.key === field.key)) extras.push(field)
+  }
+  return extras.length ? [...extras, ...fields] : fields
 }
 
 function hasMemberForm(ext: ProjectExtension) {
@@ -187,47 +235,64 @@ function applyDefaults(list: ProjectExtension[]) {
   for (const e of list) {
     if (!(e.settings.triggers || []).length) e.settings.triggers = hookNames(e)
     if (!e.settings.templates) e.settings.templates = {}
-    if (!e.member) e.member = { enabled: false, triggers: hookNames(e), templates: {}, status_only: false }
+    if (!e.settings.values) e.settings.values = {}
+    if (!e.member) e.member = { enabled: false, triggers: hookNames(e), templates: {}, status_only: false, values: {} }
     if (!(e.member.triggers || []).length) e.member.triggers = hookNames(e)
     if (!e.member.templates) e.member.templates = {}
+    if (!e.member.values) e.member.values = {}
     if (hasSetting(e, 'mention_map') && mentionDraft[e.id] === undefined) {
       mentionDraft[e.id] = e.settings.mention_map ? JSON.stringify(e.settings.mention_map, null, 2) : ''
     }
   }
 }
 
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
+  const projectId = props.project.id
   loading.value = true
   try {
-    const [res, tagList] = await Promise.all([
-      api.listProjectExtensions(props.project.id),
-      api.listTags({ project_id: props.project.id }).catch(() => [] as Tag[]),
+    const [res, tagList, memberList, statusList] = await Promise.all([
+      api.listProjectExtensions(projectId),
+      api.listTags({ project_id: projectId }).catch(() => [] as Tag[]),
+      api.listProjectMembers(projectId).catch(() => [] as ProjectMember[]),
+      api.listProjectStatuses(projectId).catch(() => [] as ProjectStatus[]),
     ])
+    if (seq !== loadSeq) return
     extensions.value = res.extensions
     listIsOwner.value = !!res.is_owner
     tags.value = tagList || []
+    members.value = memberList || []
+    statuses.value = statusList || []
     applyDefaults(extensions.value)
-    await loadInbound()
+    await loadInbound(projectId, seq)
   } catch (err) {
+    if (seq !== loadSeq) return
     toast.push(err instanceof APIError ? err.message : 'Failed to load extensions', 'error')
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
-async function loadInbound() {
+async function loadInbound(projectId = props.project.id, seq?: number) {
+  if (seq !== undefined && seq !== loadSeq) return
   if (!listIsOwner.value || !inboundAllowed.value) {
+    if (seq !== undefined && seq !== loadSeq) return
     inbound.value = null
     shownInboundSecret.value = ''
     return
   }
-  inbound.value = await api.getProjectInbound(props.project.id).catch(() => null)
+  const next = await api.getProjectInbound(projectId).catch(() => null)
+  if (seq !== undefined && seq !== loadSeq) return
+  inbound.value = next
 }
 
 function replaceExtension(updated: ProjectExtension) {
   extensions.value = extensions.value.map((e) => (e.id === updated.id ? updated : e))
   applyDefaults(extensions.value)
   if (updated.signing_secret) shownSigning[updated.id] = updated.signing_secret
+  if (updated.callback_token) shownCallback[updated.id] = updated.callback_token
 }
 
 function parseMentionMap(ext: ProjectExtension): Record<string, string> | undefined {
@@ -270,6 +335,7 @@ function payloadFrom(ext: ProjectExtension, member: boolean, extra: ProjectExten
     if (mentions === undefined) return null
     payload.mention_map = mentions
   }
+  payload.values = { ...(src.values || {}) }
   const key = destKey(ext)
   const destDraft = secretDraft[draftKey(ext, key, member)]?.trim()
   if (destDraft) payload.webhook_url = destDraft
@@ -294,6 +360,22 @@ async function save(ext: ProjectExtension, member: boolean) {
     toast.push(member ? 'Notify-me settings saved' : 'Team webhook saved', 'success')
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Save failed', 'error')
+  } finally {
+    busyId.value = null
+  }
+}
+
+async function rotateCallback(ext: ProjectExtension, member: boolean) {
+  busyId.value = `${ext.id}:cb:${member ? 'me' : 'team'}`
+  try {
+    const payload: ProjectExtensionPatch = { rotate_callback: true }
+    const saved = member
+      ? await api.patchProjectExtensionMe(props.project.id, ext.id, payload)
+      : await api.patchProjectExtension(props.project.id, ext.id, payload)
+    replaceExtension(saved)
+    toast.push('Callback token rotated — copy it now', 'success')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Rotate failed', 'error')
   } finally {
     busyId.value = null
   }
@@ -393,7 +475,7 @@ watch(
 )
 
 watch(inboundAllowed, () => {
-  void loadInbound()
+  void loadInbound(props.project.id)
 })
 </script>
 
@@ -407,7 +489,8 @@ watch(inboundAllowed, () => {
       </div>
       <div class="card-body">
         <p class="small text-muted">
-          Public <code>POST</code> to create a task or add a comment. Sign with
+          Public <code>POST</code> to create a task, add a comment, or (when an enabled extension
+          declares them) complete a task or set a custom field. Sign with
           <code>X-Ordryn-Signature: sha256=…</code> or send <code>X-Ordryn-Webhook-Secret</code>.
         </p>
         <p class="text-break small"><code>{{ inbound.url }}</code></p>
@@ -455,12 +538,18 @@ watch(inboundAllowed, () => {
       >
         <span class="d-flex align-items-center gap-2">
           <i class="bi" :class="expanded[ext.id] ? 'bi-chevron-down' : 'bi-chevron-right'" aria-hidden="true" />
+          <img v-if="iconSrc(ext)" :src="iconSrc(ext)" alt="" width="20" height="20" class="rounded" />
           <span class="h6 mb-0">{{ ext.name || ext.id }}</span>
         </span>
       </button>
       <div class="card-body pt-0">
         <div v-if="expanded[ext.id]">
           <p v-if="ext.manifest.description" class="small text-muted">{{ ext.manifest.description }}</p>
+          <p v-if="ext.manifest.author || ext.manifest.license || ext.manifest.homepage" class="small text-muted">
+            <span v-if="ext.manifest.author">{{ ext.manifest.author }}</span>
+            <span v-if="ext.manifest.license"> · {{ ext.manifest.license }}</span>
+            <a v-if="ext.manifest.homepage" :href="ext.manifest.homepage" target="_blank" rel="noopener noreferrer">Homepage</a>
+          </p>
           <p v-if="!isOwner && !hasMemberForm(ext) && !customFields(ext).length" class="small text-muted mb-0">
             The project owner configures this extension.
           </p>
@@ -511,7 +600,7 @@ watch(inboundAllowed, () => {
                       :checked="(ext.settings.triggers || []).includes(hook)"
                       @change="toggleTrigger(ext, hook, ($event.target as HTMLInputElement).checked, false)"
                     />
-                    <label class="form-check-label" :for="`proj-ext-${ext.id}-hook-${hook}`">{{ hook }}</label>
+                    <label class="form-check-label" :for="`proj-ext-${ext.id}-hook-${hook}`">{{ hookLabel(ext, hook) }}</label>
                   </div>
                 </template>
                 <template v-else-if="field.type === 'bool'">
@@ -525,6 +614,54 @@ watch(inboundAllowed, () => {
                     />
                     <label class="form-check-label" :for="`proj-ext-${ext.id}-team-${field.key}`">{{ field.label }}</label>
                   </div>
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'select'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select
+                    class="form-select form-select-sm"
+                    :value="valueOf(ext.settings, field.key)"
+                    @change="setValue(ext.settings, field.key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">None</option>
+                    <option v-for="opt in field.options || []" :key="opt.value" :value="opt.value">
+                      {{ opt.label || opt.value }}
+                    </option>
+                  </select>
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'status'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select
+                    class="form-select form-select-sm"
+                    :value="valueOf(ext.settings, field.key)"
+                    @change="setValue(ext.settings, field.key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">Any</option>
+                    <option v-for="st in statuses" :key="st.id" :value="String(st.id)">{{ st.name }}</option>
+                  </select>
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'user'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select
+                    class="form-select form-select-sm"
+                    :value="valueOf(ext.settings, field.key)"
+                    @change="setValue(ext.settings, field.key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">Anyone</option>
+                    <option v-for="m in members" :key="m.user_id" :value="String(m.user_id)">{{ memberLabel(m) }}</option>
+                  </select>
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'string' || field.type === 'int'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <input
+                    class="form-control form-control-sm"
+                    :type="field.type === 'int' ? 'number' : 'text'"
+                    :value="valueOf(ext.settings, field.key)"
+                    @input="setValue(ext.settings, field.key, ($event.target as HTMLInputElement).value)"
+                  />
                   <div v-if="field.description" class="form-text">{{ field.description }}</div>
                 </template>
                 <template v-else-if="field.type === 'priority' || field.key === 'min_priority'">
@@ -609,9 +746,10 @@ watch(inboundAllowed, () => {
                   Tokens: <code>{task}</code> <code>{name}</code> <code>{status}</code> <code>{old_status}</code>
                   <code>{project}</code> <code>{actor}</code> <code>{url}</code> <code>{id}</code> <code>{priority}</code>
                   <code>{comment}</code> <code>{claimed_by}</code> <code>{due_date}</code> <code>{sprint}</code> <code>{tags}</code>
+                  <code>{mentions}</code> <code>{member}</code>
                 </p>
                 <div v-for="hook in hookNames(ext)" :key="`tmpl-${hook}`" class="mb-2">
-                  <label class="form-label">{{ hook }}</label>
+                  <label class="form-label">{{ hookLabel(ext, hook) }}</label>
                   <textarea
                     class="form-control"
                     rows="2"
@@ -624,6 +762,10 @@ watch(inboundAllowed, () => {
                 Signing secret (shown once): <code class="user-select-all">{{ shownSigning[ext.id] }}</code>
               </div>
               <p v-else-if="hasControl(ext, 'rotate_signing') && ext.signing_set" class="small text-success">Outbound HMAC signing secret is set.</p>
+              <div v-if="shownCallback[ext.id]" class="alert alert-warning">
+                Callback token (shown once): <code class="user-select-all">{{ shownCallback[ext.id] }}</code>
+              </div>
+              <p v-else-if="canRotateCallback(ext) && ext.callback_set" class="small text-success">Callback token is set. JSON webhooks include it as <code>callback_token</code>.</p>
               <div v-if="ext.settings.last_error" class="alert alert-warning">Last delivery error: {{ ext.settings.last_error }}</div>
               <div v-if="ext.deliveries?.length" class="small mb-2">
                 <div class="fw-semibold">Recent deliveries</div>
@@ -635,7 +777,7 @@ watch(inboundAllowed, () => {
                   </li>
                 </ul>
               </div>
-              <div v-if="hasControl(ext, 'send_test') || hasControl(ext, 'rotate_signing')" class="d-flex flex-wrap gap-2">
+              <div v-if="hasControl(ext, 'send_test') || hasControl(ext, 'rotate_signing') || canRotateCallback(ext)" class="d-flex flex-wrap gap-2">
                 <button
                   v-if="hasControl(ext, 'send_test')"
                   type="button"
@@ -653,6 +795,15 @@ watch(inboundAllowed, () => {
                   @click="rotateSigning(ext, false)"
                 >
                   Rotate signing secret
+                </button>
+                <button
+                  v-if="canRotateCallback(ext)"
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="!!busyId"
+                  @click="rotateCallback(ext, false)"
+                >
+                  Rotate callback token
                 </button>
               </div>
               <pre v-if="hasControl(ext, 'sample_json') && sampleJSON[ext.id]" class="small bg-body-tertiary p-2 mt-3 mb-0 overflow-auto">{{ sampleJSON[ext.id] }}</pre>
@@ -695,7 +846,7 @@ watch(inboundAllowed, () => {
                       :checked="(ext.member?.triggers || []).includes(hook)"
                       @change="toggleTrigger(ext, hook, ($event.target as HTMLInputElement).checked, true)"
                     />
-                    <label class="form-check-label">{{ hook }}</label>
+                    <label class="form-check-label">{{ hookLabel(ext, hook) }}</label>
                   </div>
                 </template>
                 <template v-else-if="field.type === 'bool'">
@@ -708,6 +859,41 @@ watch(inboundAllowed, () => {
                     />
                     <label class="form-check-label">{{ field.label }}</label>
                   </div>
+                </template>
+                <template v-else-if="field.type === 'select'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select
+                    class="form-select form-select-sm"
+                    :value="valueOf(ext.member!, field.key)"
+                    @change="setValue(ext.member!, field.key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">None</option>
+                    <option v-for="opt in field.options || []" :key="opt.value" :value="opt.value">
+                      {{ opt.label || opt.value }}
+                    </option>
+                  </select>
+                </template>
+                <template v-else-if="field.type === 'status'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select
+                    class="form-select form-select-sm"
+                    :value="valueOf(ext.member!, field.key)"
+                    @change="setValue(ext.member!, field.key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">Any</option>
+                    <option v-for="st in statuses" :key="st.id" :value="String(st.id)">{{ st.name }}</option>
+                  </select>
+                </template>
+                <template v-else-if="field.type === 'user'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select
+                    class="form-select form-select-sm"
+                    :value="valueOf(ext.member!, field.key)"
+                    @change="setValue(ext.member!, field.key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">Anyone</option>
+                    <option v-for="m in members" :key="m.user_id" :value="String(m.user_id)">{{ memberLabel(m) }}</option>
+                  </select>
                 </template>
                 <template v-else-if="field.type === 'priority' || field.key === 'min_priority'">
                   <label class="form-label">{{ field.label }}</label>
@@ -766,7 +952,7 @@ watch(inboundAllowed, () => {
               <div v-if="hookNames(ext).length" class="mb-3">
                 <div class="fw-semibold mb-2">Messages</div>
                 <div v-for="hook in hookNames(ext)" :key="`me-tmpl-${hook}`" class="mb-2">
-                  <label class="form-label">{{ hook }}</label>
+                  <label class="form-label">{{ hookLabel(ext, hook) }}</label>
                   <textarea
                     class="form-control"
                     rows="2"
@@ -785,7 +971,7 @@ watch(inboundAllowed, () => {
                   </li>
                 </ul>
               </div>
-              <div v-if="hasControl(ext, 'send_test') || hasControl(ext, 'rotate_signing')" class="d-flex flex-wrap gap-2">
+              <div v-if="hasControl(ext, 'send_test') || hasControl(ext, 'rotate_signing') || canRotateCallback(ext)" class="d-flex flex-wrap gap-2">
                 <button
                   v-if="hasControl(ext, 'send_test')"
                   type="button"
@@ -804,9 +990,30 @@ watch(inboundAllowed, () => {
                 >
                   Rotate my signing secret
                 </button>
+                <button
+                  v-if="canRotateCallback(ext)"
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="!!busyId"
+                  @click="rotateCallback(ext, true)"
+                >
+                  Rotate my callback token
+                </button>
               </div>
             </form>
           </fieldset>
+
+          <div v-if="hasUI(ext)" class="mt-3">
+            <div class="fw-semibold mb-2">Extension panel</div>
+            <iframe
+              class="w-100 border rounded"
+              style="min-height: 280px; background: var(--bs-body-bg)"
+              :src="uiSrc(ext)"
+              sandbox="allow-scripts allow-forms allow-popups"
+              referrerpolicy="no-referrer"
+              title="Extension panel"
+            />
+          </div>
         </div>
       </div>
     </div>

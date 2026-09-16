@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"GoTodo/internal/domain"
+	"GoTodo/internal/live"
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
@@ -186,6 +187,7 @@ func APIV1AdminJoinRequestsRouter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		emailSiteInvite(r, jr.Email, inv.Token)
+		live.AfterJoinReviewed(jr.Email, jr.Message, true)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok":      true,
@@ -203,6 +205,7 @@ func APIV1AdminJoinRequestsRouter(w http.ResponseWriter, r *http.Request) {
 			writeJoinRequestReviewError(w, err)
 			return
 		}
+		live.AfterJoinReviewed(jr.Email, jr.Message, false)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok":      true,

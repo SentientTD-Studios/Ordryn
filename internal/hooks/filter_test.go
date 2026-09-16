@@ -163,6 +163,65 @@ func TestShouldDeliverIgnoresUndeclaredFilters(t *testing.T) {
 	}
 }
 
+func TestShouldDeliverMentionedAndMemberLeft(t *testing.T) {
+	m := extensions.Manifest{
+		ID:   "discord",
+		Name: "Discord",
+		Hooks: []extensions.Hook{
+			{On: "task.mentioned"},
+			{On: "project.member_left"},
+		},
+	}
+	site := storage.ExtensionSettings{Enabled: true}
+	mentioned := Event{Type: EventTaskMentioned, MentionedUserIDs: []int{2, 3}}
+
+	team := destFromProject(m, storage.ExtensionProjectSettings{
+		Enabled:  true,
+		Triggers: []string{EventTaskMentioned},
+	})
+	if !shouldDeliverDest(m, site, team, mentioned, 3) {
+		t.Fatal("team should receive mentions")
+	}
+
+	member := destFromMember(m, storage.ExtensionMemberSettings{
+		Enabled:  true,
+		Triggers: []string{EventTaskMentioned},
+	}, 2, false)
+	if !shouldDeliverDest(m, site, member, mentioned, 3) {
+		t.Fatal("mentioned member should receive")
+	}
+	other := destFromMember(m, storage.ExtensionMemberSettings{
+		Enabled:  true,
+		Triggers: []string{EventTaskMentioned},
+	}, 9, false)
+	if shouldDeliverDest(m, site, other, mentioned, 3) {
+		t.Fatal("unmentioned member should not receive")
+	}
+
+	left := Event{Type: EventProjectMemberLeft, MemberID: 2}
+	leftTeam := destFromProject(m, storage.ExtensionProjectSettings{
+		Enabled:  true,
+		Triggers: []string{EventProjectMemberLeft},
+	})
+	if !shouldDeliverDest(m, site, leftTeam, left, 3) {
+		t.Fatal("team should receive member_left")
+	}
+	departed := destFromMember(m, storage.ExtensionMemberSettings{
+		Enabled:  true,
+		Triggers: []string{EventProjectMemberLeft},
+	}, 2, false)
+	if shouldDeliverDest(m, site, departed, left, 3) {
+		t.Fatal("departed member should not receive member_left")
+	}
+	stayer := destFromMember(m, storage.ExtensionMemberSettings{
+		Enabled:  true,
+		Triggers: []string{EventProjectMemberLeft},
+	}, 3, false)
+	if !shouldDeliverDest(m, site, stayer, left, 3) {
+		t.Fatal("remaining member should receive member_left")
+	}
+}
+
 func TestApplyMentions(t *testing.T) {
 	if got := applyMentions("ada", map[string]string{"ada": "<@U1>"}); got != "<@U1>" {
 		t.Fatalf("got %q", got)
