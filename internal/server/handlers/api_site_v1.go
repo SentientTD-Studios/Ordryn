@@ -26,6 +26,7 @@ type apiSiteResponse struct {
 	AllowUserInvites         bool   `json:"allow_user_invites"`
 	UserInviteLimit          int    `json:"user_invite_limit"`
 	InviteExpirationDays     int    `json:"invite_expiration_days"`
+	EnableInboundWebhooks    bool   `json:"enable_inbound_webhooks"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -70,5 +71,6 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		AllowUserInvites:         settings.AllowUserInvites,
 		UserInviteLimit:          settings.UserInviteLimit,
 		InviteExpirationDays:     settings.InviteExpirationDays,
+		EnableInboundWebhooks:    settings.EnableInboundWebhooks,
 	})
 }

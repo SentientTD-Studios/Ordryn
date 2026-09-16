@@ -288,6 +288,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSiteSettingsAddUserInvitesAndExpiration failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateSiteSettingsAddInboundWebhooks(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddInboundWebhooks failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateInvitesAddFields(); err != nil {
 		fmt.Printf("migration: MigrateInvitesAddFields failed: %v\n", err)
 		errCount++

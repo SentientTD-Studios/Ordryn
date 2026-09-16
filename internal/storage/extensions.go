@@ -83,6 +83,7 @@ type HookTaskSnapshot struct {
 	Priority      int
 	ProjectID     int
 	ProjectName   string
+	WorkflowMode  string
 	StatusName    string
 	OwnerID       int
 	ClaimedBy     int
@@ -558,7 +559,7 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 	var projectID sql.NullInt64
 	err = pool.QueryRow(context.Background(), `
 		SELECT t.id, t.title, COALESCE(t.completed, false), COALESCE(t.priority, 0),
-		       t.project_id, COALESCE(p.name, ''), COALESCE(ps.name, ''),
+		       t.project_id, COALESCE(p.name, ''), COALESCE(p.workflow_mode, 'classic'), COALESCE(ps.name, ''),
 		       t.user_id, COALESCE(t.claimed_by, 0), COALESCE(u.user_name, u.email, ''),
 		       COALESCE(CAST(t.due_date AS TEXT), ''), COALESCE(t.sprint_id, 0), COALESCE(sp.name, '')
 		FROM tasks t
@@ -567,7 +568,7 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 		LEFT JOIN users u ON u.id = t.claimed_by
 		LEFT JOIN project_sprints sp ON sp.id = t.sprint_id
 		WHERE t.id = $1`, taskID).Scan(
-		&s.ID, &s.Title, &s.Completed, &s.Priority, &projectID, &s.ProjectName, &s.StatusName,
+		&s.ID, &s.Title, &s.Completed, &s.Priority, &projectID, &s.ProjectName, &s.WorkflowMode, &s.StatusName,
 		&s.OwnerID, &s.ClaimedBy, &s.ClaimedByName, &s.DueDate, &s.SprintID, &s.SprintName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
@@ -619,7 +620,7 @@ func GetHookProjectSnapshot(projectID int) (*HookTaskSnapshot, error) {
 	defer CloseDatabase(pool)
 	var s HookTaskSnapshot
 	err = pool.QueryRow(context.Background(),
-		`SELECT id, name, user_id FROM projects WHERE id = $1`, projectID).Scan(&s.ProjectID, &s.ProjectName, &s.OwnerID)
+		`SELECT id, name, user_id, COALESCE(workflow_mode, 'classic') FROM projects WHERE id = $1`, projectID).Scan(&s.ProjectID, &s.ProjectName, &s.OwnerID, &s.WorkflowMode)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("project not found")

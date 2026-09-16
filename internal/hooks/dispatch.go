@@ -89,6 +89,24 @@ func snapshotFor(ev Event) (*storage.HookTaskSnapshot, error) {
 	return nil, fmt.Errorf("missing snapshot")
 }
 
+// MemberDestinationsAllowed reports whether per-user (scope=member) destinations may
+// receive events for this project. Inbox tasks (no project) are allowed. Kanban
+// boards are team-webhook only so members cannot fan out board activity.
+func MemberDestinationsAllowed(projectID int, workflowMode string) bool {
+	if projectID <= 0 {
+		return true
+	}
+	mode := strings.ToLower(strings.TrimSpace(workflowMode))
+	if mode == "" {
+		var err error
+		mode, err = storage.GetProjectWorkflowMode(projectID)
+		if err != nil {
+			return false
+		}
+	}
+	return mode != storage.WorkflowKanban
+}
+
 func deliverSite(entry extensions.Entry, site storage.ExtensionSettings, ev Event) {
 	if !shouldDeliverSite(entry.Manifest, site, ev) {
 		return
@@ -119,7 +137,7 @@ func deliverProjectTeam(entry extensions.Entry, site storage.ExtensionSettings, 
 		log.Printf("hooks: load project settings %s project=%d: %v", entry.ID, ev.ProjectID, err)
 		return
 	}
-	dest := destFromProject(project)
+	dest := destFromProject(entry.Manifest, project)
 	if !shouldDeliverDest(entry.Manifest, site, dest, ev, ev.ProjectID) {
 		return
 	}
@@ -143,14 +161,24 @@ func deliverProjectTeam(entry extensions.Entry, site storage.ExtensionSettings, 
 }
 
 func deliverProjectMembers(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot) {
+	if !entry.Manifest.HasMemberSettings() {
+		return
+	}
+	mode := ""
+	if snap != nil {
+		mode = snap.WorkflowMode
+	}
+	if !MemberDestinationsAllowed(ev.ProjectID, mode) {
+		return
+	}
 	members, err := storage.ListEnabledMemberSettings(entry.ID, ev.ProjectID)
 	if err != nil {
 		log.Printf("hooks: member settings %s project=%d: %v", entry.ID, ev.ProjectID, err)
 		return
 	}
 	for _, mem := range members {
-		dest := destFromMember(mem.Settings, mem.UserID, false)
-		if dest.MentionMap == nil {
+		dest := destFromMember(entry.Manifest, mem.Settings, mem.UserID, false)
+		if entry.Manifest.HasSetting("mention_map") && dest.MentionMap == nil {
 			if p, err := storage.GetExtensionProjectSettings(entry.ID, ev.ProjectID); err == nil {
 				dest.MentionMap = p.MentionMap
 			}
@@ -179,6 +207,9 @@ func deliverProjectMembers(entry extensions.Entry, site storage.ExtensionSetting
 }
 
 func deliverPersonal(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot) {
+	if !entry.Manifest.HasMemberSettings() {
+		return
+	}
 	ownerID := snap.OwnerID
 	if ownerID <= 0 {
 		ownerID = ev.OwnerID
@@ -190,7 +221,7 @@ func deliverPersonal(entry extensions.Entry, site storage.ExtensionSettings, ev 
 	if err != nil || !mem.Enabled {
 		return
 	}
-	dest := destFromMember(mem, ownerID, true)
+	dest := destFromMember(entry.Manifest, mem, ownerID, true)
 	if !shouldDeliverDest(entry.Manifest, site, dest, ev, 0) {
 		return
 	}
@@ -448,6 +479,9 @@ func DeliverTestForUser(extensionID string, projectID, userID int, projectName s
 	}
 	if entry.Manifest.Delivery == nil {
 		return fmt.Errorf("extension has no delivery")
+	}
+	if userID > 0 && !MemberDestinationsAllowed(projectID, "") {
+		return fmt.Errorf("member destinations are not available on kanban projects")
 	}
 	if strings.TrimSpace(projectName) == "" {
 		projectName = "Test project"

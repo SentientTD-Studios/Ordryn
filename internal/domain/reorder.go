@@ -60,6 +60,7 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, isFav bool, projec
 	defer storage.CloseDatabase(pool)
 
 	nesting := parentID != nil && *parentID > 0
+	columnMoves := 0
 	for _, id := range ids {
 		canRead, writeRole, _, accessErr := storage.CanUserAccessTask(id, userID)
 		if accessErr != nil {
@@ -111,6 +112,7 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, isFav bool, projec
 					if err := applyKanbanColumnMove(userID, id, projectID, *statusFilter, oldStatusID, completed); err != nil {
 						return err
 					}
+					columnMoves++
 				}
 			}
 		}
@@ -190,6 +192,12 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, isFav bool, projec
 	if statusFilter == nil {
 		_ = storage.LogTaskEvent(ids[0], userID, "reordered", map[string]interface{}{"count": len(ids)})
 	}
-	live.AfterTasksChange(userID, live.TypeTaskReordered, ids)
+	if columnMoves > 0 {
+		// Status changes already dispatched task.updated; keep SSE so the board
+		// refreshes order without a second outbound webhook.
+		live.AfterTasksChangeLive(userID, live.TypeTaskReordered, ids)
+	} else {
+		live.AfterTasksChange(userID, live.TypeTaskReordered, ids)
+	}
 	return nil
 }

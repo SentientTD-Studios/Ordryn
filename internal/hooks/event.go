@@ -63,7 +63,7 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 	if ev.NewStatus != "" {
 		status = ev.NewStatus
 	}
-	if status == "" {
+	if status == "" && !ev.isProjectLevel() {
 		if snap.Completed {
 			status = "Completed"
 		} else {

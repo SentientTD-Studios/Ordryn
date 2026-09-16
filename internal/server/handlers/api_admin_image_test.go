@@ -109,6 +109,7 @@ func TestAdminSettingsJSONIncludesImageHosting(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{
+		"enable_inbound_webhooks",
 		"image_hosting_provider",
 		"image_max_bytes",
 		"image_s3_endpoint",

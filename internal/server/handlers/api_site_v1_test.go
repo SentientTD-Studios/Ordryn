@@ -46,6 +46,7 @@ func TestAPISiteResponsePublicFields(t *testing.T) {
 		"allow_user_invites",
 		"user_invite_limit",
 		"invite_expiration_days",
+		"enable_inbound_webhooks",
 	} {
 		if _, ok := m[key]; !ok {
 			t.Fatalf("missing key %q in %s", key, string(raw))

@@ -10,6 +10,7 @@ import type {
 } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
+import { useSite } from '@/composables/useSite'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 
 const props = defineProps<{
@@ -17,6 +18,8 @@ const props = defineProps<{
 }>()
 
 const toast = useToast()
+const { siteInfo } = useSite()
+const inboundAllowed = computed(() => !!siteInfo.value?.enable_inbound_webhooks)
 const loading = ref(false)
 const extensions = ref<ProjectExtension[]>([])
 const tags = ref<Tag[]>([])
@@ -33,21 +36,108 @@ const expanded = reactive<Record<string, boolean>>({})
 const listIsOwner = ref(false)
 
 const isOwner = computed(() => listIsOwner.value || (props.project.role || 'owner') === 'owner')
+const isKanban = computed(() => (props.project.workflow_mode || 'classic') === 'kanban')
 
 function hookNames(ext: ProjectExtension): string[] {
   return (ext.manifest.hooks || []).map((h) => h.on)
 }
 
-function projectFields(ext: ProjectExtension) {
-  return (ext.manifest.settings || []).filter((f) => f.scope === 'project')
+function settingScope(field: { scope?: string }) {
+  return field.scope || 'site'
+}
+
+function settingsForForm(ext: ProjectExtension, member: boolean) {
+  const scope = member ? 'member' : 'project'
+  return (ext.manifest.settings || []).filter((f) => settingScope(f) === scope)
+}
+
+function hasMemberForm(ext: ProjectExtension) {
+  return !isKanban.value && settingsForForm(ext, true).length > 0
+}
+
+function hasControl(ext: ProjectExtension, name: string) {
+  return (ext.manifest.controls || []).includes(name)
+}
+
+function hasSetting(ext: ProjectExtension, key: string) {
+  return (ext.manifest.settings || []).some(
+    (f) => f.key === key || (f.type === 'field_filter' && (key === 'field_key' || key === 'field_value' || key === 'field_filter')),
+  )
+}
+
+type FilterSource = ProjectExtension['settings'] | NonNullable<ProjectExtension['member']>
+
+function boolValue(src: FilterSource, key: string, member: boolean): boolean {
+  switch (key) {
+    case 'status_only':
+      return !!src.status_only
+    case 'skip_self':
+      return member ? src.skip_self !== false : !!src.skip_self
+    case 'claimed_only':
+      return !!src.claimed_only
+    case 'claimed_is_me':
+      return !!(src as NonNullable<ProjectExtension['member']>).claimed_is_me
+    default:
+      return false
+  }
+}
+
+function setBool(src: FilterSource, key: string, value: boolean) {
+  switch (key) {
+    case 'status_only':
+      src.status_only = value
+      break
+    case 'skip_self':
+      src.skip_self = value
+      break
+    case 'claimed_only':
+      src.claimed_only = value
+      break
+    case 'claimed_is_me':
+      (src as NonNullable<ProjectExtension['member']>).claimed_is_me = value
+      break
+  }
+}
+
+function stringValue(src: FilterSource, key: string): string {
+  switch (key) {
+    case 'quiet_hours_start':
+      return src.quiet_hours_start || ''
+    case 'quiet_hours_end':
+      return src.quiet_hours_end || ''
+    case 'digest':
+      return src.digest || ''
+    case 'field_key':
+      return src.field_key || ''
+    case 'field_value':
+      return src.field_value || ''
+    default:
+      return ''
+  }
+}
+
+function setString(src: FilterSource, key: string, value: string) {
+  switch (key) {
+    case 'quiet_hours_start':
+      src.quiet_hours_start = value
+      break
+    case 'quiet_hours_end':
+      src.quiet_hours_end = value
+      break
+    case 'digest':
+      src.digest = value
+      break
+    case 'field_key':
+      src.field_key = value
+      break
+    case 'field_value':
+      src.field_value = value
+      break
+  }
 }
 
 function customFields(ext: ProjectExtension) {
   return ext.manifest.fields || []
-}
-
-function isHookExtension(ext: ProjectExtension) {
-  return hookNames(ext).length > 0 || !!ext.manifest.delivery
 }
 
 function deliveryType(ext: ProjectExtension) {
@@ -98,10 +188,9 @@ function applyDefaults(list: ProjectExtension[]) {
     if (!e.member) e.member = { enabled: false, triggers: hookNames(e), templates: {}, status_only: false }
     if (!(e.member.triggers || []).length) e.member.triggers = hookNames(e)
     if (!e.member.templates) e.member.templates = {}
-    if (mentionDraft[e.id] === undefined) {
+    if (hasSetting(e, 'mention_map') && mentionDraft[e.id] === undefined) {
       mentionDraft[e.id] = e.settings.mention_map ? JSON.stringify(e.settings.mention_map, null, 2) : ''
     }
-    if (e.sample_json) sampleJSON[e.id] = e.sample_json
   }
 }
 
@@ -116,14 +205,21 @@ async function load() {
     listIsOwner.value = !!res.is_owner
     tags.value = tagList || []
     applyDefaults(extensions.value)
-    if (listIsOwner.value) {
-      inbound.value = await api.getProjectInbound(props.project.id)
-    }
+    await loadInbound()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load extensions', 'error')
   } finally {
     loading.value = false
   }
+}
+
+async function loadInbound() {
+  if (!listIsOwner.value || !inboundAllowed.value) {
+    inbound.value = null
+    shownInboundSecret.value = ''
+    return
+  }
+  inbound.value = await api.getProjectInbound(props.project.id).catch(() => null)
 }
 
 function replaceExtension(updated: ProjectExtension) {
@@ -152,20 +248,22 @@ function payloadFrom(ext: ProjectExtension, member: boolean, extra: ProjectExten
     enabled: src.enabled,
     triggers: [...(src.triggers || [])],
     templates: { ...(src.templates || {}) },
-    status_only: src.status_only,
-    skip_self: src.skip_self,
-    min_priority: src.min_priority || 0,
-    tag_ids: [...(src.tag_ids || [])],
-    claimed_only: src.claimed_only,
-    field_key: src.field_key || '',
-    field_value: src.field_value || '',
-    quiet_hours_start: src.quiet_hours_start || '',
-    quiet_hours_end: src.quiet_hours_end || '',
-    digest: src.digest || '',
     ...extra,
   }
-  if (member) payload.claimed_is_me = ext.member?.claimed_is_me
-  else {
+  if (hasSetting(ext, 'status_only')) payload.status_only = src.status_only
+  if (hasSetting(ext, 'skip_self')) payload.skip_self = member ? src.skip_self !== false : !!src.skip_self
+  if (hasSetting(ext, 'min_priority')) payload.min_priority = src.min_priority || 0
+  if (hasSetting(ext, 'tag_ids')) payload.tag_ids = [...(src.tag_ids || [])]
+  if (hasSetting(ext, 'claimed_only')) payload.claimed_only = src.claimed_only
+  if (member && hasSetting(ext, 'claimed_is_me')) payload.claimed_is_me = ext.member?.claimed_is_me
+  if (hasSetting(ext, 'field_key') || hasSetting(ext, 'field_value') || hasSetting(ext, 'field_filter')) {
+    payload.field_key = src.field_key || ''
+    payload.field_value = src.field_value || ''
+  }
+  if (hasSetting(ext, 'quiet_hours_start')) payload.quiet_hours_start = src.quiet_hours_start || ''
+  if (hasSetting(ext, 'quiet_hours_end')) payload.quiet_hours_end = src.quiet_hours_end || ''
+  if (hasSetting(ext, 'digest')) payload.digest = src.digest || ''
+  if (!member && hasSetting(ext, 'mention_map')) {
     const mentions = parseMentionMap(ext)
     if (mentions === undefined) return null
     payload.mention_map = mentions
@@ -291,17 +389,17 @@ watch(
   },
   { immediate: true },
 )
+
+watch(inboundAllowed, () => {
+  void loadInbound()
+})
 </script>
 
 <template>
   <div>
     <p v-if="loading" class="text-muted small mb-0">Loading extensions…</p>
-    <div v-else-if="!extensions.length" class="alert alert-secondary mb-0">
-      No project extensions are loaded. A site admin can copy a folder from
-      <code>examples/extensions/</code> into <code>data/extensions/</code> and restart the server.
-    </div>
-
-    <div v-else-if="isOwner && inbound" class="card mb-3">
+    <template v-else>
+    <div v-if="isOwner && inboundAllowed && inbound" class="card mb-3">
       <div class="card-header">
         <span class="h6 mb-0">Inbound webhook</span>
       </div>
@@ -340,6 +438,12 @@ watch(
       </div>
     </div>
 
+    <div v-if="!extensions.length" class="alert alert-secondary mb-0">
+      No extensions are available for this project. A site admin must enable them in Admin →
+      Extensions after copying a folder from <code>examples/extensions/</code> into
+      <code>data/extensions/</code>.
+    </div>
+
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
       <button
         type="button"
@@ -351,17 +455,13 @@ watch(
           <i class="bi" :class="expanded[ext.id] ? 'bi-chevron-down' : 'bi-chevron-right'" aria-hidden="true" />
           <span class="h6 mb-0">{{ ext.name || ext.id }}</span>
         </span>
-        <span v-if="ext.site_enabled" class="badge text-bg-success">Site enabled</span>
-        <span v-else class="badge text-bg-secondary">Site disabled</span>
       </button>
       <div class="card-body pt-0">
-        <div v-if="!ext.site_enabled" class="alert alert-warning">
-          A site admin must enable this extension in Admin → Extensions before this project can
-          {{ isHookExtension(ext) ? 'send notifications' : 'use its custom fields' }}.
-        </div>
-
         <div v-if="expanded[ext.id]">
           <p v-if="ext.manifest.description" class="small text-muted">{{ ext.manifest.description }}</p>
+          <p v-if="!isOwner && !hasMemberForm(ext) && !customFields(ext).length" class="small text-muted mb-0">
+            The project owner configures this extension.
+          </p>
 
           <div v-if="customFields(ext).length" class="mb-3">
             <div class="fw-semibold mb-2">Custom fields</div>
@@ -385,7 +485,7 @@ watch(
                   {{ busyId === `${ext.id}:team` ? 'Saving…' : 'Save team' }}
                 </button>
               </div>
-              <div v-for="field in projectFields(ext)" :key="`team-${field.key}`" class="mb-3">
+              <div v-for="field in settingsForForm(ext, false)" :key="`team-${field.key}`" class="mb-3">
                 <template v-if="field.type === 'secret'">
                   <label class="form-label" :for="`proj-ext-${ext.id}-team-${field.key}`">{{ field.label }}</label>
                   <input
@@ -398,14 +498,9 @@ watch(
                   />
                   <div v-if="field.description" class="form-text">{{ field.description }}</div>
                 </template>
-                <template v-else-if="field.type === 'bool' && field.key === 'status_only'">
-                  <div class="form-check">
-                    <input :id="`proj-ext-${ext.id}-status`" v-model="ext.settings.status_only" class="form-check-input" type="checkbox" />
-                    <label class="form-check-label" :for="`proj-ext-${ext.id}-status`">{{ field.label }}</label>
-                  </div>
-                </template>
                 <template v-else-if="field.type === 'hook_select'">
                   <div class="fw-semibold mb-2">{{ field.label }}</div>
+                  <div v-if="field.description" class="form-text mb-1">{{ field.description }}</div>
                   <div v-for="hook in hookNames(ext)" :key="`team-${hook}`" class="form-check">
                     <input
                       :id="`proj-ext-${ext.id}-hook-${hook}`"
@@ -417,63 +512,94 @@ watch(
                     <label class="form-check-label" :for="`proj-ext-${ext.id}-hook-${hook}`">{{ hook }}</label>
                   </div>
                 </template>
-              </div>
-              <div class="form-check mb-2">
-                <input :id="`proj-ext-${ext.id}-skip`" v-model="ext.settings.skip_self" class="form-check-input" type="checkbox" />
-                <label class="form-check-label" :for="`proj-ext-${ext.id}-skip`">Skip events I caused</label>
-              </div>
-              <div class="form-check mb-2">
-                <input :id="`proj-ext-${ext.id}-claimed`" v-model="ext.settings.claimed_only" class="form-check-input" type="checkbox" />
-                <label class="form-check-label" :for="`proj-ext-${ext.id}-claimed`">Only claimed tasks</label>
-              </div>
-              <div class="mb-2">
-                <label class="form-label" :for="`proj-ext-${ext.id}-pri`">Minimum priority</label>
-                <select :id="`proj-ext-${ext.id}-pri`" v-model.number="ext.settings.min_priority" class="form-select form-select-sm">
-                  <option :value="0">Any</option>
-                  <option :value="1">Low+</option>
-                  <option :value="2">Medium+</option>
-                  <option :value="3">High</option>
-                </select>
-              </div>
-              <div v-if="tags.length" class="mb-2">
-                <div class="fw-semibold mb-1">Only these tags</div>
-                <div v-for="tag in tags" :key="tag.id" class="form-check">
+                <template v-else-if="field.type === 'bool'">
+                  <div class="form-check">
+                    <input
+                      :id="`proj-ext-${ext.id}-team-${field.key}`"
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="boolValue(ext.settings, field.key, false)"
+                      @change="setBool(ext.settings, field.key, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <label class="form-check-label" :for="`proj-ext-${ext.id}-team-${field.key}`">{{ field.label }}</label>
+                  </div>
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'priority' || field.key === 'min_priority'">
+                  <label class="form-label" :for="`proj-ext-${ext.id}-pri`">{{ field.label }}</label>
+                  <select :id="`proj-ext-${ext.id}-pri`" v-model.number="ext.settings.min_priority" class="form-select form-select-sm">
+                    <option :value="0">Any</option>
+                    <option :value="1">Low+</option>
+                    <option :value="2">Medium+</option>
+                    <option :value="3">High</option>
+                  </select>
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'tag_ids' || field.key === 'tag_ids'">
+                  <div v-if="tags.length">
+                    <div class="fw-semibold mb-1">{{ field.label }}</div>
+                    <div v-if="field.description" class="form-text mb-1">{{ field.description }}</div>
+                    <div v-for="tag in tags" :key="tag.id" class="form-check">
+                      <input
+                        :id="`proj-ext-${ext.id}-tag-${tag.id}`"
+                        class="form-check-input"
+                        type="checkbox"
+                        :checked="(ext.settings.tag_ids || []).includes(tag.id)"
+                        @change="toggleTag(ext, tag.id, ($event.target as HTMLInputElement).checked, false)"
+                      />
+                      <label class="form-check-label" :for="`proj-ext-${ext.id}-tag-${tag.id}`">{{ tag.name }}</label>
+                    </div>
+                  </div>
+                </template>
+                <template v-else-if="field.type === 'time'">
+                  <label class="form-label">{{ field.label }}</label>
                   <input
-                    :id="`proj-ext-${ext.id}-tag-${tag.id}`"
-                    class="form-check-input"
-                    type="checkbox"
-                    :checked="(ext.settings.tag_ids || []).includes(tag.id)"
-                    @change="toggleTag(ext, tag.id, ($event.target as HTMLInputElement).checked, false)"
+                    :value="stringValue(ext.settings, field.key)"
+                    type="time"
+                    class="form-control form-control-sm"
+                    @input="setString(ext.settings, field.key, ($event.target as HTMLInputElement).value)"
                   />
-                  <label class="form-check-label" :for="`proj-ext-${ext.id}-tag-${tag.id}`">{{ tag.name }}</label>
-                </div>
-              </div>
-              <div class="row g-2 mb-2">
-                <div class="col-md-6">
-                  <label class="form-label">Quiet hours start</label>
-                  <input v-model="ext.settings.quiet_hours_start" type="time" class="form-control form-control-sm" />
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Quiet hours end</label>
-                  <input v-model="ext.settings.quiet_hours_end" type="time" class="form-control form-control-sm" />
-                </div>
-              </div>
-              <div class="mb-2">
-                <label class="form-label">Digest</label>
-                <select v-model="ext.settings.digest" class="form-select form-select-sm">
-                  <option value="">Immediate</option>
-                  <option value="hourly">Hourly</option>
-                  <option value="daily">Daily</option>
-                </select>
-              </div>
-              <div class="mb-2">
-                <label class="form-label">Custom field filter (key)</label>
-                <input v-model="ext.settings.field_key" class="form-control form-control-sm" placeholder="severity.level" />
-                <input v-model="ext.settings.field_value" class="form-control form-control-sm mt-1" placeholder="value (optional)" />
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Actor mention map (JSON)</label>
-                <textarea v-model="mentionDraft[ext.id]" class="form-control font-monospace" rows="2" placeholder='{"ada":"<@U123>"}' />
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'digest' || field.key === 'digest'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select v-model="ext.settings.digest" class="form-select form-select-sm">
+                    <option value="">Immediate</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                  </select>
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'field_filter'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <input v-model="ext.settings.field_key" class="form-control form-control-sm" placeholder="severity.level" />
+                  <input v-model="ext.settings.field_value" class="form-control form-control-sm mt-1" placeholder="value (optional)" />
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'mention_map'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <textarea v-model="mentionDraft[ext.id]" class="form-control font-monospace" rows="2" placeholder='{"ada":"<@U123>"}' />
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'string'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <input
+                    :value="stringValue(ext.settings, field.key)"
+                    class="form-control form-control-sm"
+                    @input="setString(ext.settings, field.key, ($event.target as HTMLInputElement).value)"
+                  />
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
+                <template v-else-if="field.type === 'int'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <input
+                    :value="ext.settings.min_priority || 0"
+                    type="number"
+                    class="form-control form-control-sm"
+                    @input="ext.settings.min_priority = Number(($event.target as HTMLInputElement).value)"
+                  />
+                  <div v-if="field.description" class="form-text">{{ field.description }}</div>
+                </template>
               </div>
               <div v-if="hookNames(ext).length" class="mb-3">
                 <div class="fw-semibold mb-2">Messages</div>
@@ -495,7 +621,7 @@ watch(
               <div v-if="shownSigning[ext.id]" class="alert alert-warning">
                 Signing secret (shown once): <code class="user-select-all">{{ shownSigning[ext.id] }}</code>
               </div>
-              <p v-else-if="ext.signing_set" class="small text-success">Outbound HMAC signing secret is set.</p>
+              <p v-else-if="hasControl(ext, 'rotate_signing') && ext.signing_set" class="small text-success">Outbound HMAC signing secret is set.</p>
               <div v-if="ext.settings.last_error" class="alert alert-warning">Last delivery error: {{ ext.settings.last_error }}</div>
               <div v-if="ext.deliveries?.length" class="small mb-2">
                 <div class="fw-semibold">Recent deliveries</div>
@@ -507,9 +633,9 @@ watch(
                   </li>
                 </ul>
               </div>
-              <div class="d-flex flex-wrap gap-2">
+              <div v-if="hasControl(ext, 'send_test') || hasControl(ext, 'rotate_signing')" class="d-flex flex-wrap gap-2">
                 <button
-                  v-if="isHookExtension(ext)"
+                  v-if="hasControl(ext, 'send_test')"
                   type="button"
                   class="btn btn-outline-secondary"
                   :disabled="testBusyId === `${ext.id}:team`"
@@ -517,17 +643,26 @@ watch(
                 >
                   {{ testBusyId === `${ext.id}:team` ? 'Sending…' : 'Send test' }}
                 </button>
-                <button type="button" class="btn btn-outline-secondary" :disabled="!!busyId" @click="rotateSigning(ext, false)">
+                <button
+                  v-if="hasControl(ext, 'rotate_signing')"
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="!!busyId"
+                  @click="rotateSigning(ext, false)"
+                >
                   Rotate signing secret
                 </button>
               </div>
-              <pre v-if="sampleJSON[ext.id]" class="small bg-body-tertiary p-2 mt-3 mb-0 overflow-auto">{{ sampleJSON[ext.id] }}</pre>
+              <pre v-if="hasControl(ext, 'sample_json') && sampleJSON[ext.id]" class="small bg-body-tertiary p-2 mt-3 mb-0 overflow-auto">{{ sampleJSON[ext.id] }}</pre>
             </form>
           </fieldset>
 
-          <fieldset v-if="isHookExtension(ext)" :disabled="!ext.site_enabled || !ext.settings.enabled" class="mb-0">
+          <fieldset v-if="hasMemberForm(ext)" :disabled="!ext.site_enabled || !ext.settings.enabled" class="mb-0">
             <legend class="h6">Notify me</legend>
-            <p class="small text-muted">Your own destination for this project. Skip-self is on by default.</p>
+            <p class="small text-muted">
+              Your own destination for this project.
+              <span v-if="hasSetting(ext, 'skip_self')">Skip-self is on by default.</span>
+            </p>
             <form @submit.prevent="save(ext, true)">
               <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
                 <div class="form-check mb-0">
@@ -538,7 +673,7 @@ watch(
                   {{ busyId === `${ext.id}:me` ? 'Saving…' : 'Save mine' }}
                 </button>
               </div>
-              <div v-for="field in projectFields(ext)" :key="`me-${field.key}`" class="mb-3">
+              <div v-for="field in settingsForForm(ext, true)" :key="`me-${field.key}`" class="mb-3">
                 <template v-if="field.type === 'secret'">
                   <label class="form-label">{{ field.label }}</label>
                   <input
@@ -561,56 +696,70 @@ watch(
                     <label class="form-check-label">{{ hook }}</label>
                   </div>
                 </template>
-                <template v-else-if="field.type === 'bool' && field.key === 'status_only'">
+                <template v-else-if="field.type === 'bool'">
                   <div class="form-check">
-                    <input v-model="ext.member!.status_only" class="form-check-input" type="checkbox" />
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="boolValue(ext.member!, field.key, true)"
+                      @change="setBool(ext.member!, field.key, ($event.target as HTMLInputElement).checked)"
+                    />
                     <label class="form-check-label">{{ field.label }}</label>
                   </div>
                 </template>
-              </div>
-              <div class="form-check mb-2">
-                <input
-                  :checked="ext.member?.skip_self !== false"
-                  class="form-check-input"
-                  type="checkbox"
-                  @change="ext.member!.skip_self = ($event.target as HTMLInputElement).checked"
-                />
-                <label class="form-check-label">Skip events I caused</label>
-              </div>
-              <div class="form-check mb-2">
-                <input v-model="ext.member!.claimed_is_me" class="form-check-input" type="checkbox" />
-                <label class="form-check-label">Only when claimed by me</label>
-              </div>
-              <div class="form-check mb-2">
-                <input v-model="ext.member!.claimed_only" class="form-check-input" type="checkbox" />
-                <label class="form-check-label">Only claimed tasks</label>
-              </div>
-              <div class="mb-2">
-                <label class="form-label">Minimum priority</label>
-                <select v-model.number="ext.member!.min_priority" class="form-select form-select-sm">
-                  <option :value="0">Any</option>
-                  <option :value="1">Low+</option>
-                  <option :value="2">Medium+</option>
-                  <option :value="3">High</option>
-                </select>
-              </div>
-              <div class="row g-2 mb-2">
-                <div class="col-md-6">
-                  <label class="form-label">Quiet hours start</label>
-                  <input v-model="ext.member!.quiet_hours_start" type="time" class="form-control form-control-sm" />
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Quiet hours end</label>
-                  <input v-model="ext.member!.quiet_hours_end" type="time" class="form-control form-control-sm" />
-                </div>
-              </div>
-              <div class="mb-2">
-                <label class="form-label">Digest</label>
-                <select v-model="ext.member!.digest" class="form-select form-select-sm">
-                  <option value="">Immediate</option>
-                  <option value="hourly">Hourly</option>
-                  <option value="daily">Daily</option>
-                </select>
+                <template v-else-if="field.type === 'priority' || field.key === 'min_priority'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select v-model.number="ext.member!.min_priority" class="form-select form-select-sm">
+                    <option :value="0">Any</option>
+                    <option :value="1">Low+</option>
+                    <option :value="2">Medium+</option>
+                    <option :value="3">High</option>
+                  </select>
+                </template>
+                <template v-else-if="field.type === 'tag_ids' || field.key === 'tag_ids'">
+                  <div v-if="tags.length">
+                    <div class="fw-semibold mb-1">{{ field.label }}</div>
+                    <div v-for="tag in tags" :key="`me-tag-${tag.id}`" class="form-check">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        :checked="(ext.member?.tag_ids || []).includes(tag.id)"
+                        @change="toggleTag(ext, tag.id, ($event.target as HTMLInputElement).checked, true)"
+                      />
+                      <label class="form-check-label">{{ tag.name }}</label>
+                    </div>
+                  </div>
+                </template>
+                <template v-else-if="field.type === 'time'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <input
+                    :value="stringValue(ext.member!, field.key)"
+                    type="time"
+                    class="form-control form-control-sm"
+                    @input="setString(ext.member!, field.key, ($event.target as HTMLInputElement).value)"
+                  />
+                </template>
+                <template v-else-if="field.type === 'digest' || field.key === 'digest'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <select v-model="ext.member!.digest" class="form-select form-select-sm">
+                    <option value="">Immediate</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                  </select>
+                </template>
+                <template v-else-if="field.type === 'field_filter'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <input v-model="ext.member!.field_key" class="form-control form-control-sm" placeholder="severity.level" />
+                  <input v-model="ext.member!.field_value" class="form-control form-control-sm mt-1" placeholder="value (optional)" />
+                </template>
+                <template v-else-if="field.type === 'string'">
+                  <label class="form-label">{{ field.label }}</label>
+                  <input
+                    :value="stringValue(ext.member!, field.key)"
+                    class="form-control form-control-sm"
+                    @input="setString(ext.member!, field.key, ($event.target as HTMLInputElement).value)"
+                  />
+                </template>
               </div>
               <div v-if="hookNames(ext).length" class="mb-3">
                 <div class="fw-semibold mb-2">Messages</div>
@@ -634,11 +783,23 @@ watch(
                   </li>
                 </ul>
               </div>
-              <div class="d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-outline-secondary" :disabled="testBusyId === `${ext.id}:me`" @click="test(ext, true)">
+              <div v-if="hasControl(ext, 'send_test') || hasControl(ext, 'rotate_signing')" class="d-flex flex-wrap gap-2">
+                <button
+                  v-if="hasControl(ext, 'send_test')"
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="testBusyId === `${ext.id}:me`"
+                  @click="test(ext, true)"
+                >
                   {{ testBusyId === `${ext.id}:me` ? 'Sending…' : 'Send test' }}
                 </button>
-                <button type="button" class="btn btn-outline-secondary" :disabled="!!busyId" @click="rotateSigning(ext, true)">
+                <button
+                  v-if="hasControl(ext, 'rotate_signing')"
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="!!busyId"
+                  @click="rotateSigning(ext, true)"
+                >
                   Rotate my signing secret
                 </button>
               </div>
@@ -647,5 +808,6 @@ watch(
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>

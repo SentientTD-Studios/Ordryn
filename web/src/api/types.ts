@@ -340,6 +340,7 @@ export type SiteInfo = {
   allow_user_invites?: boolean
   user_invite_limit?: number
   invite_expiration_days?: number
+  enable_inbound_webhooks?: boolean
 }
 
 export type ChangelogEntry = {
@@ -452,6 +453,7 @@ export type AdminSettings = {
   enable_global_announcement: boolean
   global_announcement_text: string
   enable_api: boolean
+  enable_inbound_webhooks: boolean
   allow_user_invites: boolean
   user_invite_limit: number
   invite_expiration_days: number
@@ -511,11 +513,24 @@ export type AdminProjectRef = {
 
 export type ExtensionSettingField = {
   key: string
-  type: 'secret' | 'project_ids' | 'hook_select' | 'bool' | string
+  type:
+    | 'secret'
+    | 'project_ids'
+    | 'hook_select'
+    | 'bool'
+    | 'string'
+    | 'int'
+    | 'priority'
+    | 'tag_ids'
+    | 'time'
+    | 'digest'
+    | 'field_filter'
+    | 'mention_map'
+    | string
   label: string
   description?: string
   required?: boolean
-  scope?: 'site' | 'project' | string
+  scope?: 'site' | 'project' | 'member' | string
 }
 
 export type ExtensionManifest = {
@@ -529,6 +544,7 @@ export type ExtensionManifest = {
   settings?: ExtensionSettingField[]
   templates?: Record<string, string>
   fields?: ExtensionField[]
+  controls?: string[]
 }
 
 export type ExtensionField = {

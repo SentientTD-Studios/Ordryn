@@ -1,12 +1,23 @@
 package domain
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"testing"
 )
+
+func TestApplyInboundWebhookDisabled(t *testing.T) {
+	err := ApplyInboundWebhook(context.Background(), "", "", []byte(`{"action":"create","title":"Ship"}`), InboundWebhookInput{
+		Action: "create",
+		Title:  "Ship",
+	})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err=%v", err)
+	}
+}
 
 func TestVerifyInboundAuthHMACAndSecret(t *testing.T) {
 	secret := "s3cret"

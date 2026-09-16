@@ -32,7 +32,7 @@ async function load() {
     ])
     calendar.value = c
     github.value = g
-    inbox.value = ext.extensions || []
+    inbox.value = (ext.extensions || []).filter(hasMemberSettings)
     for (const e of inbox.value) {
       if (!e.member) e.member = { enabled: false, triggers: (e.manifest.hooks || []).map((h) => h.on), templates: {}, status_only: false }
       if (!(e.member.triggers || []).length) e.member.triggers = (e.manifest.hooks || []).map((h) => h.on)
@@ -42,16 +42,75 @@ async function load() {
   }
 }
 
-function destKey(ext: ProjectExtension) {
-  return ext.manifest.delivery?.url_from || 'webhook_url'
+function memberFields(ext: ProjectExtension) {
+  return (ext.manifest.settings || []).filter((f) => f.scope === 'member')
 }
 
-function inboxPlaceholder(ext: ProjectExtension) {
+function hasMemberSettings(ext: ProjectExtension) {
+  return memberFields(ext).length > 0
+}
+
+function hasMemberSetting(ext: ProjectExtension, key: string) {
+  return memberFields(ext).some(
+    (f) =>
+      f.key === key ||
+      (f.type === 'hook_select' && key === 'triggers') ||
+      (f.type === 'field_filter' && (key === 'field_key' || key === 'field_value')),
+  )
+}
+
+function hasControl(ext: ProjectExtension, name: string) {
+  return (ext.manifest.controls || []).includes(name)
+}
+
+function inboxPlaceholder(ext: ProjectExtension, key: string) {
+  if (key === 'ntfy_auth') return 'tk_…'
   switch (ext.manifest.delivery?.type) {
     case 'ntfy.webhook':
       return 'https://ntfy.sh/my-topic'
+    case 'discord.webhook':
+      return 'https://discord.com/api/webhooks/…'
     default:
       return 'https://example.com/hooks/…'
+  }
+}
+
+function hookNames(ext: ProjectExtension) {
+  return (ext.manifest.hooks || []).map((h) => h.on)
+}
+
+function boolValue(ext: ProjectExtension, key: string): boolean {
+  const src = ext.member
+  if (!src) return false
+  switch (key) {
+    case 'status_only':
+      return !!src.status_only
+    case 'skip_self':
+      return src.skip_self !== false
+    case 'claimed_only':
+      return !!src.claimed_only
+    case 'claimed_is_me':
+      return !!src.claimed_is_me
+    default:
+      return false
+  }
+}
+
+function setBool(ext: ProjectExtension, key: string, value: boolean) {
+  if (!ext.member) return
+  switch (key) {
+    case 'status_only':
+      ext.member.status_only = value
+      break
+    case 'skip_self':
+      ext.member.skip_self = value
+      break
+    case 'claimed_only':
+      ext.member.claimed_only = value
+      break
+    case 'claimed_is_me':
+      ext.member.claimed_is_me = value
+      break
   }
 }
 
@@ -60,11 +119,12 @@ async function saveInbox(ext: ProjectExtension) {
   try {
     const payload: ProjectExtensionPatch = {
       enabled: ext.member?.enabled,
-      triggers: [...(ext.member?.triggers || [])],
-      templates: { ...(ext.member?.templates || {}) },
-      status_only: ext.member?.status_only,
-      skip_self: ext.member?.skip_self !== false,
     }
+    if (hasMemberSetting(ext, 'triggers')) payload.triggers = [...(ext.member?.triggers || [])]
+    if (hasMemberSetting(ext, 'status_only')) payload.status_only = ext.member?.status_only
+    if (hasMemberSetting(ext, 'skip_self')) payload.skip_self = ext.member?.skip_self !== false
+    if (hasMemberSetting(ext, 'claimed_only')) payload.claimed_only = ext.member?.claimed_only
+    if (hasMemberSetting(ext, 'claimed_is_me')) payload.claimed_is_me = ext.member?.claimed_is_me
     const draft = inboxDraft[ext.id]?.trim()
     if (draft) payload.webhook_url = draft
     const saved = await api.patchMyExtension(ext.id, payload)
@@ -245,44 +305,65 @@ onMounted(() => {
     </div>
     <div class="card-body">
       <p class="text-muted small">
-        Destinations for tasks that are not in a project. Site admin must enable the extension first. Skip-self is on by default.
+        Destinations for tasks that are not in a project.
       </p>
       <div v-for="ext in inbox" :key="ext.id" class="border rounded p-3 mb-3">
         <button type="button" class="btn btn-link p-0 text-decoration-none" @click="inboxExpanded[ext.id] = !inboxExpanded[ext.id]">
           {{ ext.name || ext.id }}
         </button>
-        <span v-if="ext.site_enabled" class="badge text-bg-success ms-2">Site enabled</span>
-        <span v-else class="badge text-bg-secondary ms-2">Site disabled</span>
         <form v-if="inboxExpanded[ext.id]" class="mt-3" @submit.prevent="saveInbox(ext)">
-          <fieldset :disabled="!ext.site_enabled">
+          <fieldset>
             <div class="form-check mb-2">
               <input v-model="ext.member!.enabled" class="form-check-input" type="checkbox" />
               <label class="form-check-label">Enable for my inbox</label>
             </div>
-            <div class="mb-2">
-              <label class="form-label">Webhook URL</label>
-              <input
-                v-model="inboxDraft[ext.id]"
-                type="password"
-                class="form-control"
-                autocomplete="off"
-                :placeholder="ext.member_secrets?.[destKey(ext)] ? 'Set — leave blank to keep' : inboxPlaceholder(ext)"
-              />
-            </div>
-            <div v-for="hook in (ext.manifest.hooks || []).map((h) => h.on)" :key="hook" class="form-check">
-              <input
-                class="form-check-input"
-                type="checkbox"
-                :checked="(ext.member?.triggers || []).includes(hook)"
-                @change="toggleInboxTrigger(ext, hook, ($event.target as HTMLInputElement).checked)"
-              />
-              <label class="form-check-label">{{ hook }}</label>
+            <div v-for="field in memberFields(ext)" :key="field.key" class="mb-2">
+              <template v-if="field.type === 'secret'">
+                <label class="form-label">{{ field.label }}</label>
+                <input
+                  v-model="inboxDraft[ext.id]"
+                  type="password"
+                  class="form-control"
+                  autocomplete="off"
+                  :placeholder="ext.member_secrets?.[field.key] ? 'Set — leave blank to keep' : inboxPlaceholder(ext, field.key)"
+                />
+                <div v-if="field.description" class="form-text">{{ field.description }}</div>
+              </template>
+              <template v-else-if="field.type === 'hook_select'">
+                <div class="fw-semibold mb-1">{{ field.label }}</div>
+                <div v-for="hook in hookNames(ext)" :key="hook" class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="(ext.member?.triggers || []).includes(hook)"
+                    @change="toggleInboxTrigger(ext, hook, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">{{ hook }}</label>
+                </div>
+              </template>
+              <template v-else-if="field.type === 'bool'">
+                <div class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="boolValue(ext, field.key)"
+                    @change="setBool(ext, field.key, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">{{ field.label }}</label>
+                </div>
+              </template>
             </div>
             <div class="d-flex flex-wrap gap-2 mt-3">
               <button type="submit" class="btn btn-sm btn-primary" :disabled="inboxBusy === ext.id">
                 {{ inboxBusy === ext.id ? 'Saving…' : 'Save' }}
               </button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!!inboxBusy" @click="testInbox(ext)">
+              <button
+                v-if="hasControl(ext, 'send_test')"
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                :disabled="!!inboxBusy"
+                @click="testInbox(ext)"
+              >
                 Send test
               </button>
             </div>

@@ -17,6 +17,14 @@ func testManifest() extensions.Manifest {
 			{On: "task.updated"},
 		},
 		Templates: map[string]string{"task.updated": "default"},
+		Settings: []extensions.Setting{
+			{Key: "status_only", Type: "bool", Label: "Status only", Scope: extensions.ScopeProject},
+			{Key: "skip_self", Type: "bool", Label: "Skip self", Scope: extensions.ScopeProject},
+			{Key: "min_priority", Type: "priority", Label: "Min priority", Scope: extensions.ScopeProject},
+			{Key: "tag_ids", Type: "tag_ids", Label: "Tags", Scope: extensions.ScopeProject},
+			{Key: "claimed_only", Type: "bool", Label: "Claimed", Scope: extensions.ScopeProject},
+			{Key: "claimed_is_me", Type: "bool", Label: "Claimed by me", Scope: extensions.ScopeProject},
+		},
 	}
 }
 
@@ -81,7 +89,7 @@ func TestShouldDeliverPriorityTagsClaimedAndSkipSelf(t *testing.T) {
 			ClaimedBy: 9,
 		},
 	}
-	team := destFromProject(storage.ExtensionProjectSettings{
+	team := destFromProject(m, storage.ExtensionProjectSettings{
 		Enabled:     true,
 		Triggers:    []string{"task.updated"},
 		MinPriority: 2,
@@ -102,7 +110,7 @@ func TestShouldDeliverPriorityTagsClaimedAndSkipSelf(t *testing.T) {
 	}
 	ev.Snapshot.ClaimedBy = 5
 	skipOff := false
-	mem := destFromMember(storage.ExtensionMemberSettings{
+	mem := destFromMember(m, storage.ExtensionMemberSettings{
 		Enabled:     true,
 		Triggers:    []string{"task.updated"},
 		ClaimedIsMe: true,
@@ -115,7 +123,7 @@ func TestShouldDeliverPriorityTagsClaimedAndSkipSelf(t *testing.T) {
 	if shouldDeliverDest(m, site, mem, ev, 3) {
 		t.Fatal("skip-self")
 	}
-	personal := destFromMember(storage.ExtensionMemberSettings{
+	personal := destFromMember(m, storage.ExtensionMemberSettings{
 		Enabled:  true,
 		Triggers: []string{"task.updated"},
 		SkipSelf: &skipOff,
@@ -125,6 +133,33 @@ func TestShouldDeliverPriorityTagsClaimedAndSkipSelf(t *testing.T) {
 	}
 	if !shouldDeliverDest(m, site, personal, ev, 0) {
 		t.Fatal("personal dest should receive inbox events")
+	}
+}
+
+func TestShouldDeliverIgnoresUndeclaredFilters(t *testing.T) {
+	m := extensions.Manifest{
+		ID:   "discord",
+		Name: "Discord",
+		Hooks: []extensions.Hook{
+			{On: "task.updated"},
+		},
+	}
+	site := storage.ExtensionSettings{Enabled: true}
+	ev := Event{
+		Type: "task.updated",
+		Snapshot: &storage.HookTaskSnapshot{
+			Priority: 0,
+		},
+	}
+	team := destFromProject(m, storage.ExtensionProjectSettings{
+		Enabled:     true,
+		Triggers:    []string{"task.updated"},
+		MinPriority: 3,
+		ClaimedOnly: true,
+		SkipSelf:    true,
+	})
+	if !shouldDeliverDest(m, site, team, ev, 3) {
+		t.Fatal("undeclared min_priority/claimed_only/skip_self should not filter")
 	}
 }
 

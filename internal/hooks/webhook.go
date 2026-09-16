@@ -243,8 +243,10 @@ func splitCSV(s string) []string {
 
 func discordPayload(content string, vars map[string]string) map[string]any {
 	embed := map[string]any{
-		"title":       vars["name"],
 		"description": content,
+	}
+	if name := strings.TrimSpace(vars["name"]); name != "" {
+		embed["title"] = name
 	}
 	if vars["url"] != "" {
 		embed["url"] = vars["url"]
@@ -262,8 +264,7 @@ func discordPayload(content string, vars map[string]string) map[string]any {
 	if len(fields) > 0 {
 		embed["fields"] = fields
 	}
-	out := map[string]any{"content": content, "embeds": []any{embed}}
-	return out
+	return map[string]any{"embeds": []any{embed}}
 }
 
 func slackPayload(content string, vars map[string]string) map[string]any {

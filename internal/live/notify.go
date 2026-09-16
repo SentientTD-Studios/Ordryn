@@ -141,8 +141,17 @@ func AfterTaskChangeMeta(actorID, taskID int, typ string, meta *TaskHookMeta, ex
 // AfterTasksChange notifies the union of audiences for many tasks (one SSE event).
 // Outbound hooks fire per task except task.reordered, which is one project-level event.
 func AfterTasksChange(actorID int, typ string, taskIDs []int, extraProjectIDs ...int) {
+	publishTasksChange(actorID, typ, taskIDs, true, extraProjectIDs...)
+}
+
+// AfterTasksChangeLive is SSE-only (no outbound extension hooks).
+func AfterTasksChangeLive(actorID int, typ string, taskIDs []int) {
+	publishTasksChange(actorID, typ, taskIDs, false)
+}
+
+func publishTasksChange(actorID int, typ string, taskIDs []int, emitHooks bool, extraProjectIDs ...int) {
 	h := currentHub()
-	wantHooks := hooks.HasWork()
+	wantHooks := emitHooks && hooks.HasWork()
 	if (h == nil && !wantHooks) || len(taskIDs) == 0 {
 		return
 	}

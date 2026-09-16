@@ -89,14 +89,79 @@ func TestSettingScopeDefaultsToSite(t *testing.T) {
 		t.Fatal("default discord fixture is site-scoped")
 	}
 	m.Settings[0].Scope = ScopeProject
-	if !m.HasProjectSettings() {
-		t.Fatal("expected project settings")
+	if !m.HasProjectSettings() || m.HasMemberSettings() {
+		t.Fatal("expected project settings only")
+	}
+	m.Settings = append(m.Settings, Setting{Key: "claimed_is_me", Type: "bool", Label: "Mine", Scope: ScopeMember})
+	if err := ValidateManifest("discord", m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasMemberSettings() {
+		t.Fatal("expected member settings")
 	}
 	if m.HasFields() {
 		t.Fatal("discord fixture should not register fields")
 	}
 	if got := m.SettingsForScope(ScopeProject); len(got) != 1 || got[0].Key != "webhook_url" {
 		t.Fatalf("project settings=%v", got)
+	}
+	if got := m.SettingsForScope(ScopeMember); len(got) != 1 || got[0].Key != "claimed_is_me" {
+		t.Fatalf("member settings=%v", got)
+	}
+	if !m.HasProjectSurface() {
+		t.Fatal("member settings should still appear on the project tab")
+	}
+}
+
+func TestHasSettingAndFilterTypes(t *testing.T) {
+	m := Manifest{
+		ID:      "discord",
+		Name:    "Discord",
+		Version: "1.0.0",
+		HostAPI: 1,
+		Settings: []Setting{
+			{Key: "webhook_url", Type: "secret", Label: "URL", Scope: ScopeProject},
+			{Key: "skip_self", Type: "bool", Label: "Skip", Scope: ScopeProject},
+			{Key: "min_priority", Type: "priority", Label: "Min", Scope: ScopeProject},
+			{Key: "tag_ids", Type: "tag_ids", Label: "Tags", Scope: ScopeProject},
+			{Key: "quiet_hours_start", Type: "time", Label: "Start", Scope: ScopeProject},
+			{Key: "digest", Type: "digest", Label: "Digest", Scope: ScopeProject},
+			{Key: "field_filter", Type: "field_filter", Label: "Field", Scope: ScopeProject},
+			{Key: "mention_map", Type: "mention_map", Label: "Mentions", Scope: ScopeProject},
+		},
+	}
+	if err := ValidateManifest("discord", m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasSetting("skip_self") || !m.HasSetting("min_priority") || !m.HasSetting("field_key") {
+		t.Fatal("expected declared filter settings")
+	}
+	if m.HasSetting("claimed_only") {
+		t.Fatal("undeclared setting")
+	}
+	m.Settings = append(m.Settings, Setting{Key: "wrong", Type: "priority", Label: "X", Scope: ScopeProject})
+	err := ValidateManifest("discord", m)
+	if err == nil || !strings.Contains(err.Error(), "requires key min_priority") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateManifestControls(t *testing.T) {
+	m := validDiscord()
+	m.Controls = []string{"send_test", "rotate_signing"}
+	if err := ValidateManifest("discord", m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasControl(ControlSendTest) || !m.HasControl(ControlRotateSigning) {
+		t.Fatal("expected declared controls")
+	}
+	if m.HasControl(ControlSampleJSON) {
+		t.Fatal("undeclared sample_json")
+	}
+	m.Controls = []string{"send_test", "nope"}
+	err := ValidateManifest("discord", m)
+	if err == nil || !strings.Contains(err.Error(), "unknown control") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
@@ -325,7 +390,7 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 	for id, w := range cases {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
 		if err != nil {
-			t.Fatalf("%s: %v", id, err)
+			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
 		}
 		var m Manifest
 		if err := json.Unmarshal(raw, &m); err != nil {

@@ -25,7 +25,7 @@ func TestMarshalWebhookPayloads(t *testing.T) {
 	if err := json.Unmarshal(raw, &discord); err != nil {
 		t.Fatal(err)
 	}
-	if discord["content"] != "hello" || discord["embeds"] == nil {
+	if discord["content"] != nil || discord["embeds"] == nil {
 		t.Fatalf("discord payload=%s", raw)
 	}
 	if !strings.Contains(string(raw), "Open") && !strings.Contains(string(raw), vars["url"]) {

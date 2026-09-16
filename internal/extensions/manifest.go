@@ -28,12 +28,27 @@ var knownEventHooks = map[string]struct{}{
 }
 
 var knownSettingTypes = map[string]struct{}{
-	"secret":      {},
-	"project_ids": {},
-	"hook_select": {},
-	"bool":        {},
-	"string":      {},
-	"int":         {},
+	"secret":       {},
+	"project_ids":  {},
+	"hook_select":  {},
+	"bool":         {},
+	"string":       {},
+	"int":          {},
+	"priority":     {},
+	"tag_ids":      {},
+	"time":         {},
+	"digest":       {},
+	"field_filter": {},
+	"mention_map":  {},
+}
+
+// wellKnownSettingKeys maps specialized widgets to the storage key they bind to.
+var wellKnownSettingKeys = map[string]string{
+	"priority":     "min_priority",
+	"tag_ids":      "tag_ids",
+	"digest":       "digest",
+	"mention_map":  "mention_map",
+	"field_filter": "field_filter",
 }
 
 var knownFieldTypes = map[string]struct{}{
@@ -56,6 +71,7 @@ var settingKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,32}$`)
 const (
 	ScopeSite    = "site"
 	ScopeProject = "project"
+	ScopeMember  = "member"
 )
 
 const (
@@ -86,6 +102,18 @@ var knownDeliveryFormats = map[string]struct{}{
 	DeliveryFormatJSON:    {},
 }
 
+const (
+	ControlSendTest      = "send_test"
+	ControlRotateSigning = "rotate_signing"
+	ControlSampleJSON    = "sample_json"
+)
+
+var knownControls = map[string]struct{}{
+	ControlSendTest:      {},
+	ControlRotateSigning: {},
+	ControlSampleJSON:    {},
+}
+
 const maxDescriptionLen = 400
 
 // Manifest is the required data/extensions/<id>/manifest.json document.
@@ -101,6 +129,7 @@ type Manifest struct {
 	Settings    []Setting         `json:"settings,omitempty"`
 	Templates   map[string]string `json:"templates,omitempty"`
 	Fields      []Field           `json:"fields,omitempty"`
+	Controls    []string          `json:"controls,omitempty"`
 }
 
 // Field registers a core custom field. Stored values use key "{id}.{key}".
@@ -139,7 +168,10 @@ type Delivery struct {
 	Format string `json:"format,omitempty"`
 }
 
-// Setting is a schema-driven form field (site admin or project owner).
+// Setting is a schema-driven form field (site admin, project team, or Notify me).
+// Project-scoped well-known keys bind to hook filters: skip_self, claimed_only,
+// claimed_is_me, min_priority, tag_ids, quiet_hours_start, quiet_hours_end,
+// digest, field_key, field_value, field_filter, mention_map, status_only, and triggers.
 type Setting struct {
 	Key         string `json:"key"`
 	Type        string `json:"type"`
@@ -149,13 +181,15 @@ type Setting struct {
 	Scope       string `json:"scope,omitempty"`
 }
 
-// ScopeName returns site (default) or project.
+// ScopeName returns site (default), project (team channel), or member (Notify me).
 func (s Setting) ScopeName() string {
 	switch strings.ToLower(strings.TrimSpace(s.Scope)) {
 	case "", ScopeSite:
 		return ScopeSite
 	case ScopeProject:
 		return ScopeProject
+	case ScopeMember:
+		return ScopeMember
 	default:
 		return strings.TrimSpace(s.Scope)
 	}
@@ -251,8 +285,11 @@ func ValidateManifest(folderName string, m Manifest) error {
 		if len(strings.TrimSpace(s.Description)) > maxDescriptionLen {
 			return fmt.Errorf("settings description is too long for %s", key)
 		}
+		if want, ok := wellKnownSettingKeys[typ]; ok && key != want {
+			return fmt.Errorf("settings type %s requires key %s", typ, want)
+		}
 		switch s.ScopeName() {
-		case ScopeSite, ScopeProject:
+		case ScopeSite, ScopeProject, ScopeMember:
 		default:
 			return fmt.Errorf("unknown settings scope %q for %s", s.Scope, key)
 		}
@@ -269,6 +306,21 @@ func ValidateManifest(folderName string, m Manifest) error {
 		if _, ok := knownEventHooks[on]; !ok {
 			return fmt.Errorf("unknown template hook %q", on)
 		}
+	}
+	seenControls := make(map[string]struct{})
+	for i, raw := range m.Controls {
+		c := strings.ToLower(strings.TrimSpace(raw))
+		if c == "" {
+			continue
+		}
+		if _, ok := knownControls[c]; !ok {
+			return fmt.Errorf("unknown control %q", raw)
+		}
+		if _, dup := seenControls[c]; dup {
+			return fmt.Errorf("duplicate control %q", raw)
+		}
+		seenControls[c] = struct{}{}
+		m.Controls[i] = c
 	}
 	seenFields := make(map[string]struct{})
 	for i := range m.Fields {
@@ -411,6 +463,16 @@ func (m Manifest) HasProjectSettings() bool {
 	return false
 }
 
+// HasMemberSettings reports whether any setting is for Notify me or Profile inbox.
+func (m Manifest) HasMemberSettings() bool {
+	for _, s := range m.Settings {
+		if s.ScopeName() == ScopeMember {
+			return true
+		}
+	}
+	return false
+}
+
 // HasFields reports whether the manifest registers custom fields.
 func (m Manifest) HasFields() bool {
 	return len(m.Fields) > 0
@@ -419,7 +481,7 @@ func (m Manifest) HasFields() bool {
 // HasProjectSurface reports whether the extension should appear on the project Extensions tab.
 // Site-only hook extensions (for example join.request) stay in Admin → Extensions.
 func (m Manifest) HasProjectSurface() bool {
-	return m.HasProjectSettings() || m.HasFields()
+	return m.HasProjectSettings() || m.HasMemberSettings() || m.HasFields()
 }
 
 // DestinationKey is the settings key used to look up the outbound URL.
@@ -451,7 +513,7 @@ func ShowsOnList(showOn []string) bool {
 	return false
 }
 
-// SettingsForScope returns settings with the given scope (site or project).
+// SettingsForScope returns settings with the given scope (site, project, or member).
 func (m Manifest) SettingsForScope(scope string) []Setting {
 	scope = strings.ToLower(strings.TrimSpace(scope))
 	if scope == "" {
@@ -464,4 +526,37 @@ func (m Manifest) SettingsForScope(scope string) []Setting {
 		}
 	}
 	return out
+}
+
+// HasSetting reports whether the manifest declares a settings key.
+// Type field_filter also counts as field_key / field_value.
+func (m Manifest) HasSetting(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return false
+	}
+	for _, s := range m.Settings {
+		k := strings.TrimSpace(s.Key)
+		if k == key {
+			return true
+		}
+		if strings.TrimSpace(s.Type) == "field_filter" && (key == "field_key" || key == "field_value" || key == "field_filter") {
+			return true
+		}
+	}
+	return false
+}
+
+// HasControl reports whether the manifest opts into a project UI control.
+func (m Manifest) HasControl(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	for _, c := range m.Controls {
+		if strings.ToLower(strings.TrimSpace(c)) == name {
+			return true
+		}
+	}
+	return false
 }

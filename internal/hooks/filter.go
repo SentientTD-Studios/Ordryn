@@ -60,11 +60,13 @@ type destFilter struct {
 	Personal        bool
 }
 
-func destFromProject(p storage.ExtensionProjectSettings) destFilter {
-	return destFilter{
-		Enabled:         p.Enabled,
-		Triggers:        p.Triggers,
-		Templates:       p.Templates,
+func destFromProject(m extensions.Manifest, p storage.ExtensionProjectSettings) destFilter {
+	d := destFilter{
+		Enabled:   p.Enabled,
+		Triggers:  p.Triggers,
+		Templates: p.Templates,
+	}
+	copyDeclaredFilters(&d, m, storedFilters{
 		StatusOnly:      p.StatusOnly,
 		SkipSelf:        p.SkipSelf,
 		MinPriority:     p.MinPriority,
@@ -76,16 +78,25 @@ func destFromProject(p storage.ExtensionProjectSettings) destFilter {
 		QuietHoursEnd:   p.QuietHoursEnd,
 		Digest:          p.Digest,
 		MentionMap:      p.MentionMap,
-	}
+	})
+	return d
 }
 
-func destFromMember(s storage.ExtensionMemberSettings, userID int, personal bool) destFilter {
-	return destFilter{
-		Enabled:         s.Enabled,
-		Triggers:        s.Triggers,
-		Templates:       s.Templates,
+func destFromMember(m extensions.Manifest, s storage.ExtensionMemberSettings, userID int, personal bool) destFilter {
+	d := destFilter{
+		Enabled:      s.Enabled,
+		Triggers:     s.Triggers,
+		Templates:    s.Templates,
+		SubscriberID: userID,
+		Personal:     personal,
+	}
+	skipSelf := false
+	if m.HasSetting("skip_self") {
+		skipSelf = s.SkipSelfOrDefault()
+	}
+	copyDeclaredFilters(&d, m, storedFilters{
 		StatusOnly:      s.StatusOnly,
-		SkipSelf:        s.SkipSelfOrDefault(),
+		SkipSelf:        skipSelf,
 		MinPriority:     s.MinPriority,
 		TagIDs:          s.TagIDs,
 		ClaimedOnly:     s.ClaimedOnly,
@@ -95,14 +106,65 @@ func destFromMember(s storage.ExtensionMemberSettings, userID int, personal bool
 		QuietHoursStart: s.QuietHoursStart,
 		QuietHoursEnd:   s.QuietHoursEnd,
 		Digest:          s.Digest,
-		SubscriberID:    userID,
-		Personal:        personal,
+	})
+	return d
+}
+
+type storedFilters struct {
+	StatusOnly      bool
+	SkipSelf        bool
+	MinPriority     int
+	TagIDs          []int
+	ClaimedOnly     bool
+	ClaimedIsMe     bool
+	FieldKey        string
+	FieldValue      string
+	QuietHoursStart string
+	QuietHoursEnd   string
+	Digest          string
+	MentionMap      map[string]string
+}
+
+func copyDeclaredFilters(d *destFilter, m extensions.Manifest, s storedFilters) {
+	if m.HasSetting("status_only") {
+		d.StatusOnly = s.StatusOnly
+	}
+	if m.HasSetting("skip_self") {
+		d.SkipSelf = s.SkipSelf
+	}
+	if m.HasSetting("min_priority") {
+		d.MinPriority = s.MinPriority
+	}
+	if m.HasSetting("tag_ids") {
+		d.TagIDs = s.TagIDs
+	}
+	if m.HasSetting("claimed_only") {
+		d.ClaimedOnly = s.ClaimedOnly
+	}
+	if m.HasSetting("claimed_is_me") {
+		d.ClaimedIsMe = s.ClaimedIsMe
+	}
+	if m.HasSetting("field_key") || m.HasSetting("field_value") || m.HasSetting("field_filter") {
+		d.FieldKey = s.FieldKey
+		d.FieldValue = s.FieldValue
+	}
+	if m.HasSetting("quiet_hours_start") {
+		d.QuietHoursStart = s.QuietHoursStart
+	}
+	if m.HasSetting("quiet_hours_end") {
+		d.QuietHoursEnd = s.QuietHoursEnd
+	}
+	if m.HasSetting("digest") {
+		d.Digest = s.Digest
+	}
+	if m.HasSetting("mention_map") {
+		d.MentionMap = s.MentionMap
 	}
 }
 
 // ShouldDeliver reports whether this event should produce an outbound message for a team channel.
 func ShouldDeliver(m extensions.Manifest, site storage.ExtensionSettings, project storage.ExtensionProjectSettings, ev Event, projectID int) bool {
-	return shouldDeliverDest(m, site, destFromProject(project), ev, projectID)
+	return shouldDeliverDest(m, site, destFromProject(m, project), ev, projectID)
 }
 
 func shouldDeliverDest(m extensions.Manifest, site storage.ExtensionSettings, dest destFilter, ev Event, projectID int) bool {

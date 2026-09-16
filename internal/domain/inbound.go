@@ -22,6 +22,9 @@ type InboundWebhookInput struct {
 
 // ApplyInboundWebhook creates a task or comment using the project's inbound secret.
 func ApplyInboundWebhook(ctx context.Context, secretHeader, hmacHeader string, body []byte, in InboundWebhookInput) error {
+	if !InboundWebhooksEnabled() {
+		return fmt.Errorf("%w: inbound webhooks are disabled", ErrForbidden)
+	}
 	if in.ProjectID <= 0 {
 		cfg, err := findInboundByAuth(secretHeader, hmacHeader, body)
 		if err != nil {
@@ -134,4 +137,10 @@ func verifyInboundAuth(secret, customHeader, hmacHeader string, body []byte) err
 		return nil
 	}
 	return fmt.Errorf("%w: provide X-Ordryn-Webhook-Secret or X-Ordryn-Signature", ErrForbidden)
+}
+
+// InboundWebhooksEnabled reports whether Admin has allowed inbound webhooks.
+func InboundWebhooksEnabled() bool {
+	s, err := storage.GetSiteSettings()
+	return err == nil && s != nil && s.EnableInboundWebhooks
 }

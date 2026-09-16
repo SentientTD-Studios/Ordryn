@@ -56,7 +56,15 @@ func personalExtensionsList(w http.ResponseWriter, userID int) {
 	entries := extensions.Snapshot()
 	out := make([]projectExtensionJSON, 0)
 	for _, e := range entries {
-		if !e.Loaded || e.Manifest.Delivery == nil || !e.Manifest.HasProjectSettings() {
+		if !personalInboxVisible(e) {
+			continue
+		}
+		site, err := storage.GetExtensionSettings(e.ID)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
+			return
+		}
+		if !site.Enabled {
 			continue
 		}
 		item, err := projectExtensionFromEntry(e, 0, userID, false)
@@ -68,6 +76,10 @@ func personalExtensionsList(w http.ResponseWriter, userID int) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(projectExtensionsListJSON{Extensions: out})
+}
+
+func personalInboxVisible(e extensions.Entry) bool {
+	return e.Loaded && e.Manifest.Delivery != nil && e.Manifest.HasMemberSettings()
 }
 
 type projectInboundJSON struct {
@@ -89,6 +101,10 @@ func apiV1ProjectInbound(w http.ResponseWriter, r *http.Request, projectID int) 
 	}
 	if _, err := domain.RequireProjectExtensionOwner(userID, projectID); err != nil {
 		writeProjectExtensionError(w, err)
+		return
+	}
+	if !domain.InboundWebhooksEnabled() {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Inbound webhooks are not enabled.")
 		return
 	}
 	switch r.Method {

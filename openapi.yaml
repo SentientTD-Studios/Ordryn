@@ -898,6 +898,7 @@ paths:
     get:
       tags: [Extensions]
       summary: List personal-inbox hook destinations
+      description: Only site-enabled extensions that declare member-scoped settings are returned.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1047,6 +1048,7 @@ paths:
     post:
       tags: [Webhooks]
       summary: Generic inbound webhook (create a task or comment)
+      description: Public HMAC or shared-secret receiver. Returns 403 until an admin enables inbound webhooks.
       security: []
       parameters:
         - name: X-Ordryn-Webhook-Secret
@@ -1744,13 +1746,14 @@ paths:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [Projects]
-      summary: List project-scoped extensions for members
+      summary: List site-enabled project-scoped extensions for members
+      description: Only extensions enabled in Admin → Extensions and that declare a project surface are returned.
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
         "200":
-          description: Extensions with this project's settings
+          description: Site-enabled extensions with this project's settings
           content:
             application/json:
               schema:
@@ -1838,6 +1841,7 @@ paths:
     get:
       tags: [Projects]
       summary: Get the current member's destination for this project extension
+      description: Classic (non-kanban) projects only. Kanban boards use the owner's team webhook.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1855,6 +1859,7 @@ paths:
     patch:
       tags: [Projects]
       summary: Update the current member's destination for this project extension
+      description: Classic (non-kanban) projects only. Kanban boards use the owner's team webhook.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1889,6 +1894,7 @@ paths:
     post:
       tags: [Projects]
       summary: Send a test event to the current member's destination
+      description: Classic (non-kanban) projects only.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -4195,6 +4201,9 @@ components:
           type: integer
         invite_expiration_days:
           type: integer
+        enable_inbound_webhooks:
+          type: boolean
+          description: True when an admin has allowed public inbound webhooks.
 
     User:
       type: object
@@ -5931,6 +5940,9 @@ components:
           type: string
         enable_api:
           type: boolean
+        enable_inbound_webhooks:
+          type: boolean
+          description: When true, project owners can expose POST /api/v1/webhooks/inbound.
         allow_user_invites:
           type: boolean
         user_invite_limit:
@@ -6016,6 +6028,9 @@ components:
           type: string
         enable_api:
           type: boolean
+        enable_inbound_webhooks:
+          type: boolean
+          description: When true, project owners can expose POST /api/v1/webhooks/inbound.
         allow_user_invites:
           type: boolean
         user_invite_limit:

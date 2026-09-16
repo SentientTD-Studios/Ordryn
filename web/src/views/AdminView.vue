@@ -36,6 +36,7 @@ const settings = reactive<AdminSettings>({
   enable_global_announcement: false,
   global_announcement_text: '',
   enable_api: false,
+  enable_inbound_webhooks: false,
   email_provider: '',
   email_from_address: '',
   email_from_name: '',
@@ -92,6 +93,7 @@ async function saveSettings() {
       enable_global_announcement: settings.enable_global_announcement,
       global_announcement_text: settings.global_announcement_text,
       enable_api: settings.enable_api,
+      enable_inbound_webhooks: settings.enable_inbound_webhooks,
     })
     Object.assign(settings, saved)
     await refreshSite()
@@ -292,6 +294,14 @@ onMounted(load)
             <label class="form-check-label" for="admin-api">Enable external REST API (API keys &amp; Android)</label>
           </div>
           <p class="text-muted small">The web app always uses the JSON API with your session cookie. This toggle controls Bearer access for scripts and mobile clients.</p>
+          <div class="form-check mb-2">
+            <input id="admin-inbound" v-model="settings.enable_inbound_webhooks" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-inbound">Enable inbound webhooks</label>
+          </div>
+          <p class="text-muted small">
+            Allows project owners to expose a public receiver at <code>/api/v1/webhooks/inbound</code>
+            (HMAC or shared secret, not API keys). Disabled until you turn this on.
+          </p>
           <div class="form-check mb-2">
             <input id="admin-announcement" v-model="settings.enable_global_announcement" class="form-check-input" type="checkbox" />
             <label class="form-check-label" for="admin-announcement">Global announcement</label>
