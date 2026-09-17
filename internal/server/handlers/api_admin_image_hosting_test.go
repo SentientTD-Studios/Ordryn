@@ -14,7 +14,7 @@ import (
 )
 
 func TestAPIV1AdminImageHostingTestMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/image-hosting/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/admin/image-hosting/test", nil)
 	rec := httptest.NewRecorder()
 	APIV1AdminImageHostingTest(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -31,7 +31,7 @@ func TestAPIV1AdminImageHostingTestNotConfigured(t *testing.T) {
 	loadSiteSettingsForImageTest = func() (*storage.SiteSettings, error) {
 		return &storage.SiteSettings{}, nil
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/image-hosting/test", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/image-hosting/test", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 	APIV1AdminImageHostingTest(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -64,7 +64,7 @@ func TestAPIV1AdminImageHostingTestSuccess(t *testing.T) {
 		return imagehost.ProbeResult{OK: true, PublicURLOK: true, Message: "Connected. A test image was uploaded and removed."}
 	}
 	body := `{"image_hosting_provider":"s3","image_s3_endpoint":"https://abc.r2.cloudflarestorage.com","image_s3_region":"auto","image_s3_bucket":"media","image_s3_access_key":"ak","image_s3_secret_key":"supersecret","image_s3_public_url":"https://cdn.example.com","image_s3_force_path_style":true}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/image-hosting/test", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/image-hosting/test", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	APIV1AdminImageHostingTest(rec, req)
 	if rec.Code != http.StatusOK {
@@ -101,7 +101,7 @@ func TestAPIV1AdminImageHostingTestFailure(t *testing.T) {
 		}
 	}
 	body := `{"image_hosting_provider":"s3","image_s3_endpoint":"https://abc.r2.cloudflarestorage.com","image_s3_region":"auto","image_s3_bucket":"media","image_s3_access_key":"ak","image_s3_secret_key":"s","image_s3_public_url":"https://cdn.example.com"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/image-hosting/test", bytes.NewReader([]byte(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/image-hosting/test", bytes.NewReader([]byte(body)))
 	rec := httptest.NewRecorder()
 	APIV1AdminImageHostingTest(rec, req)
 	if rec.Code != http.StatusOK {

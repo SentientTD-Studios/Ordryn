@@ -233,7 +233,6 @@ function stubParentTask(id: number, titleText: string, pid: number | ''): Task {
     due_date: '',
     project_id: pid === '' ? null : Number(pid),
     priority: 0,
-    favorite: false,
     position: 0,
     tags: [],
     created_at: '',
@@ -647,7 +646,7 @@ useLiveUpdates(async (event: LiveEvent) => {
     }
     return
   }
-  if (event.type === 'project.updated') {
+  if (event.type === 'project.updated' || event.type === 'project.created' || event.type === 'project.deleted') {
     if (currentTask.value?.project_id && event.project_id === currentTask.value.project_id) {
       await loadMeta()
       await loadTagsForProject(projectId.value)

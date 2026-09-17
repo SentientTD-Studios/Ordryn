@@ -8,7 +8,7 @@ import (
 )
 
 func TestAPIV1SiteMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/site", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/site", nil)
 	rec := httptest.NewRecorder()
 	APIV1Site(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {

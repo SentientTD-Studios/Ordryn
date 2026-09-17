@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"GoTodo/internal/hooks"
+	"GoTodo/internal/live"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 )
@@ -88,11 +91,27 @@ func apiV1CalendarSync(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		due := fmt.Sprintf("%s-%s-%s", ev.StartDate[0:4], ev.StartDate[4:6], ev.StartDate[6:8])
+		var current sql.NullString
+		if err := pool.QueryRow(ctx, `SELECT CAST(due_date AS TEXT) FROM tasks WHERE id = $1 AND user_id = $2 AND completed = false`, taskID, userID).Scan(&current); err != nil {
+			continue
+		}
+		oldDue := ""
+		if current.Valid {
+			oldDue = current.String
+		}
+		if oldDue == due {
+			continue
+		}
 		tag, err := pool.Exec(ctx,
 			`UPDATE tasks SET due_date = $1::date, date_modified = NOW() AT TIME ZONE 'UTC'
 			 WHERE id = $2 AND user_id = $3 AND completed = false`, due, taskID, userID)
 		if err == nil && tag.RowsAffected() > 0 {
 			updated++
+			live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
+			live.DispatchHook(userID, taskID, live.TypeTaskDueChanged, &live.TaskHookMeta{
+				Changed: []string{"due_date"},
+				FieldChanges: []hooks.FieldChange{{Field: "due_date", Old: oldDue, New: due}},
+			})
 		}
 	}
 

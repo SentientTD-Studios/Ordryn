@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -129,9 +130,10 @@ func flushDelivery(row storage.ExtensionDelivery) {
 			TaskID:    p.TaskID,
 			Immediate: true,
 		},
-		Vars:      p.Vars,
-		Message:   p.Message,
-		Immediate: true,
+		Vars:       p.Vars,
+		Message:    p.Message,
+		Immediate:  true,
+		DeliveryID: row.ID,
 	}
 	_, err := deliverNow(entry, ctx)
 	attempts := row.Attempts + 1
@@ -144,6 +146,8 @@ func flushDelivery(row storage.ExtensionDelivery) {
 	next := time.Now().UTC().Add(backoff(attempts))
 	if retryableStatus(err) && attempts < maxDeliveryAttempts {
 		status = storage.DeliveryStatusPending
+	} else if attempts >= maxDeliveryAttempts {
+		status = storage.DeliveryStatusDead
 	}
 	_ = storage.UpdateExtensionDelivery(row.ID, status, httpStatusOf(err), err.Error(), attempts, next)
 	recordLast(row.ExtensionID, row.ProjectID, row.UserID, err)
@@ -165,25 +169,53 @@ func flushDigests() {
 		}
 		ids := make([]int64, 0, len(rows))
 		project := ""
+		lines := make([]string, 0, 10)
+		eventID := d.EventID
 		for _, r := range rows {
 			ids = append(ids, r.ID)
 			p := parseQueuedPayload(r.Payload)
 			if project == "" {
 				project = p.Vars["project"]
 			}
+			if eventID == "" {
+				eventID = p.EventID
+			}
+			if len(lines) < 10 {
+				name := strings.TrimSpace(p.Vars["name"])
+				if name == "" {
+					name = strings.TrimSpace(p.Message)
+				}
+				evType := p.EventType
+				if evType == "" {
+					evType = r.EventType
+				}
+				if name != "" {
+					lines = append(lines, name+" ("+evType+")")
+				} else if evType != "" {
+					lines = append(lines, evType)
+				}
+			}
 		}
 		if project == "" {
 			project = "project"
 		}
-		msg := Interpolate("{count} events in {project}", map[string]string{
-			"count":   itoa(len(rows)),
-			"project": project,
-		})
+		msg := itoa(len(rows)) + " events in " + project
+		if extra := len(rows) - len(lines); extra > 0 {
+			msg += "\n" + strings.Join(lines, "\n") + "\n+" + itoa(extra) + " more"
+		} else if len(lines) > 0 {
+			msg += "\n" + strings.Join(lines, "\n")
+		}
 		ctx := destContext{
 			ProjectID: d.ProjectID,
 			UserID:    d.UserID,
-			Event:     Event{Type: EventTaskUpdated, Immediate: true, EventID: d.EventID},
-			Vars:      map[string]string{"project": project, "name": msg, "count": itoa(len(rows))},
+			Event:     Event{Type: EventTaskUpdated, Immediate: true, EventID: eventID},
+			Vars: map[string]string{
+				"project":       project,
+				"name":          itoa(len(rows)) + " events in " + project,
+				"count":         itoa(len(rows)),
+				"digest_events": strings.Join(lines, "\n"),
+				"event_id":      eventID,
+			},
 			Message:   msg,
 			Immediate: true,
 		}
@@ -206,4 +238,25 @@ func backoff(attempts int) time.Duration {
 		return 30 * time.Minute
 	}
 	return d
+}
+
+// ReplayDelivery retries a failed or dead delivery immediately.
+func ReplayDelivery(extensionID string, projectID, userID int, deliveryID int64) error {
+	row, err := storage.GetExtensionDelivery(deliveryID)
+	if err != nil {
+		return err
+	}
+	if row.ExtensionID != extensionID || row.ProjectID != projectID || row.UserID != userID {
+		return fmt.Errorf("delivery not found")
+	}
+	if row.Status != storage.DeliveryStatusFailed && row.Status != storage.DeliveryStatusDead {
+		return fmt.Errorf("delivery not retryable")
+	}
+	if err := storage.ResetDeliveryForRetry(row.ID); err != nil {
+		return err
+	}
+	row.Attempts = 0
+	row.Status = storage.DeliveryStatusPending
+	flushDelivery(*row)
+	return nil
 }

@@ -3,7 +3,7 @@ info:
   title: Ordryn / GoTodo API
   description: |
     JSON API for Ordryn (GoTodo). Self-host with `GOTODO_MODE=full` (UI + API) or
-    `GOTODO_MODE=api` (API only). Redis is required for `/api/v1` authentication,
+    `GOTODO_MODE=api` (API only). Redis is required for `/api/v2` authentication,
     rate limiting, and live SSE fan-out.
 
     Auth: session cookie (SPA login/register) or `Authorization: Bearer <api_key>`.
@@ -13,11 +13,9 @@ info:
     SPA session cookies use a higher budget (600 GET/min, 240 writes/min) so the
     web UI is not gated by the external API ceiling.
 
-    Deprecations: task favoriting (`favorite`) is deprecated and will be removed
-    in API v2. Create, update, reorder (`favorite: true`), and CSV import that
-    use `favorite` still succeed and return `Deprecation: true`, a RFC 7234
-    `Warning` header, and `deprecation_notice` in the JSON body.
-  version: 1.0.0
+    Canonical paths are `/api/v2`. `/api/v1` remains as a compatibility alias
+    for existing webhooks, OAuth callbacks, and clients.
+  version: 2.0.0
   license:
     name: See LICENSE in repository
 
@@ -41,7 +39,7 @@ tags:
   - name: Images
 
 paths:
-  /api/v1/health:
+  /api/v2/health:
     get:
       tags: [Health]
       summary: Public health probe
@@ -54,7 +52,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
 
-  /api/v1/site:
+  /api/v2/site:
     get:
       tags: [Health]
       summary: Public site metadata for the SPA shell
@@ -67,7 +65,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SiteInfo"
 
-  /api/v1/events:
+  /api/v2/events:
     get:
       tags: [Live]
       summary: Live task and project updates (Server-Sent Events)
@@ -103,7 +101,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/auth/register:
+  /api/v2/auth/register:
     post:
       tags: [Auth]
       summary: Register and start a session
@@ -128,7 +126,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
-  /api/v1/join-requests:
+  /api/v2/join-requests:
     post:
       tags: [Auth]
       summary: Submit a request to join the site
@@ -166,7 +164,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
-  /api/v1/auth/login:
+  /api/v2/auth/login:
     post:
       tags: [Auth]
       summary: Login and start a session
@@ -193,7 +191,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
-  /api/v1/auth/mfa/verify:
+  /api/v2/auth/mfa/verify:
     post:
       tags: [Auth]
       summary: Complete MFA login
@@ -218,7 +216,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
-  /api/v1/auth/logout:
+  /api/v2/auth/logout:
     post:
       tags: [Auth]
       summary: Clear session cookie
@@ -231,7 +229,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
-  /api/v1/auth/username-available:
+  /api/v2/auth/username-available:
     get:
       tags: [Auth]
       summary: Check whether a username is available
@@ -259,7 +257,7 @@ paths:
                   message:
                     type: string
 
-  /api/v1/auth/forgot-password:
+  /api/v2/auth/forgot-password:
     post:
       tags: [Auth]
       summary: Request a password reset email
@@ -290,7 +288,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
-  /api/v1/auth/reset-password:
+  /api/v2/auth/reset-password:
     get:
       tags: [Auth]
       summary: Validate a password reset token
@@ -353,7 +351,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/auth/device/code:
+  /api/v2/auth/device/code:
     post:
       tags: [Device Auth]
       summary: Start device authorization (Android SSO)
@@ -384,7 +382,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/auth/device/token:
+  /api/v2/auth/device/token:
     post:
       tags: [Device Auth]
       summary: Poll device authorization for API key
@@ -419,7 +417,7 @@ paths:
         "400":
           description: Pending, denied, expired, or invalid (OAuth-style error body)
 
-  /api/v1/auth/device/status:
+  /api/v2/auth/device/status:
     get:
       tags: [Device Auth]
       summary: Look up a pending device authorization by user_code
@@ -440,7 +438,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/auth/device/approve:
+  /api/v2/auth/device/approve:
     post:
       tags: [Device Auth]
       summary: Approve a pending device authorization
@@ -464,7 +462,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceDecisionResponse"
 
-  /api/v1/auth/device/deny:
+  /api/v2/auth/device/deny:
     post:
       tags: [Device Auth]
       summary: Deny a pending device authorization
@@ -488,7 +486,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceDecisionResponse"
 
-  /api/v1/me:
+  /api/v2/me:
     get:
       tags: [Profile]
       summary: Current user profile
@@ -534,7 +532,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/me/username:
+  /api/v2/me/username:
     post:
       tags: [Profile]
       summary: One-time username claim for migrated accounts
@@ -573,7 +571,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/me/avatar:
+  /api/v2/me/avatar:
     post:
       tags: [Profile]
       summary: Upload profile picture
@@ -628,7 +626,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/me/password:
+  /api/v2/me/password:
     post:
       tags: [Profile]
       summary: Change password
@@ -653,7 +651,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/me/mfa:
+  /api/v2/me/mfa:
     get:
       tags: [Profile]
       summary: MFA status
@@ -670,7 +668,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/me/mfa/setup:
+  /api/v2/me/mfa/setup:
     post:
       tags: [Profile]
       summary: Start MFA enrollment
@@ -689,7 +687,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/me/mfa/enable:
+  /api/v2/me/mfa/enable:
     post:
       tags: [Profile]
       summary: Confirm TOTP and enable MFA
@@ -716,7 +714,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/me/mfa/disable:
+  /api/v2/me/mfa/disable:
     post:
       tags: [Profile]
       summary: Disable MFA
@@ -744,7 +742,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/me/mfa/recovery-codes:
+  /api/v2/me/mfa/recovery-codes:
     post:
       tags: [Profile]
       summary: Replace recovery codes
@@ -772,7 +770,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/users/search:
+  /api/v2/users/search:
     get:
       tags: [Projects]
       summary: Search usernames for project invites or discussion mentions
@@ -843,7 +841,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/me/github/pat:
+  /api/v2/me/github/pat:
     post:
       tags: [GitHub]
       summary: Connect GitHub with a personal access token
@@ -871,7 +869,7 @@ paths:
         "403":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/me/github/oauth/start:
+  /api/v2/me/github/oauth/start:
     get:
       tags: [GitHub]
       summary: Start GitHub OAuth (requires admin-configured OAuth App)
@@ -894,7 +892,7 @@ paths:
         "503":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/me/extensions:
+  /api/v2/me/extensions:
     get:
       tags: [Extensions]
       summary: List personal-inbox hook destinations
@@ -912,7 +910,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/me/extensions/{extensionId}:
+  /api/v2/me/extensions/{extensionId}:
     parameters:
       - name: extensionId
         in: path
@@ -962,7 +960,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/me/extensions/{extensionId}/test:
+  /api/v2/me/extensions/{extensionId}/test:
     parameters:
       - name: extensionId
         in: path
@@ -994,7 +992,40 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/auth/github/callback:
+  /api/v2/me/extensions/{extensionId}/deliveries/{deliveryId}/retry:
+    parameters:
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      tags: [Extensions]
+      summary: Retry a failed or dead personal-inbox delivery
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/auth/github/callback:
     get:
       tags: [GitHub]
       summary: GitHub OAuth callback (public redirect)
@@ -1012,7 +1043,7 @@ paths:
         "303":
           description: Redirects to Settings
 
-  /api/v1/webhooks/github:
+  /api/v2/webhooks/github:
     post:
       tags: [GitHub]
       summary: GitHub issues webhook (updates linked tasks only; never creates tasks)
@@ -1044,11 +1075,11 @@ paths:
         "403":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/webhooks/inbound:
+  /api/v2/webhooks/inbound:
     post:
       tags: [Webhooks]
       summary: Generic inbound webhook (create, comment, complete, or set_field)
-      description: Public HMAC or shared-secret receiver. Returns 403 until an admin enables inbound webhooks. complete and set_field require an enabled extension on the project that declares those actions.
+      description: Public HMAC or shared-secret receiver. Returns 403 until an admin enables inbound webhooks. complete and set_field require an enabled extension on the project that declares those actions. project_id is required. HMAC must include X-Ordryn-Timestamp (unix seconds, ±5 minutes); the signature is HMAC-SHA256 of timestamp + "." + raw body.
       security: []
       parameters:
         - name: X-Ordryn-Webhook-Secret
@@ -1057,7 +1088,12 @@ paths:
             type: string
         - name: X-Ordryn-Signature
           in: header
-          description: HMAC SHA-256 of the raw body, prefixed with sha256=
+          description: HMAC SHA-256 of timestamp + "." + raw body, prefixed with sha256=
+          schema:
+            type: string
+        - name: X-Ordryn-Timestamp
+          in: header
+          description: Unix seconds. Required for HMAC. Rejected if skewed more than 5 minutes.
           schema:
             type: string
       requestBody:
@@ -1066,7 +1102,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [action]
+              required: [action, project_id]
               properties:
                 action:
                   type: string
@@ -1086,7 +1122,7 @@ paths:
                   type: string
                 project_id:
                   type: integer
-                  description: Optional. When omitted, the secret or HMAC identifies the project.
+                  description: Required. Identifies the inbound project.
       responses:
         "200":
           description: Accepted
@@ -1101,7 +1137,7 @@ paths:
         "403":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/ext/callback:
+  /api/v2/ext/callback:
     post:
       tags: [Webhooks]
       summary: Extension callback (scoped token)
@@ -1150,7 +1186,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/extensions/{id}/icon:
+  /api/v2/extensions/{id}/icon:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -1167,7 +1203,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/api-keys:
+  /api/v2/api-keys:
     get:
       tags: [API Keys]
       summary: List active API keys (no plaintext)
@@ -1212,7 +1248,7 @@ paths:
         "503":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/api-keys/{id}:
+  /api/v2/api-keys/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     patch:
@@ -1256,7 +1292,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks:
+  /api/v2/tasks:
     get:
       tags: [Tasks]
       summary: List tasks
@@ -1356,14 +1392,7 @@ paths:
               $ref: "#/components/schemas/TaskCreate"
       responses:
         "201":
-          description: >
-            Created. When the request included `favorite`, the response also has
-            `Deprecation` and `Warning` headers and `deprecation_notice` in the body.
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/FavoriteDeprecation"
-            Warning:
-              $ref: "#/components/headers/FavoriteWarning"
+          description: Created
           content:
             application/json:
               schema:
@@ -1371,16 +1400,14 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/tasks/reorder:
+  /api/v2/tasks/reorder:
     post:
       tags: [Tasks]
-      summary: Reorder tasks (favorite grouping is deprecated)
+      summary: Reorder tasks
       description: |
-        Updates manual sort order (`position`) within one favorite or non-favorite
-        group. Favorite grouping is deprecated and will be removed in API v2; the
-        `favorite` field is still required. Reordering the starred group
-        (`favorite: true`) returns `Deprecation` and `Warning` headers plus
-        `deprecation_notice` in the JSON body.
+        Updates manual sort order (`position`) for the listed tasks.
+        Listed IDs are rearranged among the slots they already occupy, so filtered
+        lists (e.g. incomplete-only) do not overwrite unrelated tasks.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1392,14 +1419,7 @@ paths:
               $ref: "#/components/schemas/TaskReorder"
       responses:
         "200":
-          description: >
-            Reordered. When `favorite` is true, the response also has `Deprecation`
-            and `Warning` headers and `deprecation_notice` in the body.
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/FavoriteDeprecation"
-            Warning:
-              $ref: "#/components/headers/FavoriteWarning"
+          description: Reordered
           content:
             application/json:
               schema:
@@ -1407,7 +1427,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/tasks/bulk:
+  /api/v2/tasks/bulk:
     post:
       tags: [Tasks]
       summary: Apply a bulk action to tasks
@@ -1430,7 +1450,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/tasks/undo:
+  /api/v2/tasks/undo:
     post:
       tags: [Tasks]
       summary: Restore deleted tasks via undo_token (or session undo buffer)
@@ -1460,7 +1480,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/tasks/{id}:
+  /api/v2/tasks/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -1492,14 +1512,7 @@ paths:
               $ref: "#/components/schemas/TaskPatch"
       responses:
         "200":
-          description: >
-            Updated task. When the request included `favorite`, the response also has
-            `Deprecation` and `Warning` headers and `deprecation_notice` in the body.
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/FavoriteDeprecation"
-            Warning:
-              $ref: "#/components/headers/FavoriteWarning"
+          description: Updated task
           content:
             application/json:
               schema:
@@ -1542,7 +1555,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{id}/events:
+  /api/v2/tasks/{id}/events:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -1563,7 +1576,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects:
+  /api/v2/projects:
     get:
       tags: [Projects]
       summary: List projects
@@ -1601,7 +1614,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/projects/reorder:
+  /api/v2/projects/reorder:
     post:
       tags: [Projects]
       summary: Reorder owned projects
@@ -1631,7 +1644,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/projects/{id}:
+  /api/v2/projects/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -1688,7 +1701,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/archive:
+  /api/v2/projects/{id}/archive:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -1712,7 +1725,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/restore:
+  /api/v2/projects/{id}/restore:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -1736,7 +1749,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/github:
+  /api/v2/projects/{id}/github:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -1793,7 +1806,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/custom-fields:
+  /api/v2/projects/{id}/custom-fields:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -1812,7 +1825,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/extensions:
+  /api/v2/projects/{id}/extensions:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -1834,7 +1847,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/extensions/{extensionId}:
+  /api/v2/projects/{id}/extensions/{extensionId}:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: extensionId
@@ -1868,7 +1881,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/extensions/{extensionId}/test:
+  /api/v2/projects/{id}/extensions/{extensionId}/test:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: extensionId
@@ -1901,7 +1914,41 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/extensions/{extensionId}/me:
+  /api/v2/projects/{id}/extensions/{extensionId}/deliveries/{deliveryId}/retry:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      tags: [Projects]
+      summary: Retry a failed or dead team webhook delivery (owner)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/extensions/{extensionId}/me:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: extensionId
@@ -1954,7 +2001,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/extensions/{extensionId}/me/test:
+  /api/v2/projects/{id}/extensions/{extensionId}/me/test:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: extensionId
@@ -1990,7 +2037,41 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/extensions/{extensionId}/ui:
+  /api/v2/projects/{id}/extensions/{extensionId}/me/deliveries/{deliveryId}/retry:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      tags: [Projects]
+      summary: Retry a failed or dead member webhook delivery
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/extensions/{extensionId}/ui:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: extensionId
@@ -2012,7 +2093,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/inbound:
+  /api/v2/projects/{id}/inbound:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2065,7 +2146,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/statuses:
+  /api/v2/projects/{id}/statuses:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2116,7 +2197,7 @@ paths:
         "409":
           description: Status limit or name conflict
 
-  /api/v1/projects/{id}/statuses/reorder:
+  /api/v2/projects/{id}/statuses/reorder:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -2148,7 +2229,7 @@ paths:
                   ok:
                     type: boolean
 
-  /api/v1/projects/{id}/statuses/{statusId}:
+  /api/v2/projects/{id}/statuses/{statusId}:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: statusId
@@ -2198,7 +2279,7 @@ paths:
         "204":
           description: Deleted
 
-  /api/v1/projects/{id}/sprints:
+  /api/v2/projects/{id}/sprints:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2264,7 +2345,7 @@ paths:
         "409":
           description: Sprint limit or name conflict
 
-  /api/v1/projects/{id}/sprints/{sprintId}:
+  /api/v2/projects/{id}/sprints/{sprintId}:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: sprintId
@@ -2328,7 +2409,7 @@ paths:
         "204":
           description: Deleted
 
-  /api/v1/projects/{id}/sprints/backlog:
+  /api/v2/projects/{id}/sprints/backlog:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2426,7 +2507,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{id}/github-issue:
+  /api/v2/tasks/{id}/github-issue:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -2495,7 +2576,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{id}/claim:
+  /api/v2/tasks/{id}/claim:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -2537,7 +2618,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/notifications:
+  /api/v2/notifications:
     get:
       tags: [Notifications]
       summary: List in-app notifications
@@ -2564,7 +2645,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotificationList"
 
-  /api/v1/notifications/unread-count:
+  /api/v2/notifications/unread-count:
     get:
       tags: [Notifications]
       summary: Unread notification count
@@ -2582,7 +2663,7 @@ paths:
                   unread_count:
                     type: integer
 
-  /api/v1/notifications/read-all:
+  /api/v2/notifications/read-all:
     post:
       tags: [Notifications]
       summary: Mark all notifications read
@@ -2593,7 +2674,7 @@ paths:
         "204":
           description: Marked read
 
-  /api/v1/notifications/{id}/read:
+  /api/v2/notifications/{id}/read:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -2608,7 +2689,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{id}/time-entries:
+  /api/v2/tasks/{id}/time-entries:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2655,7 +2736,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskTimeEntry"
 
-  /api/v1/tasks/{id}/comments:
+  /api/v2/tasks/{id}/comments:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2708,7 +2789,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{id}/comments/{commentId}:
+  /api/v2/tasks/{id}/comments/{commentId}:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: commentId
@@ -2768,7 +2849,7 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /api/v1/tasks/{id}/comments/{commentId}/revisions:
+  /api/v2/tasks/{id}/comments/{commentId}/revisions:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: commentId
@@ -2796,7 +2877,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{id}/comments/{commentId}/restore:
+  /api/v2/tasks/{id}/comments/{commentId}/restore:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: commentId
@@ -2834,7 +2915,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{id}/time-entries/{entryId}:
+  /api/v2/tasks/{id}/time-entries/{entryId}:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: entryId
@@ -2852,7 +2933,7 @@ paths:
         "204":
           description: Deleted
 
-  /api/v1/projects/{id}/members:
+  /api/v2/projects/{id}/members:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2873,7 +2954,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/members/{userId}:
+  /api/v2/projects/{id}/members/{userId}:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: userId
@@ -2914,7 +2995,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/invites:
+  /api/v2/projects/{id}/invites:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -2963,7 +3044,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /api/v1/projects/{id}/invites/{inviteId}:
+  /api/v2/projects/{id}/invites/{inviteId}:
     parameters:
       - $ref: "#/components/parameters/ID"
       - name: inviteId
@@ -2983,13 +3064,13 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/projects/{id}/events:
+  /api/v2/projects/{id}/events:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [Projects]
       summary: Project settings activity
-      description: Sharing, membership, status, and other project-settings events. Board/task activity is not included; use GET /api/v1/tasks/{id}/events for a task timeline.
+      description: Sharing, membership, status, and other project-settings events. Board/task activity is not included; use GET /api/v2/tasks/{id}/events for a task timeline.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -3011,7 +3092,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/project-invites:
+  /api/v2/project-invites:
     get:
       tags: [Projects]
       summary: List pending invites for the current user
@@ -3028,7 +3109,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/ProjectInvite"
 
-  /api/v1/project-invites/{id}/accept:
+  /api/v2/project-invites/{id}/accept:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -3045,7 +3126,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/project-invites/{id}/decline:
+  /api/v2/project-invites/{id}/decline:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -3060,7 +3141,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/share-links:
+  /api/v2/share-links:
     get:
       tags: [Projects]
       summary: List share links for a scope
@@ -3111,7 +3192,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
-  /api/v1/share-links/{id}:
+  /api/v2/share-links/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     delete:
@@ -3126,7 +3207,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/share-links/view/{token}:
+  /api/v2/share-links/view/{token}:
     parameters:
       - name: token
         in: path
@@ -3146,7 +3227,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tags:
+  /api/v2/tags:
     get:
       tags: [Tags]
       summary: List tags
@@ -3195,7 +3276,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
-  /api/v1/tags/{id}:
+  /api/v2/tags/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     patch:
@@ -3240,7 +3321,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
-  /api/v1/saved-views:
+  /api/v2/saved-views:
     get:
       tags: [Saved Views]
       summary: List saved views
@@ -3278,7 +3359,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/saved-views/{id}:
+  /api/v2/saved-views/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
@@ -3346,7 +3427,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/dashboard:
+  /api/v2/dashboard:
     get:
       tags: [Dashboard]
       summary: Aggregate task stats for the current user
@@ -3361,7 +3442,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DashboardStats"
 
-  /api/v1/calendar/month:
+  /api/v2/calendar/month:
     get:
       tags: [Calendar]
       summary: Month grid of tasks with due dates (open and completed)
@@ -3388,7 +3469,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/calendar:
+  /api/v2/calendar:
     get:
       tags: [Calendar]
       summary: Get or create the ICS feed token and URL
@@ -3403,7 +3484,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CalendarInfo"
 
-  /api/v1/calendar/regenerate:
+  /api/v2/calendar/regenerate:
     post:
       tags: [Calendar]
       summary: Rotate the ICS feed token
@@ -3418,7 +3499,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CalendarInfo"
 
-  /api/v1/calendar/sync:
+  /api/v2/calendar/sync:
     post:
       tags: [Calendar]
       summary: Import due dates from an ICS export back into tasks
@@ -3447,7 +3528,7 @@ paths:
                   updated:
                     type: integer
 
-  /api/v1/export:
+  /api/v2/export:
     get:
       tags: [Export]
       summary: Export tasks as JSON or CSV
@@ -3474,7 +3555,7 @@ paths:
               schema:
                 type: string
 
-  /api/v1/import/preview:
+  /api/v2/import/preview:
     post:
       tags: [Import]
       summary: Upload a CSV and preview import counts
@@ -3494,15 +3575,7 @@ paths:
                   format: binary
       responses:
         "200":
-          description: >
-            Staged import preview. When the CSV includes a `favorite` column, the
-            response also has `Deprecation` and `Warning` headers and
-            `deprecation_notice` in the body.
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/FavoriteDeprecation"
-            Warning:
-              $ref: "#/components/headers/FavoriteWarning"
+          description: Staged import preview
           content:
             application/json:
               schema:
@@ -3510,7 +3583,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/import/confirm:
+  /api/v2/import/confirm:
     post:
       tags: [Import]
       summary: Confirm the staged CSV import
@@ -3519,15 +3592,7 @@ paths:
         - BearerAuth: []
       responses:
         "200":
-          description: >
-            Import completed. When the staged CSV included a `favorite` column, the
-            response also has `Deprecation` and `Warning` headers and
-            `deprecation_notice` in the body.
-          headers:
-            Deprecation:
-              $ref: "#/components/headers/FavoriteDeprecation"
-            Warning:
-              $ref: "#/components/headers/FavoriteWarning"
+          description: Import completed
           content:
             application/json:
               schema:
@@ -3535,7 +3600,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/import/cancel:
+  /api/v2/import/cancel:
     post:
       tags: [Import]
       summary: Discard the staged CSV import
@@ -3550,7 +3615,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
-  /api/v1/images:
+  /api/v2/images:
     post:
       tags: [Images]
       summary: Upload an image
@@ -3588,7 +3653,7 @@ paths:
         "502":
           description: Storage backend failed; message is generic for end users
 
-  /api/v1/admin/image-hosting/test:
+  /api/v2/admin/image-hosting/test:
     post:
       tags: [Admin]
       summary: Test image hosting configuration
@@ -3616,7 +3681,7 @@ paths:
         "400":
           description: Provider unset or settings invalid
 
-  /api/v1/announcements/dismiss:
+  /api/v2/announcements/dismiss:
     post:
       tags: [Announcements]
       summary: Dismiss the global announcement banner for this session
@@ -3630,7 +3695,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
-  /api/v1/invites:
+  /api/v2/invites:
     get:
       tags: [Invites]
       summary: List invites
@@ -3676,7 +3741,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Invite"
 
-  /api/v1/invites/{id}:
+  /api/v2/invites/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     delete:
@@ -3689,7 +3754,7 @@ paths:
         "204":
           description: Deleted
 
-  /api/v1/admin/settings:
+  /api/v2/admin/settings:
     get:
       tags: [Admin]
       summary: Get site settings
@@ -3723,7 +3788,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminSettings"
 
-  /api/v1/admin/users:
+  /api/v2/admin/users:
     get:
       tags: [Admin]
       summary: List users
@@ -3740,7 +3805,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/AdminUser"
 
-  /api/v1/admin/users/{id}/ban:
+  /api/v2/admin/users/{id}/ban:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -3757,7 +3822,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
-  /api/v1/admin/users/{id}/unban:
+  /api/v2/admin/users/{id}/unban:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -3774,7 +3839,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OK"
 
-  /api/v1/admin/users/{id}/username:
+  /api/v2/admin/users/{id}/username:
     parameters:
       - $ref: "#/components/parameters/ID"
     patch:
@@ -3816,7 +3881,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/admin/email-audit:
+  /api/v2/admin/email-audit:
     get:
       tags: [Admin]
       summary: Query outbound email audit log
@@ -3875,7 +3940,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/admin/comment-audit:
+  /api/v2/admin/comment-audit:
     get:
       tags: [Admin]
       summary: Query discussion comment audit log
@@ -3919,7 +3984,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  /api/v1/admin/comment-audit/{id}/restore:
+  /api/v2/admin/comment-audit/{id}/restore:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -3942,7 +4007,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/admin/extensions:
+  /api/v2/admin/extensions:
     get:
       tags: [Admin]
       summary: List loaded extensions
@@ -3957,7 +4022,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminExtensionsList"
 
-  /api/v1/admin/extensions/{id}:
+  /api/v2/admin/extensions/{id}:
     parameters:
       - name: id
         in: path
@@ -4003,7 +4068,70 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/admin/join-requests:
+  /api/v2/admin/extensions/{id}/test:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Admin]
+      summary: Send a test event to the site destination
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Test sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                  sample_json:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/admin/extensions/{id}/deliveries/{deliveryId}/retry:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      tags: [Admin]
+      summary: Retry a failed or dead site delivery
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/admin/join-requests:
     get:
       tags: [Admin]
       summary: List join requests
@@ -4020,7 +4148,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/JoinRequest"
 
-  /api/v1/admin/join-requests/{id}/approve:
+  /api/v2/admin/join-requests/{id}/approve:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -4049,7 +4177,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/admin/join-requests/{id}/deny:
+  /api/v2/admin/join-requests/{id}/deny:
     parameters:
       - $ref: "#/components/parameters/ID"
     post:
@@ -4075,7 +4203,7 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
-  /api/v1/admin/invites:
+  /api/v2/admin/invites:
     get:
       tags: [Admin]
       summary: List all invites (admin)
@@ -4121,7 +4249,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Invite"
 
-  /api/v1/admin/invites/{id}:
+  /api/v2/admin/invites/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
     delete:
@@ -4145,7 +4273,7 @@ components:
       type: apiKey
       in: cookie
       name: session
-      description: httpOnly session cookie from /api/v1/auth/login or register
+      description: httpOnly session cookie from /api/v2/auth/login or register
 
   parameters:
     ID:
@@ -4155,22 +4283,6 @@ components:
       schema:
         type: integer
         minimum: 1
-
-  headers:
-    FavoriteDeprecation:
-      description: >
-        Set to `true` when the request used the deprecated `favorite` field.
-        Task favoriting will be removed in API v2.
-      schema:
-        type: string
-        example: "true"
-    FavoriteWarning:
-      description: >
-        RFC 7234 miscellaneous persistent warning describing the favorite
-        deprecation (`299 - "Task favoriting is deprecated and will be removed in API v2."`).
-      schema:
-        type: string
-        example: '299 - "Task favoriting is deprecated and will be removed in API v2."'
 
   responses:
     BadRequest:
@@ -4238,11 +4350,6 @@ components:
       properties:
         ok:
           type: boolean
-        deprecation_notice:
-          type: string
-          description: >
-            Present when reordering the deprecated favorite group (`favorite: true`).
-            Favoriting will be removed in API v2.
 
     Health:
       type: object
@@ -4321,7 +4428,7 @@ components:
           description: When false, the user cannot be invited to shared projects
         username_change_available:
           type: boolean
-          description: When true, the user may call POST /api/v1/me/username once
+          description: When true, the user may call POST /api/v2/me/username once
         mfa_enabled:
           type: boolean
           description: When true, password login requires a TOTP or recovery code
@@ -4970,13 +5077,6 @@ components:
           type: integer
           minimum: 0
           maximum: 3
-        favorite:
-          type: boolean
-          deprecated: true
-          description: >
-            Whether the task is starred. Deprecated; will be removed in API v2.
-            Still returned. Requests that set this field receive `Deprecation` and
-            `Warning` headers plus `deprecation_notice` in the JSON body.
         position:
           type: integer
         parent_id:
@@ -5000,11 +5100,6 @@ components:
           type: string
         modified_at:
           type: string
-        deprecation_notice:
-          type: string
-          description: >
-            Present on create/update responses that included the deprecated
-            `favorite` field. Favoriting will be removed in API v2.
         status_id:
           type: integer
           nullable: true
@@ -5184,13 +5279,6 @@ components:
           type: integer
         completed:
           type: boolean
-        favorite:
-          type: boolean
-          deprecated: true
-          description: >
-            Optional (default false). Deprecated; will be removed in API v2.
-            Including this field still stars or unstars the task and returns
-            `Deprecation`/`Warning` headers plus `deprecation_notice`.
         tag_ids:
           type: array
           items:
@@ -5236,13 +5324,6 @@ components:
           type: integer
         completed:
           type: boolean
-        favorite:
-          type: boolean
-          deprecated: true
-          description: >
-            Deprecated; will be removed in API v2. Including this field still
-            stars or unstars the task and returns `Deprecation`/`Warning` headers
-            plus `deprecation_notice`.
         tag_ids:
           type: array
           items:
@@ -5309,19 +5390,12 @@ components:
 
     TaskReorder:
       type: object
-      required: [task_ids, favorite]
+      required: [task_ids]
       properties:
         task_ids:
           type: array
           items:
             type: integer
-        favorite:
-          type: boolean
-          deprecated: true
-          description: >
-            Which group is being reordered. Deprecated; favorite grouping will be
-            removed in API v2. Still required. `favorite: true` returns
-            `Deprecation`/`Warning` headers plus `deprecation_notice`.
         parent_id:
           type: integer
           nullable: true
@@ -5411,11 +5485,6 @@ components:
           type: integer
         total_rows:
           type: integer
-        deprecation_notice:
-          type: string
-          description: >
-            Present when the CSV includes a `favorite` column. Favoriting will
-            be removed in API v2.
 
     ImportResult:
       type: object
@@ -5424,11 +5493,6 @@ components:
           type: integer
         skipped:
           type: integer
-        deprecation_notice:
-          type: string
-          description: >
-            Present when the staged CSV included a `favorite` column. Favoriting
-            will be removed in API v2.
 
     DeleteResult:
       type: object
@@ -5769,6 +5833,18 @@ components:
       properties:
         enabled:
           type: boolean
+        triggers:
+          type: array
+          items:
+            type: string
+        templates:
+          type: object
+          additionalProperties:
+            type: string
+        last_error:
+          type: string
+        last_delivery_at:
+          type: string
 
     AdminExtension:
       type: object
@@ -5795,6 +5871,10 @@ components:
           type: object
           additionalProperties:
             type: boolean
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtensionDelivery"
 
     AdminExtensionsList:
       type: object
@@ -5809,6 +5889,16 @@ components:
       properties:
         enabled:
           type: boolean
+        webhook_url:
+          type: string
+        triggers:
+          type: array
+          items:
+            type: string
+        templates:
+          type: object
+          additionalProperties:
+            type: string
 
     ProjectExtensionSettings:
       type: object
@@ -5830,6 +5920,14 @@ components:
         min_priority:
           type: integer
         tag_ids:
+          type: array
+          items:
+            type: integer
+        status_ids:
+          type: array
+          items:
+            type: integer
+        status_exclude_ids:
           type: array
           items:
             type: integer
@@ -5939,6 +6037,14 @@ components:
           type: array
           items:
             type: integer
+        status_ids:
+          type: array
+          items:
+            type: integer
+        status_exclude_ids:
+          type: array
+          items:
+            type: integer
         claimed_only:
           type: boolean
         claimed_is_me:
@@ -6045,7 +6151,7 @@ components:
           type: boolean
         enable_inbound_webhooks:
           type: boolean
-          description: When true, project owners can expose POST /api/v1/webhooks/inbound.
+          description: When true, project owners can expose POST /api/v2/webhooks/inbound.
         allow_user_invites:
           type: boolean
         user_invite_limit:
@@ -6133,7 +6239,7 @@ components:
           type: boolean
         enable_inbound_webhooks:
           type: boolean
-          description: When true, project owners can expose POST /api/v1/webhooks/inbound.
+          description: When true, project owners can expose POST /api/v2/webhooks/inbound.
         allow_user_invites:
           type: boolean
         user_invite_limit:

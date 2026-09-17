@@ -24,8 +24,9 @@ type inboundWebhookBody struct {
 
 const inboundWebhookSecretHdr = "X-Ordryn-Webhook-Secret"
 const inboundSignatureHdr = "X-Ordryn-Signature"
+const inboundTimestampHdr = "X-Ordryn-Timestamp"
 
-// APIV1InboundWebhook handles POST /api/v1/webhooks/inbound (public).
+// APIV1InboundWebhook handles POST /api/v2/webhooks/inbound (public).
 func APIV1InboundWebhook(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -42,7 +43,7 @@ func APIV1InboundWebhook(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid webhook payload.")
 		return
 	}
-	err = domain.ApplyInboundWebhook(r.Context(), r.Header.Get(inboundWebhookSecretHdr), r.Header.Get(inboundSignatureHdr), body, domain.InboundWebhookInput{
+	err = domain.ApplyInboundWebhook(r.Context(), r.Header.Get(inboundWebhookSecretHdr), r.Header.Get(inboundSignatureHdr), r.Header.Get(inboundTimestampHdr), body, domain.InboundWebhookInput{
 		ProjectID:   payload.ProjectID,
 		Action:      payload.Action,
 		Title:       payload.Title,

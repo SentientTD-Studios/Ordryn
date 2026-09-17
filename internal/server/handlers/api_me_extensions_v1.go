@@ -49,6 +49,10 @@ func APIV1MeExtensions(w http.ResponseWriter, r *http.Request) {
 		projectExtensionTest(w, r, 0, userID, extensionID, "Inbox")
 		return
 	}
+	if len(parts) == 4 && parts[1] == "deliveries" && parts[3] == "retry" && r.Method == http.MethodPost {
+		projectExtensionRetry(w, r, 0, userID, extensionID, parts[2])
+		return
+	}
 	utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
 }
 
@@ -185,9 +189,9 @@ func publicInboundURL() string {
 		base = strings.TrimSpace(config.Cfg.BasePath)
 	}
 	if !strings.Contains(base, "://") {
-		return "/api/v1/webhooks/inbound"
+		return "/api/v2/webhooks/inbound"
 	}
-	return strings.TrimSuffix(base, "/") + "/api/v1/webhooks/inbound"
+	return strings.TrimSuffix(base, "/") + "/api/v2/webhooks/inbound"
 }
 
 func randomInboundSecret() string {

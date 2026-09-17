@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"GoTodo/internal/extensions"
+	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
 )
 
@@ -118,10 +119,15 @@ func ApplyExtensionCallback(ctx context.Context, rawToken string, in ExtensionCa
 		if strings.TrimSpace(in.Value) == "" {
 			raw = []byte("null")
 		}
-		if err := ApplyTaskFields(in.TaskID, snap.ProjectID, actor, map[string]json.RawMessage{
+		keys, err := ApplyTaskFields(in.TaskID, snap.ProjectID, actor, map[string]json.RawMessage{
 			strings.TrimSpace(in.Field): raw,
-		}); err != nil {
+		})
+		if err != nil {
 			return nil, err
+		}
+		if len(keys) > 0 {
+			live.AfterTaskChangeLive(actor, in.TaskID, live.TypeTaskUpdated)
+			live.DispatchHook(actor, in.TaskID, live.TypeTaskUpdated, &live.TaskHookMeta{Changed: keys})
 		}
 		return map[string]string{"status": "ok"}, nil
 	default:

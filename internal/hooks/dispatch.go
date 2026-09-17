@@ -265,14 +265,15 @@ func resolveActor(ev Event) string {
 }
 
 type destContext struct {
-	ProjectID int
-	UserID    int
-	Event     Event
-	Vars      map[string]string
-	Message   string
-	Dest      destFilter
-	Immediate bool
-	Timezone  string
+	ProjectID  int
+	UserID     int
+	Event      Event
+	Vars       map[string]string
+	Message    string
+	Dest       destFilter
+	Immediate  bool
+	Timezone   string
+	DeliveryID int64
 }
 
 func sendDestination(entry extensions.Entry, ctx destContext) {
@@ -378,7 +379,11 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 			return "", fmt.Errorf("webhook URL is not set")
 		}
 		auth, _ := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, "ntfy_auth")
-		return "", sendNtfy(u, auth, ctx.Message, vars, signing)
+		return "", sendNtfy(u, auth, ctx.Message, vars, sendOpts{
+			SigningSecret: signing,
+			EventID:       ctx.Event.EventID,
+			DeliveryID:    ctx.DeliveryID,
+		})
 	case extensions.DeliveryDiscordWebhook, extensions.DeliverySlackWebhook, extensions.DeliveryTeamsWebhook, extensions.DeliveryGoogleChatWebhook, extensions.DeliveryHTTPWebhook:
 		u, err := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, key)
 		if err != nil {
@@ -391,6 +396,8 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 			SigningSecret: signing,
 			Wait:          wait,
 			ThreadID:      threadID,
+			EventID:       ctx.Event.EventID,
+			DeliveryID:    ctx.DeliveryID,
 		})
 		if err == nil && messageID != "" && ctx.Event.TaskID > 0 && ctx.ProjectID > 0 {
 			_ = storage.SetHookTaskMessageID(m.ID, ctx.ProjectID, ctx.Event.TaskID, messageID)
@@ -431,9 +438,9 @@ func publicAdminJoinURL() string {
 func publicCallbackURL() string {
 	base := publicBaseURL()
 	if base == "" {
-		return "/api/v1/ext/callback"
+		return "/api/v2/ext/callback"
 	}
-	return base + "/api/v1/ext/callback"
+	return base + "/api/v2/ext/callback"
 }
 
 func cloneVars(in map[string]string) map[string]string {
@@ -560,6 +567,12 @@ func DeliverTestForUser(extensionID string, projectID, userID int, projectName s
 			return err
 		}
 		tmpl = templateFor(entry.Manifest, s.Templates, EventTaskUpdated)
+	} else {
+		s, err := storage.GetExtensionSettings(extensionID)
+		if err != nil {
+			return err
+		}
+		tmpl = templateFor(entry.Manifest, s.Templates, EventTaskUpdated)
 	}
 	if strings.TrimSpace(tmpl) == "" {
 		tmpl = "Task {name} updated to {status} in project {project}"
@@ -612,10 +625,13 @@ func RotateCallbackToken(extensionID string, projectID, userID int) (string, err
 func SampleJSONBody() string {
 	vars := map[string]string{
 		"id": "42", "name": "Ship", "task": "Ship", "status": "Done", "old_status": "In progress",
-		"project": "Ordryn", "actor": "ada", "url": "https://todo.example.com/tasks/42", "priority": "High",
+		"project": "Ordryn", "project_id": "7", "actor": "ada", "actor_id": "3",
+		"url": "https://todo.example.com/tasks/42", "priority": "High",
+		"description": "Ship the release", "parent_id": "1", "estimate": "5",
 		"comment": "", "claimed_by": "ada", "due_date": "2026-09-20", "sprint": "Sprint 1", "tags": "release",
 		"event_id": "00000000-0000-0000-0000-000000000001", "occurred_at": "2026-09-15T16:00:00Z", "changed": "status",
-		"fields_json": `{"severity.level":"high"}`,
+		"fields_json":  `{"severity.level":"high"}`,
+		"changes_json": `[{"field":"status","old":"In progress","new":"Done"}]`,
 	}
 	raw, _ := marshalWebhookPayload(extensions.DeliveryHTTPWebhook, extensions.DeliveryFormatJSON, "Task Ship updated to Done in project Ordryn", "task.updated", vars)
 	return string(raw)

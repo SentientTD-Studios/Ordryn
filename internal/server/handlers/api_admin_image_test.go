@@ -131,7 +131,7 @@ func TestAdminSettingsJSONIncludesImageHosting(t *testing.T) {
 }
 
 func TestAPIV1AdminSettingsMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/settings", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/settings", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 	APIV1AdminSettings(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {

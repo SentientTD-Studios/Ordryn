@@ -29,7 +29,7 @@ type apiEmailAuditListResponse struct {
 	Offset int                 `json:"offset"`
 }
 
-// APIV1AdminEmailAudit handles GET /api/v1/admin/email-audit.
+// APIV1AdminEmailAudit handles GET /api/v2/admin/email-audit.
 func APIV1AdminEmailAudit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

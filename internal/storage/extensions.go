@@ -18,8 +18,6 @@ import (
 // ExtensionSettings is the site-level JSON document stored per extension_id.
 type ExtensionSettings struct {
 	Enabled        bool              `json:"enabled"`
-	AllProjects    bool              `json:"all_projects,omitempty"`
-	ProjectIDs     []int             `json:"project_ids,omitempty"`
 	Triggers       []string          `json:"triggers,omitempty"`
 	Templates      map[string]string `json:"templates,omitempty"`
 	StatusOnly     bool              `json:"status_only,omitempty"`
@@ -29,23 +27,25 @@ type ExtensionSettings struct {
 
 // ExtensionProjectSettings is the per-project JSON document for an extension.
 type ExtensionProjectSettings struct {
-	Enabled         bool              `json:"enabled"`
-	Triggers        []string          `json:"triggers"`
-	Templates       map[string]string `json:"templates"`
-	StatusOnly      bool              `json:"status_only"`
-	SkipSelf        bool              `json:"skip_self,omitempty"`
-	MinPriority     int               `json:"min_priority,omitempty"`
-	TagIDs          []int             `json:"tag_ids,omitempty"`
-	ClaimedOnly     bool              `json:"claimed_only,omitempty"`
-	FieldKey        string            `json:"field_key,omitempty"`
-	FieldValue      string            `json:"field_value,omitempty"`
-	QuietHoursStart string            `json:"quiet_hours_start,omitempty"`
-	QuietHoursEnd   string            `json:"quiet_hours_end,omitempty"`
-	Digest          string            `json:"digest,omitempty"`
-	MentionMap      map[string]string `json:"mention_map,omitempty"`
-	Values          map[string]string `json:"values,omitempty"`
-	LastError       string            `json:"last_error,omitempty"`
-	LastDeliveryAt  string            `json:"last_delivery_at,omitempty"`
+	Enabled          bool              `json:"enabled"`
+	Triggers         []string          `json:"triggers"`
+	Templates        map[string]string `json:"templates"`
+	StatusOnly       bool              `json:"status_only"`
+	SkipSelf         bool              `json:"skip_self,omitempty"`
+	MinPriority      int               `json:"min_priority,omitempty"`
+	TagIDs           []int             `json:"tag_ids,omitempty"`
+	StatusIDs        []int             `json:"status_ids,omitempty"`
+	StatusExcludeIDs []int             `json:"status_exclude_ids,omitempty"`
+	ClaimedOnly      bool              `json:"claimed_only,omitempty"`
+	FieldKey         string            `json:"field_key,omitempty"`
+	FieldValue       string            `json:"field_value,omitempty"`
+	QuietHoursStart  string            `json:"quiet_hours_start,omitempty"`
+	QuietHoursEnd    string            `json:"quiet_hours_end,omitempty"`
+	Digest           string            `json:"digest,omitempty"`
+	MentionMap       map[string]string `json:"mention_map,omitempty"`
+	Values           map[string]string `json:"values,omitempty"`
+	LastError        string            `json:"last_error,omitempty"`
+	LastDeliveryAt   string            `json:"last_delivery_at,omitempty"`
 }
 
 // ExtensionMemberSettings is per-user destination config (project or personal inbox).
@@ -55,9 +55,11 @@ type ExtensionMemberSettings struct {
 	Templates       map[string]string `json:"templates"`
 	SkipSelf        *bool             `json:"skip_self,omitempty"`
 	StatusOnly      bool              `json:"status_only,omitempty"`
-	MinPriority     int               `json:"min_priority,omitempty"`
-	TagIDs          []int             `json:"tag_ids,omitempty"`
-	ClaimedOnly     bool              `json:"claimed_only,omitempty"`
+	MinPriority      int               `json:"min_priority,omitempty"`
+	TagIDs           []int             `json:"tag_ids,omitempty"`
+	StatusIDs        []int             `json:"status_ids,omitempty"`
+	StatusExcludeIDs []int             `json:"status_exclude_ids,omitempty"`
+	ClaimedOnly      bool              `json:"claimed_only,omitempty"`
 	ClaimedIsMe     bool              `json:"claimed_is_me,omitempty"`
 	FieldKey        string            `json:"field_key,omitempty"`
 	FieldValue      string            `json:"field_value,omitempty"`
@@ -79,23 +81,27 @@ func (s ExtensionMemberSettings) SkipSelfOrDefault() bool {
 
 // HookTaskSnapshot is the task view used when rendering hook templates.
 type HookTaskSnapshot struct {
-	ID            int
-	Title         string
-	Completed     bool
-	Priority      int
-	ProjectID     int
-	ProjectName   string
-	WorkflowMode  string
-	StatusName    string
-	OwnerID       int
-	ClaimedBy     int
-	ClaimedByName string
-	DueDate       string
-	SprintID      int
-	SprintName    string
-	Tags          []string
-	TagIDs        []int
-	CustomFields  map[string]string
+	ID             int
+	Title          string
+	Description    string
+	Completed      bool
+	Priority       int
+	ProjectID      int
+	ProjectName    string
+	WorkflowMode   string
+	StatusID       int
+	StatusName     string
+	OwnerID        int
+	ClaimedBy      int
+	ClaimedByName  string
+	DueDate        string
+	SprintID       int
+	SprintName     string
+	ParentID       int
+	EstimatePoints int
+	Tags           []string
+	TagIDs         []int
+	CustomFields   map[string]string
 }
 
 // CreateExtensionTables creates extension settings and secret tables.
@@ -583,19 +589,23 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 
 	var s HookTaskSnapshot
 	var projectID sql.NullInt64
+	var parentID sql.NullInt64
+	var statusID sql.NullInt64
+	var estimate sql.NullInt64
 	err = pool.QueryRow(context.Background(), `
-		SELECT t.id, t.title, COALESCE(t.completed, false), COALESCE(t.priority, 0),
-		       t.project_id, COALESCE(p.name, ''), COALESCE(p.workflow_mode, 'classic'), COALESCE(ps.name, ''),
+		SELECT t.id, t.title, COALESCE(t.description, ''), COALESCE(t.completed, false), COALESCE(t.priority, 0),
+		       t.project_id, COALESCE(p.name, ''), COALESCE(p.workflow_mode, 'classic'), COALESCE(t.status_id, 0), COALESCE(ps.name, ''),
 		       t.user_id, COALESCE(t.claimed_by, 0), COALESCE(u.user_name, u.email, ''),
-		       COALESCE(CAST(t.due_date AS TEXT), ''), COALESCE(t.sprint_id, 0), COALESCE(sp.name, '')
+		       COALESCE(CAST(t.due_date AS TEXT), ''), COALESCE(t.sprint_id, 0), COALESCE(sp.name, ''),
+		       t.parent_id, COALESCE(t.estimate_points, 0)
 		FROM tasks t
 		LEFT JOIN projects p ON p.id = t.project_id
 		LEFT JOIN project_statuses ps ON ps.id = t.status_id
 		LEFT JOIN users u ON u.id = t.claimed_by
 		LEFT JOIN project_sprints sp ON sp.id = t.sprint_id
 		WHERE t.id = $1`, taskID).Scan(
-		&s.ID, &s.Title, &s.Completed, &s.Priority, &projectID, &s.ProjectName, &s.WorkflowMode, &s.StatusName,
-		&s.OwnerID, &s.ClaimedBy, &s.ClaimedByName, &s.DueDate, &s.SprintID, &s.SprintName)
+		&s.ID, &s.Title, &s.Description, &s.Completed, &s.Priority, &projectID, &s.ProjectName, &s.WorkflowMode, &statusID, &s.StatusName,
+		&s.OwnerID, &s.ClaimedBy, &s.ClaimedByName, &s.DueDate, &s.SprintID, &s.SprintName, &parentID, &estimate)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("task not found")
@@ -604,6 +614,15 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 	}
 	if projectID.Valid {
 		s.ProjectID = int(projectID.Int64)
+	}
+	if parentID.Valid {
+		s.ParentID = int(parentID.Int64)
+	}
+	if statusID.Valid {
+		s.StatusID = int(statusID.Int64)
+	}
+	if estimate.Valid {
+		s.EstimatePoints = int(estimate.Int64)
 	}
 	if tags, err := GetTagsForTask(taskID); err == nil {
 		s.Tags = make([]string, 0, len(tags))

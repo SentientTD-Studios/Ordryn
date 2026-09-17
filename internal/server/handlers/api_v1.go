@@ -31,7 +31,6 @@ type apiTaskJSON struct {
 	ProjectID         *int               `json:"project_id,omitempty"`
 	Project           string             `json:"project,omitempty"`
 	Priority          int                `json:"priority"`
-	Favorite          bool               `json:"favorite"`
 	Position          int                `json:"position"`
 	ParentID          *int               `json:"parent_id"`
 	ChildCount        int                `json:"child_count"`
@@ -52,7 +51,6 @@ type apiTaskJSON struct {
 	ParentTitle       string             `json:"parent_title,omitempty"`
 	GitHub            *apiTaskGitHubJSON `json:"github,omitempty"`
 	Fields            map[string]any     `json:"fields,omitempty"`
-	DeprecationNotice string             `json:"deprecation_notice,omitempty"`
 }
 
 type apiTaskListResponse struct {
@@ -73,7 +71,6 @@ type apiTaskCreateRequest struct {
 	ParentID       *int                       `json:"parent_id"`
 	Priority       *int                       `json:"priority"`
 	Completed      *bool                      `json:"completed"`
-	Favorite       *bool                      `json:"favorite"`
 	TagIDs         []int                      `json:"tag_ids"`
 	StatusID       *int                       `json:"status_id"`
 	EstimatePoints *int                       `json:"estimate_points"`
@@ -89,7 +86,6 @@ type apiTaskPatchRequest struct {
 	ParentID       **int           `json:"parent_id"`
 	Priority       *int            `json:"priority"`
 	Completed      *bool           `json:"completed"`
-	Favorite       *bool           `json:"favorite"`
 	TagIDs         *[]int          `json:"tag_ids"`
 	ClearDue       *bool           `json:"clear_due_date"`
 	StatusID       **int           `json:"status_id"`
@@ -174,7 +170,6 @@ func (o optionalString) toPatchString() *string {
 
 type apiTaskReorderRequest struct {
 	TaskIDs  []int   `json:"task_ids"`
-	Favorite *bool   `json:"favorite"`
 	ParentID *int    `json:"parent_id"`
 	Page     *int    `json:"page"`
 	PerPage  *int    `json:"per_page"`
@@ -183,8 +178,7 @@ type apiTaskReorderRequest struct {
 }
 
 type apiReorderOKResponse struct {
-	OK                bool   `json:"ok"`
-	DeprecationNotice string `json:"deprecation_notice,omitempty"`
+	OK bool `json:"ok"`
 }
 
 type apiProjectJSON struct {
@@ -281,7 +275,6 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 		Completed:         t.Completed,
 		DueDate:           t.DueDate,
 		Priority:          t.Priority,
-		Favorite:          t.IsFavorite,
 		Position:          t.Position,
 		ChildCount:        t.ChildCount,
 		ChildrenCompleted: t.ChildrenCompleted,
@@ -379,7 +372,7 @@ func decodeJSONBody(r *http.Request, dest interface{}) error {
 	return json.Unmarshal(body, dest)
 }
 
-// APIV1TasksRouter handles /api/v1/tasks, reorder/bulk/undo, /api/v1/tasks/{id}, and events.
+// APIV1TasksRouter handles /api/v2/tasks, reorder/bulk/undo, /api/v2/tasks/{id}, and events.
 func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "tasks")
 	if sub == "" {
@@ -570,11 +563,6 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Completed != nil {
 		completed = *req.Completed
 	}
-	favorite := false
-	if req.Favorite != nil {
-		favorite = *req.Favorite
-	}
-	notice := favoriteDeprecationNoticeIfUsed(w, req.Favorite != nil)
 	in := domain.CreateTaskInput{
 		Title:          req.Title,
 		Description:    req.Description,
@@ -583,7 +571,6 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 		ParentID:       req.ParentID,
 		Priority:       priority,
 		Completed:      completed,
-		Favorite:       favorite,
 		TagIDs:         req.TagIDs,
 		StatusID:       req.StatusID,
 		EstimatePoints: req.EstimatePoints,
@@ -615,7 +602,6 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := taskToAPIJSON(task)
-	out.DeprecationNotice = notice
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(out)
@@ -632,15 +618,12 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	notice := favoriteDeprecationNoticeIfUsed(w, req.Favorite != nil)
-
 	in := domain.UpdateTaskInput{
 		Title:       req.Title,
 		Description: req.Description,
 		DueDate:     req.DueDate,
 		Priority:    req.Priority,
 		Completed:   req.Completed,
-		Favorite:    req.Favorite,
 		TagIDs:      req.TagIDs,
 		ParentID:    req.ParentID,
 		StatusID:    req.StatusID,
@@ -683,7 +666,6 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 		return
 	}
 	out := taskToAPIJSON(task)
-	out.DeprecationNotice = notice
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(out)
 }
@@ -1009,20 +991,15 @@ func apiV1ReorderTasks(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "task_ids is required.")
 		return
 	}
-	if req.Favorite == nil {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "favorite is required.")
-		return
-	}
-	notice := favoriteDeprecationNoticeIfUsed(w, *req.Favorite)
 
 	var projectFilter *int
 	if req.Project != nil {
 		projectFilter = parseProjectFilter(*req.Project)
 	}
 
-	if err := domain.ReorderTasks(r.Context(), userID, req.TaskIDs, *req.Favorite, projectFilter, req.ParentID, req.StatusID); err != nil {
+	if err := domain.ReorderTasks(r.Context(), userID, req.TaskIDs, projectFilter, req.ParentID, req.StatusID); err != nil {
 		if errors.Is(err, domain.ErrValidation) {
-			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Task does not belong to user or mismatched favorite group/project.")
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Task does not belong to user or mismatched project/parent.")
 			return
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder tasks.")
@@ -1030,10 +1007,10 @@ func apiV1ReorderTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(apiReorderOKResponse{OK: true, DeprecationNotice: notice})
+	json.NewEncoder(w).Encode(apiReorderOKResponse{OK: true})
 }
 
-// APIV1ProjectsRouter handles /api/v1/projects and /api/v1/projects/{id}[/members|invites|events].
+// APIV1ProjectsRouter handles /api/v2/projects and /api/v2/projects/{id}[/members|invites|events].
 func APIV1ProjectsRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "projects")
 	if sub == "" {
@@ -1229,7 +1206,7 @@ func apiV1DeleteProject(w http.ResponseWriter, r *http.Request, projectID int) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// APIV1TagsRouter handles /api/v1/tags and /api/v1/tags/{id}.
+// APIV1TagsRouter handles /api/v2/tags and /api/v2/tags/{id}.
 func APIV1TagsRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "tags")
 	if sub == "" {

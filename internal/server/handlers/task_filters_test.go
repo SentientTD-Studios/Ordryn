@@ -79,7 +79,7 @@ func TestParseProjectFilter(t *testing.T) {
 }
 
 func TestFilterContextFromRequest(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/v1/tasks?project=3&sprint_id=7&status=incomplete&due=today&priority=2&tag=urgent&workflow_claim_scope=mine&include_subtasks=1&page=3", nil)
+	req := httptest.NewRequest("GET", "/api/v2/tasks?project=3&sprint_id=7&status=incomplete&due=today&priority=2&tag=urgent&workflow_claim_scope=mine&include_subtasks=1&page=3", nil)
 	fc := filterContextFromRequest(req)
 
 	if fc.Project != "3" {

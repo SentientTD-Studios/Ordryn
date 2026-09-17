@@ -65,16 +65,16 @@ func keepFieldKeys(defs []storage.CustomFieldDef) []string {
 }
 
 // ApplyTaskFields merges fields onto a task. Null / empty JSON clears a key.
-func ApplyTaskFields(taskID, projectID, actorUserID int, patch map[string]json.RawMessage) error {
+func ApplyTaskFields(taskID, projectID, actorUserID int, patch map[string]json.RawMessage) ([]string, error) {
 	if len(patch) == 0 {
-		return nil
+		return nil, nil
 	}
 	if projectID <= 0 {
-		return fmt.Errorf("%w: custom fields require a project", ErrValidation)
+		return nil, fmt.Errorf("%w: custom fields require a project", ErrValidation)
 	}
 	defs, err := ApplicableFieldDefsForProject(projectID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	byKey := defsByKey(defs)
 	changed := make([]string, 0)
@@ -82,31 +82,31 @@ func ApplyTaskFields(taskID, projectID, actorUserID int, patch map[string]json.R
 		key = strings.TrimSpace(key)
 		def, ok := byKey[key]
 		if !ok {
-			return fmt.Errorf("%w: unknown field %q", ErrValidation, key)
+			return nil, fmt.Errorf("%w: unknown field %q", ErrValidation, key)
 		}
 		normalized, clear, err := normalizeFieldValue(def, projectID, raw)
 		if err != nil {
-			return fmt.Errorf("%w: %s: %s", ErrValidation, key, err.Error())
+			return nil, fmt.Errorf("%w: %s: %s", ErrValidation, key, err.Error())
 		}
 		if clear {
 			if def.Required {
-				return fmt.Errorf("%w: %s is required", ErrValidation, key)
+				return nil, fmt.Errorf("%w: %s is required", ErrValidation, key)
 			}
 			if err := storage.DeleteCustomFieldValue(taskID, key); err != nil {
-				return err
+				return nil, err
 			}
 			changed = append(changed, key)
 			continue
 		}
 		if err := storage.UpsertCustomFieldValue(taskID, key, normalized); err != nil {
-			return err
+			return nil, err
 		}
 		changed = append(changed, key)
 	}
 	if len(changed) > 0 {
 		_ = storage.LogTaskEvent(taskID, actorUserID, "edited", map[string]interface{}{"fields": changed})
 	}
-	return nil
+	return changed, nil
 }
 
 // PruneInapplicableFieldValues drops values that no longer apply after a project change.

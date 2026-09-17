@@ -314,3 +314,106 @@ func TestSprintLifecycleHooks(t *testing.T) {
 		t.Fatalf("expected sprint_changed+moved, got %v", *sprintChanged)
 	}
 }
+
+func TestStatusChangeDoesNotDoubleFireTaskUpdated(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Status Hook Proj", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatal(err)
+	}
+	sts, err := storage.ListProjectStatuses(proj.ID)
+	if err != nil || len(sts) < 2 {
+		t.Fatalf("need statuses: %v %d", err, len(sts))
+	}
+	pid := proj.ID
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Move column", ProjectID: &pid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := listenHookTypes(t)
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{StatusID: ptrToIntPtr(sts[len(sts)-1].ID)}); err != nil {
+		t.Fatal(err)
+	}
+	if !hasHookType(*got, live.TypeTaskStatusChanged) {
+		t.Fatalf("expected task.status_changed, got %v", *got)
+	}
+	if hasHookType(*got, live.TypeTaskUpdated) {
+		t.Fatalf("status-only edit must not also fire residual task.updated, got %v", *got)
+	}
+}
+
+func TestTitleEditFiresResidualTaskUpdated(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Title Hook Proj", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := proj.ID
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Old title", ProjectID: &pid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := listenHookTypes(t)
+	title := "New title"
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{Title: &title}); err != nil {
+		t.Fatal(err)
+	}
+	if !hasHookType(*got, live.TypeTaskUpdated) {
+		t.Fatalf("expected residual task.updated, got %v", *got)
+	}
+	if hasHookType(*got, live.TypeTaskStatusChanged) {
+		t.Fatalf("title edit should not fire status_changed, got %v", *got)
+	}
+}
+
+func TestCommentEditDoesNotFireCommentedHook(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Comment Split Proj", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := proj.ID
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Discuss", ProjectID: &pid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := AddCommentForUser(ctx, 1, taskID, "Original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := listenHookTypes(t)
+	if _, err := EditCommentForUser(ctx, 1, taskID, c.ID, "Edited body"); err != nil {
+		t.Fatal(err)
+	}
+	if !hasHookType(*got, live.TypeTaskCommentEdited) {
+		t.Fatalf("expected task.comment_edited, got %v", *got)
+	}
+	if hasHookType(*got, live.TypeTaskCommented) {
+		t.Fatalf("edit must not outbound-fire task.commented, got %v", *got)
+	}
+}
+
+func TestProjectCreatedAndDeletedHooks(t *testing.T) {
+	ctx := context.Background()
+	created := listenHookTypes(t)
+	proj, err := CreateProject(ctx, 1, "Create Hook Proj", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasHookType(*created, live.TypeProjectCreated) {
+		t.Fatalf("expected project.created, got %v", *created)
+	}
+	deleted := listenHookTypes(t)
+	if err := DeleteProject(ctx, 1, proj.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !hasHookType(*deleted, live.TypeProjectDeleted) {
+		t.Fatalf("expected project.deleted, got %v", *deleted)
+	}
+	if hasHookType(*deleted, live.TypeProjectUpdated) {
+		t.Fatalf("delete should not also fire project.updated, got %v", *deleted)
+	}
+}

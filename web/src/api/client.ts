@@ -152,12 +152,12 @@ async function upload<T>(path: string, field: string, file: Blob | File): Promis
 export const api = {
   health() {
     return request<{ version: string; api_enabled: boolean; redis_ok: boolean; mode: string }>(
-      '/api/v1/health',
+      '/api/v2/health',
     )
   },
 
   site() {
-    return request<SiteInfo>('/api/v1/site')
+    return request<SiteInfo>('/api/v2/site')
   },
 
   changelog() {
@@ -165,47 +165,47 @@ export const api = {
   },
 
   me() {
-    return request<User | null>('/api/v1/me')
+    return request<User | null>('/api/v2/me')
   },
 
   login(email: string, password: string) {
-    return request<User | MFARequired>('/api/v1/auth/login', {
+    return request<User | MFARequired>('/api/v2/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
   },
 
   verifyMFA(code: string) {
-    return request<User>('/api/v1/auth/mfa/verify', {
+    return request<User>('/api/v2/auth/mfa/verify', {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
   },
 
   getMFA() {
-    return request<MFAStatus>('/api/v1/me/mfa')
+    return request<MFAStatus>('/api/v2/me/mfa')
   },
 
   setupMFA() {
-    return request<MFASetup>('/api/v1/me/mfa/setup', { method: 'POST' })
+    return request<MFASetup>('/api/v2/me/mfa/setup', { method: 'POST' })
   },
 
   enableMFA(code: string) {
-    return request<MFARecoveryCodes>('/api/v1/me/mfa/enable', {
+    return request<MFARecoveryCodes>('/api/v2/me/mfa/enable', {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
   },
 
   disableMFA(code: string) {
-    return request<{ ok: boolean }>('/api/v1/me/mfa/disable', {
+    return request<{ ok: boolean }>('/api/v2/me/mfa/disable', {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
   },
 
   regenerateMFARecoveryCodes(code: string) {
-    return request<MFARecoveryCodes>('/api/v1/me/mfa/recovery-codes', {
+    return request<MFARecoveryCodes>('/api/v2/me/mfa/recovery-codes', {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
@@ -219,7 +219,7 @@ export const api = {
     timezone?: string
     invite_token?: string
   }) {
-    return request<User>('/api/v1/auth/register', {
+    return request<User>('/api/v2/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -228,23 +228,23 @@ export const api = {
   usernameAvailable(username: string) {
     const qs = new URLSearchParams({ username })
     return request<{ username: string; available: boolean; valid: boolean; message?: string }>(
-      `/api/v1/auth/username-available?${qs}`,
+      `/api/v2/auth/username-available?${qs}`,
     )
   },
 
   logout() {
-    return request<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' })
+    return request<{ ok: boolean }>('/api/v2/auth/logout', { method: 'POST' })
   },
 
   patchMe(payload: Partial<Pick<User, 'timezone' | 'items_per_page' | 'allow_project_invites'>>) {
-    return request<User>('/api/v1/me', {
+    return request<User>('/api/v2/me', {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
 
   claimUsername(user_name: string) {
-    return request<User>('/api/v1/me/username', {
+    return request<User>('/api/v2/me/username', {
       method: 'POST',
       body: JSON.stringify({ user_name }),
     })
@@ -255,32 +255,32 @@ export const api = {
     new_password: string
     confirm_password: string
   }) {
-    return request<{ ok: boolean }>('/api/v1/me/password', {
+    return request<{ ok: boolean }>('/api/v2/me/password', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
   listAPIKeys() {
-    return request<APIKey[]>('/api/v1/api-keys')
+    return request<APIKey[]>('/api/v2/api-keys')
   },
 
   createAPIKey(name: string) {
-    return request<APIKey & { key: string }>('/api/v1/api-keys', {
+    return request<APIKey & { key: string }>('/api/v2/api-keys', {
       method: 'POST',
       body: JSON.stringify({ name }),
     })
   },
 
   renameAPIKey(id: number, name: string) {
-    return request<APIKey>(`/api/v1/api-keys/${id}`, {
+    return request<APIKey>(`/api/v2/api-keys/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     })
   },
 
   revokeAPIKey(id: number) {
-    return request<void>(`/api/v1/api-keys/${id}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/api-keys/${id}`, { method: 'DELETE' })
   },
 
   listTasks(params: Record<string, string | number | undefined> = {}) {
@@ -289,15 +289,15 @@ export const api = {
       if (v !== undefined && v !== '') qs.set(k, String(v))
     }
     const q = qs.toString()
-    return request<TaskList>(`/api/v1/tasks${q ? `?${q}` : ''}`)
+    return request<TaskList>(`/api/v2/tasks${q ? `?${q}` : ''}`)
   },
 
   getTask(id: number) {
-    return request<Task>(`/api/v1/tasks/${id}`)
+    return request<Task>(`/api/v2/tasks/${id}`)
   },
 
   listTaskEvents(id: number) {
-    return request<TaskEvent[]>(`/api/v1/tasks/${id}/events`)
+    return request<TaskEvent[]>(`/api/v2/tasks/${id}/events`)
   },
 
   createTask(payload: {
@@ -307,15 +307,13 @@ export const api = {
     project_id?: number | null
     parent_id?: number | null
     priority?: number
-    /** @deprecated Task favoriting will be removed in API v2. */
-    favorite?: boolean
     tag_ids?: number[]
     status_id?: number | null
     estimate_points?: number | null
     sprint_id?: number | null
     fields?: Record<string, unknown>
   }) {
-    return request<Task>('/api/v1/tasks', {
+    return request<Task>('/api/v2/tasks', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -332,8 +330,6 @@ export const api = {
       parent_id: number | null
       priority: number
       completed: boolean
-      /** @deprecated Task favoriting will be removed in API v2. */
-      favorite: boolean
       tag_ids: number[]
       status_id: number | null
       estimate_points: number | null
@@ -341,7 +337,7 @@ export const api = {
       fields: Record<string, unknown>
     }>,
   ) {
-    return request<Task>(`/api/v1/tasks/${id}`, {
+    return request<Task>(`/api/v2/tasks/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
@@ -360,21 +356,21 @@ export const api = {
     }
     const qs = params.toString()
     return request<{ ok: boolean; undo_token?: string; expires_in?: number }>(
-      `/api/v1/tasks/${id}${qs ? `?${qs}` : ''}`,
+      `/api/v2/tasks/${id}${qs ? `?${qs}` : ''}`,
       { method: 'DELETE' },
     )
   },
 
   archiveTask(id: number) {
-    return request<Task>(`/api/v1/tasks/${id}/archive`, { method: 'POST' })
+    return request<Task>(`/api/v2/tasks/${id}/archive`, { method: 'POST' })
   },
 
   restoreTask(id: number) {
-    return request<Task>(`/api/v1/tasks/${id}/restore`, { method: 'POST' })
+    return request<Task>(`/api/v2/tasks/${id}/restore`, { method: 'POST' })
   },
 
   undo(undo_token: string) {
-    return request<{ ok: boolean; restored: number }>('/api/v1/tasks/undo', {
+    return request<{ ok: boolean; restored: number }>('/api/v2/tasks/undo', {
       method: 'POST',
       body: JSON.stringify({ undo_token }),
     })
@@ -390,7 +386,7 @@ export const api = {
     status_id?: number
     sprint_id?: number | null
   }) {
-    return request<{ ok: boolean; affected: number; undo_token?: string }>('/api/v1/tasks/bulk', {
+    return request<{ ok: boolean; affected: number; undo_token?: string }>('/api/v2/tasks/bulk', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -398,62 +394,60 @@ export const api = {
 
   reorderTasks(payload: {
     task_ids: number[]
-    /** @deprecated Favorite grouping will be removed in API v2. */
-    favorite: boolean
     project?: string
     parent_id?: number | null
     status_id?: number | null
   }) {
-    return request<{ ok: boolean }>('/api/v1/tasks/reorder', {
+    return request<{ ok: boolean }>('/api/v2/tasks/reorder', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
   getGitHubConnection() {
-    return request<GitHubConnection>('/api/v1/me/github')
+    return request<GitHubConnection>('/api/v2/me/github')
   },
 
   connectGitHubPAT(token: string) {
-    return request<GitHubConnection>('/api/v1/me/github/pat', {
+    return request<GitHubConnection>('/api/v2/me/github/pat', {
       method: 'POST',
       body: JSON.stringify({ token }),
     })
   },
 
   disconnectGitHub() {
-    return request<{ ok: boolean }>('/api/v1/me/github', { method: 'DELETE' })
+    return request<{ ok: boolean }>('/api/v2/me/github', { method: 'DELETE' })
   },
 
   startGitHubOAuth() {
-    return request<{ authorize_url: string; redirect_uri: string }>('/api/v1/me/github/oauth/start')
+    return request<{ authorize_url: string; redirect_uri: string }>('/api/v2/me/github/oauth/start')
   },
 
   getProjectGitHub(projectId: number) {
-    return request<ProjectGitHubRepo>(`/api/v1/projects/${projectId}/github`)
+    return request<ProjectGitHubRepo>(`/api/v2/projects/${projectId}/github`)
   },
 
   linkProjectGitHub(projectId: number, repository: string) {
-    return request<ProjectGitHubRepo>(`/api/v1/projects/${projectId}/github`, {
+    return request<ProjectGitHubRepo>(`/api/v2/projects/${projectId}/github`, {
       method: 'PUT',
       body: JSON.stringify({ repository }),
     })
   },
 
   unlinkProjectGitHub(projectId: number) {
-    return request<{ ok: boolean }>(`/api/v1/projects/${projectId}/github`, { method: 'DELETE' })
+    return request<{ ok: boolean }>(`/api/v2/projects/${projectId}/github`, { method: 'DELETE' })
   },
 
   listProjectCustomFields(projectId: number) {
-    return request<CustomFieldDefList>(`/api/v1/projects/${projectId}/custom-fields`)
+    return request<CustomFieldDefList>(`/api/v2/projects/${projectId}/custom-fields`)
   },
 
   listProjectExtensions(projectId: number) {
-    return request<ProjectExtensionsList>(`/api/v1/projects/${projectId}/extensions`)
+    return request<ProjectExtensionsList>(`/api/v2/projects/${projectId}/extensions`)
   },
 
   patchProjectExtension(projectId: number, extensionId: string, payload: ProjectExtensionPatch) {
-    return request<ProjectExtension>(`/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}`, {
+    return request<ProjectExtension>(`/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
@@ -461,31 +455,45 @@ export const api = {
 
   testProjectExtension(projectId: number, extensionId: string) {
     return request<{ ok: boolean; message: string; sample_json?: string }>(
-      `/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/test`,
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/test`,
       { method: 'POST' },
     )
   },
 
   patchProjectExtensionMe(projectId: number, extensionId: string, payload: ProjectExtensionPatch) {
     return request<ProjectExtension>(
-      `/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me`,
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me`,
       { method: 'PATCH', body: JSON.stringify(payload) },
     )
   },
 
   testProjectExtensionMe(projectId: number, extensionId: string) {
     return request<{ ok: boolean; message: string; sample_json?: string }>(
-      `/api/v1/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me/test`,
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me/test`,
+      { method: 'POST' },
+    )
+  },
+
+  retryProjectExtension(projectId: number, extensionId: string, deliveryId: number) {
+    return request<{ ok: boolean }>(
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/deliveries/${deliveryId}/retry`,
+      { method: 'POST' },
+    )
+  },
+
+  retryProjectExtensionMe(projectId: number, extensionId: string, deliveryId: number) {
+    return request<{ ok: boolean }>(
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me/deliveries/${deliveryId}/retry`,
       { method: 'POST' },
     )
   },
 
   listMyExtensions() {
-    return request<ProjectExtensionsList>('/api/v1/me/extensions')
+    return request<ProjectExtensionsList>('/api/v2/me/extensions')
   },
 
   patchMyExtension(extensionId: string, payload: ProjectExtensionPatch) {
-    return request<ProjectExtension>(`/api/v1/me/extensions/${encodeURIComponent(extensionId)}`, {
+    return request<ProjectExtension>(`/api/v2/me/extensions/${encodeURIComponent(extensionId)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
@@ -493,46 +501,53 @@ export const api = {
 
   testMyExtension(extensionId: string) {
     return request<{ ok: boolean; message: string; sample_json?: string }>(
-      `/api/v1/me/extensions/${encodeURIComponent(extensionId)}/test`,
+      `/api/v2/me/extensions/${encodeURIComponent(extensionId)}/test`,
+      { method: 'POST' },
+    )
+  },
+
+  retryMyExtension(extensionId: string, deliveryId: number) {
+    return request<{ ok: boolean }>(
+      `/api/v2/me/extensions/${encodeURIComponent(extensionId)}/deliveries/${deliveryId}/retry`,
       { method: 'POST' },
     )
   },
 
   getProjectInbound(projectId: number) {
-    return request<ProjectInboundWebhook>(`/api/v1/projects/${projectId}/inbound`)
+    return request<ProjectInboundWebhook>(`/api/v2/projects/${projectId}/inbound`)
   },
 
   patchProjectInbound(projectId: number, payload: ProjectInboundPatch) {
-    return request<ProjectInboundWebhook>(`/api/v1/projects/${projectId}/inbound`, {
+    return request<ProjectInboundWebhook>(`/api/v2/projects/${projectId}/inbound`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
 
   createTaskGitHubIssue(taskId: number, payload: { title?: string; body?: string } = {}) {
-    return request<TaskGitHubIssue>(`/api/v1/tasks/${taskId}/github-issue`, {
+    return request<TaskGitHubIssue>(`/api/v2/tasks/${taskId}/github-issue`, {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
   linkTaskGitHubIssue(taskId: number, issue: string) {
-    return request<TaskGitHubIssue>(`/api/v1/tasks/${taskId}/github-issue`, {
+    return request<TaskGitHubIssue>(`/api/v2/tasks/${taskId}/github-issue`, {
       method: 'PUT',
       body: JSON.stringify({ issue }),
     })
   },
 
   unlinkTaskGitHubIssue(taskId: number) {
-    return request<{ ok: boolean }>(`/api/v1/tasks/${taskId}/github-issue`, { method: 'DELETE' })
+    return request<{ ok: boolean }>(`/api/v2/tasks/${taskId}/github-issue`, { method: 'DELETE' })
   },
 
   listProjects() {
-    return request<Project[]>('/api/v1/projects')
+    return request<Project[]>('/api/v2/projects')
   },
 
   createProject(name: string, description = '') {
-    return request<Project>('/api/v1/projects', {
+    return request<Project>('/api/v2/projects', {
       method: 'POST',
       body: JSON.stringify({ name, description }),
     })
@@ -551,43 +566,43 @@ export const api = {
       auto_sprint_lock_days_before: number | null
     }>,
   ) {
-    return request<Project>(`/api/v1/projects/${id}`, {
+    return request<Project>(`/api/v2/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
 
   renameProject(id: number, name: string) {
-    return request<Project>(`/api/v1/projects/${id}`, {
+    return request<Project>(`/api/v2/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     })
   },
 
   reorderProjects(projectIds: number[]) {
-    return request<{ ok: boolean }>('/api/v1/projects/reorder', {
+    return request<{ ok: boolean }>('/api/v2/projects/reorder', {
       method: 'POST',
       body: JSON.stringify({ project_ids: projectIds }),
     })
   },
 
   archiveProject(id: number) {
-    return request<Project>(`/api/v1/projects/${id}/archive`, { method: 'POST' })
+    return request<Project>(`/api/v2/projects/${id}/archive`, { method: 'POST' })
   },
 
   restoreProject(id: number) {
-    return request<Project>(`/api/v1/projects/${id}/restore`, { method: 'POST' })
+    return request<Project>(`/api/v2/projects/${id}/restore`, { method: 'POST' })
   },
 
   listProjectStatuses(projectId: number) {
-    return request<ProjectStatus[]>(`/api/v1/projects/${projectId}/statuses`)
+    return request<ProjectStatus[]>(`/api/v2/projects/${projectId}/statuses`)
   },
 
   createProjectStatus(
     projectId: number,
     payload: { name: string; description?: string; is_done?: boolean; is_default?: boolean },
   ) {
-    return request<ProjectStatus>(`/api/v1/projects/${projectId}/statuses`, {
+    return request<ProjectStatus>(`/api/v2/projects/${projectId}/statuses`, {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -598,7 +613,7 @@ export const api = {
     statusId: number,
     payload: Partial<{ name: string; description: string; is_done: boolean; is_default: boolean }>,
   ) {
-    return request<ProjectStatus>(`/api/v1/projects/${projectId}/statuses/${statusId}`, {
+    return request<ProjectStatus>(`/api/v2/projects/${projectId}/statuses/${statusId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
@@ -609,20 +624,20 @@ export const api = {
       moveToStatusId != null
         ? `?move_to_status_id=${encodeURIComponent(String(moveToStatusId))}`
         : ''
-    return request<void>(`/api/v1/projects/${projectId}/statuses/${statusId}${qs}`, {
+    return request<void>(`/api/v2/projects/${projectId}/statuses/${statusId}${qs}`, {
       method: 'DELETE',
     })
   },
 
   reorderProjectStatuses(projectId: number, statusIds: number[]) {
-    return request<{ ok: boolean }>(`/api/v1/projects/${projectId}/statuses/reorder`, {
+    return request<{ ok: boolean }>(`/api/v2/projects/${projectId}/statuses/reorder`, {
       method: 'POST',
       body: JSON.stringify({ status_ids: statusIds }),
     })
   },
 
   listProjectSprints(projectId: number) {
-    return request<ProjectSprint[]>(`/api/v1/projects/${projectId}/sprints`)
+    return request<ProjectSprint[]>(`/api/v2/projects/${projectId}/sprints`)
   },
 
   createProjectSprint(
@@ -635,7 +650,7 @@ export const api = {
       lock_date?: string | null
     },
   ) {
-    return request<ProjectSprint>(`/api/v1/projects/${projectId}/sprints`, {
+    return request<ProjectSprint>(`/api/v2/projects/${projectId}/sprints`, {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -652,7 +667,7 @@ export const api = {
       lock_date: string | null
     }>,
   ) {
-    return request<ProjectSprint>(`/api/v1/projects/${projectId}/sprints/${sprintId}`, {
+    return request<ProjectSprint>(`/api/v2/projects/${projectId}/sprints/${sprintId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
@@ -663,7 +678,7 @@ export const api = {
     payload: string | Partial<{ name: string; description: string }>,
   ) {
     const body = typeof payload === 'string' ? { name: payload } : payload
-    return request<ProjectSprint>(`/api/v1/projects/${projectId}/sprints/backlog`, {
+    return request<ProjectSprint>(`/api/v2/projects/${projectId}/sprints/backlog`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     })
@@ -674,69 +689,69 @@ export const api = {
       moveToSprintId != null
         ? `?move_to_sprint_id=${encodeURIComponent(String(moveToSprintId))}`
         : ''
-    return request<void>(`/api/v1/projects/${projectId}/sprints/${sprintId}${qs}`, {
+    return request<void>(`/api/v2/projects/${projectId}/sprints/${sprintId}${qs}`, {
       method: 'DELETE',
     })
   },
 
   listTimeEntries(taskId: number) {
-    return request<TaskTimeEntry[]>(`/api/v1/tasks/${taskId}/time-entries`)
+    return request<TaskTimeEntry[]>(`/api/v2/tasks/${taskId}/time-entries`)
   },
 
   addTimeEntry(taskId: number, minutes: number, note = '') {
-    return request<TaskTimeEntry>(`/api/v1/tasks/${taskId}/time-entries`, {
+    return request<TaskTimeEntry>(`/api/v2/tasks/${taskId}/time-entries`, {
       method: 'POST',
       body: JSON.stringify({ minutes, note }),
     })
   },
 
   deleteTimeEntry(taskId: number, entryId: number) {
-    return request<void>(`/api/v1/tasks/${taskId}/time-entries/${entryId}`, {
+    return request<void>(`/api/v2/tasks/${taskId}/time-entries/${entryId}`, {
       method: 'DELETE',
     })
   },
 
   listTaskComments(taskId: number) {
-    return request<TaskComment[]>(`/api/v1/tasks/${taskId}/comments`)
+    return request<TaskComment[]>(`/api/v2/tasks/${taskId}/comments`)
   },
 
   addTaskComment(taskId: number, body: string) {
-    return request<TaskComment>(`/api/v1/tasks/${taskId}/comments`, {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments`, {
       method: 'POST',
       body: JSON.stringify({ body }),
     })
   },
 
   deleteTaskComment(taskId: number, commentId: number) {
-    return request<void>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
+    return request<void>(`/api/v2/tasks/${taskId}/comments/${commentId}`, {
       method: 'DELETE',
     })
   },
 
   editTaskComment(taskId: number, commentId: number, body: string) {
-    return request<TaskComment>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}`, {
       method: 'PATCH',
       body: JSON.stringify({ body }),
     })
   },
 
   listTaskCommentRevisions(taskId: number, commentId: number) {
-    return request<TaskCommentRevision[]>(`/api/v1/tasks/${taskId}/comments/${commentId}/revisions`)
+    return request<TaskCommentRevision[]>(`/api/v2/tasks/${taskId}/comments/${commentId}/revisions`)
   },
 
   restoreTaskComment(taskId: number, commentId: number, revisionId: number) {
-    return request<TaskComment>(`/api/v1/tasks/${taskId}/comments/${commentId}/restore`, {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}/restore`, {
       method: 'POST',
       body: JSON.stringify({ revision_id: revisionId }),
     })
   },
 
   claimTask(taskId: number) {
-    return request<Task>(`/api/v1/tasks/${taskId}/claim`, { method: 'POST' })
+    return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'POST' })
   },
 
   unclaimTask(taskId: number) {
-    return request<Task>(`/api/v1/tasks/${taskId}/claim`, { method: 'DELETE' })
+    return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'DELETE' })
   },
 
   listNotifications(params: { page?: number; per_page?: number } = {}) {
@@ -744,86 +759,86 @@ export const api = {
     if (params.page) qs.set('page', String(params.page))
     if (params.per_page) qs.set('per_page', String(params.per_page))
     const q = qs.toString()
-    return request<NotificationList>(`/api/v1/notifications${q ? `?${q}` : ''}`)
+    return request<NotificationList>(`/api/v2/notifications${q ? `?${q}` : ''}`)
   },
 
   unreadNotificationCount() {
-    return request<{ unread_count: number }>('/api/v1/notifications/unread-count')
+    return request<{ unread_count: number }>('/api/v2/notifications/unread-count')
   },
 
   markNotificationRead(id: number) {
-    return request<void>(`/api/v1/notifications/${id}/read`, { method: 'POST' })
+    return request<void>(`/api/v2/notifications/${id}/read`, { method: 'POST' })
   },
 
   markAllNotificationsRead() {
-    return request<void>('/api/v1/notifications/read-all', { method: 'POST' })
+    return request<void>('/api/v2/notifications/read-all', { method: 'POST' })
   },
 
   deleteProject(id: number) {
-    return request<void>(`/api/v1/projects/${id}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/projects/${id}`, { method: 'DELETE' })
   },
 
   listProjectMembers(projectId: number) {
-    return request<ProjectMember[]>(`/api/v1/projects/${projectId}/members`)
+    return request<ProjectMember[]>(`/api/v2/projects/${projectId}/members`)
   },
 
   updateProjectMember(projectId: number, userId: number, role: 'editor' | 'viewer') {
-    return request<void>(`/api/v1/projects/${projectId}/members/${userId}`, {
+    return request<void>(`/api/v2/projects/${projectId}/members/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     })
   },
 
   removeProjectMember(projectId: number, userId: number) {
-    return request<void>(`/api/v1/projects/${projectId}/members/${userId}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/projects/${projectId}/members/${userId}`, { method: 'DELETE' })
   },
 
   listProjectInvites(projectId: number) {
-    return request<ProjectInvite[]>(`/api/v1/projects/${projectId}/invites`)
+    return request<ProjectInvite[]>(`/api/v2/projects/${projectId}/invites`)
   },
 
   searchUsers(q: string, init: RequestInit & { projectId?: number } = {}) {
     const { projectId, ...rest } = init
     const qs = new URLSearchParams({ q })
     if (projectId && projectId > 0) qs.set('project_id', String(projectId))
-    return request<UserSearchHit[]>(`/api/v1/users/search?${qs}`, rest)
+    return request<UserSearchHit[]>(`/api/v2/users/search?${qs}`, rest)
   },
 
   createProjectInvite(projectId: number, username: string, role: 'editor' | 'viewer') {
-    return request<ProjectInvite>(`/api/v1/projects/${projectId}/invites`, {
+    return request<ProjectInvite>(`/api/v2/projects/${projectId}/invites`, {
       method: 'POST',
       body: JSON.stringify({ username, role }),
     })
   },
 
   revokeProjectInvite(projectId: number, inviteId: number) {
-    return request<void>(`/api/v1/projects/${projectId}/invites/${inviteId}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/projects/${projectId}/invites/${inviteId}`, { method: 'DELETE' })
   },
 
   listProjectEvents(projectId: number) {
-    return request<ProjectEvent[]>(`/api/v1/projects/${projectId}/events`)
+    return request<ProjectEvent[]>(`/api/v2/projects/${projectId}/events`)
   },
 
   listMyProjectInvites() {
-    return request<ProjectInvite[]>('/api/v1/project-invites')
+    return request<ProjectInvite[]>('/api/v2/project-invites')
   },
 
   acceptProjectInvite(id: number) {
-    return request<void>(`/api/v1/project-invites/${id}/accept`, { method: 'POST' })
+    return request<void>(`/api/v2/project-invites/${id}/accept`, { method: 'POST' })
   },
 
   declineProjectInvite(id: number) {
-    return request<void>(`/api/v1/project-invites/${id}/decline`, { method: 'POST' })
+    return request<void>(`/api/v2/project-invites/${id}/decline`, { method: 'POST' })
   },
 
   listShareLinks(scopeType: 'project', scopeId: number) {
     return request<ShareLink[]>(
-      `/api/v1/share-links?scope_type=${encodeURIComponent(scopeType)}&scope_id=${scopeId}`,
+      `/api/v2/share-links?scope_type=${encodeURIComponent(scopeType)}&scope_id=${scopeId}`,
     )
   },
 
   createShareLink(scopeType: 'project', scopeId: number, expiresAt?: string) {
-    return request<ShareLink>('/api/v1/share-links', {
+    return request<ShareLink>('/api/v2/share-links', {
       method: 'POST',
       body: JSON.stringify({
         scope_type: scopeType,
@@ -834,11 +849,11 @@ export const api = {
   },
 
   revokeShareLink(id: number) {
-    return request<void>(`/api/v1/share-links/${id}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/share-links/${id}`, { method: 'DELETE' })
   },
 
   viewShareLink(token: string) {
-    return request<ShareLinkView>(`/api/v1/share-links/view/${encodeURIComponent(token)}`)
+    return request<ShareLinkView>(`/api/v2/share-links/view/${encodeURIComponent(token)}`)
   },
 
   listTags(opts?: { project_id?: number }) {
@@ -847,146 +862,160 @@ export const api = {
       q.set('project_id', String(opts.project_id))
     }
     const qs = q.toString()
-    return request<Tag[]>(`/api/v1/tags${qs ? `?${qs}` : ''}`)
+    return request<Tag[]>(`/api/v2/tags${qs ? `?${qs}` : ''}`)
   },
 
   createTag(name: string, projectId?: number | null) {
-    return request<Tag>('/api/v1/tags', {
+    return request<Tag>('/api/v2/tags', {
       method: 'POST',
       body: JSON.stringify({ name, project_id: projectId ?? null }),
     })
   },
 
   renameTag(id: number, name: string) {
-    return request<Tag>(`/api/v1/tags/${id}`, {
+    return request<Tag>(`/api/v2/tags/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     })
   },
 
   updateTag(id: number, payload: { name?: string; color?: string }) {
-    return request<Tag>(`/api/v1/tags/${id}`, {
+    return request<Tag>(`/api/v2/tags/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
 
   deleteTag(id: number) {
-    return request<void>(`/api/v1/tags/${id}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/tags/${id}`, { method: 'DELETE' })
   },
 
   dashboard() {
-    return request<DashboardStats>('/api/v1/dashboard')
+    return request<DashboardStats>('/api/v2/dashboard')
   },
 
   getCalendar() {
-    return request<CalendarInfo>('/api/v1/calendar')
+    return request<CalendarInfo>('/api/v2/calendar')
   },
 
   calendarMonth(month?: string) {
     const qs = month ? `?month=${encodeURIComponent(month)}` : ''
-    return request<CalendarMonth>(`/api/v1/calendar/month${qs}`)
+    return request<CalendarMonth>(`/api/v2/calendar/month${qs}`)
   },
 
   regenerateCalendar() {
-    return request<CalendarInfo>('/api/v1/calendar/regenerate', { method: 'POST' })
+    return request<CalendarInfo>('/api/v2/calendar/regenerate', { method: 'POST' })
   },
 
   downloadExport(format: 'json' | 'csv' = 'json') {
-    return download(`/api/v1/export?format=${format}`, `gotodo-export.${format}`)
+    return download(`/api/v2/export?format=${format}`, `gotodo-export.${format}`)
   },
 
   listSavedViews() {
-    return request<SavedView[]>('/api/v1/saved-views')
+    return request<SavedView[]>('/api/v2/saved-views')
   },
 
   createSavedView(payload: { name: string; filter: SavedViewFilter; sort_order?: number }) {
-    return request<SavedView>('/api/v1/saved-views', {
+    return request<SavedView>('/api/v2/saved-views', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
   deleteSavedView(id: number) {
-    return request<void>(`/api/v1/saved-views/${id}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/saved-views/${id}`, { method: 'DELETE' })
   },
 
   deviceStatus(userCode: string) {
     const qs = new URLSearchParams({ user_code: userCode })
-    return request<DeviceStatus>(`/api/v1/auth/device/status?${qs}`)
+    return request<DeviceStatus>(`/api/v2/auth/device/status?${qs}`)
   },
 
   deviceApprove(userCode: string) {
-    return request<DeviceDecisionResult>('/api/v1/auth/device/approve', {
+    return request<DeviceDecisionResult>('/api/v2/auth/device/approve', {
       method: 'POST',
       body: JSON.stringify({ user_code: userCode }),
     })
   },
 
   deviceDeny(userCode: string) {
-    return request<DeviceDecisionResult>('/api/v1/auth/device/deny', {
+    return request<DeviceDecisionResult>('/api/v2/auth/device/deny', {
       method: 'POST',
       body: JSON.stringify({ user_code: userCode }),
     })
   },
 
   getAdminSettings() {
-    return request<AdminSettings>('/api/v1/admin/settings')
+    return request<AdminSettings>('/api/v2/admin/settings')
   },
 
   patchAdminSettings(payload: AdminSettingsPatch) {
-    return request<AdminSettings>('/api/v1/admin/settings', {
+    return request<AdminSettings>('/api/v2/admin/settings', {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
 
   testImageHosting(payload: AdminSettingsPatch) {
-    return request<ImageHostingTestResult>('/api/v1/admin/image-hosting/test', {
+    return request<ImageHostingTestResult>('/api/v2/admin/image-hosting/test', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
   listAdminExtensions() {
-    return request<AdminExtensionsList>('/api/v1/admin/extensions')
+    return request<AdminExtensionsList>('/api/v2/admin/extensions')
   },
 
   patchAdminExtension(id: string, payload: AdminExtensionPatch) {
-    return request<AdminExtension>(`/api/v1/admin/extensions/${encodeURIComponent(id)}`, {
+    return request<AdminExtension>(`/api/v2/admin/extensions/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
 
+  testAdminExtension(id: string) {
+    return request<{ ok: boolean; message: string; sample_json?: string }>(
+      `/api/v2/admin/extensions/${encodeURIComponent(id)}/test`,
+      { method: 'POST' },
+    )
+  },
+
+  retryAdminExtension(id: string, deliveryId: number) {
+    return request<{ ok: boolean }>(
+      `/api/v2/admin/extensions/${encodeURIComponent(id)}/deliveries/${deliveryId}/retry`,
+      { method: 'POST' },
+    )
+  },
+
   listAdminUsers() {
-    return request<AdminUser[]>('/api/v1/admin/users')
+    return request<AdminUser[]>('/api/v2/admin/users')
   },
 
   banUser(id: number) {
-    return request<{ ok: boolean }>(`/api/v1/admin/users/${id}/ban`, { method: 'POST' })
+    return request<{ ok: boolean }>(`/api/v2/admin/users/${id}/ban`, { method: 'POST' })
   },
 
   unbanUser(id: number) {
-    return request<{ ok: boolean }>(`/api/v1/admin/users/${id}/unban`, { method: 'POST' })
+    return request<{ ok: boolean }>(`/api/v2/admin/users/${id}/unban`, { method: 'POST' })
   },
 
   setAdminUsername(id: number, user_name: string) {
-    return request<{ ok: boolean; id: number; user_name: string }>(`/api/v1/admin/users/${id}/username`, {
+    return request<{ ok: boolean; id: number; user_name: string }>(`/api/v2/admin/users/${id}/username`, {
       method: 'PATCH',
       body: JSON.stringify({ user_name }),
     })
   },
 
   createJoinRequest(email: string, message = '') {
-    return request<{ ok: boolean; message: string }>('/api/v1/join-requests', {
+    return request<{ ok: boolean; message: string }>('/api/v2/join-requests', {
       method: 'POST',
       body: JSON.stringify({ email, message }),
     })
   },
 
   listAdminJoinRequests() {
-    return request<JoinRequest[]>('/api/v1/admin/join-requests')
+    return request<JoinRequest[]>('/api/v2/admin/join-requests')
   },
 
   listAdminEmailAudit(params: EmailAuditQuery = {}) {
@@ -995,7 +1024,7 @@ export const api = {
       if (v !== undefined && v !== '') qs.set(k, String(v))
     }
     const q = qs.toString()
-    return request<EmailAuditList>(`/api/v1/admin/email-audit${q ? `?${q}` : ''}`)
+    return request<EmailAuditList>(`/api/v2/admin/email-audit${q ? `?${q}` : ''}`)
   },
 
   listAdminCommentAudit(params: CommentAuditQuery = {}) {
@@ -1004,34 +1033,34 @@ export const api = {
       if (v !== undefined && v !== '') qs.set(k, String(v))
     }
     const q = qs.toString()
-    return request<CommentAuditList>(`/api/v1/admin/comment-audit${q ? `?${q}` : ''}`)
+    return request<CommentAuditList>(`/api/v2/admin/comment-audit${q ? `?${q}` : ''}`)
   },
 
   restoreAdminCommentRevision(revisionId: number) {
-    return request<TaskComment>(`/api/v1/admin/comment-audit/${revisionId}/restore`, {
+    return request<TaskComment>(`/api/v2/admin/comment-audit/${revisionId}/restore`, {
       method: 'POST',
     })
   },
 
   approveJoinRequest(id: number) {
     return request<{ ok: boolean; request: JoinRequest; invite: Invite }>(
-      `/api/v1/admin/join-requests/${id}/approve`,
+      `/api/v2/admin/join-requests/${id}/approve`,
       { method: 'POST' },
     )
   },
 
   denyJoinRequest(id: number) {
-    return request<{ ok: boolean; request: JoinRequest }>(`/api/v1/admin/join-requests/${id}/deny`, {
+    return request<{ ok: boolean; request: JoinRequest }>(`/api/v2/admin/join-requests/${id}/deny`, {
       method: 'POST',
     })
   },
 
   listInvites() {
-    return request<Invite[]>('/api/v1/invites')
+    return request<Invite[]>('/api/v2/invites')
   },
 
   createInvite(email: string, expiresAt?: string, bypassExpiration?: boolean) {
-    return request<Invite>('/api/v1/invites', {
+    return request<Invite>('/api/v2/invites', {
       method: 'POST',
       body: JSON.stringify({
         email,
@@ -1042,15 +1071,15 @@ export const api = {
   },
 
   deleteInvite(id: number) {
-    return request<void>(`/api/v1/invites/${id}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/invites/${id}`, { method: 'DELETE' })
   },
 
   listAdminInvites() {
-    return request<Invite[]>('/api/v1/admin/invites')
+    return request<Invite[]>('/api/v2/admin/invites')
   },
 
   createAdminInvite(email: string, expiresAt?: string, bypassExpiration?: boolean) {
-    return request<Invite>('/api/v1/admin/invites', {
+    return request<Invite>('/api/v2/admin/invites', {
       method: 'POST',
       body: JSON.stringify({
         email,
@@ -1061,11 +1090,11 @@ export const api = {
   },
 
   deleteAdminInvite(id: number) {
-    return request<void>(`/api/v1/admin/invites/${id}`, { method: 'DELETE' })
+    return request<void>(`/api/v2/admin/invites/${id}`, { method: 'DELETE' })
   },
 
   forgotPassword(email: string, confirmEmail: string) {
-    return request<{ ok: boolean }>('/api/v1/auth/forgot-password', {
+    return request<{ ok: boolean }>('/api/v2/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email, confirm_email: confirmEmail }),
     })
@@ -1073,7 +1102,7 @@ export const api = {
 
   validateResetToken(token: string, id: string) {
     const qs = new URLSearchParams({ token, id })
-    return request<{ valid: boolean; email: string }>(`/api/v1/auth/reset-password?${qs}`)
+    return request<{ valid: boolean; email: string }>(`/api/v2/auth/reset-password?${qs}`)
   },
 
   resetPassword(payload: {
@@ -1082,7 +1111,7 @@ export const api = {
     new_password: string
     confirm_password: string
   }) {
-    return request<{ ok: boolean }>('/api/v1/auth/reset-password', {
+    return request<{ ok: boolean }>('/api/v2/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -1094,34 +1123,34 @@ export const api = {
       would_import: number
       would_skip: number
       total_rows: number
-    }>('/api/v1/import/preview', 'file', file)
+    }>('/api/v2/import/preview', 'file', file)
   },
 
   importConfirm() {
-    return request<{ imported: number; skipped: number }>('/api/v1/import/confirm', { method: 'POST' })
+    return request<{ imported: number; skipped: number }>('/api/v2/import/confirm', { method: 'POST' })
   },
 
   importCancel() {
-    return request<{ ok: boolean }>('/api/v1/import/cancel', { method: 'POST' })
+    return request<{ ok: boolean }>('/api/v2/import/cancel', { method: 'POST' })
   },
 
   uploadImage(file: File) {
-    return upload<ImageUpload>('/api/v1/images', 'file', file)
+    return upload<ImageUpload>('/api/v2/images', 'file', file)
   },
 
   uploadAvatar(file: Blob | File) {
-    return upload<User>('/api/v1/me/avatar', 'file', file)
+    return upload<User>('/api/v2/me/avatar', 'file', file)
   },
 
   deleteAvatar() {
-    return request<User>('/api/v1/me/avatar', { method: 'DELETE' })
+    return request<User>('/api/v2/me/avatar', { method: 'DELETE' })
   },
 
   syncCalendar(file: File) {
-    return upload<{ updated: number }>('/api/v1/calendar/sync', 'ics_file', file)
+    return upload<{ updated: number }>('/api/v2/calendar/sync', 'ics_file', file)
   },
 
   dismissAnnouncement() {
-    return request<{ ok: boolean }>('/api/v1/announcements/dismiss', { method: 'POST' })
+    return request<{ ok: boolean }>('/api/v2/announcements/dismiss', { method: 'POST' })
   },
 }

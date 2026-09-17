@@ -93,7 +93,7 @@ func TestCustomFieldsMergeClearAndListFilter(t *testing.T) {
 		"severity.level":  json.RawMessage(`"high"`),
 		"severity.ticket": json.RawMessage(`"ABC-1"`),
 	}
-	if err := ApplyTaskFields(taskID, pid, 1, patch); err != nil {
+	if _, err := ApplyTaskFields(taskID, pid, 1, patch); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 
@@ -122,11 +122,11 @@ func TestCustomFieldsMergeClearAndListFilter(t *testing.T) {
 	}
 
 	clear := map[string]json.RawMessage{"severity.ticket": json.RawMessage(`null`)}
-	if err := ApplyTaskFields(taskID, pid, 1, clear); err != nil {
+	if _, err := ApplyTaskFields(taskID, pid, 1, clear); err != nil {
 		t.Fatal(err)
 	}
 	keep := map[string]json.RawMessage{"severity.level": json.RawMessage(`"low"`)}
-	if err := ApplyTaskFields(taskID, pid, 1, keep); err != nil {
+	if _, err := ApplyTaskFields(taskID, pid, 1, keep); err != nil {
 		t.Fatal(err)
 	}
 	got, err = tasks.FetchTaskByIDForUser(taskID, 1, "UTC", 1)
@@ -152,15 +152,15 @@ func TestCustomFieldsValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"severity.level": json.RawMessage(`"nope"`)})
+	_, err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"severity.level": json.RawMessage(`"nope"`)})
 	if err == nil || !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "invalid option") {
 		t.Fatalf("enum err=%v", err)
 	}
-	err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"missing.key": json.RawMessage(`"x"`)})
+	_, err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"missing.key": json.RawMessage(`"x"`)})
 	if err == nil || !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("unknown err=%v", err)
 	}
-	err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"severity.level": json.RawMessage(`"high"`)})
+	_, err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"severity.level": json.RawMessage(`"high"`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,11 +197,11 @@ func TestCustomFieldsUserMustBeMember(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"fields-demo.owner": json.RawMessage(`2`)})
+	_, err = ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"fields-demo.owner": json.RawMessage(`2`)})
 	if err == nil || !errors.Is(err, ErrValidation) {
 		t.Fatalf("non-member err=%v", err)
 	}
-	if err := ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"fields-demo.owner": json.RawMessage(`1`)}); err != nil {
+	if _, err := ApplyTaskFields(taskID, pid, 1, map[string]json.RawMessage{"fields-demo.owner": json.RawMessage(`1`)}); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -227,6 +227,44 @@ func mentionHookMeta(projectID, actorUserID int, body string) *live.TaskHookMeta
 	}
 }
 
+func mentionHookMetaDiff(projectID, actorUserID int, oldBody, newBody string) *live.TaskHookMeta {
+	oldMeta := mentionHookMeta(projectID, actorUserID, oldBody)
+	newMeta := mentionHookMeta(projectID, actorUserID, newBody)
+	if newMeta == nil {
+		return nil
+	}
+	if oldMeta == nil {
+		return newMeta
+	}
+	seen := make(map[int]struct{}, len(oldMeta.MentionedUserIDs))
+	for _, id := range oldMeta.MentionedUserIDs {
+		seen[id] = struct{}{}
+	}
+	ids := make([]int, 0)
+	names := make([]string, 0)
+	nameByID := make(map[int]string)
+	for i, id := range newMeta.MentionedUserIDs {
+		if i < len(newMeta.Mentions) {
+			nameByID[id] = newMeta.Mentions[i]
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		ids = append(ids, id)
+		if n := nameByID[id]; n != "" {
+			names = append(names, n)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return &live.TaskHookMeta{
+		Comment:          newBody,
+		MentionedUserIDs: ids,
+		Mentions:         names,
+	}
+}
+
 // DeleteCommentForUser soft-deletes a comment. Authors delete as "user";
 // project owners deleting someone else's comment delete as "owner".
 func DeleteCommentForUser(ctx context.Context, userID, taskID, commentID int) error {
@@ -258,7 +296,8 @@ func DeleteCommentForUser(ctx context.Context, userID, taskID, commentID int) er
 	if err := storage.SoftDeleteTaskComment(commentID, userID, kind); err != nil {
 		return err
 	}
-	live.AfterTaskChange(userID, taskID, live.TypeTaskCommented)
+	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskCommented)
+	live.DispatchHook(userID, taskID, live.TypeTaskCommentDeleted, &live.TaskHookMeta{Comment: comment.Body})
 	return nil
 }
 
@@ -317,7 +356,11 @@ func EditCommentForUser(ctx context.Context, userID, taskID, commentID int, body
 		return nil, err
 	}
 	updated.Links = ResolveCommentTaskLinks(taskID, projectID, userID, updated.Body)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskCommented)
+	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskCommented)
+	live.DispatchHook(userID, taskID, live.TypeTaskCommentEdited, &live.TaskHookMeta{Comment: body})
+	if meta := mentionHookMetaDiff(projectID, userID, comment.Body, body); meta != nil {
+		live.DispatchHook(userID, taskID, live.TypeTaskMentioned, meta)
+	}
 	return updated, nil
 }
 
@@ -375,7 +418,8 @@ func RestoreCommentRevisionForUser(ctx context.Context, userID, taskID, commentI
 		return nil, err
 	}
 	updated.Links = ResolveCommentTaskLinks(taskID, projectID, userID, updated.Body)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskCommented)
+	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskCommented)
+	live.DispatchHook(userID, taskID, live.TypeTaskCommentRestored, &live.TaskHookMeta{Comment: updated.Body})
 	return updated, nil
 }
 
@@ -406,7 +450,8 @@ func RestoreCommentRevisionForAdmin(ctx context.Context, userID, revisionID int)
 		return nil, err
 	}
 	updated.Links = ResolveCommentTaskLinks(rev.TaskID, rev.ProjectID, userID, updated.Body)
-	live.AfterTaskChange(userID, updated.TaskID, live.TypeTaskCommented)
+	live.AfterTaskChangeLive(userID, updated.TaskID, live.TypeTaskCommented)
+	live.DispatchHook(userID, updated.TaskID, live.TypeTaskCommentRestored, &live.TaskHookMeta{Comment: updated.Body})
 	return updated, nil
 }
 

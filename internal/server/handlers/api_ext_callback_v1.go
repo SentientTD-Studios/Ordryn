@@ -18,7 +18,7 @@ type extCallbackBody struct {
 	Value   string `json:"value"`
 }
 
-// APIV1ExtCallback handles POST /api/v1/ext/callback (Bearer callback token).
+// APIV1ExtCallback handles POST /api/v2/ext/callback (Bearer callback token).
 func APIV1ExtCallback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

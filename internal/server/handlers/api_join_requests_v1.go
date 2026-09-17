@@ -53,7 +53,7 @@ func writeJoinRequestOK(w http.ResponseWriter) {
 	})
 }
 
-// APIV1JoinRequestsCreate handles POST /api/v1/join-requests (public).
+// APIV1JoinRequestsCreate handles POST /api/v2/join-requests (public).
 func APIV1JoinRequestsCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -141,7 +141,7 @@ func notifyAdminsOfJoinRequest(r *http.Request, siteName, email, message string)
 	}
 }
 
-// APIV1AdminJoinRequestsRouter handles /api/v1/admin/join-requests and approve/deny.
+// APIV1AdminJoinRequestsRouter handles /api/v2/admin/join-requests and approve/deny.
 func APIV1AdminJoinRequestsRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "admin/join-requests")
 	if sub == "" {

@@ -44,7 +44,7 @@ func incrementFailedMFA(r *http.Request, email string) {
 	}
 }
 
-// APIV1AuthMFAVerify handles POST /api/v1/auth/mfa/verify.
+// APIV1AuthMFAVerify handles POST /api/v2/auth/mfa/verify.
 func APIV1AuthMFAVerify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -106,7 +106,7 @@ func APIV1AuthMFAVerify(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusOK, profile)
 }
 
-// APIV1MeMFA handles GET /api/v1/me/mfa.
+// APIV1MeMFA handles GET /api/v2/me/mfa.
 func APIV1MeMFA(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -129,7 +129,7 @@ func APIV1MeMFA(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// APIV1MeMFASetup handles POST /api/v1/me/mfa/setup.
+// APIV1MeMFASetup handles POST /api/v2/me/mfa/setup.
 func APIV1MeMFASetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -175,7 +175,7 @@ func APIV1MeMFASetup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// APIV1MeMFAEnable handles POST /api/v1/me/mfa/enable.
+// APIV1MeMFAEnable handles POST /api/v2/me/mfa/enable.
 func APIV1MeMFAEnable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -203,7 +203,7 @@ func APIV1MeMFAEnable(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// APIV1MeMFADisable handles POST /api/v1/me/mfa/disable.
+// APIV1MeMFADisable handles POST /api/v2/me/mfa/disable.
 func APIV1MeMFADisable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -227,7 +227,7 @@ func APIV1MeMFADisable(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// APIV1MeMFARecoveryCodes handles POST /api/v1/me/mfa/recovery-codes.
+// APIV1MeMFARecoveryCodes handles POST /api/v2/me/mfa/recovery-codes.
 func APIV1MeMFARecoveryCodes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

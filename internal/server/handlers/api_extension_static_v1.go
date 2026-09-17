@@ -10,7 +10,7 @@ import (
 	"GoTodo/internal/server/utils"
 )
 
-// APIV1ExtensionsStatic serves extension icons at GET /api/v1/extensions/{id}/icon.
+// APIV1ExtensionsStatic serves extension icons at GET /api/v2/extensions/{id}/icon.
 func APIV1ExtensionsStatic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

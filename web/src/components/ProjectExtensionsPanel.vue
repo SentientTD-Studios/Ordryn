@@ -58,11 +58,11 @@ function hasUI(ext: ProjectExtension) {
 }
 
 function iconSrc(ext: ProjectExtension) {
-  return ext.manifest.icon ? withBase(`/api/v1/extensions/${ext.id}/icon`) : ''
+  return ext.manifest.icon ? withBase(`/api/v2/extensions/${ext.id}/icon`) : ''
 }
 
 function uiSrc(ext: ProjectExtension) {
-  return withBase(`/api/v1/projects/${props.project.id}/extensions/${ext.id}/ui`)
+  return withBase(`/api/v2/projects/${props.project.id}/extensions/${ext.id}/ui`)
 }
 
 function canRotateCallback(ext: ProjectExtension) {
@@ -109,7 +109,10 @@ function hasControl(ext: ProjectExtension, name: string) {
 
 function hasSetting(ext: ProjectExtension, key: string) {
   return (ext.manifest.settings || []).some(
-    (f) => f.key === key || (f.type === 'field_filter' && (key === 'field_key' || key === 'field_value' || key === 'field_filter')),
+    (f) =>
+      f.key === key ||
+      f.type === key ||
+      (f.type === 'field_filter' && (key === 'field_key' || key === 'field_value' || key === 'field_filter')),
   )
 }
 
@@ -321,6 +324,8 @@ function payloadFrom(ext: ProjectExtension, member: boolean, extra: ProjectExten
   if (hasSetting(ext, 'skip_self')) payload.skip_self = member ? src.skip_self !== false : !!src.skip_self
   if (hasSetting(ext, 'min_priority')) payload.min_priority = src.min_priority || 0
   if (hasSetting(ext, 'tag_ids')) payload.tag_ids = [...(src.tag_ids || [])]
+  if (hasSetting(ext, 'status_ids')) payload.status_ids = [...(src.status_ids || [])]
+  if (hasSetting(ext, 'status_exclude_ids')) payload.status_exclude_ids = [...(src.status_exclude_ids || [])]
   if (hasSetting(ext, 'claimed_only')) payload.claimed_only = src.claimed_only
   if (member && hasSetting(ext, 'claimed_is_me')) payload.claimed_is_me = ext.member?.claimed_is_me
   if (hasSetting(ext, 'field_key') || hasSetting(ext, 'field_value') || hasSetting(ext, 'field_filter')) {
@@ -415,10 +420,47 @@ async function test(ext: ProjectExtension, member: boolean) {
 
 function toggleTrigger(ext: ProjectExtension, hook: string, checked: boolean, member: boolean) {
   const src = member ? ext.member! : ext.settings
-  const cur = new Set(src.triggers || [])
+  const names = hookNames(ext)
+  let cur = new Set(src.triggers || [])
+  if (hook === '*') {
+    src.triggers = checked ? ['*'] : []
+    return
+  }
+  if (cur.has('*')) {
+    cur = new Set(names)
+  }
   if (checked) cur.add(hook)
   else cur.delete(hook)
+  cur.delete('*')
   src.triggers = [...cur]
+}
+
+function triggerChecked(src: FilterSource, hook: string): boolean {
+  const cur = src.triggers || []
+  return cur.includes('*') || cur.includes(hook)
+}
+
+function toggleStatus(ext: ProjectExtension, statusId: number, checked: boolean, member: boolean, exclude: boolean) {
+  const src = member ? ext.member! : ext.settings
+  const key = exclude ? 'status_exclude_ids' : 'status_ids'
+  const cur = new Set(src[key] || [])
+  if (checked) cur.add(statusId)
+  else cur.delete(statusId)
+  src[key] = [...cur]
+}
+
+async function retryDelivery(ext: ProjectExtension, row: { id: number }, member: boolean) {
+  busyId.value = `${ext.id}:retry:${member ? 'me' : 'team'}:${row.id}`
+  try {
+    if (member) await api.retryProjectExtensionMe(props.project.id, ext.id, row.id)
+    else await api.retryProjectExtension(props.project.id, ext.id, row.id)
+    toast.push('Delivery queued for retry', 'success')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Retry failed', 'error')
+  } finally {
+    busyId.value = null
+  }
 }
 
 function setTemplate(ext: ProjectExtension, hook: string, value: string, member: boolean) {
@@ -490,8 +532,11 @@ watch(inboundAllowed, () => {
       <div class="card-body">
         <p class="small text-muted">
           Public <code>POST</code> to create a task, add a comment, or (when an enabled extension
-          declares them) complete a task or set a custom field. Sign with
-          <code>X-Ordryn-Signature: sha256=…</code> or send <code>X-Ordryn-Webhook-Secret</code>.
+          declares them) complete a task or set a custom field. JSON must include
+          <code>project_id: {{ project.id }}</code>. Sign with
+          <code>X-Ordryn-Signature: sha256=HMAC(secret, timestamp + "." + body)</code>
+          and send <code>X-Ordryn-Timestamp</code> (unix seconds, ±5 minutes), or send
+          <code>X-Ordryn-Webhook-Secret</code>.
         </p>
         <p class="text-break small"><code>{{ inbound.url }}</code></p>
         <div class="form-check mb-2">
@@ -592,12 +637,22 @@ watch(inboundAllowed, () => {
                 <template v-else-if="field.type === 'hook_select'">
                   <div class="fw-semibold mb-2">{{ field.label }}</div>
                   <div v-if="field.description" class="form-text mb-1">{{ field.description }}</div>
+                  <div class="form-check">
+                    <input
+                      :id="`proj-ext-${ext.id}-hook-all`"
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="(ext.settings.triggers || []).includes('*')"
+                      @change="toggleTrigger(ext, '*', ($event.target as HTMLInputElement).checked, false)"
+                    />
+                    <label class="form-check-label" :for="`proj-ext-${ext.id}-hook-all`">All declared events</label>
+                  </div>
                   <div v-for="hook in hookNames(ext)" :key="`team-${hook}`" class="form-check">
                     <input
                       :id="`proj-ext-${ext.id}-hook-${hook}`"
                       class="form-check-input"
                       type="checkbox"
-                      :checked="(ext.settings.triggers || []).includes(hook)"
+                      :checked="triggerChecked(ext.settings, hook)"
                       @change="toggleTrigger(ext, hook, ($event.target as HTMLInputElement).checked, false)"
                     />
                     <label class="form-check-label" :for="`proj-ext-${ext.id}-hook-${hook}`">{{ hookLabel(ext, hook) }}</label>
@@ -690,6 +745,22 @@ watch(inboundAllowed, () => {
                     </div>
                   </div>
                 </template>
+                <template v-else-if="field.type === 'status_ids' || field.key === 'status_ids' || field.type === 'status_exclude_ids' || field.key === 'status_exclude_ids'">
+                  <div v-if="statuses.length">
+                    <div class="fw-semibold mb-1">{{ field.label }}</div>
+                    <div v-if="field.description" class="form-text mb-1">{{ field.description }}</div>
+                    <div v-for="st in statuses" :key="`team-${field.key}-${st.id}`" class="form-check">
+                      <input
+                        :id="`proj-ext-${ext.id}-${field.key}-${st.id}`"
+                        class="form-check-input"
+                        type="checkbox"
+                        :checked="(((field.key === 'status_exclude_ids' || field.type === 'status_exclude_ids') ? ext.settings.status_exclude_ids : ext.settings.status_ids) || []).includes(st.id)"
+                        @change="toggleStatus(ext, st.id, ($event.target as HTMLInputElement).checked, false, field.key === 'status_exclude_ids' || field.type === 'status_exclude_ids')"
+                      />
+                      <label class="form-check-label" :for="`proj-ext-${ext.id}-${field.key}-${st.id}`">{{ st.name }}</label>
+                    </div>
+                  </div>
+                </template>
                 <template v-else-if="field.type === 'time'">
                   <label class="form-label">{{ field.label }}</label>
                   <input
@@ -744,10 +815,20 @@ watch(inboundAllowed, () => {
                 <div class="fw-semibold mb-2">Messages</div>
                 <p class="small text-muted">
                   Tokens: <code>{task}</code> <code>{name}</code> <code>{status}</code> <code>{old_status}</code>
-                  <code>{project}</code> <code>{actor}</code> <code>{url}</code> <code>{id}</code> <code>{priority}</code>
+                  <code>{project}</code> <code>{actor}</code> <code>{actor_id}</code> <code>{url}</code> <code>{id}</code> <code>{priority}</code>
+                  <code>{description}</code> <code>{parent_id}</code> <code>{estimate}</code> <code>{old_priority}</code>
                   <code>{comment}</code> <code>{claimed_by}</code> <code>{due_date}</code> <code>{sprint}</code> <code>{tags}</code>
                   <code>{mentions}</code> <code>{member}</code>
                 </p>
+                <div class="mb-2">
+                  <label class="form-label">Default message (all events)</label>
+                  <textarea
+                    class="form-control"
+                    rows="2"
+                    :value="templateValue(ext, '*', false)"
+                    @input="setTemplate(ext, '*', ($event.target as HTMLTextAreaElement).value, false)"
+                  />
+                </div>
                 <div v-for="hook in hookNames(ext)" :key="`tmpl-${hook}`" class="mb-2">
                   <label class="form-label">{{ hookLabel(ext, hook) }}</label>
                   <textarea
@@ -774,6 +855,13 @@ watch(inboundAllowed, () => {
                     {{ row.created_at }} · {{ row.event }} · {{ row.status }}
                     <span v-if="row.http_code"> ({{ row.http_code }})</span>
                     <span v-if="row.error" class="text-warning"> {{ row.error }}</span>
+                    <button
+                      v-if="row.status === 'failed' || row.status === 'dead'"
+                      type="button"
+                      class="btn btn-link btn-sm py-0"
+                      :disabled="!!busyId"
+                      @click="retryDelivery(ext, row, false)"
+                    >Retry</button>
                   </li>
                 </ul>
               </div>
@@ -839,11 +927,20 @@ watch(inboundAllowed, () => {
                 </template>
                 <template v-else-if="field.type === 'hook_select'">
                   <div class="fw-semibold mb-2">{{ field.label }}</div>
+                  <div class="form-check">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="(ext.member?.triggers || []).includes('*')"
+                      @change="toggleTrigger(ext, '*', ($event.target as HTMLInputElement).checked, true)"
+                    />
+                    <label class="form-check-label">All declared events</label>
+                  </div>
                   <div v-for="hook in hookNames(ext)" :key="`me-${hook}`" class="form-check">
                     <input
                       class="form-check-input"
                       type="checkbox"
-                      :checked="(ext.member?.triggers || []).includes(hook)"
+                      :checked="triggerChecked(ext.member!, hook)"
                       @change="toggleTrigger(ext, hook, ($event.target as HTMLInputElement).checked, true)"
                     />
                     <label class="form-check-label">{{ hookLabel(ext, hook) }}</label>
@@ -918,6 +1015,20 @@ watch(inboundAllowed, () => {
                     </div>
                   </div>
                 </template>
+                <template v-else-if="field.type === 'status_ids' || field.key === 'status_ids' || field.type === 'status_exclude_ids' || field.key === 'status_exclude_ids'">
+                  <div v-if="statuses.length">
+                    <div class="fw-semibold mb-1">{{ field.label }}</div>
+                    <div v-for="st in statuses" :key="`me-${field.key}-${st.id}`" class="form-check">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        :checked="(((field.key === 'status_exclude_ids' || field.type === 'status_exclude_ids') ? ext.member?.status_exclude_ids : ext.member?.status_ids) || []).includes(st.id)"
+                        @change="toggleStatus(ext, st.id, ($event.target as HTMLInputElement).checked, true, field.key === 'status_exclude_ids' || field.type === 'status_exclude_ids')"
+                      />
+                      <label class="form-check-label">{{ st.name }}</label>
+                    </div>
+                  </div>
+                </template>
                 <template v-else-if="field.type === 'time'">
                   <label class="form-label">{{ field.label }}</label>
                   <input
@@ -951,6 +1062,15 @@ watch(inboundAllowed, () => {
               </div>
               <div v-if="hookNames(ext).length" class="mb-3">
                 <div class="fw-semibold mb-2">Messages</div>
+                <div class="mb-2">
+                  <label class="form-label">Default message (all events)</label>
+                  <textarea
+                    class="form-control"
+                    rows="2"
+                    :value="templateValue(ext, '*', true)"
+                    @input="setTemplate(ext, '*', ($event.target as HTMLTextAreaElement).value, true)"
+                  />
+                </div>
                 <div v-for="hook in hookNames(ext)" :key="`me-tmpl-${hook}`" class="mb-2">
                   <label class="form-label">{{ hookLabel(ext, hook) }}</label>
                   <textarea
@@ -968,6 +1088,13 @@ watch(inboundAllowed, () => {
                   <li v-for="row in ext.member_deliveries" :key="row.id">
                     {{ row.created_at }} · {{ row.event }} · {{ row.status }}
                     <span v-if="row.error" class="text-warning"> {{ row.error }}</span>
+                    <button
+                      v-if="row.status === 'failed' || row.status === 'dead'"
+                      type="button"
+                      class="btn btn-link btn-sm py-0"
+                      :disabled="!!busyId"
+                      @click="retryDelivery(ext, row, true)"
+                    >Retry</button>
                   </li>
                 </ul>
               </div>

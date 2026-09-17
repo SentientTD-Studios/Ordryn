@@ -13,7 +13,7 @@ import (
 )
 
 func TestAPIV1EventsMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/events", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1Events(rec, req)
@@ -23,7 +23,7 @@ func TestAPIV1EventsMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1EventsUnauthorized(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/events", nil)
 	rec := httptest.NewRecorder()
 	APIV1Events(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -34,7 +34,7 @@ func TestAPIV1EventsUnauthorized(t *testing.T) {
 func TestAPIV1EventsReadyAndUpdate(t *testing.T) {
 	live.Init(nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/events", nil).WithContext(ctx)
 	req = utils.SetAPIUserID(req, 9)
 	rec := httptest.NewRecorder()
 

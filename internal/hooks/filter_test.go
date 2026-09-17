@@ -254,4 +254,76 @@ func TestTemplateForOverrideAndBlank(t *testing.T) {
 	if got := templateFor(m, nil, "task.updated"); got != "default" {
 		t.Fatalf("got %q", got)
 	}
+	s = map[string]string{"*": "catchall"}
+	if got := templateFor(m, s, "task.created"); got != "catchall" {
+		t.Fatalf("wildcard template got %q", got)
+	}
+}
+
+func TestTriggerAllowedWildcard(t *testing.T) {
+	if triggerAllowed(nil, "task.updated") {
+		t.Fatal("empty triggers are none")
+	}
+	if !triggerAllowed([]string{"*"}, "task.status_changed") {
+		t.Fatal("star should match declared-or-not at this layer")
+	}
+	if !triggerAllowed([]string{"task.updated", "*"}, "task.created") {
+		t.Fatal("star among others")
+	}
+}
+
+func TestShouldDeliverWildcardAndStatusFilters(t *testing.T) {
+	m := extensions.Manifest{
+		ID: "discord",
+		Hooks: []extensions.Hook{
+			{On: "task.updated"},
+			{On: "task.status_changed"},
+			{On: "task.created"},
+		},
+		Settings: []extensions.Setting{
+			{Key: "status_ids", Type: "status_ids", Scope: extensions.ScopeProject},
+			{Key: "status_exclude_ids", Type: "status_exclude_ids", Scope: extensions.ScopeProject},
+			{Key: "status_only", Type: "bool", Scope: extensions.ScopeProject},
+		},
+	}
+	site := storage.ExtensionSettings{Enabled: true}
+	star := destFromProject(m, storage.ExtensionProjectSettings{
+		Enabled:  true,
+		Triggers: []string{"*"},
+	})
+	if !shouldDeliverDest(m, site, star, Event{Type: "task.created"}, 3) {
+		t.Fatal("wildcard should deliver created")
+	}
+	if shouldDeliverDest(m, site, star, Event{Type: "task.deleted"}, 3) {
+		t.Fatal("undeclared hook still blocked")
+	}
+
+	include := destFromProject(m, storage.ExtensionProjectSettings{
+		Enabled:   true,
+		Triggers:  []string{"task.updated"},
+		StatusIDs: []int{4},
+	})
+	if shouldDeliverDest(m, site, include, Event{Type: "task.updated", Snapshot: &storage.HookTaskSnapshot{StatusID: 9}}, 3) {
+		t.Fatal("status include miss")
+	}
+	if !shouldDeliverDest(m, site, include, Event{Type: "task.updated", Snapshot: &storage.HookTaskSnapshot{StatusID: 4}}, 3) {
+		t.Fatal("status include hit")
+	}
+	exclude := destFromProject(m, storage.ExtensionProjectSettings{
+		Enabled:          true,
+		Triggers:         []string{"task.updated"},
+		StatusExcludeIDs: []int{4},
+	})
+	if shouldDeliverDest(m, site, exclude, Event{Type: "task.updated", Snapshot: &storage.HookTaskSnapshot{StatusID: 4}}, 3) {
+		t.Fatal("status exclude")
+	}
+
+	legacy := destFromProject(m, storage.ExtensionProjectSettings{
+		Enabled:    true,
+		Triggers:   []string{"task.updated"},
+		StatusOnly: true,
+	})
+	if !shouldDeliverDest(m, site, legacy, Event{Type: EventTaskStatusChanged, Snapshot: &storage.HookTaskSnapshot{StatusID: 1}}, 3) {
+		t.Fatal("status_only configs that listed task.updated should still get status_changed")
+	}
 }

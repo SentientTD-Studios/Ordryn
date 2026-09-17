@@ -21,6 +21,7 @@ const (
 	DeliveryStatusSent    = "sent"
 	DeliveryStatusFailed  = "failed"
 	DeliveryStatusDigest  = "digest"
+	DeliveryStatusDead    = "dead"
 
 	maxDeliveryPayload = 8000
 )
@@ -453,6 +454,53 @@ func ListRecentDeliveries(extensionID string, projectID, userID, limit int) ([]E
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+// GetExtensionDelivery loads one delivery row.
+func GetExtensionDelivery(id int64) (*ExtensionDelivery, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("delivery id required")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	var d ExtensionDelivery
+	err = pool.QueryRow(context.Background(), `
+		SELECT id, extension_id, project_id, user_id, task_id, event_type, event_id, url_host,
+		       status, http_code, error, attempts, coalesce_key, payload, next_attempt_at, created_at, updated_at
+		FROM extension_deliveries WHERE id = $1`, id).Scan(
+		&d.ID, &d.ExtensionID, &d.ProjectID, &d.UserID, &d.TaskID, &d.EventType, &d.EventID, &d.URLHost,
+		&d.Status, &d.HTTPCode, &d.Error, &d.Attempts, &d.CoalesceKey, &d.Payload, &d.NextAttemptAt, &d.CreatedAt, &d.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("delivery not found")
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
+// ResetDeliveryForRetry marks a failed/dead delivery pending with attempts reset.
+func ResetDeliveryForRetry(id int64) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	tag, err := pool.Exec(context.Background(), `
+		UPDATE extension_deliveries
+		SET status = $2, attempts = 0, error = '', next_attempt_at = NOW(), updated_at = NOW()
+		WHERE id = $1 AND status IN ($3, $4)`, id, DeliveryStatusPending, DeliveryStatusFailed, DeliveryStatusDead)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("delivery not retryable")
+	}
+	return nil
 }
 
 // ListDigestDeliveries returns queued digest rows for a destination.

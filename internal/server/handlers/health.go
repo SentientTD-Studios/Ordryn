@@ -9,7 +9,7 @@ import (
 )
 
 // APIV1Health is a public readiness probe for API clients (no auth).
-// GET /api/v1/health → { version, api_enabled, redis_ok, mode }
+// GET /api/v2/health → { version, api_enabled, redis_ok, mode }
 func APIV1Health(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

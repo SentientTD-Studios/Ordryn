@@ -64,6 +64,7 @@ function hasMemberSetting(ext: ProjectExtension, key: string) {
   return memberFields(ext).some(
     (f) =>
       f.key === key ||
+      f.type === key ||
       (f.type === 'hook_select' && key === 'triggers') ||
       (f.type === 'field_filter' && (key === 'field_key' || key === 'field_value')),
   )
@@ -169,10 +170,37 @@ async function testInbox(ext: ProjectExtension) {
 }
 
 function toggleInboxTrigger(ext: ProjectExtension, hook: string, checked: boolean) {
-  const cur = new Set(ext.member?.triggers || [])
+  const names = hookNames(ext)
+  let cur = new Set(ext.member?.triggers || [])
+  if (hook === '*') {
+    ext.member!.triggers = checked ? ['*'] : []
+    return
+  }
+  if (cur.has('*')) {
+    cur = new Set(names)
+  }
   if (checked) cur.add(hook)
   else cur.delete(hook)
+  cur.delete('*')
   ext.member!.triggers = [...cur]
+}
+
+function inboxTriggerChecked(ext: ProjectExtension, hook: string): boolean {
+  const cur = ext.member?.triggers || []
+  return cur.includes('*') || cur.includes(hook)
+}
+
+async function retryInbox(ext: ProjectExtension, row: { id: number }) {
+  inboxBusy.value = `${ext.id}:retry:${row.id}`
+  try {
+    await api.retryMyExtension(ext.id, row.id)
+    push('Delivery queued for retry', 'success')
+    await load()
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Retry failed', 'error')
+  } finally {
+    inboxBusy.value = null
+  }
 }
 
 async function connectGitHubPAT() {
@@ -348,11 +376,20 @@ onMounted(() => {
               </template>
               <template v-else-if="field.type === 'hook_select'">
                 <div class="fw-semibold mb-1">{{ field.label }}</div>
+                <div class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="(ext.member?.triggers || []).includes('*')"
+                    @change="toggleInboxTrigger(ext, '*', ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">All declared events</label>
+                </div>
                 <div v-for="hook in hookNames(ext)" :key="hook" class="form-check">
                   <input
                     class="form-check-input"
                     type="checkbox"
-                    :checked="(ext.member?.triggers || []).includes(hook)"
+                    :checked="inboxTriggerChecked(ext, hook)"
                     @change="toggleInboxTrigger(ext, hook, ($event.target as HTMLInputElement).checked)"
                   />
                   <label class="form-check-label">{{ hookLabel(ext, hook) }}</label>
@@ -385,6 +422,18 @@ onMounted(() => {
               </button>
             </div>
             <p v-if="ext.member?.last_error" class="small text-warning mt-2 mb-0">{{ ext.member.last_error }}</p>
+            <ul v-if="ext.member_deliveries?.length" class="small mt-2 mb-0 ps-3">
+              <li v-for="row in ext.member_deliveries" :key="row.id">
+                {{ row.created_at }} · {{ row.event }} · {{ row.status }}
+                <button
+                  v-if="row.status === 'failed' || row.status === 'dead'"
+                  type="button"
+                  class="btn btn-link btn-sm py-0"
+                  :disabled="!!inboxBusy"
+                  @click="retryInbox(ext, row)"
+                >Retry</button>
+              </li>
+            </ul>
           </fieldset>
         </form>
       </div>

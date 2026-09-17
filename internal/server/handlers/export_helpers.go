@@ -14,7 +14,6 @@ type exportTaskJSON struct {
 	DueDate     string          `json:"due_date"`
 	Project     string          `json:"project"`
 	Priority    int             `json:"priority"`
-	Favorite    bool            `json:"favorite"`
 	Position    int             `json:"position"`
 	Tags        []exportTagJSON `json:"tags"`
 	CreatedAt   string          `json:"created_at"`
@@ -40,7 +39,6 @@ func taskToExportJSON(t tasks.Task) exportTaskJSON {
 		DueDate:     t.DueDate,
 		Project:     t.ProjectName,
 		Priority:    t.Priority,
-		Favorite:    t.IsFavorite,
 		Position:    t.Position,
 		Tags:        tags,
 		CreatedAt:   t.DateCreated,
@@ -61,7 +59,6 @@ func taskToCSVRow(t tasks.Task) []string {
 		t.DueDate,
 		t.ProjectName,
 		strconv.Itoa(t.Priority),
-		strconv.FormatBool(t.IsFavorite),
 		strconv.Itoa(t.Position),
 		strings.Join(tagNames, ";"),
 		t.DateCreated,

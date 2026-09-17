@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,6 +69,8 @@ type projectExtensionPatch struct {
 	QuietHoursStart *string           `json:"quiet_hours_start"`
 	QuietHoursEnd   *string           `json:"quiet_hours_end"`
 	Digest          *string           `json:"digest"`
+	StatusIDs       *[]int            `json:"status_ids"`
+	StatusExcludeIDs *[]int           `json:"status_exclude_ids"`
 	MentionMap      map[string]string `json:"mention_map"`
 	WebhookURL      *string           `json:"webhook_url"`
 	NtfyAuth        *string           `json:"ntfy_auth"`
@@ -145,6 +148,18 @@ func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID in
 			return
 		}
 	}
+	if rest[1] == "deliveries" && len(rest) == 4 && rest[3] == "retry" && r.Method == http.MethodPost {
+		if !isOwner {
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only the project owner can retry the team webhook.")
+			return
+		}
+		projectExtensionRetry(w, r, projectID, 0, extensionID, rest[2])
+		return
+	}
+	if rest[1] == "me" && len(rest) == 5 && rest[2] == "deliveries" && rest[4] == "retry" && r.Method == http.MethodPost {
+		projectExtensionRetry(w, r, projectID, userID, extensionID, rest[3])
+		return
+	}
 	utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
 }
 
@@ -198,6 +213,12 @@ func applyHookFiltersToProject(m extensions.Manifest, cur *storage.ExtensionProj
 	if req.TagIDs != nil && m.HasSetting("tag_ids") {
 		cur.TagIDs = *req.TagIDs
 	}
+	if req.StatusIDs != nil && m.HasSetting("status_ids") {
+		cur.StatusIDs = *req.StatusIDs
+	}
+	if req.StatusExcludeIDs != nil && m.HasSetting("status_exclude_ids") {
+		cur.StatusExcludeIDs = *req.StatusExcludeIDs
+	}
 	if req.ClaimedOnly != nil && m.HasSetting("claimed_only") {
 		cur.ClaimedOnly = *req.ClaimedOnly
 	}
@@ -239,6 +260,12 @@ func applyHookFiltersToMember(m extensions.Manifest, cur *storage.ExtensionMembe
 	}
 	if req.TagIDs != nil && m.HasSetting("tag_ids") {
 		cur.TagIDs = *req.TagIDs
+	}
+	if req.StatusIDs != nil && m.HasSetting("status_ids") {
+		cur.StatusIDs = *req.StatusIDs
+	}
+	if req.StatusExcludeIDs != nil && m.HasSetting("status_exclude_ids") {
+		cur.StatusExcludeIDs = *req.StatusExcludeIDs
 	}
 	if req.ClaimedOnly != nil && m.HasSetting("claimed_only") {
 		cur.ClaimedOnly = *req.ClaimedOnly
@@ -521,6 +548,30 @@ func projectExtensionTest(w http.ResponseWriter, r *http.Request, projectID, use
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+func projectExtensionRetry(w http.ResponseWriter, r *http.Request, projectID, userID int, extensionID, rawID string) {
+	_ = r
+	id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+	if err != nil || id <= 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid delivery id.")
+		return
+	}
+	if _, ok := extensions.Get(extensionID); !ok {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension not found.")
+		return
+	}
+	if err := hooks.ReplayDelivery(extensionID, projectID, userID, id); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "not found") {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Delivery not found.")
+			return
+		}
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", msg+".")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
 func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwner bool) (projectExtensionJSON, error) {

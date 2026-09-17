@@ -7,7 +7,7 @@ import (
 )
 
 func TestAPIV1AdminCommentAuditMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/comment-audit", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/comment-audit", nil)
 	rec := httptest.NewRecorder()
 	APIV1AdminCommentAuditRouter(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -16,13 +16,13 @@ func TestAPIV1AdminCommentAuditMethodNotAllowed(t *testing.T) {
 }
 
 func TestParseCommentAuditListQuery(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/comment-audit?kind=nope", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/admin/comment-audit?kind=nope", nil)
 	_, errMsg := parseCommentAuditListQuery(req)
 	if errMsg == "" {
 		t.Fatal("expected invalid kind error")
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/comment-audit?kind=edit&limit=10&offset=2&q=hello", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v2/admin/comment-audit?kind=edit&limit=10&offset=2&q=hello", nil)
 	f, errMsg := parseCommentAuditListQuery(req)
 	if errMsg != "" {
 		t.Fatalf("err=%q", errMsg)

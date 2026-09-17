@@ -299,7 +299,7 @@ onMounted(load)
             <label class="form-check-label" for="admin-inbound">Enable inbound webhooks</label>
           </div>
           <p class="text-muted small">
-            Allows project owners to expose a public receiver at <code>/api/v1/webhooks/inbound</code>
+            Allows project owners to expose a public receiver at <code>/api/v2/webhooks/inbound</code>
             (HMAC or shared secret, not API keys). Disabled until you turn this on.
           </p>
           <div class="form-check mb-2">
@@ -324,7 +324,7 @@ onMounted(load)
         <p class="text-muted small">
           Optional. When configured, users can connect GitHub via OAuth in Settings.
           Create an OAuth App on GitHub with callback
-          <code>/api/v1/auth/github/callback</code>
+          <code>/api/v2/auth/github/callback</code>
           (include your site base path if applicable). Users can always connect with a personal access token instead.
         </p>
         <form @submit.prevent="saveGitHubOAuthSettings">

@@ -236,8 +236,6 @@ export type Task = {
   project_id?: number | null
   project?: string
   priority: number
-  /** @deprecated Task favoriting will be removed in API v2. */
-  favorite: boolean
   position: number
   parent_id?: number | null
   child_count?: number
@@ -258,8 +256,6 @@ export type Task = {
   parent_title?: string
   github?: TaskGitHubIssue | null
   fields?: Record<string, unknown>
-  /** Present on write responses that used the deprecated favorite field. */
-  deprecation_notice?: string
 }
 
 export type GitHubConnection = {
@@ -525,6 +521,8 @@ export type ExtensionSettingField = {
     | 'user'
     | 'priority'
     | 'tag_ids'
+    | 'status_ids'
+    | 'status_exclude_ids'
     | 'time'
     | 'digest'
     | 'field_filter'
@@ -598,6 +596,10 @@ export type CustomFieldDefList = {
 
 export type AdminExtensionSettings = {
   enabled: boolean
+  triggers?: string[]
+  templates?: Record<string, string>
+  last_error?: string
+  last_delivery_at?: string
 }
 
 export type AdminExtension = {
@@ -610,6 +612,7 @@ export type AdminExtension = {
   manifest: ExtensionManifest
   settings: AdminExtensionSettings
   secrets: Record<string, boolean>
+  deliveries?: ExtensionDelivery[]
 }
 
 export type AdminExtensionsList = {
@@ -619,6 +622,8 @@ export type AdminExtensionsList = {
 export type AdminExtensionPatch = {
   enabled?: boolean
   webhook_url?: string
+  triggers?: string[]
+  templates?: Record<string, string>
 }
 
 export type ExtensionDelivery = {
@@ -641,6 +646,8 @@ export type ProjectExtensionSettings = {
   skip_self?: boolean
   min_priority?: number
   tag_ids?: number[]
+  status_ids?: number[]
+  status_exclude_ids?: number[]
   claimed_only?: boolean
   field_key?: string
   field_value?: string
@@ -693,6 +700,8 @@ export type ProjectExtensionPatch = {
   skip_self?: boolean
   min_priority?: number
   tag_ids?: number[]
+  status_ids?: number[]
+  status_exclude_ids?: number[]
   claimed_only?: boolean
   claimed_is_me?: boolean
   field_key?: string

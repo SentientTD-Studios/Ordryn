@@ -104,7 +104,7 @@ type adminSettingsPatch struct {
 	ImageLocalPath        *string `json:"image_local_path"`
 }
 
-// APIV1AdminSettings handles GET/PATCH /api/v1/admin/settings.
+// APIV1AdminSettings handles GET/PATCH /api/v2/admin/settings.
 func APIV1AdminSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -445,7 +445,7 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 	})
 }
 
-// APIV1AdminUsersRouter handles /api/v1/admin/users and ban/unban.
+// APIV1AdminUsersRouter handles /api/v2/admin/users and ban/unban.
 func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "admin/users")
 	if sub == "" {

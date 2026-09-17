@@ -507,6 +507,7 @@ func ApplyGitHubIssueWebhookState(ctx context.Context, owner, repoName string, i
 	if lookupErr != nil {
 		log.Printf("github webhook completed lookup task=%d: %v", issue.TaskID, lookupErr)
 	}
+	hookedCompleted := false
 	allow, err := kanbanAllowsGitHubStatusSync(issue.TaskID, projectID)
 	if err != nil {
 		log.Printf("github webhook status sync task=%d: %v", issue.TaskID, err)
@@ -515,6 +516,7 @@ func ApplyGitHubIssueWebhookState(ctx context.Context, owner, repoName string, i
 			log.Printf("github webhook status sync task=%d: %v", issue.TaskID, err)
 		} else if lookupErr == nil && oldCompleted != completed {
 			dispatchCompletedHook(0, issue.TaskID, completed)
+			hookedCompleted = true
 		}
 	}
 	_ = storage.LogTaskEvent(issue.TaskID, 0, "github_issue_synced", map[string]interface{}{
@@ -522,7 +524,11 @@ func ApplyGitHubIssueWebhookState(ctx context.Context, owner, repoName string, i
 		"issue_state":  state,
 		"source":       "github",
 	})
-	live.AfterTaskChange(0, issue.TaskID, live.TypeTaskUpdated)
+	if hookedCompleted {
+		live.AfterTaskChangeLive(0, issue.TaskID, live.TypeTaskUpdated)
+	} else {
+		live.AfterTaskChange(0, issue.TaskID, live.TypeTaskUpdated)
+	}
 	return nil
 }
 

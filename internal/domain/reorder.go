@@ -44,11 +44,11 @@ func ApplyRelativeReorder(allIDs []int, orderedIDs []int) ([]int, error) {
 	return out, nil
 }
 
-// ReorderTasks validates IDs and renumbers position within a favorite/project/parent/status group.
+// ReorderTasks validates IDs and renumbers position within a project/parent/status group.
 // parentID nil or 0 reorders root tasks; otherwise reorders siblings under that parent.
 // statusFilter, when set, is the destination kanban column: tasks in ids that are not
 // already in that column are moved (status + completed) then the column is reordered.
-func ReorderTasks(ctx context.Context, userID int, ids []int, isFav bool, projectFilter *int, parentID *int, statusFilter *int) error {
+func ReorderTasks(ctx context.Context, userID int, ids []int, projectFilter *int, parentID *int, statusFilter *int) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("%w: empty task_ids", ErrValidation)
 	}
@@ -67,34 +67,31 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, isFav bool, projec
 			return accessErr
 		}
 		if !canRead || !storage.RoleCanWrite(writeRole) {
-			return fmt.Errorf("%w: task %d does not belong to user or mismatched favorite group/project", ErrValidation, id)
+			return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
 		}
-		var isFavorite, completed bool
+		var completed bool
 		var proj, pid, sid sql.NullInt64
 		err := pool.QueryRow(ctx,
-			`SELECT COALESCE(is_favorite,false), COALESCE(completed,false), project_id, parent_id, status_id FROM tasks WHERE id = $1`,
-			id).Scan(&isFavorite, &completed, &proj, &pid, &sid)
+			`SELECT COALESCE(completed,false), project_id, parent_id, status_id FROM tasks WHERE id = $1`,
+			id).Scan(&completed, &proj, &pid, &sid)
 		if err != nil {
 			return err
 		}
 		if nesting {
 			if !pid.Valid || int(pid.Int64) != *parentID {
-				return fmt.Errorf("%w: task %d does not belong to user or mismatched favorite group/project", ErrValidation, id)
+				return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
 			}
 		} else {
 			if pid.Valid {
-				return fmt.Errorf("%w: task %d does not belong to user or mismatched favorite group/project", ErrValidation, id)
-			}
-			if isFavorite != isFav {
-				return fmt.Errorf("%w: task %d does not belong to user or mismatched favorite group/project", ErrValidation, id)
+				return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
 			}
 			if projectFilter != nil {
 				if *projectFilter == 0 {
 					if proj.Valid {
-						return fmt.Errorf("%w: task %d does not belong to user or mismatched favorite group/project", ErrValidation, id)
+						return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
 					}
 				} else if !proj.Valid || int(proj.Int64) != *projectFilter {
-					return fmt.Errorf("%w: task %d does not belong to user or mismatched favorite group/project", ErrValidation, id)
+					return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
 				}
 			}
 			if statusFilter != nil {
@@ -125,9 +122,9 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, isFav bool, projec
 		q = "SELECT id FROM tasks WHERE parent_id = $1 ORDER BY position ASC, id ASC"
 	} else {
 		vis := storage.TaskListVisibleCondition("t", "$1", projectFilter)
-		argsAll = []interface{}{userID, isFav}
-		q = "SELECT t.id FROM tasks t WHERE " + vis + " AND COALESCE(t.is_favorite,false) = $2 AND t.parent_id IS NULL"
-		argN := 3
+		argsAll = []interface{}{userID}
+		q = "SELECT t.id FROM tasks t WHERE " + vis + " AND t.parent_id IS NULL"
+		argN := 2
 		if projectFilter != nil {
 			if *projectFilter == 0 {
 				q += " AND t.project_id IS NULL"

@@ -56,7 +56,7 @@ func TestRateLimitSpecForWriteMethods(t *testing.T) {
 }
 
 func TestAPIRateLimitMiddlewareUnauthorized(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/tasks", nil)
 	rec := httptest.NewRecorder()
 	called := false
 	APIRateLimitMiddleware(func(http.ResponseWriter, *http.Request) {
@@ -75,7 +75,7 @@ func TestAPIRateLimitMiddlewareRequiresRedis(t *testing.T) {
 	RedisClient = nil
 	t.Cleanup(func() { RedisClient = orig })
 
-	req := SetAPIUserID(httptest.NewRequest(http.MethodGet, "/api/v1/tasks", nil), 1)
+	req := SetAPIUserID(httptest.NewRequest(http.MethodGet, "/api/v2/tasks", nil), 1)
 	rec := httptest.NewRecorder()
 	APIRateLimitMiddleware(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("handler should not run")
@@ -100,5 +100,19 @@ func TestGetAPIAuthKindDefaultsToAPIKey(t *testing.T) {
 	req = SetAPIAuthKind(req, AuthKindSession)
 	if got := GetAPIAuthKind(req); got != AuthKindSession {
 		t.Fatalf("kind=%q want %q", got, AuthKindSession)
+	}
+}
+
+func TestParseAPIV1SubpathAcceptsV1AndV2(t *testing.T) {
+	for _, path := range []string{"/api/v2/tasks/12/comments", "/api/v1/tasks/12/comments"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		got := ParseAPIV1Subpath(req, "tasks")
+		if got != "12/comments" {
+			t.Fatalf("%s: subpath=%q want 12/comments", path, got)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/tasks/12", nil)
+	if got := ParseAPIV1Subpath(req, "tasks"); got != "" {
+		t.Fatalf("unexpected subpath %q for /api/v3", got)
 	}
 }

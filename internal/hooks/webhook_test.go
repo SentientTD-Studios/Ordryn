@@ -81,6 +81,26 @@ func TestMarshalWebhookPayloads(t *testing.T) {
 	if body.EventID != "evt-1" || len(body.Changed) != 2 || body.Fields["severity.level"] != "high" {
 		t.Fatalf("rich json body=%+v", body)
 	}
+	vars["actor_id"] = "3"
+	vars["description"] = "Ship it"
+	vars["parent_id"] = "1"
+	vars["estimate"] = "5"
+	vars["project_id"] = "7"
+	vars["changes_json"] = `[{"field":"status","old":"Todo","new":"Done"}]`
+	vars["digest_events"] = "Ship (task.updated)\nLater (task.created)"
+	raw, err = marshalWebhookPayload(extensions.DeliveryHTTPWebhook, extensions.DeliveryFormatJSON, "hello", "task.updated", vars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ActorObj == nil || body.ActorObj.Name != "ada" || body.TaskObj == nil || body.TaskObj.Description != "Ship it" || body.ProjectObj == nil || body.ProjectObj.ID != 7 {
+		t.Fatalf("nested json body=%+v", body)
+	}
+	if len(body.Changes) != 1 || body.Changes[0].Field != "status" || len(body.DigestEvents) != 2 {
+		t.Fatalf("changes/digest json body=%+v", body)
+	}
 
 	raw, err = marshalWebhookPayload(extensions.DeliveryTeamsWebhook, "", "hello **world**", "task.updated", vars)
 	if err != nil {
@@ -124,6 +144,20 @@ func TestPostJSONSuccessAndError(t *testing.T) {
 	}
 	if string(gotBody) != `{"text":"hi"}` {
 		t.Fatalf("body=%s", gotBody)
+	}
+	var gotEvent, gotDelivery string
+	hdrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotEvent = r.Header.Get("X-Ordryn-Event-Id")
+		gotDelivery = r.Header.Get("X-Ordryn-Delivery-Id")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(hdrSrv.Close)
+	webhookHTTPClient = hdrSrv.Client()
+	if _, _, err := postJSONOpts(hdrSrv.URL, []byte(`{"text":"hi"}`), sendOpts{EventID: "evt-9", DeliveryID: 44}); err != nil {
+		t.Fatal(err)
+	}
+	if gotEvent != "evt-9" || gotDelivery != "44" {
+		t.Fatalf("headers event=%q delivery=%q", gotEvent, gotDelivery)
 	}
 	err := postJSON(srv.URL+"/fail", []byte(`{}`))
 	if err == nil || !strings.Contains(err.Error(), "webhook HTTP 400") || !strings.Contains(err.Error(), "Unknown name") {

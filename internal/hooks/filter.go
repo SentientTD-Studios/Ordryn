@@ -14,7 +14,8 @@ func triggerAllowed(triggers []string, eventType string) bool {
 		return false
 	}
 	for _, t := range triggers {
-		if strings.TrimSpace(t) == eventType {
+		t = strings.TrimSpace(t)
+		if t == "*" || t == eventType {
 			return true
 		}
 	}
@@ -30,9 +31,15 @@ func templateFor(m extensions.Manifest, templates map[string]string, eventType s
 		if s, ok := templates[eventType]; ok {
 			return s
 		}
+		if s, ok := templates["*"]; ok {
+			return s
+		}
 	}
 	if m.Templates != nil {
 		if s, ok := m.Templates[eventType]; ok {
+			return s
+		}
+		if s, ok := m.Templates["*"]; ok {
 			return s
 		}
 	}
@@ -41,24 +48,26 @@ func templateFor(m extensions.Manifest, templates map[string]string, eventType s
 
 // destFilter is the filter view of team or member settings.
 type destFilter struct {
-	Enabled         bool
-	Triggers        []string
-	Templates       map[string]string
-	StatusOnly      bool
-	SkipSelf        bool
-	MinPriority     int
-	TagIDs          []int
-	ClaimedOnly     bool
-	ClaimedIsMe     bool
-	FieldKey        string
-	FieldValue      string
-	QuietHoursStart string
-	QuietHoursEnd   string
-	Digest          string
-	MentionMap      map[string]string
-	SubscriberID    int
-	Personal        bool
-	Values          map[string]string
+	Enabled          bool
+	Triggers         []string
+	Templates        map[string]string
+	StatusOnly       bool
+	SkipSelf         bool
+	MinPriority      int
+	TagIDs           []int
+	StatusIDs        []int
+	StatusExcludeIDs []int
+	ClaimedOnly      bool
+	ClaimedIsMe      bool
+	FieldKey         string
+	FieldValue       string
+	QuietHoursStart  string
+	QuietHoursEnd    string
+	Digest           string
+	MentionMap       map[string]string
+	SubscriberID     int
+	Personal         bool
+	Values           map[string]string
 }
 
 func destFromProject(m extensions.Manifest, p storage.ExtensionProjectSettings) destFilter {
@@ -69,17 +78,19 @@ func destFromProject(m extensions.Manifest, p storage.ExtensionProjectSettings) 
 		Values:    p.Values,
 	}
 	copyDeclaredFilters(&d, m, storedFilters{
-		StatusOnly:      p.StatusOnly,
-		SkipSelf:        p.SkipSelf,
-		MinPriority:     p.MinPriority,
-		TagIDs:          p.TagIDs,
-		ClaimedOnly:     p.ClaimedOnly,
-		FieldKey:        p.FieldKey,
-		FieldValue:      p.FieldValue,
-		QuietHoursStart: p.QuietHoursStart,
-		QuietHoursEnd:   p.QuietHoursEnd,
-		Digest:          p.Digest,
-		MentionMap:      p.MentionMap,
+		StatusOnly:       p.StatusOnly,
+		SkipSelf:         p.SkipSelf,
+		MinPriority:      p.MinPriority,
+		TagIDs:           p.TagIDs,
+		StatusIDs:        p.StatusIDs,
+		StatusExcludeIDs: p.StatusExcludeIDs,
+		ClaimedOnly:      p.ClaimedOnly,
+		FieldKey:         p.FieldKey,
+		FieldValue:       p.FieldValue,
+		QuietHoursStart:  p.QuietHoursStart,
+		QuietHoursEnd:    p.QuietHoursEnd,
+		Digest:           p.Digest,
+		MentionMap:       p.MentionMap,
 	})
 	return d
 }
@@ -98,34 +109,38 @@ func destFromMember(m extensions.Manifest, s storage.ExtensionMemberSettings, us
 		skipSelf = s.SkipSelfOrDefault()
 	}
 	copyDeclaredFilters(&d, m, storedFilters{
-		StatusOnly:      s.StatusOnly,
-		SkipSelf:        skipSelf,
-		MinPriority:     s.MinPriority,
-		TagIDs:          s.TagIDs,
-		ClaimedOnly:     s.ClaimedOnly,
-		ClaimedIsMe:     s.ClaimedIsMe,
-		FieldKey:        s.FieldKey,
-		FieldValue:      s.FieldValue,
-		QuietHoursStart: s.QuietHoursStart,
-		QuietHoursEnd:   s.QuietHoursEnd,
-		Digest:          s.Digest,
+		StatusOnly:       s.StatusOnly,
+		SkipSelf:         skipSelf,
+		MinPriority:      s.MinPriority,
+		TagIDs:           s.TagIDs,
+		StatusIDs:        s.StatusIDs,
+		StatusExcludeIDs: s.StatusExcludeIDs,
+		ClaimedOnly:      s.ClaimedOnly,
+		ClaimedIsMe:      s.ClaimedIsMe,
+		FieldKey:         s.FieldKey,
+		FieldValue:       s.FieldValue,
+		QuietHoursStart:  s.QuietHoursStart,
+		QuietHoursEnd:    s.QuietHoursEnd,
+		Digest:           s.Digest,
 	})
 	return d
 }
 
 type storedFilters struct {
-	StatusOnly      bool
-	SkipSelf        bool
-	MinPriority     int
-	TagIDs          []int
-	ClaimedOnly     bool
-	ClaimedIsMe     bool
-	FieldKey        string
-	FieldValue      string
-	QuietHoursStart string
-	QuietHoursEnd   string
-	Digest          string
-	MentionMap      map[string]string
+	StatusOnly       bool
+	SkipSelf         bool
+	MinPriority      int
+	TagIDs           []int
+	StatusIDs        []int
+	StatusExcludeIDs []int
+	ClaimedOnly      bool
+	ClaimedIsMe      bool
+	FieldKey         string
+	FieldValue       string
+	QuietHoursStart  string
+	QuietHoursEnd    string
+	Digest           string
+	MentionMap       map[string]string
 }
 
 func copyDeclaredFilters(d *destFilter, m extensions.Manifest, s storedFilters) {
@@ -140,6 +155,12 @@ func copyDeclaredFilters(d *destFilter, m extensions.Manifest, s storedFilters) 
 	}
 	if m.HasSetting("tag_ids") {
 		d.TagIDs = s.TagIDs
+	}
+	if m.HasSetting("status_ids") {
+		d.StatusIDs = s.StatusIDs
+	}
+	if m.HasSetting("status_exclude_ids") {
+		d.StatusExcludeIDs = s.StatusExcludeIDs
 	}
 	if m.HasSetting("claimed_only") {
 		d.ClaimedOnly = s.ClaimedOnly
@@ -187,7 +208,9 @@ func shouldDeliverDest(m extensions.Manifest, site storage.ExtensionSettings, de
 		return false
 	}
 	if !triggerAllowed(dest.Triggers, ev.Type) {
-		return false
+		if !(dest.StatusOnly && ev.Type == EventTaskStatusChanged && triggerAllowed(dest.Triggers, EventTaskUpdated)) {
+			return false
+		}
 	}
 	if ev.Type == EventTaskUpdated && dest.StatusOnly && !ev.StatusChanged {
 		return false
@@ -203,6 +226,12 @@ func shouldDeliverDest(m extensions.Manifest, site storage.ExtensionSettings, de
 		return false
 	}
 	if len(dest.TagIDs) > 0 && snap != nil && !tagOverlap(dest.TagIDs, snap.TagIDs) {
+		return false
+	}
+	if len(dest.StatusIDs) > 0 && snap != nil && !containsInt(dest.StatusIDs, snap.StatusID) {
+		return false
+	}
+	if len(dest.StatusExcludeIDs) > 0 && snap != nil && containsInt(dest.StatusExcludeIDs, snap.StatusID) {
 		return false
 	}
 	if dest.ClaimedOnly && snap != nil && snap.ClaimedBy <= 0 {

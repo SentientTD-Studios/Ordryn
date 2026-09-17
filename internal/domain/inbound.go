@@ -7,9 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"GoTodo/internal/extensions"
+	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
 )
 
@@ -25,17 +28,12 @@ type InboundWebhookInput struct {
 }
 
 // ApplyInboundWebhook creates a task or comment using the project's inbound secret.
-func ApplyInboundWebhook(ctx context.Context, secretHeader, hmacHeader string, body []byte, in InboundWebhookInput) error {
+func ApplyInboundWebhook(ctx context.Context, secretHeader, hmacHeader, timestampHeader string, body []byte, in InboundWebhookInput) error {
+	if in.ProjectID <= 0 {
+		return fmt.Errorf("%w: project_id is required", ErrValidation)
+	}
 	if !InboundWebhooksEnabled() {
 		return fmt.Errorf("%w: inbound webhooks are disabled", ErrForbidden)
-	}
-	if in.ProjectID <= 0 {
-		cfg, err := findInboundByAuth(secretHeader, hmacHeader, body)
-		if err != nil {
-			return err
-		}
-		in.ProjectID = cfg.ProjectID
-		return applyInboundWithConfig(ctx, cfg, in)
 	}
 	cfg, err := storage.GetProjectInboundWebhook(in.ProjectID)
 	if err != nil {
@@ -44,26 +42,10 @@ func ApplyInboundWebhook(ctx context.Context, secretHeader, hmacHeader string, b
 	if cfg == nil || !cfg.Enabled || !cfg.SecretSet {
 		return ErrForbidden
 	}
-	if err := verifyInboundAuth(cfg.Secret, secretHeader, hmacHeader, body); err != nil {
+	if err := verifyInboundAuth(cfg.Secret, secretHeader, hmacHeader, timestampHeader, body); err != nil {
 		return err
 	}
 	return applyInboundWithConfig(ctx, cfg, in)
-}
-
-func findInboundByAuth(secretHeader, hmacHeader string, body []byte) (*storage.ProjectInboundWebhook, error) {
-	rows, err := storage.ListEnabledProjectInboundWebhooks()
-	if err != nil {
-		return nil, err
-	}
-	for _, cfg := range rows {
-		if cfg == nil || !cfg.SecretSet {
-			continue
-		}
-		if err := verifyInboundAuth(cfg.Secret, secretHeader, hmacHeader, body); err == nil {
-			return cfg, nil
-		}
-	}
-	return nil, ErrForbidden
 }
 
 func applyInboundWithConfig(ctx context.Context, cfg *storage.ProjectInboundWebhook, in InboundWebhookInput) error {
@@ -143,11 +125,16 @@ func applyInboundWithConfig(ctx context.Context, cfg *storage.ProjectInboundWebh
 		if strings.TrimSpace(in.Value) == "" {
 			raw = []byte("null")
 		}
-		if err := ApplyTaskFields(in.TaskID, cfg.ProjectID, cfg.ProjectOwnerID(), map[string]json.RawMessage{
+		keys, err := ApplyTaskFields(in.TaskID, cfg.ProjectID, cfg.ProjectOwnerID(), map[string]json.RawMessage{
 			strings.TrimSpace(in.Field): raw,
-		}); err != nil {
+		})
+		if err != nil {
 			_ = storage.RecordProjectInboundDelivery(cfg.ProjectID, err.Error())
 			return err
+		}
+		if len(keys) > 0 {
+			live.AfterTaskChangeLive(cfg.ProjectOwnerID(), in.TaskID, live.TypeTaskUpdated)
+			live.DispatchHook(cfg.ProjectOwnerID(), in.TaskID, live.TypeTaskUpdated, &live.TaskHookMeta{Changed: keys})
 		}
 		_ = storage.RecordProjectInboundDelivery(cfg.ProjectID, "")
 		return nil
@@ -182,7 +169,7 @@ func projectDeclaresInboundAction(projectID int, action string) bool {
 	return false
 }
 
-func verifyInboundAuth(secret, customHeader, hmacHeader string, body []byte) error {
+func verifyInboundAuth(secret, customHeader, hmacHeader, timestampHeader string, body []byte) error {
 	customHeader = strings.TrimSpace(customHeader)
 	hmacHeader = strings.TrimSpace(hmacHeader)
 	if customHeader != "" {
@@ -192,6 +179,22 @@ func verifyInboundAuth(secret, customHeader, hmacHeader string, body []byte) err
 		return ErrForbidden
 	}
 	if hmacHeader != "" {
+		ts := strings.TrimSpace(timestampHeader)
+		if ts == "" {
+			return fmt.Errorf("%w: X-Ordryn-Timestamp is required", ErrForbidden)
+		}
+		unix, err := strconv.ParseInt(ts, 10, 64)
+		if err != nil {
+			return fmt.Errorf("%w: invalid X-Ordryn-Timestamp", ErrForbidden)
+		}
+		now := time.Now().UTC().Unix()
+		skew := now - unix
+		if skew < 0 {
+			skew = -skew
+		}
+		if skew > 300 {
+			return fmt.Errorf("%w: X-Ordryn-Timestamp is too old", ErrForbidden)
+		}
 		const prefix = "sha256="
 		if !strings.HasPrefix(hmacHeader, prefix) {
 			return ErrForbidden
@@ -201,6 +204,7 @@ func verifyInboundAuth(secret, customHeader, hmacHeader string, body []byte) err
 			return ErrForbidden
 		}
 		mac := hmac.New(sha256.New, []byte(secret))
+		_, _ = mac.Write([]byte(ts + "."))
 		_, _ = mac.Write(body)
 		if !hmac.Equal(mac.Sum(nil), want) {
 			return ErrForbidden

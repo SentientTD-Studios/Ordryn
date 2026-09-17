@@ -12,6 +12,7 @@ const toast = useToast()
 const loading = ref(false)
 const extensions = ref<AdminExtension[]>([])
 const busyId = ref<string | null>(null)
+const testBusyId = ref<string | null>(null)
 const expanded = reactive<Record<string, boolean>>({})
 const siteSecretDraft = reactive<Record<string, string>>({})
 
@@ -33,6 +34,49 @@ function customFields(ext: AdminExtension) {
   return ext.manifest.fields || []
 }
 
+function hookNames(ext: AdminExtension): string[] {
+  return (ext.manifest.hooks || []).map((h) => h.on)
+}
+
+function hookLabel(ext: AdminExtension, on: string): string {
+  const hook = (ext.manifest.hooks || []).find((h) => h.on === on)
+  return hook?.label || on
+}
+
+function hasControl(ext: AdminExtension, name: string) {
+  return (ext.manifest.controls || []).includes(name)
+}
+
+function triggerChecked(ext: AdminExtension, hook: string): boolean {
+  const cur = ext.settings.triggers || []
+  return cur.includes('*') || cur.includes(hook)
+}
+
+function toggleTrigger(ext: AdminExtension, hook: string, checked: boolean) {
+  const names = hookNames(ext)
+  let cur = new Set(ext.settings.triggers || [])
+  if (hook === '*') {
+    ext.settings.triggers = checked ? ['*'] : []
+    return
+  }
+  if (cur.has('*')) {
+    cur = new Set(names)
+  }
+  if (checked) cur.add(hook)
+  else cur.delete(hook)
+  cur.delete('*')
+  ext.settings.triggers = [...cur]
+}
+
+function templateValue(ext: AdminExtension, hook: string): string {
+  return ext.settings.templates?.[hook] ?? ext.manifest.templates?.[hook] ?? ''
+}
+
+function setTemplate(ext: AdminExtension, hook: string, value: string) {
+  if (!ext.settings.templates) ext.settings.templates = {}
+  ext.settings.templates[hook] = value
+}
+
 function toggleExpanded(id: string) {
   expanded[id] = !expanded[id]
 }
@@ -42,6 +86,10 @@ async function load() {
   try {
     const res = await api.listAdminExtensions()
     extensions.value = res.extensions
+    for (const ext of extensions.value) {
+      if (!ext.settings.templates) ext.settings.templates = {}
+      if (!ext.settings.triggers) ext.settings.triggers = []
+    }
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load extensions', 'error')
   } finally {
@@ -50,6 +98,8 @@ async function load() {
 }
 
 function replaceExtension(updated: AdminExtension) {
+  if (!updated.settings.templates) updated.settings.templates = {}
+  if (!updated.settings.triggers) updated.settings.triggers = []
   extensions.value = extensions.value.map((e) => (e.id === updated.id ? updated : e))
 }
 
@@ -57,7 +107,11 @@ async function save(ext: AdminExtension) {
   if (ext.status !== 'loaded') return
   busyId.value = ext.id
   try {
-    const payload: AdminExtensionPatch = { enabled: ext.settings.enabled }
+    const payload: AdminExtensionPatch = {
+      enabled: ext.settings.enabled,
+      triggers: [...(ext.settings.triggers || [])],
+      templates: { ...(ext.settings.templates || {}) },
+    }
     const draft = siteSecretDraft[ext.id]?.trim()
     if (draft) payload.webhook_url = draft
     const saved = await api.patchAdminExtension(ext.id, payload)
@@ -67,6 +121,32 @@ async function save(ext: AdminExtension) {
     toast.push('Extension settings saved', 'success')
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Save failed', 'error')
+  } finally {
+    busyId.value = null
+  }
+}
+
+async function test(ext: AdminExtension) {
+  testBusyId.value = ext.id
+  try {
+    const res = await api.testAdminExtension(ext.id)
+    toast.push(res.message || 'Test message sent', 'success')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Test failed', 'error')
+  } finally {
+    testBusyId.value = null
+  }
+}
+
+async function retryDelivery(ext: AdminExtension, row: { id: number }) {
+  busyId.value = `${ext.id}:retry:${row.id}`
+  try {
+    await api.retryAdminExtension(ext.id, row.id)
+    toast.push('Delivery queued for retry', 'success')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Retry failed', 'error')
   } finally {
     busyId.value = null
   }
@@ -96,7 +176,7 @@ onMounted(load)
           <i class="bi" :class="expanded[ext.id] ? 'bi-chevron-down' : 'bi-chevron-right'" aria-hidden="true" />
           <img
             v-if="ext.manifest.icon"
-            :src="withBase(`/api/v1/extensions/${ext.id}/icon`)"
+            :src="withBase(`/api/v2/extensions/${ext.id}/icon`)"
             alt=""
             width="20"
             height="20"
@@ -134,7 +214,7 @@ onMounted(load)
               <span v-if="ext.manifest.homepage"><a v-if="ext.manifest.homepage" :href="ext.manifest.homepage" target="_blank" rel="noopener noreferrer">Homepage</a></span>
             </p>
             <p v-if="hasProjectSettings(ext)" class="small text-muted">
-              Webhook, triggers, and message templates are set per project in Project settings → Extensions.
+              Webhook, triggers, and message templates for project destinations are set per project in Project settings → Extensions.
             </p>
             <p v-else-if="customFields(ext).length" class="small text-muted">
               Project owners enable this per board in Project settings → Extensions. Fields then appear on that project’s tasks.
@@ -165,9 +245,81 @@ onMounted(load)
               <div v-if="ext.secrets?.[field.key]" class="form-text text-success">URL is stored.</div>
             </div>
             <div v-for="field in siteFields(ext).filter((f) => f.type !== 'secret')" :key="field.key" class="mb-3">
-              <div class="fw-semibold">{{ field.label }}</div>
-              <div v-if="field.description" class="form-text">{{ field.description }}</div>
+              <template v-if="field.type === 'hook_select'">
+                <div class="fw-semibold mb-2">{{ field.label }}</div>
+                <div v-if="field.description" class="form-text mb-1">{{ field.description }}</div>
+                <p class="small text-muted">Empty triggers still deliver all site events. Choose “All declared events” or specific hooks to restrict them.</p>
+                <div class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="(ext.settings.triggers || []).includes('*')"
+                    @change="toggleTrigger(ext, '*', ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">All declared events</label>
+                </div>
+                <div v-for="hook in hookNames(ext)" :key="hook" class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="triggerChecked(ext, hook)"
+                    @change="toggleTrigger(ext, hook, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">{{ hookLabel(ext, hook) }}</label>
+                </div>
+              </template>
+              <template v-else>
+                <div class="fw-semibold">{{ field.label }}</div>
+                <div v-if="field.description" class="form-text">{{ field.description }}</div>
+              </template>
             </div>
+            <div v-if="hookNames(ext).length && !hasProjectSettings(ext)" class="mb-3">
+              <div class="fw-semibold mb-2">Messages</div>
+              <div class="mb-2">
+                <label class="form-label">Default message (all events)</label>
+                <textarea
+                  class="form-control"
+                  rows="2"
+                  :value="templateValue(ext, '*')"
+                  @input="setTemplate(ext, '*', ($event.target as HTMLTextAreaElement).value)"
+                />
+              </div>
+              <div v-for="hook in hookNames(ext)" :key="`tmpl-${hook}`" class="mb-2">
+                <label class="form-label">{{ hookLabel(ext, hook) }}</label>
+                <textarea
+                  class="form-control"
+                  rows="2"
+                  :value="templateValue(ext, hook)"
+                  @input="setTemplate(ext, hook, ($event.target as HTMLTextAreaElement).value)"
+                />
+              </div>
+            </div>
+            <div v-if="ext.settings.last_error" class="alert alert-warning">Last delivery error: {{ ext.settings.last_error }}</div>
+            <div v-if="ext.deliveries?.length" class="small mb-2">
+              <div class="fw-semibold">Recent deliveries</div>
+              <ul class="mb-0 ps-3">
+                <li v-for="row in ext.deliveries" :key="row.id">
+                  {{ row.created_at }} · {{ row.event }} · {{ row.status }}
+                  <span v-if="row.error" class="text-warning"> {{ row.error }}</span>
+                  <button
+                    v-if="row.status === 'failed' || row.status === 'dead'"
+                    type="button"
+                    class="btn btn-link btn-sm py-0"
+                    :disabled="!!busyId"
+                    @click="retryDelivery(ext, row)"
+                  >Retry</button>
+                </li>
+              </ul>
+            </div>
+            <button
+              v-if="hasControl(ext, 'send_test') && !hasProjectSettings(ext)"
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :disabled="testBusyId === ext.id"
+              @click="test(ext)"
+            >
+              {{ testBusyId === ext.id ? 'Sending…' : 'Send test' }}
+            </button>
           </div>
         </form>
       </div>

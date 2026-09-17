@@ -15,7 +15,7 @@ type apiUserSearchHitJSON struct {
 	UserName string `json:"user_name"`
 }
 
-// APIV1UsersSearch handles GET /api/v1/users/search?q=&project_id=
+// APIV1UsersSearch handles GET /api/v2/users/search?q=&project_id=
 func APIV1UsersSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

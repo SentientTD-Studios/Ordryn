@@ -69,6 +69,7 @@ type TaskHookMeta struct {
 	NewStatus        string
 	Comment          string
 	Changed          []string
+	FieldChanges     []hooks.FieldChange
 	Count            int
 	JoinEmail        string
 	JoinMessage      string
@@ -93,6 +94,7 @@ func hookEvent(actorID, taskID, projectID int, typ string, meta *TaskHookMeta) h
 		ev.NewStatus = meta.NewStatus
 		ev.Comment = meta.Comment
 		ev.Changed = meta.Changed
+		ev.FieldChanges = meta.FieldChanges
 		ev.Count = meta.Count
 		ev.JoinEmail = meta.JoinEmail
 		ev.JoinMessage = meta.JoinMessage
@@ -175,12 +177,27 @@ func DispatchHook(actorID, taskID int, typ string, meta *TaskHookMeta) {
 	dispatchHook(actorID, taskID, projectID, typ, meta)
 }
 
-// DispatchProjectHook sends a project-level outbound extension event without SSE.
+// DispatchOwnerHook sends a personal (no project) outbound extension event.
+func DispatchOwnerHook(actorID, ownerID int, typ string, meta *TaskHookMeta) {
+	if ownerID <= 0 || !wantOutboundHooks() {
+		return
+	}
+	ev := hookEvent(actorID, 0, 0, typ, meta)
+	ev.OwnerID = ownerID
+	ev.Snapshot = &storage.HookTaskSnapshot{OwnerID: ownerID}
+	emitHook(ev)
+}
+
+// DispatchProjectHook sends a project-level outbound event without an extra SSE publish.
 func DispatchProjectHook(actorID, projectID int, typ string, meta *TaskHookMeta) {
 	if projectID <= 0 || !wantOutboundHooks() {
 		return
 	}
-	emitHook(hookEvent(actorID, 0, projectID, typ, meta))
+	ev := hookEvent(actorID, 0, projectID, typ, meta)
+	if snap, err := storage.GetHookProjectSnapshot(projectID); err == nil {
+		ev.Snapshot = snap
+	}
+	emitHook(ev)
 }
 
 // AfterTaskChange notifies everyone who can currently see the task.
@@ -190,11 +207,20 @@ func AfterTaskChange(actorID, taskID int, typ string, extraProjectIDs ...int) {
 
 // AfterTaskChangeMeta is AfterTaskChange plus optional status-change metadata for extensions.
 func AfterTaskChangeMeta(actorID, taskID int, typ string, meta *TaskHookMeta, extraProjectIDs ...int) {
+	afterTaskChange(actorID, taskID, typ, meta, true, extraProjectIDs...)
+}
+
+// AfterTaskChangeLive is SSE-only (no outbound extension hooks).
+func AfterTaskChangeLive(actorID, taskID int, typ string, extraProjectIDs ...int) {
+	afterTaskChange(actorID, taskID, typ, nil, false, extraProjectIDs...)
+}
+
+func afterTaskChange(actorID, taskID int, typ string, meta *TaskHookMeta, emitHooks bool, extraProjectIDs ...int) {
 	if taskID <= 0 {
 		return
 	}
 	h := currentHub()
-	wantHooks := wantOutboundHooks()
+	wantHooks := emitHooks && wantOutboundHooks()
 	if h == nil && !wantHooks {
 		return
 	}
@@ -285,8 +311,17 @@ func publishTasksChange(actorID int, typ string, taskIDs []int, emitHooks bool, 
 // AfterProjectChange notifies current project members, plus any extra user IDs
 // (for example a member who was just removed).
 func AfterProjectChange(actorID, projectID int, typ string, extraUserIDs ...int) {
+	afterProjectChange(actorID, projectID, typ, true, extraUserIDs...)
+}
+
+// AfterProjectChangeLive is SSE-only (no outbound extension hooks).
+func AfterProjectChangeLive(actorID, projectID int, typ string, extraUserIDs ...int) {
+	afterProjectChange(actorID, projectID, typ, false, extraUserIDs...)
+}
+
+func afterProjectChange(actorID, projectID int, typ string, emitHooks bool, extraUserIDs ...int) {
 	h := currentHub()
-	wantHooks := wantOutboundHooks()
+	wantHooks := emitHooks && wantOutboundHooks()
 	if projectID <= 0 || (h == nil && !wantHooks) {
 		return
 	}

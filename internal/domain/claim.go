@@ -45,7 +45,7 @@ func ClaimTaskForUser(ctx context.Context, userID, taskID int) error {
 		meta["previous_claimed_by"] = prev
 	}
 	_ = storage.LogTaskEvent(taskID, userID, "claimed", meta)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
 	live.DispatchHook(userID, taskID, live.TypeTaskClaimed, &live.TaskHookMeta{Changed: []string{"claimed_by"}})
 	return nil
 }
@@ -86,7 +86,7 @@ func UnclaimTaskForUser(ctx context.Context, userID, taskID int) error {
 		meta["previous_claimed_by"] = prev
 	}
 	_ = storage.LogTaskEvent(taskID, userID, "unclaimed", meta)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
 	live.DispatchHook(userID, taskID, live.TypeTaskUnclaimed, &live.TaskHookMeta{Changed: []string{"claimed_by"}})
 	return nil
 }

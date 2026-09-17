@@ -13,7 +13,7 @@ import (
 )
 
 func TestAPIV1AdminExtensionsMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/extensions", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/extensions", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 	APIV1AdminExtensionsRouter(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -22,7 +22,7 @@ func TestAPIV1AdminExtensionsMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1AdminExtensionsGetUnknown(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/extensions/missing", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/admin/extensions/missing", nil)
 	rec := httptest.NewRecorder()
 	APIV1AdminExtensionsRouter(rec, req)
 	if rec.Code != http.StatusNotFound {
@@ -31,7 +31,7 @@ func TestAPIV1AdminExtensionsGetUnknown(t *testing.T) {
 }
 
 func TestAPIV1AdminExtensionsTestRemoved(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/extensions/discord/test", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/extensions/discord/test", nil)
 	rec := httptest.NewRecorder()
 	APIV1AdminExtensionsRouter(rec, req)
 	if rec.Code != http.StatusNotFound {
@@ -51,7 +51,7 @@ func TestAdminExtensionPatchJSONIgnoresTriggers(t *testing.T) {
 }
 
 func TestAPIV1ProjectExtensionsUnauthorized(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/1/extensions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/projects/1/extensions", nil)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -60,7 +60,7 @@ func TestAPIV1ProjectExtensionsUnauthorized(t *testing.T) {
 }
 
 func TestAPIV1ProjectExtensionsListMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/1/extensions", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/projects/1/extensions", strings.NewReader(`{}`))
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
@@ -70,7 +70,7 @@ func TestAPIV1ProjectExtensionsListMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1InboundWebhookMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/webhooks/inbound", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/webhooks/inbound", nil)
 	rec := httptest.NewRecorder()
 	APIV1InboundWebhook(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -79,7 +79,7 @@ func TestAPIV1InboundWebhookMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1InboundWebhookInvalidJSON(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound", strings.NewReader(`not-json`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/webhooks/inbound", strings.NewReader(`not-json`))
 	rec := httptest.NewRecorder()
 	APIV1InboundWebhook(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -88,7 +88,7 @@ func TestAPIV1InboundWebhookInvalidJSON(t *testing.T) {
 }
 
 func TestAPIV1InboundWebhookDisabled(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound", strings.NewReader(`{"action":"create","title":"Ship"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/webhooks/inbound", strings.NewReader(`{"action":"create","title":"Ship","project_id":1}`))
 	rec := httptest.NewRecorder()
 	APIV1InboundWebhook(rec, req)
 	if rec.Code != http.StatusForbidden {
@@ -96,8 +96,17 @@ func TestAPIV1InboundWebhookDisabled(t *testing.T) {
 	}
 }
 
+func TestAPIV1InboundWebhookRequiresProjectID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/webhooks/inbound", strings.NewReader(`{"action":"create","title":"Ship"}`))
+	rec := httptest.NewRecorder()
+	APIV1InboundWebhook(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAPIV1MeExtensionsUnauthorized(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me/extensions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/me/extensions", nil)
 	rec := httptest.NewRecorder()
 	APIV1MeExtensions(rec, req)
 	if rec.Code != http.StatusUnauthorized {

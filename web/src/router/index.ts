@@ -29,9 +29,13 @@ const router = createRouter({
       component: () => import('@/views/UserGuideView.vue'),
     },
     {
-      path: '/docs/api/v1',
+      path: '/docs/api/v2',
       name: 'api-docs',
       component: () => import('@/views/ApiDocsView.vue'),
+    },
+    {
+      path: '/docs/api/v1',
+      redirect: { name: 'api-docs' },
     },
     {
       path: '/s/:token',

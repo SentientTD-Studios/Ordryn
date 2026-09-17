@@ -12,15 +12,16 @@ import (
 )
 
 type adminExtensionJSON struct {
-	ID       string                    `json:"id"`
-	Name     string                    `json:"name"`
-	Version  string                    `json:"version"`
-	HostAPI  int                       `json:"host_api"`
-	Status   string                    `json:"status"`
-	Error    string                    `json:"error,omitempty"`
-	Manifest extensions.Manifest       `json:"manifest"`
-	Settings storage.ExtensionSettings `json:"settings"`
-	Secrets  map[string]bool           `json:"secrets"`
+	ID         string                      `json:"id"`
+	Name       string                      `json:"name"`
+	Version    string                      `json:"version"`
+	HostAPI    int                         `json:"host_api"`
+	Status     string                      `json:"status"`
+	Error      string                      `json:"error,omitempty"`
+	Manifest   extensions.Manifest         `json:"manifest"`
+	Settings   storage.ExtensionSettings   `json:"settings"`
+	Secrets    map[string]bool             `json:"secrets"`
+	Deliveries []storage.ExtensionDelivery `json:"deliveries,omitempty"`
 }
 
 type adminExtensionsListJSON struct {
@@ -28,12 +29,13 @@ type adminExtensionsListJSON struct {
 }
 
 type adminExtensionPatch struct {
-	Enabled    *bool   `json:"enabled"`
-	WebhookURL *string `json:"webhook_url"`
-	Triggers   *[]string `json:"triggers"`
+	Enabled    *bool              `json:"enabled"`
+	WebhookURL *string            `json:"webhook_url"`
+	Triggers   *[]string          `json:"triggers"`
+	Templates  *map[string]string `json:"templates"`
 }
 
-// APIV1AdminExtensionsRouter handles /api/v1/admin/extensions and /{id}.
+// APIV1AdminExtensionsRouter handles /api/v2/admin/extensions and /{id}.
 func APIV1AdminExtensionsRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "admin/extensions")
 	if sub == "" {
@@ -59,6 +61,14 @@ func APIV1AdminExtensionsRouter(w http.ResponseWriter, r *http.Request) {
 		default:
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		}
+		return
+	}
+	if len(parts) == 2 && parts[1] == "test" && r.Method == http.MethodPost {
+		projectExtensionTest(w, r, 0, 0, id, "Site")
+		return
+	}
+	if len(parts) == 4 && parts[1] == "deliveries" && parts[3] == "retry" && r.Method == http.MethodPost {
+		projectExtensionRetry(w, r, 0, 0, id, parts[2])
 		return
 	}
 	utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
@@ -122,6 +132,9 @@ func adminExtensionPatchHandler(w http.ResponseWriter, r *http.Request, id strin
 	if req.Triggers != nil {
 		cur.Triggers = filterDeclaredTriggers(e.Manifest, *req.Triggers)
 	}
+	if req.Templates != nil {
+		cur.Templates = *req.Templates
+	}
 	if req.WebhookURL != nil && strings.TrimSpace(*req.WebhookURL) != "" {
 		url := strings.TrimSpace(*req.WebhookURL)
 		if e.Manifest.Delivery != nil {
@@ -175,6 +188,9 @@ func adminExtensionFromEntry(e extensions.Entry) (adminExtensionJSON, error) {
 		for _, key := range e.Manifest.SiteSecretKeys() {
 			item.Secrets[key] = storage.ExtensionSecretIsSet(e.ID, 0, key)
 		}
+		if rows, err := storage.ListRecentDeliveries(e.ID, 0, 0, 10); err == nil {
+			item.Deliveries = rows
+		}
 	} else {
 		item.Status = "failed"
 		item.Error = e.Error
@@ -183,6 +199,9 @@ func adminExtensionFromEntry(e extensions.Entry) (adminExtensionJSON, error) {
 }
 
 func hookNameDeclared(m extensions.Manifest, name string) bool {
+	if name == "*" {
+		return true
+	}
 	for _, h := range m.Hooks {
 		if h.On == name {
 			return true
@@ -196,6 +215,14 @@ func filterDeclaredTriggers(m extensions.Manifest, triggers []string) []string {
 	seen := map[string]struct{}{}
 	for _, t := range triggers {
 		t = strings.TrimSpace(t)
+		if t == "*" {
+			if _, ok := seen[t]; ok {
+				continue
+			}
+			seen[t] = struct{}{}
+			out = append(out, t)
+			continue
+		}
 		if !hookNameDeclared(m, t) {
 			continue
 		}

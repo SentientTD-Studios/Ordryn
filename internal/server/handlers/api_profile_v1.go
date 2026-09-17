@@ -29,7 +29,7 @@ type apiClaimUsernameRequest struct {
 	UserName string `json:"user_name"`
 }
 
-// APIV1Me handles GET/PATCH /api/v1/me.
+// APIV1Me handles GET/PATCH /api/v2/me.
 func APIV1Me(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -102,7 +102,7 @@ func apiV1PatchMe(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusOK, profile)
 }
 
-// APIV1ClaimUsername handles POST /api/v1/me/username (one-time free change).
+// APIV1ClaimUsername handles POST /api/v2/me/username (one-time free change).
 func APIV1ClaimUsername(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -141,7 +141,7 @@ func APIV1ClaimUsername(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusOK, profile)
 }
 
-// APIV1ChangePassword handles POST /api/v1/me/password.
+// APIV1ChangePassword handles POST /api/v2/me/password.
 func APIV1ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

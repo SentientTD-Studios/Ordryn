@@ -11,7 +11,7 @@ import (
 	"GoTodo/internal/storage"
 )
 
-// APIV1AdminInvitesRouter handles /api/v1/admin/invites and /api/v1/admin/invites/{id}.
+// APIV1AdminInvitesRouter handles /api/v2/admin/invites and /api/v2/admin/invites/{id}.
 // Protected by AdminAPIChain.
 func APIV1AdminInvitesRouter(w http.ResponseWriter, r *http.Request) {
 	userID, ok := utils.GetAPIUserID(r)

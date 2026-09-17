@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"GoTodo/internal/hooks"
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
 
@@ -17,7 +19,7 @@ import (
 // MaxDescriptionLength is the shared limit for task descriptions.
 const MaxDescriptionLength = 1000
 
-// CreateTaskInput is the shared create payload for HTMX and /api/v1.
+// CreateTaskInput is the shared create payload for HTMX and /api/v2.
 type CreateTaskInput struct {
 	Title       string
 	Description string
@@ -29,7 +31,6 @@ type CreateTaskInput struct {
 	ParentID       *int
 	Priority       int
 	Completed      bool
-	Favorite       bool // Deprecated: will be removed in API v2.
 	TagIDs         []int
 	StatusID       *int
 	EstimatePoints *int
@@ -49,7 +50,6 @@ type UpdateTaskInput struct {
 	ParentID  **int
 	Priority  *int
 	Completed *bool
-	Favorite  *bool // Deprecated: will be removed in API v2.
 	TagIDs    *[]int
 	// StatusID: nil = leave; non-nil with *nil or 0 = reject on kanban; non-nil with id = set.
 	StatusID **int
@@ -98,7 +98,7 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 	}
 	defer storage.CloseDatabase(pool)
 
-	favorite := in.Favorite
+	favorite := false
 	var parentArg interface{}
 	var projectArg interface{}
 
@@ -164,20 +164,11 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 	}
 
 	var nextPos int
-	if favorite {
-		if err := pool.QueryRow(ctx,
-			`SELECT COALESCE(MAX(position),0) + 1 FROM tasks
-			 WHERE user_id = $1 AND is_favorite = true AND parent_id IS NULL`,
-			userID).Scan(&nextPos); err != nil {
-			return 0, err
-		}
-	} else {
-		if err := pool.QueryRow(ctx,
-			`SELECT COALESCE(MAX(position),0) + 1 FROM tasks
-			 WHERE user_id = $1 AND (is_favorite IS NULL OR is_favorite = false) AND parent_id IS NULL`,
-			userID).Scan(&nextPos); err != nil {
-			return 0, err
-		}
+	if err := pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(position),0) + 1 FROM tasks
+		 WHERE user_id = $1 AND parent_id IS NULL`,
+		userID).Scan(&nextPos); err != nil {
+		return 0, err
 	}
 
 	var newID int
@@ -303,7 +294,8 @@ func applyCreateFields(taskID, userID int, projectArg interface{}, fields map[st
 		return nil
 	}
 	pid, _ := projectArg.(int)
-	return ApplyTaskFields(taskID, pid, userID, fields)
+	_, err := ApplyTaskFields(taskID, pid, userID, fields)
+	return err
 }
 
 // UpdateTask applies a partial update for an owned task.
@@ -348,6 +340,14 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 
 	oldCompleted := completed
 	oldDueDate := dueDate
+	oldTitle := title
+	oldDescription := description
+	oldPriority := priority
+	oldParentID := nullInt(parentID)
+	oldEstimate := 0
+	if estimatePoints.Valid {
+		oldEstimate = int(estimatePoints.Int64)
+	}
 	statusTouched := false
 	completedTouched := in.Completed != nil
 	originalProjectID := projectID
@@ -377,9 +377,6 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 	if in.Completed != nil {
 		completed = *in.Completed
-	}
-	if in.Favorite != nil {
-		favorite = *in.Favorite
 	}
 	if in.ClearDue {
 		dueDate = ""
@@ -612,8 +609,11 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		}
 	}
 
+	fieldKeys := []string{}
 	if in.Fields != nil {
-		if err := ApplyTaskFields(taskID, effectiveProjectID, userID, in.Fields); err != nil {
+		var err error
+		fieldKeys, err = ApplyTaskFields(taskID, effectiveProjectID, userID, in.Fields)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -652,58 +652,116 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	result.ProjectChanged = projectChanged
 	dueChanged := oldDueDate != dueDate
 	sprintChanged := newSprintID != oldSprintID
-	fieldsChanged := in.Fields != nil
-	changed := make([]string, 0, 6)
-	if statusTouched && newStatusID != oldStatusID {
-		changed = append(changed, "status")
+	titleChanged := oldTitle != title
+	descriptionChanged := oldDescription != description
+	parentChanged := oldParentID != nullInt(newParentID)
+	newEstimate := oldEstimate
+	if in.EstimatePoints != nil {
+		if *in.EstimatePoints == nil {
+			newEstimate = 0
+		} else {
+			newEstimate = **in.EstimatePoints
+		}
+	}
+	estimateChanged := oldEstimate != newEstimate
+	completedChanged := oldCompleted != completed
+	statusChanged := statusTouched && newStatusID != oldStatusID
+
+	changed := make([]string, 0, 10)
+	fieldChanges := make([]hooks.FieldChange, 0, 8)
+	appendChange := func(field, oldVal, newVal string) {
+		changed = append(changed, field)
+		fieldChanges = append(fieldChanges, hooks.FieldChange{Field: field, Old: oldVal, New: newVal})
+	}
+	if titleChanged {
+		appendChange("title", oldTitle, title)
+	}
+	if descriptionChanged {
+		appendChange("description", "", "")
+	}
+	if result.PriorityChanged {
+		appendChange("priority", strconv.Itoa(oldPriority), strconv.Itoa(priority))
+	}
+	if statusChanged {
+		from, to := statusHookNames(effectiveProjectID, oldStatusID, newStatusID)
+		appendChange("status", from, to)
+	}
+	if completedChanged {
+		appendChange("completed", strconv.FormatBool(oldCompleted), strconv.FormatBool(completed))
 	}
 	if dueChanged {
-		changed = append(changed, "due_date")
+		appendChange("due_date", oldDueDate, dueDate)
 	}
 	if projectChanged {
-		changed = append(changed, "project")
+		appendChange("project", strconv.Itoa(result.OldProjectID), strconv.Itoa(effectiveProjectID))
 	}
 	if sprintChanged {
-		changed = append(changed, "sprint")
+		appendChange("sprint", strconv.Itoa(oldSprintID), strconv.Itoa(newSprintID))
 	}
 	if tagsChanged {
 		changed = append(changed, "tags")
 	}
-	if fieldsChanged {
-		changed = append(changed, "fields")
+	if parentChanged {
+		appendChange("parent", strconv.Itoa(oldParentID), strconv.Itoa(nullInt(newParentID)))
 	}
-	var hookMeta *live.TaskHookMeta
-	if len(changed) > 0 || (statusTouched && newStatusID != oldStatusID) {
-		hookMeta = &live.TaskHookMeta{Changed: changed}
+	if estimateChanged {
+		appendChange("estimate", strconv.Itoa(oldEstimate), strconv.Itoa(newEstimate))
 	}
-	if statusTouched && newStatusID != oldStatusID {
+	changed = append(changed, fieldKeys...)
+
+	hookMeta := &live.TaskHookMeta{Changed: changed, FieldChanges: fieldChanges}
+	if statusChanged {
 		from, to := statusHookNames(effectiveProjectID, oldStatusID, newStatusID)
-		if hookMeta == nil {
-			hookMeta = &live.TaskHookMeta{}
-		}
 		hookMeta.StatusChanged = true
 		hookMeta.OldStatus = from
 		hookMeta.NewStatus = to
 	}
 	if projectChanged {
-		live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskUpdated, hookMeta, result.OldProjectID)
+		live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated, result.OldProjectID)
 	} else {
-		live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskUpdated, hookMeta)
+		live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
+	}
+	dedicated := map[string]struct{}{}
+	if statusChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskStatusChanged, hookMeta)
+		dedicated["status"] = struct{}{}
 	}
 	if dueChanged {
 		live.DispatchHook(userID, taskID, live.TypeTaskDueChanged, hookMeta)
+		dedicated["due_date"] = struct{}{}
 	}
 	if projectChanged {
 		live.DispatchHook(userID, taskID, live.TypeTaskProjectChanged, hookMeta)
+		dedicated["project"] = struct{}{}
 	}
 	if sprintChanged {
 		live.DispatchHook(userID, taskID, live.TypeTaskSprintChanged, hookMeta)
+		dedicated["sprint"] = struct{}{}
 	}
 	if projectChanged || sprintChanged {
 		live.DispatchHook(userID, taskID, live.TypeTaskMoved, hookMeta)
 	}
 	if tagsChanged {
 		live.DispatchHook(userID, taskID, live.TypeTaskTagged, hookMeta)
+		dedicated["tags"] = struct{}{}
+	}
+	if completedChanged {
+		dedicated["completed"] = struct{}{}
+		dedicated["status"] = struct{}{}
+	}
+	residual := make([]string, 0, len(changed))
+	for _, c := range changed {
+		if _, ok := dedicated[c]; ok {
+			continue
+		}
+		residual = append(residual, c)
+	}
+	if len(residual) > 0 {
+		residualMeta := &live.TaskHookMeta{Changed: residual, FieldChanges: fieldChanges}
+		residualMeta.StatusChanged = hookMeta.StatusChanged
+		residualMeta.OldStatus = hookMeta.OldStatus
+		residualMeta.NewStatus = hookMeta.NewStatus
+		live.DispatchHook(userID, taskID, live.TypeTaskUpdated, residualMeta)
 	}
 	return result, nil
 }
@@ -881,7 +939,7 @@ func ArchiveTask(ctx context.Context, userID, taskID int) error {
 			return err
 		}
 		_ = storage.LogTaskEvent(id, userID, "archived", nil)
-		live.AfterTaskChange(userID, id, live.TypeTaskUpdated)
+		live.AfterTaskChangeLive(userID, id, live.TypeTaskUpdated)
 		live.DispatchHook(userID, id, live.TypeTaskArchived, &live.TaskHookMeta{Changed: []string{"archived"}})
 	}
 	return nil
@@ -901,7 +959,7 @@ func RestoreTask(ctx context.Context, userID, taskID int) error {
 			return err
 		}
 		_ = storage.LogTaskEvent(id, userID, "restored", nil)
-		live.AfterTaskChange(userID, id, live.TypeTaskUpdated)
+		live.AfterTaskChangeLive(userID, id, live.TypeTaskUpdated)
 		live.DispatchHook(userID, id, live.TypeTaskRestored, &live.TaskHookMeta{Changed: []string{"archived"}})
 	}
 	return nil
@@ -946,7 +1004,7 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 				_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 			}
 			go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
-			live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+			live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
 			if oldCompleted != completed {
 				dispatchCompletedHook(userID, taskID, completed)
 			}
@@ -969,7 +1027,7 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 		_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 	}
 	go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
 	if oldCompleted != completed {
 		dispatchCompletedHook(userID, taskID, completed)
 	}
@@ -1027,80 +1085,6 @@ func ToggleTaskCompleted(ctx context.Context, userID, taskID int) (bool, error) 
 	}
 	newVal := !completed
 	if err := SetTaskCompleted(ctx, userID, taskID, newVal); err != nil {
-		return false, err
-	}
-	return newVal, nil
-}
-
-// SetTaskFavorite sets is_favorite for a writable task.
-// Deprecated: task favoriting will be removed in API v2.
-func SetTaskFavorite(ctx context.Context, userID, taskID int, favorite bool) error {
-	pool, err := storage.OpenDatabase()
-	if err != nil {
-		return err
-	}
-	defer storage.CloseDatabase(pool)
-
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(taskID, userID)
-	if accessErr != nil {
-		return accessErr
-	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
-		return ErrNotFound
-	}
-
-	if favorite {
-		var parentID sql.NullInt64
-		if err := pool.QueryRow(ctx, `SELECT parent_id FROM tasks WHERE id = $1`, taskID).Scan(&parentID); err != nil {
-			return err
-		}
-		if parentID.Valid {
-			return fmt.Errorf("%w: subtasks cannot be favorites", ErrValidation)
-		}
-	}
-
-	tag, err := pool.Exec(ctx,
-		`UPDATE tasks SET is_favorite = $1, date_modified = NOW() AT TIME ZONE 'UTC'
-		 WHERE id = $2`, favorite, taskID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
-	return nil
-}
-
-// ToggleTaskFavorite flips is_favorite for a writable task.
-// Deprecated: task favoriting will be removed in API v2.
-func ToggleTaskFavorite(ctx context.Context, userID, taskID int) (bool, error) {
-	pool, err := storage.OpenDatabase()
-	if err != nil {
-		return false, err
-	}
-	defer storage.CloseDatabase(pool)
-
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(taskID, userID)
-	if accessErr != nil {
-		return false, accessErr
-	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
-		return false, ErrNotFound
-	}
-
-	var isFav bool
-	err = pool.QueryRow(ctx,
-		`SELECT COALESCE(is_favorite,false) FROM tasks WHERE id = $1`,
-		taskID).Scan(&isFav)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-			return false, ErrNotFound
-		}
-		return false, err
-	}
-	newVal := !isFav
-	if err := SetTaskFavorite(ctx, userID, taskID, newVal); err != nil {
 		return false, err
 	}
 	return newVal, nil

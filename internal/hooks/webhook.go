@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,8 @@ type sendOpts struct {
 	ExtraHeaders  map[string]string
 	Wait          bool
 	ThreadID      string
+	EventID       string
+	DeliveryID    int64
 }
 
 func newWebhookHTTPClient() *http.Client {
@@ -211,6 +214,39 @@ func httpWebhookPayload(format, content, eventType string, vars map[string]strin
 			body.CallbackToken = tok
 			body.CallbackURL = vars["callback_url"]
 		}
+		if id := atoiSafe(vars["actor_id"]); id > 0 || vars["actor"] != "" {
+			body.ActorObj = &webhookActor{ID: id, Name: vars["actor"]}
+		}
+		if id := atoiSafe(vars["id"]); id > 0 || vars["task"] != "" {
+			body.TaskObj = &webhookTask{
+				ID:             id,
+				Title:          vars["task"],
+				Description:    vars["description"],
+				Status:         vars["status"],
+				Priority:       vars["priority"],
+				ParentID:       atoiSafe(vars["parent_id"]),
+				EstimatePoints: atoiSafe(vars["estimate"]),
+				DueDate:        vars["due_date"],
+			}
+		}
+		if pid := atoiSafe(vars["project_id"]); pid > 0 || vars["project"] != "" {
+			body.ProjectObj = &webhookProject{ID: pid, Name: vars["project"]}
+		}
+		if raw := strings.TrimSpace(vars["changes_json"]); raw != "" {
+			_ = json.Unmarshal([]byte(raw), &body.Changes)
+		}
+		if raw := strings.TrimSpace(vars["digest_events"]); raw != "" {
+			body.DigestEvents = splitCSV(raw)
+			if strings.Contains(raw, "\n") {
+				body.DigestEvents = nil
+				for _, line := range strings.Split(raw, "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" {
+						body.DigestEvents = append(body.DigestEvents, line)
+					}
+				}
+			}
+		}
 		return body
 	default:
 		return map[string]string{"text": content}
@@ -246,6 +282,40 @@ type webhookJSONBody struct {
 	Config        map[string]string `json:"config,omitempty"`
 	CallbackToken string            `json:"callback_token,omitempty"`
 	CallbackURL   string            `json:"callback_url,omitempty"`
+	ActorObj      *webhookActor     `json:"actor_detail,omitempty"`
+	TaskObj       *webhookTask      `json:"task_detail,omitempty"`
+	ProjectObj    *webhookProject   `json:"project_detail,omitempty"`
+	Changes       []FieldChange     `json:"changes,omitempty"`
+	DigestEvents  []string          `json:"digest_events,omitempty"`
+}
+
+type webhookActor struct {
+	ID   int    `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+type webhookTask struct {
+	ID             int    `json:"id,omitempty"`
+	Title          string `json:"title,omitempty"`
+	Description    string `json:"description,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Priority       string `json:"priority,omitempty"`
+	ParentID       int    `json:"parent_id,omitempty"`
+	EstimatePoints int    `json:"estimate_points,omitempty"`
+	DueDate        string `json:"due_date,omitempty"`
+}
+
+type webhookProject struct {
+	ID   int    `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+func atoiSafe(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func splitCSV(s string) []string {
@@ -410,7 +480,7 @@ func gchatHTML(s string) string {
 	return gchatStarBold.ReplaceAllString(s, "<b>$1</b>")
 }
 
-func sendNtfy(webhookURL, auth, content string, vars map[string]string, signing string) error {
+func sendNtfy(webhookURL, auth, content string, vars map[string]string, opts sendOpts) error {
 	if err := validateWebhookURL(extensions.DeliveryNtfyWebhook, webhookURL); err != nil {
 		return err
 	}
@@ -425,7 +495,7 @@ func sendNtfy(webhookURL, auth, content string, vars map[string]string, signing 
 	if p := ntfyPriority(vars["priority"]); p != "" {
 		headers["Priority"] = p
 	}
-	opts := sendOpts{SigningSecret: signing, ExtraHeaders: headers}
+	opts.ExtraHeaders = headers
 	if strings.TrimSpace(auth) != "" {
 		opts.AuthHeader = "Bearer " + strings.TrimSpace(auth)
 	}
@@ -466,6 +536,12 @@ func postJSONOpts(webhookURL string, body []byte, opts sendOpts) (respBody []byt
 		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	}
 	req.Header.Set("User-Agent", "Ordryn-Webhook/1")
+	if strings.TrimSpace(opts.EventID) != "" {
+		req.Header.Set("X-Ordryn-Event-Id", opts.EventID)
+	}
+	if opts.DeliveryID > 0 {
+		req.Header.Set("X-Ordryn-Delivery-Id", strconv.FormatInt(opts.DeliveryID, 10))
+	}
 	if strings.TrimSpace(opts.SigningSecret) != "" {
 		req.Header.Set("X-Ordryn-Signature", signBody(opts.SigningSecret, body))
 	}

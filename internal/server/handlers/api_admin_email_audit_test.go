@@ -12,7 +12,7 @@ import (
 )
 
 func TestAPIV1AdminEmailAuditMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/email-audit", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/email-audit", nil)
 	rec := httptest.NewRecorder()
 	APIV1AdminEmailAudit(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -21,7 +21,7 @@ func TestAPIV1AdminEmailAuditMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1AdminEmailAuditRejectsBadStatus(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/email-audit?status=nope", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/admin/email-audit?status=nope", nil)
 	rec := httptest.NewRecorder()
 	APIV1AdminEmailAudit(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -38,7 +38,7 @@ func TestParseEmailAuditListQuery(t *testing.T) {
 	}{
 		{
 			name:   "defaults",
-			rawURL: "/api/v1/admin/email-audit",
+			rawURL: "/api/v2/admin/email-audit",
 			check: func(t *testing.T, f storage.EmailAuditFilter) {
 				t.Helper()
 				if f.Limit != 50 || f.Offset != 0 || f.Status != "" || f.Trigger != "" {
@@ -48,7 +48,7 @@ func TestParseEmailAuditListQuery(t *testing.T) {
 		},
 		{
 			name:   "filters",
-			rawURL: "/api/v1/admin/email-audit?status=failed&trigger=password_reset&q=user@&limit=10&offset=20",
+			rawURL: "/api/v2/admin/email-audit?status=failed&trigger=password_reset&q=user@&limit=10&offset=20",
 			check: func(t *testing.T, f storage.EmailAuditFilter) {
 				t.Helper()
 				if f.Status != mailer.StatusFailed || f.Trigger != mailer.TriggerPasswordReset {
@@ -61,7 +61,7 @@ func TestParseEmailAuditListQuery(t *testing.T) {
 		},
 		{
 			name:   "date range",
-			rawURL: "/api/v1/admin/email-audit?from=2026-08-01&to=2026-08-28",
+			rawURL: "/api/v2/admin/email-audit?from=2026-08-01&to=2026-08-28",
 			check: func(t *testing.T, f storage.EmailAuditFilter) {
 				t.Helper()
 				if f.From == nil || f.To == nil {
@@ -78,7 +78,7 @@ func TestParseEmailAuditListQuery(t *testing.T) {
 		},
 		{
 			name:   "rate limited status",
-			rawURL: "/api/v1/admin/email-audit?status=rate_limited",
+			rawURL: "/api/v2/admin/email-audit?status=rate_limited",
 			check: func(t *testing.T, f storage.EmailAuditFilter) {
 				t.Helper()
 				if f.Status != mailer.StatusRateLimited {
@@ -88,32 +88,32 @@ func TestParseEmailAuditListQuery(t *testing.T) {
 		},
 		{
 			name:    "bad status",
-			rawURL:  "/api/v1/admin/email-audit?status=nope",
+			rawURL:  "/api/v2/admin/email-audit?status=nope",
 			wantErr: "status must be sent, failed, not_configured, or rate_limited.",
 		},
 		{
 			name:    "bad trigger",
-			rawURL:  "/api/v1/admin/email-audit?trigger=welcome",
+			rawURL:  "/api/v2/admin/email-audit?trigger=welcome",
 			wantErr: "Unknown trigger.",
 		},
 		{
 			name:    "bad from",
-			rawURL:  "/api/v1/admin/email-audit?from=yesterday",
+			rawURL:  "/api/v2/admin/email-audit?from=yesterday",
 			wantErr: "from must be an RFC3339 timestamp or YYYY-MM-DD date.",
 		},
 		{
 			name:    "bad limit",
-			rawURL:  "/api/v1/admin/email-audit?limit=0",
+			rawURL:  "/api/v2/admin/email-audit?limit=0",
 			wantErr: "limit must be a positive integer.",
 		},
 		{
 			name:    "bad offset",
-			rawURL:  "/api/v1/admin/email-audit?offset=-1",
+			rawURL:  "/api/v2/admin/email-audit?offset=-1",
 			wantErr: "offset must be a non-negative integer.",
 		},
 		{
 			name:   "limit capped",
-			rawURL: "/api/v1/admin/email-audit?limit=500",
+			rawURL: "/api/v2/admin/email-audit?limit=500",
 			check: func(t *testing.T, f storage.EmailAuditFilter) {
 				t.Helper()
 				if f.Limit != 100 {

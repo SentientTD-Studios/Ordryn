@@ -504,27 +504,11 @@ async function onCardDrop(evt: Sortable.SortableEvent) {
       }
     }
     if (rootIds.length) {
-      const byId = new Map(boardTasks.value.map((t) => [t.id, t]))
-      const favoriteIds = rootIds.filter((id) => byId.get(id)?.favorite)
-      const regularIds = rootIds.filter((id) => !byId.get(id)?.favorite)
-      const reorderPayload = {
+      await api.reorderTasks({
+        task_ids: rootIds,
         status_id: statusId,
         project: String(props.projectId),
-      }
-      if (favoriteIds.length) {
-        await api.reorderTasks({
-          task_ids: favoriteIds,
-          favorite: true,
-          ...reorderPayload,
-        })
-      }
-      if (regularIds.length) {
-        await api.reorderTasks({
-          task_ids: regularIds,
-          favorite: false,
-          ...reorderPayload,
-        })
-      }
+      })
     }
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not update board', 'error')
@@ -578,7 +562,7 @@ watch(
 )
 
 useLiveUpdates((event) => {
-  if (event.type !== 'project.updated') return
+  if (event.type !== 'project.updated' && event.type !== 'project.created' && event.type !== 'project.deleted') return
   if (event.project_id && event.project_id !== props.projectId) return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
   void loadStatuses(true)

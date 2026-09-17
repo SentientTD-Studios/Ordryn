@@ -26,7 +26,7 @@ const isOwner = computed(() => (props.project.role || 'owner') === 'owner')
 
 const webhookURL = computed(() => {
   if (typeof window === 'undefined') return ''
-  return `${window.location.origin}${withBase('/api/v1/webhooks/github')}`
+  return `${window.location.origin}${withBase('/api/v2/webhooks/github')}`
 })
 
 async function load() {

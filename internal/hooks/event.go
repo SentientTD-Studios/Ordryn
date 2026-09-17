@@ -27,19 +27,31 @@ const (
 	EventTaskCompleted       = "task.completed"
 	EventTaskReopened        = "task.reopened"
 	EventTaskDueSoon         = "task.due_soon"
-	EventTaskArchived        = "task.archived"
-	EventTaskRestored        = "task.restored"
-	EventProjectUpdated      = "project.updated"
-	EventProjectArchived     = "project.archived"
-	EventProjectRestored     = "project.restored"
-	EventProjectMemberJoined = "project.member_joined"
-	EventProjectMemberLeft   = "project.member_left"
-	EventSprintCreated       = "sprint.created"
-	EventSprintStarted       = "sprint.started"
-	EventSprintEnded         = "sprint.ended"
-	EventJoinRequest         = "join.request"
-	EventJoinApproved        = "join.approved"
-	EventJoinDenied          = "join.denied"
+	EventTaskArchived             = "task.archived"
+	EventTaskRestored             = "task.restored"
+	EventTaskStatusChanged        = "task.status_changed"
+	EventTaskCommentEdited        = "task.comment_edited"
+	EventTaskCommentDeleted       = "task.comment_deleted"
+	EventTaskCommentRestored      = "task.comment_restored"
+	EventProjectUpdated           = "project.updated"
+	EventProjectCreated           = "project.created"
+	EventProjectDeleted           = "project.deleted"
+	EventProjectArchived          = "project.archived"
+	EventProjectRestored          = "project.restored"
+	EventProjectMemberJoined      = "project.member_joined"
+	EventProjectMemberLeft        = "project.member_left"
+	EventProjectMemberRoleChanged = "project.member_role_changed"
+	EventProjectInviteSent        = "project.invite_sent"
+	EventProjectInviteDeclined    = "project.invite_declined"
+	EventSprintCreated            = "sprint.created"
+	EventSprintUpdated            = "sprint.updated"
+	EventSprintDeleted            = "sprint.deleted"
+	EventSprintStarted            = "sprint.started"
+	EventSprintEnded              = "sprint.ended"
+	EventImportCompleted          = "import.completed"
+	EventJoinRequest              = "join.request"
+	EventJoinApproved             = "join.approved"
+	EventJoinDenied               = "join.denied"
 )
 
 // Event is a domain change delivered to loaded extensions.
@@ -63,11 +75,19 @@ type Event struct {
 	MemberName       string
 	SprintID         int
 	SprintName       string
+	FieldChanges     []FieldChange
 	Snapshot         *storage.HookTaskSnapshot
 	Actor            string
 	EventID          string
 	OccurredAt       time.Time
 	Immediate        bool // skip coalesce/quiet hours (test sends)
+}
+
+// FieldChange is an old/new pair included in structured JSON payloads.
+type FieldChange struct {
+	Field string `json:"field"`
+	Old   string `json:"old,omitempty"`
+	New   string `json:"new,omitempty"`
 }
 
 func (ev Event) isSiteEvent() bool {
@@ -81,9 +101,12 @@ func (ev Event) isSiteEvent() bool {
 
 func (ev Event) isProjectLevel() bool {
 	switch ev.Type {
-	case EventProjectUpdated, EventProjectArchived, EventProjectRestored,
+	case EventProjectUpdated, EventProjectCreated, EventProjectDeleted,
+		EventProjectArchived, EventProjectRestored,
 		EventTaskReordered, EventProjectMemberJoined, EventProjectMemberLeft,
-		EventSprintCreated, EventSprintStarted, EventSprintEnded:
+		EventProjectMemberRoleChanged, EventProjectInviteSent, EventProjectInviteDeclined,
+		EventSprintCreated, EventSprintUpdated, EventSprintDeleted,
+		EventSprintStarted, EventSprintEnded, EventImportCompleted:
 		return true
 	default:
 		return false
@@ -117,16 +140,23 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 		count = 1
 	}
 	comment := truncateRunes(strings.TrimSpace(ev.Comment), 400)
+	desc := truncateRunes(strings.TrimSpace(snap.Description), 2000)
+	parentID := snap.ParentID
 	vars := map[string]string{
 		"task":         title,
 		"name":         title,
 		"status":       status,
 		"old_status":   ev.OldStatus,
 		"project":      project,
+		"project_id":   strconv.Itoa(snap.ProjectID),
 		"actor":        actor,
+		"actor_id":     strconv.Itoa(ev.ActorID),
 		"url":          publicTaskURL(id),
 		"id":           strconv.Itoa(id),
 		"priority":     priorityLabel(snap.Priority),
+		"description":  desc,
+		"parent_id":    strconv.Itoa(parentID),
+		"estimate":     strconv.Itoa(snap.EstimatePoints),
 		"comment":      comment,
 		"claimed_by":   snap.ClaimedByName,
 		"due_date":     snap.DueDate,
@@ -141,6 +171,14 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 		"event_id":     ev.EventID,
 		"occurred_at":  formatOccurred(ev.OccurredAt),
 		"changed":      strings.Join(ev.Changed, ","),
+	}
+	if len(ev.FieldChanges) > 0 {
+		if raw, err := json.Marshal(ev.FieldChanges); err == nil {
+			vars["changes_json"] = string(raw)
+		}
+	}
+	if oldPri := fieldChangeOld(ev.FieldChanges, "priority"); oldPri != "" {
+		vars["old_priority"] = oldPri
 	}
 	if ev.SprintName != "" {
 		vars["sprint"] = ev.SprintName
@@ -183,4 +221,13 @@ func applyMentions(actor string, mentionMap map[string]string) string {
 		return v
 	}
 	return actor
+}
+
+func fieldChangeOld(changes []FieldChange, field string) string {
+	for _, c := range changes {
+		if c.Field == field {
+			return c.Old
+		}
+	}
+	return ""
 }

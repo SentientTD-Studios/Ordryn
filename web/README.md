@@ -1,6 +1,6 @@
 # Ordryn web SPA (Vue 3)
 
-Vue 3 + TypeScript + Vite client for `/api/v1`. The UI uses **Bootstrap 5**, **Bootstrap Icons**, and the original `site.css` theme (Fira Code, light/dark toggle) from the HTMX app.
+Vue 3 + TypeScript + Vite client for `/api/v2`. The UI uses **Bootstrap 5**, **Bootstrap Icons**, and the original `site.css` theme (Fira Code, light/dark toggle) from the HTMX app.
 
 Operator install, reverse proxy, and API docs: [Ordryn wiki](https://github.com/SentientTD-Studios/Ordryn/wiki).
 
@@ -72,5 +72,5 @@ Browser: `/gotodo/…` · Go receives: `/…` · SPA still knows the public pref
 ## Auth
 
 Login/register use JSON endpoints and the httpOnly session cookie (`credentials: 'include'`).
-If MFA is enabled, `POST /api/v1/auth/login` returns `{ "mfa_required": true }` and `POST /api/v1/auth/mfa/verify` completes the session.
-Anonymous `GET /api/v1/me` returns HTTP 200 with JSON `null` when there is no session.
+If MFA is enabled, `POST /api/v2/auth/login` returns `{ "mfa_required": true }` and `POST /api/v2/auth/mfa/verify` completes the session.
+Anonymous `GET /api/v2/me` returns HTTP 200 with JSON `null` when there is no session.
