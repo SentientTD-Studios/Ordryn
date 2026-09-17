@@ -33,6 +33,7 @@ type SiteSettings struct {
 	EnableGlobalAnnouncement bool
 	GlobalAnnouncementText   string
 	EnableAPI                bool
+	EnableInboundWebhooks    bool
 	AllowUserInvites         bool
 	UserInviteLimit          int
 	InviteExpirationDays     int
@@ -127,7 +128,8 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(image_s3_secret_key_enc, ''),
 			COALESCE(image_s3_public_url, ''),
 			COALESCE(image_s3_force_path_style, TRUE),
-			COALESCE(image_local_path, '')
+			COALESCE(image_local_path, ''),
+			COALESCE(enable_inbound_webhooks, FALSE)
 		FROM site_settings WHERE id = 1`)
 	if err := row.Scan(
 		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
@@ -144,6 +146,7 @@ func GetSiteSettings() (*SiteSettings, error) {
 		&s.Image.S3Endpoint, &s.Image.S3Region, &s.Image.S3Bucket,
 		&s.Image.S3AccessKey, &s.ImageS3SecretKeyEnc, &s.Image.S3PublicURL,
 		&s.Image.S3ForcePathStyle, &s.Image.LocalPath,
+		&s.EnableInboundWebhooks,
 	); err != nil {
 		return nil, err
 	}
@@ -190,9 +193,10 @@ func UpsertSiteSettings(s SiteSettings) error {
 			github_oauth_client_id, github_oauth_client_secret_enc,
 			image_hosting_provider, image_max_bytes, image_s3_endpoint, image_s3_region,
 			image_s3_bucket, image_s3_access_key, image_s3_secret_key_enc,
-			image_s3_public_url, image_s3_force_path_style, image_local_path
+			image_s3_public_url, image_s3_force_path_style, image_local_path,
+			enable_inbound_webhooks
 		)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
@@ -229,7 +233,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 			image_s3_secret_key_enc = EXCLUDED.image_s3_secret_key_enc,
 			image_s3_public_url = EXCLUDED.image_s3_public_url,
 			image_s3_force_path_style = EXCLUDED.image_s3_force_path_style,
-			image_local_path = EXCLUDED.image_local_path
+			image_local_path = EXCLUDED.image_local_path,
+			enable_inbound_webhooks = EXCLUDED.enable_inbound_webhooks
     `, s.SiteName, s.DefaultTimezone, s.ShowChangelog,
 		s.EnableRegistration, s.InviteOnly, s.EnableJoinRequests, s.MetaDescription,
 		s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI,
@@ -243,7 +248,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 		s.Image.Provider, s.Image.MaxBytes,
 		s.Image.S3Endpoint, s.Image.S3Region, s.Image.S3Bucket,
 		s.Image.S3AccessKey, s.ImageS3SecretKeyEnc, s.Image.S3PublicURL,
-		s.Image.S3ForcePathStyle, s.Image.LocalPath)
+		s.Image.S3ForcePathStyle, s.Image.LocalPath,
+		s.EnableInboundWebhooks)
 	if err != nil {
 		return fmt.Errorf("failed to upsert site_settings: %v", err)
 	}
@@ -329,6 +335,20 @@ func MigrateSiteSettingsAddEnableAPI() error {
 
 	if _, err := pool.Exec(context.Background(), "ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS enable_api BOOLEAN DEFAULT FALSE"); err != nil {
 		return fmt.Errorf("failed to add enable_api column to site_settings: %v", err)
+	}
+	return nil
+}
+
+// MigrateSiteSettingsAddInboundWebhooks adds enable_inbound_webhooks if missing.
+func MigrateSiteSettingsAddInboundWebhooks() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	if _, err := pool.Exec(context.Background(), "ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS enable_inbound_webhooks BOOLEAN DEFAULT FALSE"); err != nil {
+		return fmt.Errorf("failed to add enable_inbound_webhooks column to site_settings: %v", err)
 	}
 	return nil
 }

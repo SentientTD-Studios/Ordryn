@@ -156,7 +156,7 @@ func serveSPAIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	escaped := htmlAttrEscape(injectBase)
 	// Meta for JS pathPrefix. Do NOT inject <base href>: it breaks in-page anchors
-	// (href="#x" → {BASE}/#x, dropping /docs/api/v1). Rewrite Vite's relative
+	// (href="#x" → {BASE}/#x, dropping /docs/api/v2). Rewrite Vite's relative
 	// ./assets URLs to absolute paths under the public prefix instead.
 	inject := fmt.Sprintf(`<meta name="gotodo-base" content="%s">`, escaped)
 	siteName := spaSiteName()
@@ -206,7 +206,7 @@ func replaceHTMLTitle(page, title string) string {
 }
 
 // absolutizeRelativeAssetURLs rewrites Vite "./…" asset refs so nested routes
-// (e.g. /auth/device, /docs/api/v1) still load JS/CSS from the SPA mount.
+// (e.g. /auth/device, /docs/api/v2) still load JS/CSS from the SPA mount.
 func absolutizeRelativeAssetURLs(html, base string) string {
 	if base == "" {
 		base = "/"

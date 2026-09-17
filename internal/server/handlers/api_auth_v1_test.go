@@ -44,7 +44,7 @@ func TestAPIV1AuthLoginValidation(t *testing.T) {
 			if tt.name == "method not allowed" {
 				method = http.MethodGet
 			}
-			req := httptest.NewRequest(method, "/api/v1/auth/login", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(method, "/api/v2/auth/login", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			APIV1AuthLogin(rec, req)
@@ -96,7 +96,7 @@ func TestAPIV1AuthRegisterValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v2/auth/register", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			APIV1AuthRegister(rec, req)
@@ -115,7 +115,7 @@ func TestAPIV1AuthRegisterValidation(t *testing.T) {
 }
 
 func TestAPIV1AuthLogoutMethod(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/auth/logout", nil)
 	rec := httptest.NewRecorder()
 	APIV1AuthLogout(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -124,14 +124,14 @@ func TestAPIV1AuthLogoutMethod(t *testing.T) {
 }
 
 func TestAPIV1AuthMFAVerifyValidation(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/mfa/verify", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/auth/mfa/verify", nil)
 	rec := httptest.NewRecorder()
 	APIV1AuthMFAVerify(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/mfa/verify", bytes.NewBufferString(`{"code":"123456"}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v2/auth/mfa/verify", bytes.NewBufferString(`{"code":"123456"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	APIV1AuthMFAVerify(rec, req)
@@ -146,7 +146,7 @@ func TestAPIV1AuthMFAVerifyValidation(t *testing.T) {
 		t.Fatalf("error = %q", payload["error"])
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/mfa/verify", bytes.NewBufferString(`{`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v2/auth/mfa/verify", bytes.NewBufferString(`{`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	// Still unauthorized before JSON parse when no pending session.
@@ -157,7 +157,7 @@ func TestAPIV1AuthMFAVerifyValidation(t *testing.T) {
 }
 
 func TestAPIV1AuthMFAVerifyEmptyCodeWithPending(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mfa/verify", bytes.NewBufferString(`{"code":""}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/auth/mfa/verify", bytes.NewBufferString(`{"code":""}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	if err := utils.EstablishPendingMFASession(rec, req, 7, "a@b.com"); err != nil {
@@ -174,7 +174,7 @@ func TestAPIV1AuthMFAVerifyEmptyCodeWithPending(t *testing.T) {
 		t.Fatal("expected pending session cookie")
 	}
 
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mfa/verify", bytes.NewBufferString(`{"code":""}`))
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v2/auth/mfa/verify", bytes.NewBufferString(`{"code":""}`))
 	req2.Header.Set("Content-Type", "application/json")
 	req2.AddCookie(cookie)
 	if utils.GetSessionUserID(req2) != nil {
@@ -192,21 +192,21 @@ func TestAPIV1AuthMFAVerifyEmptyCodeWithPending(t *testing.T) {
 }
 
 func TestAPIV1MeMFAMethods(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/mfa", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/mfa", nil)
 	rec := httptest.NewRecorder()
 	APIV1MeMFA(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/me/mfa/setup", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v2/me/mfa/setup", nil)
 	rec = httptest.NewRecorder()
 	APIV1MeMFASetup(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("setup status = %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/me/mfa/enable", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v2/me/mfa/enable", nil)
 	rec = httptest.NewRecorder()
 	APIV1MeMFAEnable(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -215,7 +215,7 @@ func TestAPIV1MeMFAMethods(t *testing.T) {
 }
 
 func TestAPIV1MeUnauthenticatedReturnsNull(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/me", nil)
 	rec := httptest.NewRecorder()
 	APIV1Me(rec, req)
 	if rec.Code != http.StatusOK {

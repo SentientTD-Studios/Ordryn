@@ -31,7 +31,7 @@ func TestValidateSavedViewFilterRejectsInvalidValues(t *testing.T) {
 }
 
 func TestAPIV1SavedViewsRequiresAuthentication(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/saved-views", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v2/saved-views", nil)
 	response := httptest.NewRecorder()
 
 	APIV1SavedViewsRouter(response, request)

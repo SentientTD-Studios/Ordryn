@@ -183,3 +183,32 @@ func TestAPISprintPatchLockDateJSON(t *testing.T) {
 		}
 	})
 }
+
+func TestAPITaskPatchFieldsJSON(t *testing.T) {
+	var req apiTaskPatchRequest
+	if err := json.Unmarshal([]byte(`{"fields":{"severity.level":"high","fields-demo.spec":null}}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	if !req.Fields.Set {
+		t.Fatal("fields should be set")
+	}
+	if string(req.Fields.Values["severity.level"]) != `"high"` {
+		t.Fatalf("level=%s", req.Fields.Values["severity.level"])
+	}
+	if string(req.Fields.Values["fields-demo.spec"]) != "null" {
+		t.Fatalf("spec=%s", req.Fields.Values["fields-demo.spec"])
+	}
+
+	var omitted apiTaskPatchRequest
+	if err := json.Unmarshal([]byte(`{"title":"x"}`), &omitted); err != nil {
+		t.Fatal(err)
+	}
+	if omitted.Fields.Set {
+		t.Fatal("omitted fields should not be set")
+	}
+
+	var bad apiTaskPatchRequest
+	if err := json.Unmarshal([]byte(`{"fields":null}`), &bad); err == nil {
+		t.Fatal("null fields object should fail")
+	}
+}

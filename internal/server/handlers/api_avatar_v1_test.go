@@ -51,7 +51,7 @@ func mockProfileStorage(t *testing.T, profile *storage.UserProfile) {
 }
 
 func TestAPIV1MeAvatarMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me/avatar", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/me/avatar", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1MeAvatar(rec, req)
@@ -62,7 +62,7 @@ func TestAPIV1MeAvatarMethodNotAllowed(t *testing.T) {
 
 func TestAPIV1MeAvatarUnauthorized(t *testing.T) {
 	body, ctype := multipartPNG(t, "file", "avatar.png", testTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", body)
 	req.Header.Set("Content-Type", ctype)
 	rec := httptest.NewRecorder()
 	APIV1MeAvatar(rec, req)
@@ -70,7 +70,7 @@ func TestAPIV1MeAvatarUnauthorized(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	reqDel := httptest.NewRequest(http.MethodDelete, "/api/v1/me/avatar", nil)
+	reqDel := httptest.NewRequest(http.MethodDelete, "/api/v2/me/avatar", nil)
 	recDel := httptest.NewRecorder()
 	APIV1MeAvatar(recDel, reqDel)
 	if recDel.Code != http.StatusUnauthorized {
@@ -81,7 +81,7 @@ func TestAPIV1MeAvatarUnauthorized(t *testing.T) {
 func TestAPIV1MeAvatarNotConfigured(t *testing.T) {
 	withImageHosting(t, imagehost.Config{}, nil)
 	body, ctype := multipartPNG(t, "file", "avatar.png", testTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -98,7 +98,7 @@ func TestAPIV1MeAvatarRejectsNonImage(t *testing.T) {
 	dir := t.TempDir()
 	withImageHosting(t, imagehost.Config{Provider: imagehost.ProviderLocal, MaxBytes: imagehost.DefaultMaxBytes, LocalPath: dir}, nil)
 	body, ctype := multipartPNG(t, "file", "avatar.txt", []byte("plain text not an image"))
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -114,7 +114,7 @@ func TestAPIV1MeAvatarRejectsDisallowedFormats(t *testing.T) {
 
 	// Test GIF rejection
 	bodyGIF, ctypeGIF := multipartPNG(t, "file", "avatar.gif", testTinyGIF)
-	reqGIF := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", bodyGIF)
+	reqGIF := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", bodyGIF)
 	reqGIF.Header.Set("Content-Type", ctypeGIF)
 	reqGIF = utils.SetAPIUserID(reqGIF, 1)
 	recGIF := httptest.NewRecorder()
@@ -128,7 +128,7 @@ func TestAPIV1MeAvatarRejectsDisallowedFormats(t *testing.T) {
 
 	// Test WebP rejection
 	bodyWebP, ctypeWebP := multipartPNG(t, "file", "avatar.webp", testTinyWebP)
-	reqWebP := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", bodyWebP)
+	reqWebP := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", bodyWebP)
 	reqWebP.Header.Set("Content-Type", ctypeWebP)
 	reqWebP = utils.SetAPIUserID(reqWebP, 1)
 	recWebP := httptest.NewRecorder()
@@ -147,7 +147,7 @@ func TestAPIV1MeAvatarRejectsOversize(t *testing.T) {
 	big := make([]byte, imagehost.MinMaxBytes+1)
 	copy(big, testTinyPNG)
 	body, ctype := multipartPNG(t, "file", "big.png", big)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -163,7 +163,7 @@ func TestAPIV1MeAvatarPNGSuccess(t *testing.T) {
 	mockProfileStorage(t, &storage.UserProfile{ID: 1, Email: "user@example.com", UserName: "alice"})
 
 	body, ctype := multipartPNG(t, "file", "avatar.png", testTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", body)
 	req.Header.Set("Content-Type", ctype)
 	req.Host = "gotodo.test"
 	req = utils.SetAPIUserID(req, 1)
@@ -188,7 +188,7 @@ func TestAPIV1MeAvatarJPEGSuccess(t *testing.T) {
 	mockProfileStorage(t, &storage.UserProfile{ID: 1, Email: "user@example.com", UserName: "alice"})
 
 	body, ctype := multipartPNG(t, "file", "avatar.jpg", testTinyJPEG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/avatar", body)
 	req.Header.Set("Content-Type", ctype)
 	req.Host = "gotodo.test"
 	req = utils.SetAPIUserID(req, 1)
@@ -210,7 +210,7 @@ func TestAPIV1MeAvatarJPEGSuccess(t *testing.T) {
 func TestAPIV1MeAvatarDeleteSuccess(t *testing.T) {
 	mockProfileStorage(t, &storage.UserProfile{ID: 1, Email: "user@example.com", UserName: "alice", AvatarURL: "/uploads/old.png"})
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me/avatar", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v2/me/avatar", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1MeAvatar(rec, req)

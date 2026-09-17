@@ -97,7 +97,7 @@ func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserPro
 	return session.Save(r, w)
 }
 
-// APIV1AuthRegister handles POST /api/v1/auth/register.
+// APIV1AuthRegister handles POST /api/v2/auth/register.
 func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -227,7 +227,7 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusCreated, profile)
 }
 
-// APIV1AuthLogin handles POST /api/v1/auth/login.
+// APIV1AuthLogin handles POST /api/v2/auth/login.
 func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -313,7 +313,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusOK, profile)
 }
 
-// APIV1AuthLogout handles POST /api/v1/auth/logout.
+// APIV1AuthLogout handles POST /api/v2/auth/logout.
 func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -325,7 +325,7 @@ func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// APIV1UsernameAvailable handles GET /api/v1/auth/username-available?username=
+// APIV1UsernameAvailable handles GET /api/v2/auth/username-available?username=
 func APIV1UsernameAvailable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

@@ -9,97 +9,112 @@ import (
 	"testing"
 )
 
-// requiredOpenAPIPaths is the logical /api/v1 surface that must appear in openapi.yaml.
+// requiredOpenAPIPaths is the logical /api/v2 surface that must appear in openapi.yaml.
 // Keep in sync when adding routes (Phase A4+).
 var requiredOpenAPIPaths = []string{
-	"/api/v1/health",
-	"/api/v1/site",
-	"/api/v1/auth/register",
-	"/api/v1/auth/login",
-	"/api/v1/auth/mfa/verify",
-	"/api/v1/auth/logout",
-	"/api/v1/auth/username-available",
-	"/api/v1/auth/device/code",
-	"/api/v1/auth/device/token",
-	"/api/v1/auth/device/status",
-	"/api/v1/auth/device/approve",
-	"/api/v1/auth/device/deny",
-	"/api/v1/me",
-	"/api/v1/me/password",
-	"/api/v1/me/mfa",
-	"/api/v1/me/mfa/setup",
-	"/api/v1/me/mfa/enable",
-	"/api/v1/me/mfa/disable",
-	"/api/v1/me/mfa/recovery-codes",
-	"/api/v1/me/username",
-	"/api/v1/me/avatar",
-	"/api/v1/api-keys",
-	"/api/v1/api-keys/{id}",
-	"/api/v1/tasks",
-	"/api/v1/tasks/{id}",
-	"/api/v1/tasks/reorder",
-	"/api/v1/tasks/bulk",
-	"/api/v1/tasks/undo",
-	"/api/v1/tasks/{id}/events",
-	"/api/v1/tasks/{id}/comments",
-	"/api/v1/tasks/{id}/comments/{commentId}",
-	"/api/v1/tasks/{id}/comments/{commentId}/revisions",
-	"/api/v1/tasks/{id}/comments/{commentId}/restore",
-	"/api/v1/users/search",
-	"/api/v1/projects",
-	"/api/v1/projects/reorder",
-	"/api/v1/projects/{id}",
-	"/api/v1/projects/{id}/archive",
-	"/api/v1/projects/{id}/restore",
-	"/api/v1/projects/{id}/members",
-	"/api/v1/projects/{id}/members/{userId}",
-	"/api/v1/projects/{id}/invites",
-	"/api/v1/projects/{id}/invites/{inviteId}",
-	"/api/v1/projects/{id}/events",
-	"/api/v1/projects/{id}/sprints",
-	"/api/v1/projects/{id}/sprints/{sprintId}",
-	"/api/v1/projects/{id}/sprints/backlog",
-	"/api/v1/project-invites",
-	"/api/v1/project-invites/{id}/accept",
-	"/api/v1/project-invites/{id}/decline",
-	"/api/v1/share-links",
-	"/api/v1/share-links/{id}",
-	"/api/v1/share-links/view/{token}",
-	"/api/v1/tags",
-	"/api/v1/tags/{id}",
-	"/api/v1/saved-views",
-	"/api/v1/saved-views/{id}",
-	"/api/v1/dashboard",
-	"/api/v1/events",
-	"/api/v1/calendar",
-	"/api/v1/calendar/month",
-	"/api/v1/calendar/regenerate",
-	"/api/v1/calendar/sync",
-	"/api/v1/export",
-	"/api/v1/import/preview",
-	"/api/v1/import/confirm",
-	"/api/v1/import/cancel",
-	"/api/v1/images",
-	"/api/v1/auth/forgot-password",
-	"/api/v1/auth/reset-password",
-	"/api/v1/join-requests",
-	"/api/v1/announcements/dismiss",
-	"/api/v1/invites",
-	"/api/v1/invites/{id}",
-	"/api/v1/admin/settings",
-	"/api/v1/admin/image-hosting/test",
-	"/api/v1/admin/users",
-	"/api/v1/admin/users/{id}/ban",
-	"/api/v1/admin/users/{id}/unban",
-	"/api/v1/admin/users/{id}/username",
-	"/api/v1/admin/join-requests",
-	"/api/v1/admin/join-requests/{id}/approve",
-	"/api/v1/admin/join-requests/{id}/deny",
-	"/api/v1/admin/invites",
-	"/api/v1/admin/invites/{id}",
-	"/api/v1/admin/email-audit",
-	"/api/v1/admin/comment-audit",
-	"/api/v1/admin/comment-audit/{id}/restore",
+	"/api/v2/health",
+	"/api/v2/site",
+	"/api/v2/auth/register",
+	"/api/v2/auth/login",
+	"/api/v2/auth/mfa/verify",
+	"/api/v2/auth/logout",
+	"/api/v2/auth/username-available",
+	"/api/v2/auth/device/code",
+	"/api/v2/auth/device/token",
+	"/api/v2/auth/device/status",
+	"/api/v2/auth/device/approve",
+	"/api/v2/auth/device/deny",
+	"/api/v2/me",
+	"/api/v2/me/password",
+	"/api/v2/me/mfa",
+	"/api/v2/me/mfa/setup",
+	"/api/v2/me/mfa/enable",
+	"/api/v2/me/mfa/disable",
+	"/api/v2/me/mfa/recovery-codes",
+	"/api/v2/me/username",
+	"/api/v2/me/avatar",
+	"/api/v2/api-keys",
+	"/api/v2/api-keys/{id}",
+	"/api/v2/tasks",
+	"/api/v2/tasks/{id}",
+	"/api/v2/tasks/reorder",
+	"/api/v2/tasks/bulk",
+	"/api/v2/tasks/undo",
+	"/api/v2/tasks/{id}/events",
+	"/api/v2/tasks/{id}/comments",
+	"/api/v2/tasks/{id}/comments/{commentId}",
+	"/api/v2/tasks/{id}/comments/{commentId}/revisions",
+	"/api/v2/tasks/{id}/comments/{commentId}/restore",
+	"/api/v2/users/search",
+	"/api/v2/projects",
+	"/api/v2/projects/reorder",
+	"/api/v2/projects/{id}",
+	"/api/v2/projects/{id}/archive",
+	"/api/v2/projects/{id}/restore",
+	"/api/v2/projects/{id}/members",
+	"/api/v2/projects/{id}/members/{userId}",
+	"/api/v2/projects/{id}/invites",
+	"/api/v2/projects/{id}/invites/{inviteId}",
+	"/api/v2/projects/{id}/events",
+	"/api/v2/projects/{id}/sprints",
+	"/api/v2/projects/{id}/sprints/{sprintId}",
+	"/api/v2/projects/{id}/sprints/backlog",
+	"/api/v2/project-invites",
+	"/api/v2/project-invites/{id}/accept",
+	"/api/v2/project-invites/{id}/decline",
+	"/api/v2/share-links",
+	"/api/v2/share-links/{id}",
+	"/api/v2/share-links/view/{token}",
+	"/api/v2/tags",
+	"/api/v2/tags/{id}",
+	"/api/v2/saved-views",
+	"/api/v2/saved-views/{id}",
+	"/api/v2/dashboard",
+	"/api/v2/events",
+	"/api/v2/calendar",
+	"/api/v2/calendar/month",
+	"/api/v2/calendar/regenerate",
+	"/api/v2/calendar/sync",
+	"/api/v2/export",
+	"/api/v2/import/preview",
+	"/api/v2/import/confirm",
+	"/api/v2/import/cancel",
+	"/api/v2/images",
+	"/api/v2/auth/forgot-password",
+	"/api/v2/auth/reset-password",
+	"/api/v2/join-requests",
+	"/api/v2/announcements/dismiss",
+	"/api/v2/invites",
+	"/api/v2/invites/{id}",
+	"/api/v2/admin/settings",
+	"/api/v2/admin/image-hosting/test",
+	"/api/v2/admin/users",
+	"/api/v2/admin/users/{id}/ban",
+	"/api/v2/admin/users/{id}/unban",
+	"/api/v2/admin/users/{id}/username",
+	"/api/v2/admin/join-requests",
+	"/api/v2/admin/join-requests/{id}/approve",
+	"/api/v2/admin/join-requests/{id}/deny",
+	"/api/v2/admin/invites",
+	"/api/v2/admin/invites/{id}",
+	"/api/v2/admin/email-audit",
+	"/api/v2/admin/comment-audit",
+	"/api/v2/admin/comment-audit/{id}/restore",
+	"/api/v2/admin/extensions",
+	"/api/v2/admin/extensions/{id}",
+	"/api/v2/projects/{id}/extensions",
+	"/api/v2/projects/{id}/extensions/{extensionId}",
+	"/api/v2/projects/{id}/extensions/{extensionId}/test",
+	"/api/v2/projects/{id}/extensions/{extensionId}/me",
+	"/api/v2/projects/{id}/extensions/{extensionId}/me/test",
+	"/api/v2/projects/{id}/inbound",
+	"/api/v2/projects/{id}/custom-fields",
+	"/api/v2/me/extensions",
+	"/api/v2/me/extensions/{extensionId}",
+	"/api/v2/me/extensions/{extensionId}/test",
+	"/api/v2/webhooks/inbound",
+	"/api/v2/ext/callback",
+	"/api/v2/extensions/{id}/icon",
 }
 
 func moduleRoot(t *testing.T) string {
@@ -118,14 +133,14 @@ func openAPIPathSet(t *testing.T) map[string]struct{} {
 	if err != nil {
 		t.Fatalf("read openapi.yaml: %v", err)
 	}
-	re := regexp.MustCompile(`(?m)^  (/api/v1[^:]+):`)
+	re := regexp.MustCompile(`(?m)^  (/api/v2[^:]+):`)
 	matches := re.FindAllStringSubmatch(string(raw), -1)
 	out := make(map[string]struct{}, len(matches))
 	for _, m := range matches {
 		out[m[1]] = struct{}{}
 	}
 	if len(out) == 0 {
-		t.Fatal("no /api/v1 paths found in openapi.yaml")
+		t.Fatal("no /api/v2 paths found in openapi.yaml")
 	}
 	return out
 }
@@ -144,19 +159,19 @@ func TestServerAPIV1RegistrationsCoveredByOpenAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read server.go: %v", err)
 	}
-	re := regexp.MustCompile(`handleBoth\("(/api/v1[^"]+)"`)
+	re := regexp.MustCompile(`handleAPI\("(/[^"]+)"`)
 	matches := re.FindAllStringSubmatch(string(raw), -1)
 	if len(matches) == 0 {
-		t.Fatal("no /api/v1 handleBoth registrations found in server.go")
+		t.Fatal("no handleAPI registrations found in server.go")
 	}
 
 	openapi := openAPIPathSet(t)
 	for _, m := range matches {
-		reg := strings.TrimSuffix(m[1], "/")
+		reg := "/api/v2" + strings.TrimSuffix(m[1], "/")
 		if coveredByOpenAPI(reg, openapi) {
 			continue
 		}
-		t.Errorf("server registration %q has no covering OpenAPI path", m[1])
+		t.Errorf("server registration %q has no covering OpenAPI path", "/api/v2"+m[1])
 	}
 }
 

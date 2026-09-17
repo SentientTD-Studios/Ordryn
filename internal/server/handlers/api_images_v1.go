@@ -31,7 +31,7 @@ func defaultLoadImageHosting() (imagehost.Config, error) {
 // openImageStore is overridable in tests.
 var openImageStore = imagehost.NewStore
 
-// APIV1Images handles POST /api/v1/images (multipart field "file").
+// APIV1Images handles POST /api/v2/images (multipart field "file").
 func APIV1Images(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

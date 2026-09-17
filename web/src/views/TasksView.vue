@@ -604,29 +604,14 @@ async function saveReorder(orderedIds: number[], parentId?: number | null) {
     if (parentId) {
       await api.reorderTasks({
         task_ids: orderedIds,
-        favorite: false,
         parent_id: parentId,
       })
       return
     }
-    const byId = new Map(tasks.value.map((t) => [t.id, t]))
-    const favoriteIds = orderedIds.filter((id) => byId.get(id)?.favorite)
-    const regularIds = orderedIds.filter((id) => !byId.get(id)?.favorite)
-    const project = filters.project || undefined
-    if (favoriteIds.length) {
-      await api.reorderTasks({
-        task_ids: favoriteIds,
-        favorite: true,
-        project,
-      })
-    }
-    if (regularIds.length) {
-      await api.reorderTasks({
-        task_ids: regularIds,
-        favorite: false,
-        project,
-      })
-    }
+    await api.reorderTasks({
+      task_ids: orderedIds,
+      project: filters.project || undefined,
+    })
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not save task order', 'error')
     await reloadInitial()
@@ -1178,7 +1163,7 @@ function selectHome() {
 async function exportTasks(format: 'json' | 'csv', filtered: boolean) {
   try {
     const suffix = filtered ? toExportQuery() : ''
-    const path = `/api/v1/export?format=${format}${suffix}`
+    const path = `/api/v2/export?format=${format}${suffix}`
     const res = await fetch(path, { credentials: 'include' })
     if (!res.ok) throw new Error('Export failed')
     const blob = await res.blob()
@@ -1270,7 +1255,7 @@ onMounted(async () => {
 useLiveUpdates((event) => {
   if (event.type === 'task.commented') return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
-  if (event.type === 'project.updated') {
+  if (event.type === 'project.updated' || event.type === 'project.created' || event.type === 'project.deleted') {
     void loadMeta()
     kanbanColumnsRev.value++
   }

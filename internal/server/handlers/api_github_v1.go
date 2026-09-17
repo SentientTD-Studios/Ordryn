@@ -101,7 +101,7 @@ func taskGitHubToAPIJSON(p *domain.TaskGitHubIssuePublic) *apiTaskGitHubJSON {
 	}
 }
 
-// APIV1MeGitHub handles GET/DELETE /api/v1/me/github.
+// APIV1MeGitHub handles GET/DELETE /api/v2/me/github.
 func APIV1MeGitHub(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -129,7 +129,7 @@ func APIV1MeGitHub(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// APIV1MeGitHubPAT handles POST /api/v1/me/github/pat.
+// APIV1MeGitHubPAT handles POST /api/v2/me/github/pat.
 func APIV1MeGitHubPAT(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -154,7 +154,7 @@ func APIV1MeGitHubPAT(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(conn)
 }
 
-// APIV1MeGitHubOAuthStart handles GET /api/v1/me/github/oauth/start.
+// APIV1MeGitHubOAuthStart handles GET /api/v2/me/github/oauth/start.
 func APIV1MeGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -185,7 +185,7 @@ func APIV1MeGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := hex.EncodeToString(stateBytes)
-	redirectURI := utils.AbsoluteURLForRequest(r, "/api/v1/auth/github/callback")
+	redirectURI := utils.AbsoluteURLForRequest(r, "/api/v2/auth/github/callback")
 
 	ctx := r.Context()
 	if err := utils.RedisClient.Set(ctx, githubOAuthStatePref+state, strconv.Itoa(userID), githubOAuthStateTTL).Err(); err != nil {
@@ -201,7 +201,7 @@ func APIV1MeGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// APIV1GitHubOAuthCallback handles GET /api/v1/auth/github/callback (public).
+// APIV1GitHubOAuthCallback handles GET /api/v2/auth/github/callback (public).
 func APIV1GitHubOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -262,7 +262,7 @@ func APIV1GitHubOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, utils.PublicPath("/settings?github=connected"), http.StatusSeeOther)
 }
 
-// apiV1ProjectGitHub handles GET/PUT/DELETE /api/v1/projects/{id}/github.
+// apiV1ProjectGitHub handles GET/PUT/DELETE /api/v2/projects/{id}/github.
 func apiV1ProjectGitHub(w http.ResponseWriter, r *http.Request, projectID int) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -303,7 +303,7 @@ func apiV1ProjectGitHub(w http.ResponseWriter, r *http.Request, projectID int) {
 	}
 }
 
-// apiV1TaskGitHubIssue handles POST/PUT/DELETE /api/v1/tasks/{id}/github-issue.
+// apiV1TaskGitHubIssue handles POST/PUT/DELETE /api/v2/tasks/{id}/github-issue.
 func apiV1TaskGitHubIssue(w http.ResponseWriter, r *http.Request, taskID int) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -363,7 +363,7 @@ func apiV1TaskGitHubIssue(w http.ResponseWriter, r *http.Request, taskID int) {
 	}
 }
 
-// APIV1GitHubWebhook handles POST /api/v1/webhooks/github (public).
+// APIV1GitHubWebhook handles POST /api/v2/webhooks/github (public).
 // Auth: X-Ordryn-Webhook-Secret matching the project link secret, or X-Hub-Signature-256 HMAC.
 func APIV1GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

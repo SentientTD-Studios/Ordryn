@@ -55,7 +55,7 @@ func TestAPIV1JoinRequestsCreateValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "/api/v1/join-requests", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(tt.method, "/api/v2/join-requests", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			APIV1JoinRequestsCreate(rec, req)
@@ -75,7 +75,7 @@ func TestAPIV1JoinRequestsCreateValidation(t *testing.T) {
 
 func TestAPIV1AdminJoinRequestsValidation(t *testing.T) {
 	t.Run("collection method not allowed", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/join-requests", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/join-requests", nil)
 		rec := httptest.NewRecorder()
 		APIV1AdminJoinRequestsRouter(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
@@ -83,7 +83,7 @@ func TestAPIV1AdminJoinRequestsValidation(t *testing.T) {
 		}
 	})
 	t.Run("invalid id", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/join-requests/abc/approve", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/join-requests/abc/approve", nil)
 		rec := httptest.NewRecorder()
 		APIV1AdminJoinRequestsRouter(rec, req)
 		if rec.Code != http.StatusBadRequest {
@@ -91,7 +91,7 @@ func TestAPIV1AdminJoinRequestsValidation(t *testing.T) {
 		}
 	})
 	t.Run("unknown action", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/join-requests/1/nope", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/join-requests/1/nope", nil)
 		rec := httptest.NewRecorder()
 		APIV1AdminJoinRequestsRouter(rec, req)
 		if rec.Code != http.StatusNotFound {

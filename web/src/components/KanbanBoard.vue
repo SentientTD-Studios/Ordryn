@@ -190,6 +190,7 @@
                     :style="{ backgroundColor: tag.color || '#6c757d' }"
                     :title="tag.name"
                   >{{ tag.name }}</span>
+                  <TaskFieldBadges :task="task" surface="kanban" />
                 </div>
 
                 <div v-if="canDrag" class="kanban-claim-row mt-2">
@@ -229,6 +230,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
 import type { ProjectStatus, Task } from '@/api/types'
+import TaskFieldBadges from '@/components/TaskFieldBadges.vue'
 import { APIError } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
@@ -502,27 +504,11 @@ async function onCardDrop(evt: Sortable.SortableEvent) {
       }
     }
     if (rootIds.length) {
-      const byId = new Map(boardTasks.value.map((t) => [t.id, t]))
-      const favoriteIds = rootIds.filter((id) => byId.get(id)?.favorite)
-      const regularIds = rootIds.filter((id) => !byId.get(id)?.favorite)
-      const reorderPayload = {
+      await api.reorderTasks({
+        task_ids: rootIds,
         status_id: statusId,
         project: String(props.projectId),
-      }
-      if (favoriteIds.length) {
-        await api.reorderTasks({
-          task_ids: favoriteIds,
-          favorite: true,
-          ...reorderPayload,
-        })
-      }
-      if (regularIds.length) {
-        await api.reorderTasks({
-          task_ids: regularIds,
-          favorite: false,
-          ...reorderPayload,
-        })
-      }
+      })
     }
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not update board', 'error')
@@ -576,7 +562,7 @@ watch(
 )
 
 useLiveUpdates((event) => {
-  if (event.type !== 'project.updated') return
+  if (event.type !== 'project.updated' && event.type !== 'project.created' && event.type !== 'project.deleted') return
   if (event.project_id && event.project_id !== props.projectId) return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
   void loadStatuses(true)

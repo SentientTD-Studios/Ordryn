@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -88,7 +90,7 @@ func RateLimitMiddleware(capacity int, refillRate float64, ttlSeconds int, keyFu
 				return
 			}
 			if !allowed {
-				if strings.Contains(r.URL.Path, "/api/v1/") {
+				if strings.Contains(r.URL.Path, "/api/v2/") || strings.Contains(r.URL.Path, "/api/v1/") {
 					msg := "Too many requests; please try again later."
 					if strings.Contains(r.URL.Path, "/auth/login") || strings.Contains(r.URL.Path, "/auth/register") {
 						msg = "Too many login attempts; please try again later."
@@ -132,6 +134,21 @@ func KeyByIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// KeyByIPAndBearer rate-limits public callback endpoints per IP plus token hash.
+func KeyByIPAndBearer(r *http.Request) string {
+	ip := KeyByIP(r)
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(auth) < 8 || !strings.EqualFold(auth[:7], "Bearer ") {
+		return ip
+	}
+	tok := strings.TrimSpace(auth[7:])
+	if tok == "" {
+		return ip
+	}
+	sum := sha256.Sum256([]byte(tok))
+	return ip + ":" + hex.EncodeToString(sum[:8])
 }
 
 // KeyByEmail reads form value `email` if present and returns a normalized key.

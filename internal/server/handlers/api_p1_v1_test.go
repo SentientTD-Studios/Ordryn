@@ -12,7 +12,7 @@ import (
 )
 
 func TestAPIV1MeMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1Me(rec, req)
@@ -22,7 +22,7 @@ func TestAPIV1MeMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1ChangePasswordValidation(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/password", bytes.NewBufferString(`{"current_password":"x","new_password":"short","confirm_password":"short"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/me/password", bytes.NewBufferString(`{"current_password":"x","new_password":"short","confirm_password":"short"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -33,7 +33,7 @@ func TestAPIV1ChangePasswordValidation(t *testing.T) {
 }
 
 func TestAPIV1APIKeysCreateValidation(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/api-keys", bytes.NewBufferString(`{"name":""}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/api-keys", bytes.NewBufferString(`{"name":""}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -69,10 +69,10 @@ func TestAPIV1APIKeysRenameValidation(t *testing.T) {
 		path string
 		body string
 	}{
-		{name: "empty name", path: "/api/v1/api-keys/1", body: `{"name":""}`},
-		{name: "whitespace name", path: "/api/v1/api-keys/1", body: `{"name":"   "}`},
-		{name: "too long", path: "/api/v1/api-keys/1", body: `{"name":"` + strings.Repeat("a", 81) + `"}`},
-		{name: "invalid id", path: "/api/v1/api-keys/abc", body: `{"name":"Phone"}`},
+		{name: "empty name", path: "/api/v2/api-keys/1", body: `{"name":""}`},
+		{name: "whitespace name", path: "/api/v2/api-keys/1", body: `{"name":"   "}`},
+		{name: "too long", path: "/api/v2/api-keys/1", body: `{"name":"` + strings.Repeat("a", 81) + `"}`},
+		{name: "invalid id", path: "/api/v2/api-keys/abc", body: `{"name":"Phone"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestAPIV1BulkValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/bulk", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v2/tasks/bulk", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			req = utils.SetAPIUserID(req, 1)
 			rec := httptest.NewRecorder()
@@ -112,7 +112,7 @@ func TestAPIV1BulkValidation(t *testing.T) {
 }
 
 func TestAPIV1TaskEventsInvalidID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/abc/events", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/tasks/abc/events", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1TasksRouter(rec, req)
@@ -122,7 +122,7 @@ func TestAPIV1TaskEventsInvalidID(t *testing.T) {
 }
 
 func TestAPIV1TaskCommentsInvalidID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/abc/comments", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/tasks/abc/comments", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1TasksRouter(rec, req)
@@ -130,7 +130,7 @@ func TestAPIV1TaskCommentsInvalidID(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/tasks/1/comments/abc", nil)
+	req = httptest.NewRequest(http.MethodPatch, "/api/v2/tasks/1/comments/abc", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec = httptest.NewRecorder()
 	APIV1TasksRouter(rec, req)
@@ -140,7 +140,7 @@ func TestAPIV1TaskCommentsInvalidID(t *testing.T) {
 }
 
 func TestAPIV1UndoMissingToken(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/undo", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/tasks/undo", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()

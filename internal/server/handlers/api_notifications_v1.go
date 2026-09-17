@@ -57,7 +57,7 @@ func notificationToAPIJSON(n storage.UserNotification) apiNotificationJSON {
 	return out
 }
 
-// APIV1NotificationsRouter handles /api/v1/notifications and subpaths.
+// APIV1NotificationsRouter handles /api/v2/notifications and subpaths.
 func APIV1NotificationsRouter(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {

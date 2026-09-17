@@ -18,7 +18,7 @@ type apiCommentAuditListResponse struct {
 	Offset int                          `json:"offset"`
 }
 
-// APIV1AdminCommentAuditRouter handles GET /api/v1/admin/comment-audit and restore.
+// APIV1AdminCommentAuditRouter handles GET /api/v2/admin/comment-audit and restore.
 func APIV1AdminCommentAuditRouter(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {

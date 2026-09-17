@@ -384,7 +384,7 @@ watch(isAuthenticated, (ok) => {
             </RouterLink>
           </li>
           <li class="sidebar-nav-item">
-            <RouterLink to="/docs/api/v1" class="sidebar-nav-link" @click="close">
+            <RouterLink to="/docs/api/v2" class="sidebar-nav-link" @click="close">
               <i class="bi bi-braces" />
               <span>API</span>
             </RouterLink>

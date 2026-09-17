@@ -166,7 +166,8 @@ func createProjectSprintRecord(projectID, actorUserID int, in CreateProjectSprin
 		meta[k] = v
 	}
 	_ = storage.LogProjectEvent(projectID, actorUserID, "sprint_added", meta)
-	live.AfterProjectChange(actorUserID, projectID, live.TypeProjectUpdated)
+	live.AfterProjectChangeLive(actorUserID, projectID, live.TypeProjectUpdated)
+	dispatchSprintLifecycleHooks(actorUserID, projectID, s, true)
 	return s, nil
 }
 
@@ -258,7 +259,12 @@ func UpdateProjectSprintForUser(ctx context.Context, userID, projectID, sprintID
 	_ = storage.LogProjectEvent(projectID, userID, "sprint_updated", map[string]interface{}{
 		"sprint_id": s.ID, "name": s.Name,
 	})
-	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, projectID, live.TypeSprintUpdated, &live.TaskHookMeta{
+		SprintID:   s.ID,
+		SprintName: s.Name,
+	})
+	dispatchSprintLifecycleHooks(userID, projectID, s, false)
 	return s, nil
 }
 
@@ -297,7 +303,11 @@ func DeleteProjectSprintForUser(ctx context.Context, userID, projectID, sprintID
 	_ = storage.LogProjectEvent(projectID, userID, "sprint_deleted", map[string]interface{}{
 		"name": cur.Name,
 	})
-	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, projectID, live.TypeSprintDeleted, &live.TaskHookMeta{
+		SprintID:   sprintID,
+		SprintName: cur.Name,
+	})
+	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectUpdated)
 	return nil
 }
 
@@ -355,4 +365,27 @@ func applyTaskSprint(taskID, projectID, userID int, sprintID *int) error {
 		}
 	}
 	return storage.SetTaskSprintID(taskID, sprintID)
+}
+
+func dispatchSprintLifecycleHooks(actorID, projectID int, s *storage.ProjectSprint, created bool) {
+	if s == nil {
+		return
+	}
+	meta := &live.TaskHookMeta{SprintID: s.ID, SprintName: s.Name}
+	if created {
+		live.DispatchProjectHook(actorID, projectID, live.TypeSprintCreated, meta)
+	}
+	today := time.Now().UTC().Format("2006-01-02")
+	if s.StartDate != nil && storage.FormatSprintDate(*s.StartDate) == today {
+		ok, err := storage.TryMarkSprintHookSent(s.ID, live.TypeSprintStarted)
+		if err == nil && ok {
+			live.DispatchProjectHook(actorID, projectID, live.TypeSprintStarted, meta)
+		}
+	}
+	if s.EndDate != nil && storage.FormatSprintDate(*s.EndDate) == today {
+		ok, err := storage.TryMarkSprintHookSent(s.ID, live.TypeSprintEnded)
+		if err == nil && ok {
+			live.DispatchProjectHook(actorID, projectID, live.TypeSprintEnded, meta)
+		}
+	}
 }

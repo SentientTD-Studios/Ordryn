@@ -3,10 +3,13 @@ package domain
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"GoTodo/internal/hooks"
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
 
@@ -16,7 +19,7 @@ import (
 // MaxDescriptionLength is the shared limit for task descriptions.
 const MaxDescriptionLength = 1000
 
-// CreateTaskInput is the shared create payload for HTMX and /api/v1.
+// CreateTaskInput is the shared create payload for HTMX and /api/v2.
 type CreateTaskInput struct {
 	Title       string
 	Description string
@@ -28,11 +31,11 @@ type CreateTaskInput struct {
 	ParentID       *int
 	Priority       int
 	Completed      bool
-	Favorite       bool // Deprecated: will be removed in API v2.
 	TagIDs         []int
 	StatusID       *int
 	EstimatePoints *int
 	SprintID       *int
+	Fields         map[string]json.RawMessage
 }
 
 // UpdateTaskInput is a partial update. Nil pointer fields are left unchanged.
@@ -47,7 +50,6 @@ type UpdateTaskInput struct {
 	ParentID  **int
 	Priority  *int
 	Completed *bool
-	Favorite  *bool // Deprecated: will be removed in API v2.
 	TagIDs    *[]int
 	// StatusID: nil = leave; non-nil with *nil or 0 = reject on kanban; non-nil with id = set.
 	StatusID **int
@@ -55,6 +57,8 @@ type UpdateTaskInput struct {
 	EstimatePoints **int
 	// SprintID: nil = leave; non-nil with *nil or 0 = clear; non-nil with id = set.
 	SprintID **int
+	// Fields: nil = leave; non-nil map merges (JSON null clears a key).
+	Fields map[string]json.RawMessage
 }
 
 // UpdateResult summarizes what changed for audit logging in handlers.
@@ -94,7 +98,7 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 	}
 	defer storage.CloseDatabase(pool)
 
-	favorite := in.Favorite
+	favorite := false
 	var parentArg interface{}
 	var projectArg interface{}
 
@@ -135,6 +139,9 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 				return 0, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 			}
 		}
+		if err := applyCreateFields(newID, userID, projectArg, in.Fields); err != nil {
+			return 0, err
+		}
 		_ = storage.LogTaskEvent(newID, userID, "created", map[string]interface{}{"parent_id": *in.ParentID})
 		if pid, ok := projectArg.(int); ok && pid > 0 {
 			NotifyProjectMembersTaskCreated(newID, userID, pid, title)
@@ -157,20 +164,11 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 	}
 
 	var nextPos int
-	if favorite {
-		if err := pool.QueryRow(ctx,
-			`SELECT COALESCE(MAX(position),0) + 1 FROM tasks
-			 WHERE user_id = $1 AND is_favorite = true AND parent_id IS NULL`,
-			userID).Scan(&nextPos); err != nil {
-			return 0, err
-		}
-	} else {
-		if err := pool.QueryRow(ctx,
-			`SELECT COALESCE(MAX(position),0) + 1 FROM tasks
-			 WHERE user_id = $1 AND (is_favorite IS NULL OR is_favorite = false) AND parent_id IS NULL`,
-			userID).Scan(&nextPos); err != nil {
-			return 0, err
-		}
+	if err := pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(position),0) + 1 FROM tasks
+		 WHERE user_id = $1 AND parent_id IS NULL`,
+		userID).Scan(&nextPos); err != nil {
+		return 0, err
 	}
 
 	var newID int
@@ -190,6 +188,9 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		if err := storage.SetTaskTags(newID, userID, in.TagIDs); err != nil {
 			return 0, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 		}
+	}
+	if err := applyCreateFields(newID, userID, projectArg, in.Fields); err != nil {
+		return 0, err
 	}
 	_ = storage.LogTaskEvent(newID, userID, "created", nil)
 	if pid, ok := projectArg.(int); ok && pid > 0 {
@@ -288,6 +289,15 @@ func requireWritableRootParent(ctx context.Context, pool interface {
 	return projectID, nil
 }
 
+func applyCreateFields(taskID, userID int, projectArg interface{}, fields map[string]json.RawMessage) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	pid, _ := projectArg.(int)
+	_, err := ApplyTaskFields(taskID, pid, userID, fields)
+	return err
+}
+
 // UpdateTask applies a partial update for an owned task.
 func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*UpdateResult, error) {
 	pool, err := storage.OpenDatabase()
@@ -329,6 +339,15 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 
 	oldCompleted := completed
+	oldDueDate := dueDate
+	oldTitle := title
+	oldDescription := description
+	oldPriority := priority
+	oldParentID := nullInt(parentID)
+	oldEstimate := 0
+	if estimatePoints.Valid {
+		oldEstimate = int(estimatePoints.Int64)
+	}
 	statusTouched := false
 	completedTouched := in.Completed != nil
 	originalProjectID := projectID
@@ -358,9 +377,6 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 	if in.Completed != nil {
 		completed = *in.Completed
-	}
-	if in.Favorite != nil {
-		favorite = *in.Favorite
 	}
 	if in.ClearDue {
 		dueDate = ""
@@ -576,6 +592,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		newSprintID = 0
 	}
 
+	tagsChanged := false
 	if in.TagIDs != nil {
 		beforeTags, err := storage.GetTagsForTask(taskID)
 		if err != nil {
@@ -586,6 +603,27 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		}
 		if afterTags, err := storage.GetTagsForTask(taskID); err == nil {
 			logTagChanges(taskID, userID, beforeTags, afterTags)
+			tagsChanged = !sameTagSet(beforeTags, afterTags)
+		} else {
+			tagsChanged = true
+		}
+	}
+
+	fieldKeys := []string{}
+	if in.Fields != nil {
+		var err error
+		fieldKeys, err = ApplyTaskFields(taskID, effectiveProjectID, userID, in.Fields)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if projectChanged {
+		childIDs, _ := ChildIDsOf(ctx, []int{taskID})
+		allIDs := append([]int{taskID}, childIDs...)
+		for _, id := range allIDs {
+			if err := PruneInapplicableFieldValues(id, effectiveProjectID); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -596,6 +634,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 			_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 		}
 		go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
+		dispatchCompletedHook(userID, taskID, completed)
 	}
 	if statusTouched && newStatusID != oldStatusID {
 		_ = storage.LogTaskEvent(taskID, userID, "status_changed", statusChangeMetadata(effectiveProjectID, oldStatusID, newStatusID))
@@ -611,10 +650,118 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	result.NewProjectID = effectiveProjectID
 	result.PriorityChanged = result.OldPriority != result.NewPriority
 	result.ProjectChanged = projectChanged
+	dueChanged := oldDueDate != dueDate
+	sprintChanged := newSprintID != oldSprintID
+	titleChanged := oldTitle != title
+	descriptionChanged := oldDescription != description
+	parentChanged := oldParentID != nullInt(newParentID)
+	newEstimate := oldEstimate
+	if in.EstimatePoints != nil {
+		if *in.EstimatePoints == nil {
+			newEstimate = 0
+		} else {
+			newEstimate = **in.EstimatePoints
+		}
+	}
+	estimateChanged := oldEstimate != newEstimate
+	completedChanged := oldCompleted != completed
+	statusChanged := statusTouched && newStatusID != oldStatusID
+
+	changed := make([]string, 0, 10)
+	fieldChanges := make([]hooks.FieldChange, 0, 8)
+	appendChange := func(field, oldVal, newVal string) {
+		changed = append(changed, field)
+		fieldChanges = append(fieldChanges, hooks.FieldChange{Field: field, Old: oldVal, New: newVal})
+	}
+	if titleChanged {
+		appendChange("title", oldTitle, title)
+	}
+	if descriptionChanged {
+		appendChange("description", "", "")
+	}
+	if result.PriorityChanged {
+		appendChange("priority", strconv.Itoa(oldPriority), strconv.Itoa(priority))
+	}
+	if statusChanged {
+		from, to := statusHookNames(effectiveProjectID, oldStatusID, newStatusID)
+		appendChange("status", from, to)
+	}
+	if completedChanged {
+		appendChange("completed", strconv.FormatBool(oldCompleted), strconv.FormatBool(completed))
+	}
+	if dueChanged {
+		appendChange("due_date", oldDueDate, dueDate)
+	}
 	if projectChanged {
-		live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated, result.OldProjectID)
+		appendChange("project", strconv.Itoa(result.OldProjectID), strconv.Itoa(effectiveProjectID))
+	}
+	if sprintChanged {
+		appendChange("sprint", strconv.Itoa(oldSprintID), strconv.Itoa(newSprintID))
+	}
+	if tagsChanged {
+		changed = append(changed, "tags")
+	}
+	if parentChanged {
+		appendChange("parent", strconv.Itoa(oldParentID), strconv.Itoa(nullInt(newParentID)))
+	}
+	if estimateChanged {
+		appendChange("estimate", strconv.Itoa(oldEstimate), strconv.Itoa(newEstimate))
+	}
+	changed = append(changed, fieldKeys...)
+
+	hookMeta := &live.TaskHookMeta{Changed: changed, FieldChanges: fieldChanges}
+	if statusChanged {
+		from, to := statusHookNames(effectiveProjectID, oldStatusID, newStatusID)
+		hookMeta.StatusChanged = true
+		hookMeta.OldStatus = from
+		hookMeta.NewStatus = to
+	}
+	if projectChanged {
+		live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated, result.OldProjectID)
 	} else {
-		live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+		live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
+	}
+	dedicated := map[string]struct{}{}
+	if statusChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskStatusChanged, hookMeta)
+		dedicated["status"] = struct{}{}
+	}
+	if dueChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskDueChanged, hookMeta)
+		dedicated["due_date"] = struct{}{}
+	}
+	if projectChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskProjectChanged, hookMeta)
+		dedicated["project"] = struct{}{}
+	}
+	if sprintChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskSprintChanged, hookMeta)
+		dedicated["sprint"] = struct{}{}
+	}
+	if projectChanged || sprintChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskMoved, hookMeta)
+	}
+	if tagsChanged {
+		live.DispatchHook(userID, taskID, live.TypeTaskTagged, hookMeta)
+		dedicated["tags"] = struct{}{}
+	}
+	if completedChanged {
+		dedicated["completed"] = struct{}{}
+		dedicated["status"] = struct{}{}
+	}
+	residual := make([]string, 0, len(changed))
+	for _, c := range changed {
+		if _, ok := dedicated[c]; ok {
+			continue
+		}
+		residual = append(residual, c)
+	}
+	if len(residual) > 0 {
+		residualMeta := &live.TaskHookMeta{Changed: residual, FieldChanges: fieldChanges}
+		residualMeta.StatusChanged = hookMeta.StatusChanged
+		residualMeta.OldStatus = hookMeta.OldStatus
+		residualMeta.NewStatus = hookMeta.NewStatus
+		live.DispatchHook(userID, taskID, live.TypeTaskUpdated, residualMeta)
 	}
 	return result, nil
 }
@@ -634,6 +781,21 @@ func logTagChanges(taskID, userID int, before, after []storage.Tag) {
 	}
 }
 
+func sameTagSet(a, b []storage.Tag) bool {
+	return len(tagActivityMap(a)) == len(tagActivityMap(b)) && len(tagActivityMap(a)) == len(mergedTagKeys(a, b))
+}
+
+func mergedTagKeys(a, b []storage.Tag) map[string]struct{} {
+	out := make(map[string]struct{})
+	for k := range tagActivityMap(a) {
+		out[k] = struct{}{}
+	}
+	for k := range tagActivityMap(b) {
+		out[k] = struct{}{}
+	}
+	return out
+}
+
 func tagActivityMap(tags []storage.Tag) map[string]storage.Tag {
 	m := make(map[string]storage.Tag, len(tags))
 	for _, t := range tags {
@@ -651,19 +813,30 @@ func tagActivityMap(tags []storage.Tag) map[string]storage.Tag {
 
 func statusChangeMetadata(projectID, oldStatusID, newStatusID int) map[string]interface{} {
 	meta := map[string]interface{}{}
+	from, to := statusHookNames(projectID, oldStatusID, newStatusID)
+	if to != "" {
+		meta["to"] = to
+		meta["to_id"] = newStatusID
+	}
+	if from != "" {
+		meta["from"] = from
+		meta["from_id"] = oldStatusID
+	}
+	return meta
+}
+
+func statusHookNames(projectID, oldStatusID, newStatusID int) (from, to string) {
 	if newStatusID > 0 {
 		if st, err := storage.GetProjectStatus(projectID, newStatusID); err == nil && st != nil {
-			meta["to"] = st.Name
-			meta["to_id"] = st.ID
+			to = st.Name
 		}
 	}
 	if oldStatusID > 0 {
 		if st, err := storage.GetProjectStatus(projectID, oldStatusID); err == nil && st != nil {
-			meta["from"] = st.Name
-			meta["from_id"] = st.ID
+			from = st.Name
 		}
 	}
-	return meta
+	return from, to
 }
 
 func sprintChangeMetadata(projectID, oldSprintID, newSprintID int) map[string]interface{} {
@@ -766,7 +939,8 @@ func ArchiveTask(ctx context.Context, userID, taskID int) error {
 			return err
 		}
 		_ = storage.LogTaskEvent(id, userID, "archived", nil)
-		live.AfterTaskChange(userID, id, live.TypeTaskUpdated)
+		live.AfterTaskChangeLive(userID, id, live.TypeTaskUpdated)
+		live.DispatchHook(userID, id, live.TypeTaskArchived, &live.TaskHookMeta{Changed: []string{"archived"}})
 	}
 	return nil
 }
@@ -785,7 +959,8 @@ func RestoreTask(ctx context.Context, userID, taskID int) error {
 			return err
 		}
 		_ = storage.LogTaskEvent(id, userID, "restored", nil)
-		live.AfterTaskChange(userID, id, live.TypeTaskUpdated)
+		live.AfterTaskChangeLive(userID, id, live.TypeTaskUpdated)
+		live.DispatchHook(userID, id, live.TypeTaskRestored, &live.TaskHookMeta{Changed: []string{"archived"}})
 	}
 	return nil
 }
@@ -806,6 +981,14 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 		return ErrNotFound
 	}
 
+	var oldCompleted bool
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(completed, false) FROM tasks WHERE id = $1`, taskID).Scan(&oldCompleted); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
 	if projectID > 0 {
 		mode, err := storage.GetProjectWorkflowMode(projectID)
 		if err != nil {
@@ -821,7 +1004,10 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 				_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 			}
 			go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
-			live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+			live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
+			if oldCompleted != completed {
+				dispatchCompletedHook(userID, taskID, completed)
+			}
 			return nil
 		}
 	}
@@ -841,8 +1027,36 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 		_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 	}
 	go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
+	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
+	if oldCompleted != completed {
+		dispatchCompletedHook(userID, taskID, completed)
+	}
 	return nil
+}
+
+func dispatchCompletedHook(userID, taskID int, completed bool) {
+	typ := live.TypeTaskReopened
+	if completed {
+		typ = live.TypeTaskCompleted
+	}
+	live.DispatchHook(userID, taskID, typ, &live.TaskHookMeta{
+		StatusChanged: true,
+		Changed:       []string{"status"},
+	})
+}
+
+func lookupTaskCompleted(taskID int) (bool, error) {
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return false, err
+	}
+	defer storage.CloseDatabase(pool)
+	var completed bool
+	err = pool.QueryRow(context.Background(), `SELECT COALESCE(completed, false) FROM tasks WHERE id = $1`, taskID).Scan(&completed)
+	if err != nil {
+		return false, err
+	}
+	return completed, nil
 }
 
 // ToggleTaskCompleted flips completed for a writable task.
@@ -871,80 +1085,6 @@ func ToggleTaskCompleted(ctx context.Context, userID, taskID int) (bool, error) 
 	}
 	newVal := !completed
 	if err := SetTaskCompleted(ctx, userID, taskID, newVal); err != nil {
-		return false, err
-	}
-	return newVal, nil
-}
-
-// SetTaskFavorite sets is_favorite for a writable task.
-// Deprecated: task favoriting will be removed in API v2.
-func SetTaskFavorite(ctx context.Context, userID, taskID int, favorite bool) error {
-	pool, err := storage.OpenDatabase()
-	if err != nil {
-		return err
-	}
-	defer storage.CloseDatabase(pool)
-
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(taskID, userID)
-	if accessErr != nil {
-		return accessErr
-	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
-		return ErrNotFound
-	}
-
-	if favorite {
-		var parentID sql.NullInt64
-		if err := pool.QueryRow(ctx, `SELECT parent_id FROM tasks WHERE id = $1`, taskID).Scan(&parentID); err != nil {
-			return err
-		}
-		if parentID.Valid {
-			return fmt.Errorf("%w: subtasks cannot be favorites", ErrValidation)
-		}
-	}
-
-	tag, err := pool.Exec(ctx,
-		`UPDATE tasks SET is_favorite = $1, date_modified = NOW() AT TIME ZONE 'UTC'
-		 WHERE id = $2`, favorite, taskID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
-	return nil
-}
-
-// ToggleTaskFavorite flips is_favorite for a writable task.
-// Deprecated: task favoriting will be removed in API v2.
-func ToggleTaskFavorite(ctx context.Context, userID, taskID int) (bool, error) {
-	pool, err := storage.OpenDatabase()
-	if err != nil {
-		return false, err
-	}
-	defer storage.CloseDatabase(pool)
-
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(taskID, userID)
-	if accessErr != nil {
-		return false, accessErr
-	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
-		return false, ErrNotFound
-	}
-
-	var isFav bool
-	err = pool.QueryRow(ctx,
-		`SELECT COALESCE(is_favorite,false) FROM tasks WHERE id = $1`,
-		taskID).Scan(&isFav)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-			return false, ErrNotFound
-		}
-		return false, err
-	}
-	newVal := !isFav
-	if err := SetTaskFavorite(ctx, userID, taskID, newVal); err != nil {
 		return false, err
 	}
 	return newVal, nil

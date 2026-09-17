@@ -26,10 +26,11 @@ type apiSiteResponse struct {
 	AllowUserInvites         bool   `json:"allow_user_invites"`
 	UserInviteLimit          int    `json:"user_invite_limit"`
 	InviteExpirationDays     int    `json:"invite_expiration_days"`
+	EnableInboundWebhooks    bool   `json:"enable_inbound_webhooks"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
-// GET /api/v1/site
+// GET /api/v2/site
 func APIV1Site(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -70,5 +71,6 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		AllowUserInvites:         settings.AllowUserInvites,
 		UserInviteLimit:          settings.UserInviteLimit,
 		InviteExpirationDays:     settings.InviteExpirationDays,
+		EnableInboundWebhooks:    settings.EnableInboundWebhooks,
 	})
 }

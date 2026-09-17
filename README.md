@@ -1,6 +1,6 @@
 # Ordryn
 
-Ordryn (formerly GoTodo) is a self-hosted task manager built with Go, PostgreSQL, Redis, and a Vue 3 SPA. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, and a JSON `/api/v1` for web and mobile clients.
+Ordryn (formerly GoTodo) is a self-hosted task manager built with Go, PostgreSQL, Redis, and a Vue 3 SPA. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, and a JSON `/api/v2` for web and mobile clients (`/api/v1` remains as a compatibility alias).
 
 Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordryn/releases).
 
@@ -26,19 +26,81 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Invite-only registration and role-based permissions (admin, create invites)
 - Admin panel: site settings, user management, global announcements, configurable image hosting (S3-compatible or local uploads)
 - Dark and light themes
-- Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v1` (session cookie auth)
+- Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v2` (session cookie auth)
 - Live updates over Server-Sent Events so shared projects and other tabs stay in sync without a refresh
+- Drop-in **extensions** (`data/extensions/<id>/manifest.json`): outbound event hooks, custom fields, a sandboxed project panel, and scoped callback tokens for HTTP relays
+
+## Extensions
+
+Ordryn loads folders from `data/extensions/` (or `EXTENSIONS_DIR`) at startup. Each folder is one extension. Copy examples from `examples/extensions/` (or keep a local copy under `data/extensions/`), enable them in **Admin → Extensions**, then configure destinations on the project **Extensions** tab.
+
+Bundled examples cover chat destinations (Discord, Slack, Teams, Google Chat, ntfy, generic webhook, email relay), focused hooks (due-dates including `task.due_soon`, comments + mentions, claimed, activity, lifecycle, join-requests), a personal **Mentions** ntfy destination, **Callback bot** (sandboxed panel, callback tokens, inbound `complete`/`set_field`), and custom fields (`severity`, `estimate`, `fields-demo` including `date` and `markdown`).
+
+A `manifest.json` is the whole contract (`host_api` 1). No JavaScript or WASM plugin runtime: Ordryn delivers events to Discord, Slack, Teams, Google Chat, ntfy, or a generic HTTPS webhook, optionally serves a sandboxed HTML panel, and can accept inbound actions.
+
+### Identity
+
+Optional fields help the directory look like a real product:
+
+| Field | Purpose |
+| --- | --- |
+| `author` | Display name (80 chars) |
+| `homepage` | `http(s)` URL |
+| `license` | Short SPDX-style label (64 chars) |
+| `icon` | Image file in the extension folder, shown in Admin and project settings |
+
+### Event hooks
+
+Declare `hooks` with `on` (and optional `label`). The UI uses the label; templates and APIs still use the event name.
+
+Task: `task.created`, `task.updated`, `task.deleted`, `task.commented`, `task.comment_edited`, `task.comment_deleted`, `task.comment_restored`, `task.reordered`, `task.claimed`, `task.unclaimed`, `task.due_changed`, `task.moved`, `task.project_changed`, `task.sprint_changed`, `task.tagged`, `task.overdue`, `task.mentioned`, `task.completed`, `task.reopened`, `task.due_soon` (due tomorrow), `task.archived`, `task.restored`, `task.status_changed`
+
+Project / sprint / import: `project.created`, `project.updated`, `project.deleted`, `project.archived`, `project.restored`, `project.member_joined`, `project.member_left`, `project.member_role_changed`, `project.invite_sent`, `project.invite_declined`, `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.started`, `sprint.ended`, `import.completed`
+
+Site (Admin): `join.request`, `join.approved`, `join.denied`
+
+Triggers may include `*` to match every **declared** hook. Empty project/member trigger lists still mean none. `templates["*"]` is the default message when an event has no specific template.
+
+SSE still uses `task.updated` / `project.updated` / `task.commented` so the UI refreshes. Outbound hooks use the specific event (`task.status_changed`, `task.due_changed`, `task.comment_edited`, …). Residual `task.updated` fires only for leftover field keys (title, description, priority, parent, estimate, favorite, custom fields).
+
+`task.moved` still fires when a task changes project or sprint. `task.project_changed` / `task.sprint_changed` fire in addition so relays can tell them apart.
+
+Template tokens include `{task}` `{name}` `{status}` `{old_status}` `{project}` `{actor}` `{actor_id}` `{url}` `{id}` `{priority}` `{old_priority}` `{description}` `{parent_id}` `{estimate}` `{comment}` `{claimed_by}` `{due_date}` `{sprint}` `{tags}` `{mentions}` `{member}` `{join_email}` `{event}` `{event_id}` `{occurred_at}` `{changed}` `{fields}`.
+
+For `http.webhook` with `format: json`, the body keeps those flat fields and adds nested `actor_detail`, `task_detail`, `project_detail`, `changes`, and `digest_events`. Outbound requests send `X-Ordryn-Event-Id` and, for queued rows, `X-Ordryn-Delivery-Id`. Failed deliveries become `dead` after 8 attempts; owners can `POST …/deliveries/{id}/retry`.
+
+Status filters (`status_ids` / `status_exclude_ids`) work like tag filters. Quiet hours and digest (`hourly` / `daily`) still apply. Digest bodies list up to 10 `{name} ({event})` lines.
+
+### Settings and fields
+
+Setting widgets: `secret`, `bool`, `string`, `int`, `select` (requires `options`), `status`, `user`, `hook_select`, `priority`, `tag_ids`, `status_ids`, `status_exclude_ids`, `time`, `digest`, `field_filter`, `mention_map`, `project_ids`.
+
+Custom field types: `string`, `number`, `boolean`, `enum`, `url`, `user`, `date` (`YYYY-MM-DD`), `markdown`.
+
+### Sandboxed UI
+
+Set `ui` to an HTML file in the folder. Project members see it in an iframe (`sandbox` without `allow-same-origin`, so it cannot read the session). Extra files next to that HTML are served under `/api/v2/projects/{id}/extensions/{id}/ui/…`. Do not put secrets in the panel; use outbound JSON callbacks instead.
+
+### Callback tokens and inbound actions
+
+`permissions` (`tasks:read`, `tasks:write`, `comments:write`) mints a **project-scoped** callback token (not a user API key). JSON deliveries include it. Relays `POST /api/v2/ext/callback` with `Authorization: Bearer …` and `{ "action": "get"|"complete"|"comment"|"set_field", "task_id": 1, … }`. Rotate it from the project Extensions tab (`controls`: `rotate_callback`).
+
+`actions` (`complete`, `comment`, `set_field`) opt the extension into extra inbound webhook verbs on `POST /api/v2/webhooks/inbound` when the extension is enabled on that project. First-party `create` / `comment` still use the project's inbound flags. JSON **must** include `project_id`. HMAC requests send `X-Ordryn-Timestamp` (unix seconds, ±5 minutes) and `X-Ordryn-Signature: sha256=HMAC(secret, timestamp + "." + body)`. Shared secret `X-Ordryn-Webhook-Secret` is unchanged. Both inbound and callback endpoints are rate-limited.
+
+### Delivery
+
+`delivery.type`: `discord.webhook`, `slack.webhook`, `teams.webhook`, `googlechat.webhook`, `ntfy.webhook`, `http.webhook`. `delivery.url_from` must be a `secret` setting key. Optional `format` for HTTP: `text`, `content`, or `json`. Optional HMAC signing via `controls`: `rotate_signing`.
 
 ## Requirements
 
 - Go 1.24+
 - PostgreSQL
-- Redis (required for `/api/v1` auth, rate limits, device SSO, and live updates)
+- Redis (required for `/api/v2` auth, rate limits, device SSO, and live updates)
 - Node.js + npm (to build or develop the Vue SPA)
 
 ## Quick start
 
-One binary serves `/api/v1` and the Vue UI at `/` (or under `BASE_PATH`).
+One binary serves `/api/v2` and the Vue UI at `/` (or under `BASE_PATH`).
 
 ```bash
 cp .env.example .env   # required; process will not start without it
@@ -65,8 +127,9 @@ The git tag is the version. Nothing in source is bumped for a release.
 ## Docs
 
 - [Wiki](https://github.com/SentientTD-Studios/Ordryn/wiki) — self-hosting, configuration, API guide, example clients
-- [`openapi.yaml`](openapi.yaml) — `/api/v1` contract (also `GET /openapi.yaml` on a running instance)
+- [`openapi.yaml`](openapi.yaml) — `/api/v2` contract (also `GET /openapi.yaml` on a running instance)
 - [`web/README.md`](web/README.md) — Vue SPA development
 - [License](LICENSE)
+- Extensions authoring: see **Extensions** above
 
 SPA source lives in `web/`. Vite hot reload and tests: [Local development](https://github.com/SentientTD-Studios/Ordryn/wiki/Local-development).

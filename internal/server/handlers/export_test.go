@@ -14,16 +14,15 @@ func TestTaskToCSVRow(t *testing.T) {
 		DueDate:      "2026-07-01",
 		ProjectName:  "Work",
 		Priority:     2,
-		IsFavorite:   false,
 		Position:     3,
 		Tags:         []tasks.Tag{{Name: "a"}, {Name: "b"}},
 		DateCreated:  "2026/01/01",
 		DateModified: "2026/01/02",
 	})
-	if len(row) != 12 {
-		t.Fatalf("expected 12 columns, got %d", len(row))
+	if len(row) != 11 {
+		t.Fatalf("expected 11 columns, got %d", len(row))
 	}
-	if row[0] != "1" || row[1] != "Test" || row[9] != "a;b" {
+	if row[0] != "1" || row[1] != "Test" || row[8] != "a;b" {
 		t.Fatalf("unexpected row: %#v", row)
 	}
 }

@@ -17,7 +17,7 @@ var probeImageHosting = imagehost.Probe
 // loadSiteSettingsForImageTest is overridable in tests.
 var loadSiteSettingsForImageTest = storage.GetSiteSettings
 
-// APIV1AdminImageHostingTest handles POST /api/v1/admin/image-hosting/test.
+// APIV1AdminImageHostingTest handles POST /api/v2/admin/image-hosting/test.
 // It uploads (and deletes) a tiny probe image using the form values, falling
 // back to saved settings for any omitted secret.
 func APIV1AdminImageHostingTest(w http.ResponseWriter, r *http.Request) {

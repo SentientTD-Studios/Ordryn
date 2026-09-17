@@ -42,12 +42,14 @@ function triggerLabel(value: string) {
 function statusBadge(value: string) {
   if (value === 'failed') return 'bg-danger'
   if (value === 'not_configured') return 'bg-warning text-dark'
+  if (value === 'rate_limited') return 'bg-info text-dark'
   if (value === 'sent') return 'bg-success'
   return 'bg-secondary'
 }
 
 function statusLabel(value: string) {
   if (value === 'not_configured') return 'Not configured'
+  if (value === 'rate_limited') return 'Rate limited'
   if (value === 'failed') return 'Failed'
   if (value === 'sent') return 'Sent'
   return value
@@ -114,6 +116,7 @@ onMounted(load)
         <select id="email-audit-status" v-model="status" class="form-select">
           <option value="failed">Failed</option>
           <option value="not_configured">Not configured</option>
+          <option value="rate_limited">Rate limited</option>
           <option value="sent">Sent</option>
           <option value="">All</option>
         </select>

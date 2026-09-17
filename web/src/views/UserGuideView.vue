@@ -213,8 +213,9 @@ onUnmounted(() => {
           Use <strong>Set up</strong> or <strong>Manage</strong> to open the two-factor dialog.
           Password reset does not disable MFA; the next login still asks for a code.
           For machine clients and integrations, see the
-          <RouterLink to="/docs/api/v1">REST API documentation</RouterLink>.
-          Site admins configure outbound email and image hosting (S3-compatible or local uploads) on
+          <RouterLink to="/docs/api/v2">REST API documentation</RouterLink>.
+          Site admins configure outbound email for password resets and invites only (not extensions;
+          core sends are rate-limited) and image hosting (S3-compatible or local uploads) on
           <RouterLink to="/admin">Admin</RouterLink>.
           After filling in image hosting, use <strong>Test connection</strong> to confirm the server
           can upload to the bucket or local directory.

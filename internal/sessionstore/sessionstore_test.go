@@ -39,7 +39,7 @@ func TestGetSessionIgnoresUndecodableCookie(t *testing.T) {
 
 func TestEstablishSessionPatternWithBadCookie(t *testing.T) {
 	// Mirrors login: GetSession + write values + Save must succeed with junk cookie.
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/auth/login", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "garbage"})
 
 	sess, err := GetSession(req)
