@@ -11,6 +11,7 @@ import (
 	"GoTodo/internal/storage"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // MaxDescriptionLength is the shared limit for task descriptions.
@@ -329,6 +330,10 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 
 	oldCompleted := completed
+	oldTitle := title
+	oldDueDate := dueDate
+	oldParentID := parentID
+	oldEstimate := estimatePoints
 	statusTouched := false
 	completedTouched := in.Completed != nil
 	originalProjectID := projectID
@@ -440,6 +445,8 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		return nil, err
 	}
 
+	logTaskFieldChanges(ctx, pool, taskID, userID, oldTitle, title, result.OldPriority, priority, oldDueDate, dueDate, oldParentID, newParentID)
+
 	projectChanged := result.OldProjectID != nullInt(newProjectID)
 
 	// Keep children project in sync when a root's project changes.
@@ -539,6 +546,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		if mode != storage.WorkflowKanban {
 			return nil, fmt.Errorf("%w: estimates require a kanban project", ErrValidation)
 		}
+		var newEstimate sql.NullInt64
 		if *in.EstimatePoints == nil {
 			if err := storage.SetTaskEstimatePoints(taskID, nil); err != nil {
 				return nil, err
@@ -551,6 +559,10 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 			if err := storage.SetTaskEstimatePoints(taskID, &pts); err != nil {
 				return nil, err
 			}
+			newEstimate = sql.NullInt64{Int64: int64(pts), Valid: true}
+		}
+		if !sameNullInt64(oldEstimate, newEstimate) {
+			_ = storage.LogTaskEvent(taskID, userID, "estimate_changed", estimateChangeMetadata(oldEstimate, newEstimate))
 		}
 	}
 
@@ -617,6 +629,89 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		live.AfterTaskChange(userID, taskID, live.TypeTaskUpdated)
 	}
 	return result, nil
+}
+
+func logTaskFieldChanges(ctx context.Context, pool *pgxpool.Pool, taskID, userID int, oldTitle, newTitle string, oldPriority, newPriority int, oldDueDate, newDueDate string, oldParentID, newParentID sql.NullInt64) {
+	if oldTitle != newTitle {
+		_ = storage.LogTaskEvent(taskID, userID, "title_changed", map[string]interface{}{
+			"from": oldTitle,
+			"to":   newTitle,
+		})
+	}
+	if oldPriority != newPriority {
+		_ = storage.LogTaskEvent(taskID, userID, "priority_changed", map[string]interface{}{
+			"from": priorityEventLabel(oldPriority),
+			"to":   priorityEventLabel(newPriority),
+		})
+	}
+	if oldDueDate != newDueDate {
+		_ = storage.LogTaskEvent(taskID, userID, "due_date_changed", dueDateChangeMetadata(oldDueDate, newDueDate))
+	}
+	if !sameNullInt64(oldParentID, newParentID) {
+		_ = storage.LogTaskEvent(taskID, userID, "parent_changed", parentChangeMetadata(ctx, pool, oldParentID, newParentID))
+	}
+}
+
+func dueDateChangeMetadata(from, to string) map[string]interface{} {
+	meta := map[string]interface{}{}
+	if from != "" {
+		meta["from"] = from
+	}
+	if to != "" {
+		meta["to"] = to
+	}
+	return meta
+}
+
+func estimateChangeMetadata(from, to sql.NullInt64) map[string]interface{} {
+	meta := map[string]interface{}{}
+	if from.Valid {
+		meta["from"] = int(from.Int64)
+	}
+	if to.Valid {
+		meta["to"] = int(to.Int64)
+	}
+	return meta
+}
+
+func parentChangeMetadata(ctx context.Context, pool *pgxpool.Pool, from, to sql.NullInt64) map[string]interface{} {
+	meta := map[string]interface{}{}
+	if from.Valid {
+		id := int(from.Int64)
+		meta["from_id"] = id
+		if title := taskTitleByID(ctx, pool, id); title != "" {
+			meta["from"] = title
+		}
+	}
+	if to.Valid {
+		id := int(to.Int64)
+		meta["to_id"] = id
+		if title := taskTitleByID(ctx, pool, id); title != "" {
+			meta["to"] = title
+		}
+	}
+	return meta
+}
+
+func taskTitleByID(ctx context.Context, pool *pgxpool.Pool, id int) string {
+	var title string
+	if err := pool.QueryRow(ctx, `SELECT title FROM tasks WHERE id = $1`, id).Scan(&title); err != nil {
+		return ""
+	}
+	return title
+}
+
+func priorityEventLabel(p int) string {
+	switch p {
+	case 1:
+		return "Low"
+	case 2:
+		return "Medium"
+	case 3:
+		return "High"
+	default:
+		return "None"
+	}
 }
 
 func logTagChanges(taskID, userID int, before, after []storage.Tag) {
