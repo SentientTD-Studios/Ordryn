@@ -1,8 +1,10 @@
 package hooks
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -120,6 +122,12 @@ func flushDelivery(row storage.ExtensionDelivery) {
 		_ = storage.UpdateExtensionDelivery(row.ID, storage.DeliveryStatusFailed, 0, "extension not loaded", row.Attempts+1, time.Now().UTC().Add(time.Hour))
 		return
 	}
+	key := destHoldKey(row.ExtensionID, row.ProjectID, row.UserID)
+	if delay, msg := destLimiter.delay(key); delay > 0 {
+		_ = storage.UpdateExtensionDelivery(row.ID, storage.DeliveryStatusPending, http.StatusTooManyRequests, msg, row.Attempts, time.Now().UTC().Add(delay))
+		recordLast(row.ExtensionID, row.ProjectID, row.UserID, errors.New(msg))
+		return
+	}
 	p := parseQueuedPayload(row.Payload)
 	ctx := destContext{
 		ProjectID: row.ProjectID,
@@ -143,13 +151,19 @@ func flushDelivery(row storage.ExtensionDelivery) {
 		return
 	}
 	status := storage.DeliveryStatusFailed
-	next := time.Now().UTC().Add(backoff(attempts))
+	nextDelay := retryDelayForError(err, attempts)
 	if retryableStatus(err) && attempts < maxDeliveryAttempts {
 		status = storage.DeliveryStatusPending
 	} else if attempts >= maxDeliveryAttempts {
 		status = storage.DeliveryStatusDead
 	}
-	_ = storage.UpdateExtensionDelivery(row.ID, status, httpStatusOf(err), err.Error(), attempts, next)
+	msg := err.Error()
+	if errors.Is(err, ErrRateLimited) {
+		if status == storage.DeliveryStatusPending {
+			destLimiter.holdUntil(key, nextDelay, msg)
+		}
+	}
+	_ = storage.UpdateExtensionDelivery(row.ID, status, httpStatusOf(err), msg, attempts, time.Now().UTC().Add(nextDelay))
 	recordLast(row.ExtensionID, row.ProjectID, row.UserID, err)
 }
 
@@ -165,6 +179,12 @@ func flushDigests() {
 		}
 		entry, ok := extensions.Get(d.ExtensionID)
 		if !ok || !entry.Loaded {
+			continue
+		}
+		key := destHoldKey(d.ExtensionID, d.ProjectID, d.UserID)
+		if delay, msg := destLimiter.delay(key); delay > 0 {
+			log.Printf("hooks: digest flush %s rate-limited: %s", d.ExtensionID, msg)
+			recordLast(d.ExtensionID, d.ProjectID, d.UserID, errors.New(msg))
 			continue
 		}
 		ids := make([]int64, 0, len(rows))
@@ -222,6 +242,14 @@ func flushDigests() {
 		_, err = deliverNow(entry, ctx)
 		if err != nil {
 			log.Printf("hooks: digest flush %s: %v", d.ExtensionID, err)
+			if errors.Is(err, ErrRateLimited) {
+				delay := retryAfterOf(err)
+				if delay < time.Second {
+					delay = time.Second
+				}
+				destLimiter.holdUntil(key, delay, err.Error())
+				recordLast(d.ExtensionID, d.ProjectID, d.UserID, err)
+			}
 			continue
 		}
 		_ = storage.MarkDeliveriesStatus(ids, storage.DeliveryStatusSent)
@@ -255,6 +283,7 @@ func ReplayDelivery(extensionID string, projectID, userID int, deliveryID int64)
 	if err := storage.ResetDeliveryForRetry(row.ID); err != nil {
 		return err
 	}
+	destLimiter.clear(destHoldKey(extensionID, projectID, userID))
 	row.Attempts = 0
 	row.Status = storage.DeliveryStatusPending
 	flushDelivery(*row)

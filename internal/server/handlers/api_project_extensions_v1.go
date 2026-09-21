@@ -38,15 +38,16 @@ type projectExtensionJSON struct {
 }
 
 type extensionDeliveryJSON struct {
-	ID        int64  `json:"id"`
-	Event     string `json:"event"`
-	EventID   string `json:"event_id,omitempty"`
-	Host      string `json:"host,omitempty"`
-	Status    string `json:"status"`
-	HTTPCode  int    `json:"http_code,omitempty"`
-	Error     string `json:"error,omitempty"`
-	Attempts  int    `json:"attempts"`
-	CreatedAt string `json:"created_at"`
+	ID            int64  `json:"id"`
+	Event         string `json:"event"`
+	EventID       string `json:"event_id,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Status        string `json:"status"`
+	HTTPCode      int    `json:"http_code,omitempty"`
+	Error         string `json:"error,omitempty"`
+	Attempts      int    `json:"attempts"`
+	CreatedAt     string `json:"created_at"`
+	NextAttemptAt string `json:"next_attempt_at,omitempty"`
 }
 
 type projectExtensionsListJSON struct {
@@ -632,7 +633,7 @@ func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwne
 func deliveryJSON(rows []storage.ExtensionDelivery) []extensionDeliveryJSON {
 	out := make([]extensionDeliveryJSON, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, extensionDeliveryJSON{
+		item := extensionDeliveryJSON{
 			ID:        r.ID,
 			Event:     r.EventType,
 			EventID:   r.EventID,
@@ -642,7 +643,11 @@ func deliveryJSON(rows []storage.ExtensionDelivery) []extensionDeliveryJSON {
 			Error:     r.Error,
 			Attempts:  r.Attempts,
 			CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339),
-		})
+		}
+		if !r.NextAttemptAt.IsZero() && (r.Status == storage.DeliveryStatusPending || r.Status == storage.DeliveryStatusFailed) {
+			item.NextAttemptAt = r.NextAttemptAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, item)
 	}
 	return out
 }

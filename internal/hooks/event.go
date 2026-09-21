@@ -10,23 +10,23 @@ import (
 )
 
 const (
-	EventTaskCreated         = "task.created"
-	EventTaskUpdated         = "task.updated"
-	EventTaskDeleted         = "task.deleted"
-	EventTaskCommented       = "task.commented"
-	EventTaskReordered       = "task.reordered"
-	EventTaskClaimed         = "task.claimed"
-	EventTaskUnclaimed       = "task.unclaimed"
-	EventTaskDueChanged      = "task.due_changed"
-	EventTaskMoved           = "task.moved"
-	EventTaskProjectChanged  = "task.project_changed"
-	EventTaskSprintChanged   = "task.sprint_changed"
-	EventTaskTagged          = "task.tagged"
-	EventTaskOverdue         = "task.overdue"
-	EventTaskMentioned       = "task.mentioned"
-	EventTaskCompleted       = "task.completed"
-	EventTaskReopened        = "task.reopened"
-	EventTaskDueSoon         = "task.due_soon"
+	EventTaskCreated              = "task.created"
+	EventTaskUpdated              = "task.updated"
+	EventTaskDeleted              = "task.deleted"
+	EventTaskCommented            = "task.commented"
+	EventTaskReordered            = "task.reordered"
+	EventTaskClaimed              = "task.claimed"
+	EventTaskUnclaimed            = "task.unclaimed"
+	EventTaskDueChanged           = "task.due_changed"
+	EventTaskMoved                = "task.moved"
+	EventTaskProjectChanged       = "task.project_changed"
+	EventTaskSprintChanged        = "task.sprint_changed"
+	EventTaskTagged               = "task.tagged"
+	EventTaskOverdue              = "task.overdue"
+	EventTaskMentioned            = "task.mentioned"
+	EventTaskCompleted            = "task.completed"
+	EventTaskReopened             = "task.reopened"
+	EventTaskDueSoon              = "task.due_soon"
 	EventTaskArchived             = "task.archived"
 	EventTaskRestored             = "task.restored"
 	EventTaskStatusChanged        = "task.status_changed"
@@ -110,6 +110,21 @@ func (ev Event) isProjectLevel() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// parentHook is the catch-all a destination may subscribe to instead of a
+// specialized mutation event. Chat extensions that only declare task.updated
+// still receive status/due/tag/claim/complete changes.
+func parentHook(eventType string) string {
+	switch eventType {
+	case EventTaskStatusChanged, EventTaskDueChanged, EventTaskMoved,
+		EventTaskProjectChanged, EventTaskSprintChanged, EventTaskTagged,
+		EventTaskClaimed, EventTaskUnclaimed, EventTaskCompleted, EventTaskReopened,
+		EventTaskArchived, EventTaskRestored:
+		return EventTaskUpdated
+	default:
+		return ""
 	}
 }
 

@@ -27,23 +27,32 @@ func hookDeclared(m extensions.Manifest, eventType string) bool {
 }
 
 func templateFor(m extensions.Manifest, templates map[string]string, eventType string) string {
-	if templates != nil {
-		if s, ok := templates[eventType]; ok {
-			return s
-		}
-		if s, ok := templates["*"]; ok {
-			return s
-		}
+	parent := parentHook(eventType)
+	if s, ok := lookupTemplate(templates, eventType, parent); ok {
+		return s
 	}
-	if m.Templates != nil {
-		if s, ok := m.Templates[eventType]; ok {
-			return s
-		}
-		if s, ok := m.Templates["*"]; ok {
-			return s
-		}
+	if s, ok := lookupTemplate(m.Templates, eventType, parent); ok {
+		return s
 	}
 	return ""
+}
+
+func lookupTemplate(templates map[string]string, eventType, parent string) (string, bool) {
+	if templates == nil {
+		return "", false
+	}
+	if s, ok := templates[eventType]; ok {
+		return s, true
+	}
+	if parent != "" {
+		if s, ok := templates[parent]; ok {
+			return s, true
+		}
+	}
+	if s, ok := templates["*"]; ok {
+		return s, true
+	}
+	return "", false
 }
 
 // destFilter is the filter view of team or member settings.
@@ -204,15 +213,24 @@ func shouldDeliverDest(m extensions.Manifest, site storage.ExtensionSettings, de
 	if dest.Personal && projectID > 0 {
 		return false
 	}
-	if !hookDeclared(m, ev.Type) {
+	if !hookDeclared(m, ev.Type) && !hookDeclared(m, parentHook(ev.Type)) {
 		return false
 	}
-	if !triggerAllowed(dest.Triggers, ev.Type) {
-		if !(dest.StatusOnly && ev.Type == EventTaskStatusChanged && triggerAllowed(dest.Triggers, EventTaskUpdated)) {
-			return false
+	matchedSpecific := hookDeclared(m, ev.Type) && triggerAllowed(dest.Triggers, ev.Type)
+	matchedParent := false
+	if !matchedSpecific {
+		parent := parentHook(ev.Type)
+		if parent != "" && hookDeclared(m, parent) && triggerAllowed(dest.Triggers, parent) {
+			matchedParent = true
+		} else if dest.StatusOnly && ev.Type == EventTaskStatusChanged && triggerAllowed(dest.Triggers, EventTaskUpdated) {
+			matchedParent = true
 		}
 	}
-	if ev.Type == EventTaskUpdated && dest.StatusOnly && !ev.StatusChanged {
+	if !matchedSpecific && !matchedParent {
+		return false
+	}
+	if dest.StatusOnly && !ev.StatusChanged && ev.Type != EventTaskStatusChanged &&
+		(ev.Type == EventTaskUpdated || matchedParent && parentHook(ev.Type) == EventTaskUpdated) {
 		return false
 	}
 	if dest.SkipSelf && dest.SubscriberID > 0 && ev.ActorID > 0 && ev.ActorID == dest.SubscriberID {

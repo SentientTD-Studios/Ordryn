@@ -6,6 +6,7 @@ import { APIError } from '@/api/types'
 import { useConfirm } from '@/composables/useConfirm'
 import { useSite } from '@/composables/useSite'
 import { useToast } from '@/composables/useToast'
+import { rateLimitNotice } from '@/utils/extensionDeliveries'
 
 const { push } = useToast()
 const { askConfirm } = useConfirm()
@@ -421,10 +422,14 @@ onMounted(() => {
                 Send test
               </button>
             </div>
-            <p v-if="ext.member?.last_error" class="small text-warning mt-2 mb-0">{{ ext.member.last_error }}</p>
+            <p v-if="rateLimitNotice(ext.member?.last_error, ext.member_deliveries)" class="small text-warning mt-2 mb-0">
+              {{ rateLimitNotice(ext.member?.last_error, ext.member_deliveries) }}
+            </p>
+            <p v-else-if="ext.member?.last_error" class="small text-warning mt-2 mb-0">{{ ext.member.last_error }}</p>
             <ul v-if="ext.member_deliveries?.length" class="small mt-2 mb-0 ps-3">
               <li v-for="row in ext.member_deliveries" :key="row.id">
                 {{ row.created_at }} · {{ row.event }} · {{ row.status }}
+                <span v-if="row.next_attempt_at && (row.status === 'pending' || row.status === 'failed')" class="text-muted"> retry {{ row.next_attempt_at }}</span>
                 <button
                   v-if="row.status === 'failed' || row.status === 'dead'"
                   type="button"

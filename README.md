@@ -61,13 +61,13 @@ Site (Admin): `join.request`, `join.approved`, `join.denied`
 
 Triggers may include `*` to match every **declared** hook. Empty project/member trigger lists still mean none. `templates["*"]` is the default message when an event has no specific template.
 
-SSE still uses `task.updated` / `project.updated` / `task.commented` so the UI refreshes. Outbound hooks use the specific event (`task.status_changed`, `task.due_changed`, `task.comment_edited`, …). Residual `task.updated` fires only for leftover field keys (title, description, priority, parent, estimate, favorite, custom fields).
+SSE still uses `task.updated` / `project.updated` / `task.commented` so the UI refreshes. Outbound hooks use the specific event (`task.status_changed`, `task.due_changed`, `task.comment_edited`, …). Residual `task.updated` fires only for leftover field keys (title, description, priority, parent, estimate, favorite, custom fields). Destinations subscribed to `task.updated` still receive those specialized task mutations (kanban status, due date, tags, claims, complete/archive, and project/sprint moves) so chat extensions that only declare `task.updated` keep posting. A destination that selected a specific event uses that event’s template; otherwise the `task.updated` template is used.
 
 `task.moved` still fires when a task changes project or sprint. `task.project_changed` / `task.sprint_changed` fire in addition so relays can tell them apart.
 
 Template tokens include `{task}` `{name}` `{status}` `{old_status}` `{project}` `{actor}` `{actor_id}` `{url}` `{id}` `{priority}` `{old_priority}` `{description}` `{parent_id}` `{estimate}` `{comment}` `{claimed_by}` `{due_date}` `{sprint}` `{tags}` `{mentions}` `{member}` `{join_email}` `{event}` `{event_id}` `{occurred_at}` `{changed}` `{fields}`.
 
-For `http.webhook` with `format: json`, the body keeps those flat fields and adds nested `actor_detail`, `task_detail`, `project_detail`, `changes`, and `digest_events`. Outbound requests send `X-Ordryn-Event-Id` and, for queued rows, `X-Ordryn-Delivery-Id`. Failed deliveries become `dead` after 8 attempts; owners can `POST …/deliveries/{id}/retry`.
+For `http.webhook` with `format: json`, the body keeps those flat fields and adds nested `actor_detail`, `task_detail`, `project_detail`, `changes`, and `digest_events`. Outbound requests send `X-Ordryn-Event-Id` and, for queued rows, `X-Ordryn-Delivery-Id`. Failed deliveries become `dead` after 8 attempts; owners can `POST …/deliveries/{id}/retry`. HTTP 429 (Discord/Google Chat rate limits) is retried using `Retry-After` / `retry_after`, and the extensions panel shows a rate-limit notice while that destination is waiting.
 
 Status filters (`status_ids` / `status_exclude_ids`) work like tag filters. Quiet hours and digest (`hourly` / `daily`) still apply. Digest bodies list up to 10 `{name} ({event})` lines.
 

@@ -2,11 +2,13 @@ package hooks
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"GoTodo/internal/extensions"
 )
@@ -163,6 +165,27 @@ func TestPostJSONSuccessAndError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "webhook HTTP 400") || !strings.Contains(err.Error(), "Unknown name") {
 		t.Fatalf("err=%v", err)
 	}
+
+	limited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "7")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"message":"You are being rate limited.","retry_after":0.64}`))
+	}))
+	t.Cleanup(limited.Close)
+	webhookHTTPClient = limited.Client()
+	err = postJSON(limited.URL, []byte(`{"text":"hi"}`))
+	if err == nil || !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("rate limit err=%v", err)
+	}
+	if !strings.Contains(err.Error(), "rate-limited") {
+		t.Fatalf("friendly err=%v", err)
+	}
+	if httpStatusOf(err) != 429 {
+		t.Fatalf("status=%d", httpStatusOf(err))
+	}
+	if ra := retryAfterOf(err); ra != 7*time.Second {
+		t.Fatalf("retry-after header=%s", ra)
+	}
 }
 
 func TestGoogleChatWebhookPayloadAndURL(t *testing.T) {
@@ -210,6 +233,27 @@ func TestGoogleChatWebhookPayloadAndURL(t *testing.T) {
 	thread, _ := body["thread"].(map[string]any)
 	if thread["threadKey"] != "ordryn-task-9" {
 		t.Fatalf("thread=%v", body["thread"])
+	}
+	cards, _ := body["cardsV2"].([]any)
+	if len(cards) == 0 {
+		t.Fatal("missing cardsV2 entries")
+	}
+	card0, _ := cards[0].(map[string]any)
+	if card0["cardId"] != "ordryn-task-9" {
+		t.Fatalf("cardId=%v", card0["cardId"])
+	}
+	vars["event_id"] = "evt-42"
+	raw, err = marshalWebhookPayload(extensions.DeliveryGoogleChatWebhook, "", "Task *Ship* updated", "task.updated", vars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	cards, _ = body["cardsV2"].([]any)
+	card0, _ = cards[0].(map[string]any)
+	if card0["cardId"] != "ordryn-evt-42" {
+		t.Fatalf("event cardId=%v", card0["cardId"])
 	}
 }
 
