@@ -15,6 +15,7 @@ import { useToast } from '@/composables/useToast'
 import { useSite } from '@/composables/useSite'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 import { withBase } from '@/base'
+import { rateLimitNotice } from '@/utils/extensionDeliveries'
 
 const props = defineProps<{
   project: Project
@@ -847,13 +848,17 @@ watch(inboundAllowed, () => {
                 Callback token (shown once): <code class="user-select-all">{{ shownCallback[ext.id] }}</code>
               </div>
               <p v-else-if="canRotateCallback(ext) && ext.callback_set" class="small text-success">Callback token is set. JSON webhooks include it as <code>callback_token</code>.</p>
-              <div v-if="ext.settings.last_error" class="alert alert-warning">Last delivery error: {{ ext.settings.last_error }}</div>
+              <div v-if="rateLimitNotice(ext.settings.last_error, ext.deliveries)" class="alert alert-warning">
+                {{ rateLimitNotice(ext.settings.last_error, ext.deliveries) }}
+              </div>
+              <div v-else-if="ext.settings.last_error" class="alert alert-warning">Last delivery error: {{ ext.settings.last_error }}</div>
               <div v-if="ext.deliveries?.length" class="small mb-2">
                 <div class="fw-semibold">Recent deliveries</div>
                 <ul class="mb-0 ps-3">
                   <li v-for="row in ext.deliveries" :key="row.id">
                     {{ row.created_at }} · {{ row.event }} · {{ row.status }}
                     <span v-if="row.http_code"> ({{ row.http_code }})</span>
+                    <span v-if="row.next_attempt_at && (row.status === 'pending' || row.status === 'failed')" class="text-muted"> retry {{ row.next_attempt_at }}</span>
                     <span v-if="row.error" class="text-warning"> {{ row.error }}</span>
                     <button
                       v-if="row.status === 'failed' || row.status === 'dead'"
@@ -1081,13 +1086,17 @@ watch(inboundAllowed, () => {
                   />
                 </div>
               </div>
-              <div v-if="ext.member?.last_error" class="alert alert-warning">Last delivery error: {{ ext.member.last_error }}</div>
+              <div v-if="rateLimitNotice(ext.member?.last_error, ext.member_deliveries)" class="alert alert-warning">
+                {{ rateLimitNotice(ext.member?.last_error, ext.member_deliveries) }}
+              </div>
+              <div v-else-if="ext.member?.last_error" class="alert alert-warning">Last delivery error: {{ ext.member.last_error }}</div>
               <div v-if="ext.member_deliveries?.length" class="small mb-2">
                 <div class="fw-semibold">Recent deliveries</div>
                 <ul class="mb-0 ps-3">
                   <li v-for="row in ext.member_deliveries" :key="row.id">
                     {{ row.created_at }} · {{ row.event }} · {{ row.status }}
                     <span v-if="row.error" class="text-warning"> {{ row.error }}</span>
+                    <span v-if="row.next_attempt_at && (row.status === 'pending' || row.status === 'failed')" class="text-muted"> retry {{ row.next_attempt_at }}</span>
                     <button
                       v-if="row.status === 'failed' || row.status === 'dead'"
                       type="button"

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -460,10 +461,16 @@ func gchatPayload(content string, vars map[string]string) map[string]any {
 	if len(header) > 0 {
 		card["header"] = header
 	}
+	cardID := "ordryn"
+	if id := strings.TrimSpace(vars["event_id"]); id != "" {
+		cardID = "ordryn-" + id
+	} else if id := strings.TrimSpace(vars["id"]); id != "" {
+		cardID = "ordryn-task-" + id
+	}
 	out := map[string]any{
 		"text": content,
 		"cardsV2": []map[string]any{{
-			"cardId": "ordryn",
+			"cardId": cardID,
 			"card":   card,
 		}},
 	}
@@ -560,17 +567,138 @@ func postJSONOpts(webhookURL string, body []byte, opts sendOpts) (respBody []byt
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxWebhookResponseBytes))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return raw, resp.StatusCode, webhookStatusError(resp.StatusCode, raw)
+		return raw, resp.StatusCode, webhookStatusError(resp.StatusCode, raw, resp.Header)
 	}
 	return raw, resp.StatusCode, nil
 }
 
-func webhookStatusError(status int, body []byte) error {
-	snippet := strings.Join(strings.Fields(strings.TrimSpace(string(body))), " ")
-	if snippet == "" {
-		return fmt.Errorf("webhook HTTP %d", status)
+type webhookHTTPError struct {
+	Status     int
+	Snippet    string
+	RetryAfter time.Duration
+}
+
+func (e *webhookHTTPError) Error() string {
+	if e == nil {
+		return ""
 	}
-	return fmt.Errorf("webhook HTTP %d: %s", status, truncateRunes(snippet, 240))
+	if e.Status == http.StatusTooManyRequests {
+		if e.RetryAfter > 0 {
+			return "Destination is rate-limited. Next retry in " + formatRetryAfter(e.RetryAfter) + "."
+		}
+		return "Destination is rate-limited. Deliveries will retry automatically."
+	}
+	if e.Snippet == "" {
+		return fmt.Sprintf("webhook HTTP %d", e.Status)
+	}
+	return fmt.Sprintf("webhook HTTP %d: %s", e.Status, e.Snippet)
+}
+
+func (e *webhookHTTPError) Unwrap() error {
+	if e != nil && e.Status == http.StatusTooManyRequests {
+		return ErrRateLimited
+	}
+	return nil
+}
+
+func webhookStatusError(status int, body []byte, header http.Header) error {
+	snippet := strings.Join(strings.Fields(strings.TrimSpace(string(body))), " ")
+	err := &webhookHTTPError{
+		Status:  status,
+		Snippet: truncateRunes(snippet, 240),
+	}
+	if status == http.StatusTooManyRequests {
+		err.RetryAfter = parseRetryAfter(header, body)
+	}
+	return err
+}
+
+func parseRetryAfter(header http.Header, body []byte) time.Duration {
+	if header != nil {
+		raw := strings.TrimSpace(header.Get("Retry-After"))
+		if raw != "" {
+			if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
+				return clampRetryAfter(time.Duration(secs) * time.Second)
+			}
+			if t, err := http.ParseTime(raw); err == nil {
+				if d := time.Until(t); d > 0 {
+					return clampRetryAfter(d)
+				}
+			}
+		}
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return 0
+	}
+	return clampRetryAfter(retryAfterFromJSON(obj))
+}
+
+func retryAfterFromJSON(obj map[string]any) time.Duration {
+	if obj == nil {
+		return 0
+	}
+	if d := durationFromJSONNumber(obj["retry_after"]); d > 0 {
+		return d
+	}
+	if errObj, ok := obj["error"].(map[string]any); ok {
+		if d := durationFromJSONNumber(errObj["retry_after"]); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+func durationFromJSONNumber(v any) time.Duration {
+	switch n := v.(type) {
+	case float64:
+		if n <= 0 {
+			return 0
+		}
+		return time.Duration(n * float64(time.Second))
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil || f <= 0 {
+			return 0
+		}
+		return time.Duration(f * float64(time.Second))
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil || f <= 0 {
+			return 0
+		}
+		return time.Duration(f * float64(time.Second))
+	default:
+		return 0
+	}
+}
+
+func clampRetryAfter(d time.Duration) time.Duration {
+	if d <= 0 {
+		return 0
+	}
+	if d > 30*time.Minute {
+		return 30 * time.Minute
+	}
+	return d
+}
+
+func formatRetryAfter(d time.Duration) string {
+	if d < time.Second {
+		d = time.Second
+	}
+	if d < time.Minute {
+		secs := int(d.Round(time.Second) / time.Second)
+		if secs <= 1 {
+			return "1 second"
+		}
+		return strconv.Itoa(secs) + " seconds"
+	}
+	mins := int((d + time.Minute/2) / time.Minute)
+	if mins <= 1 {
+		return "1 minute"
+	}
+	return strconv.Itoa(mins) + " minutes"
 }
 
 func parseProviderMessageID(deliveryType string, body []byte) string {
@@ -602,14 +730,29 @@ func httpStatusOf(err error) int {
 	if err == nil {
 		return 200
 	}
+	var he *webhookHTTPError
+	if errors.As(err, &he) && he != nil {
+		return he.Status
+	}
 	var n int
 	_, _ = fmt.Sscanf(err.Error(), "webhook HTTP %d", &n)
 	return n
 }
 
+func retryAfterOf(err error) time.Duration {
+	var he *webhookHTTPError
+	if errors.As(err, &he) && he != nil {
+		return he.RetryAfter
+	}
+	return 0
+}
+
 func retryableStatus(err error) bool {
 	if err == nil {
 		return false
+	}
+	if errors.Is(err, ErrRateLimited) {
+		return true
 	}
 	code := httpStatusOf(err)
 	if code == 429 || code >= 500 {

@@ -327,3 +327,80 @@ func TestShouldDeliverWildcardAndStatusFilters(t *testing.T) {
 		t.Fatal("status_only configs that listed task.updated should still get status_changed")
 	}
 }
+
+func TestShouldDeliverTaskUpdatedMatchesSpecializedEvents(t *testing.T) {
+	m := extensions.Manifest{
+		ID: "discord",
+		Hooks: []extensions.Hook{
+			{On: "task.created"},
+			{On: "task.updated"},
+			{On: "task.deleted"},
+			{On: "task.commented"},
+		},
+		Templates: map[string]string{
+			"task.updated": "Task {name} updated to {status}",
+		},
+		Settings: []extensions.Setting{
+			{Key: "status_only", Type: "bool", Scope: extensions.ScopeProject},
+		},
+	}
+	site := storage.ExtensionSettings{Enabled: true}
+	dest := storage.ExtensionProjectSettings{
+		Enabled:  true,
+		Triggers: []string{"task.updated"},
+	}
+	for _, typ := range []string{
+		EventTaskStatusChanged,
+		EventTaskDueChanged,
+		EventTaskMoved,
+		EventTaskTagged,
+		EventTaskClaimed,
+		EventTaskCompleted,
+		EventTaskArchived,
+	} {
+		ev := Event{Type: typ, StatusChanged: typ == EventTaskStatusChanged || typ == EventTaskCompleted}
+		if !ShouldDeliver(m, site, dest, ev, 3) {
+			t.Fatalf("task.updated trigger should deliver %s", typ)
+		}
+		if got := templateFor(m, dest.Templates, typ); got != "Task {name} updated to {status}" {
+			t.Fatalf("template for %s = %q", typ, got)
+		}
+	}
+	if ShouldDeliver(m, site, dest, Event{Type: EventTaskCommented}, 3) {
+		t.Fatal("commented is not a task.updated child")
+	}
+	if ShouldDeliver(m, site, dest, Event{Type: EventTaskDeleted}, 3) {
+		t.Fatal("deleted is not a task.updated child")
+	}
+
+	statusOnly := dest
+	statusOnly.StatusOnly = true
+	if ShouldDeliver(m, site, statusOnly, Event{Type: EventTaskDueChanged}, 3) {
+		t.Fatal("status_only should skip due_changed matched via task.updated")
+	}
+	if !ShouldDeliver(m, site, statusOnly, Event{Type: EventTaskStatusChanged, StatusChanged: true}, 3) {
+		t.Fatal("status_only should still deliver status_changed")
+	}
+
+	specific := extensions.Manifest{
+		ID: "discord",
+		Hooks: []extensions.Hook{
+			{On: "task.updated"},
+			{On: "task.status_changed"},
+		},
+		Templates: map[string]string{
+			"task.updated":        "updated",
+			"task.status_changed": "status",
+		},
+	}
+	onlyStatus := storage.ExtensionProjectSettings{Enabled: true, Triggers: []string{"task.status_changed"}}
+	if !ShouldDeliver(specific, site, onlyStatus, Event{Type: EventTaskStatusChanged, StatusChanged: true}, 3) {
+		t.Fatal("explicit status_changed trigger")
+	}
+	if ShouldDeliver(specific, site, onlyStatus, Event{Type: EventTaskDueChanged}, 3) {
+		t.Fatal("due_changed should not match a status_changed-only trigger")
+	}
+	if got := templateFor(specific, nil, EventTaskStatusChanged); got != "status" {
+		t.Fatalf("specific template=%q", got)
+	}
+}

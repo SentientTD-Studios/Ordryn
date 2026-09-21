@@ -19,6 +19,12 @@ func TestEventClassification(t *testing.T) {
 	if (Event{Type: EventTaskCompleted}.isProjectLevel()) {
 		t.Fatal("task.completed is not project-level")
 	}
+	if parentHook(EventTaskStatusChanged) != EventTaskUpdated || parentHook(EventTaskDueChanged) != EventTaskUpdated {
+		t.Fatal("status and due changes should parent to task.updated")
+	}
+	if parentHook(EventTaskCommented) != "" || parentHook(EventTaskCreated) != "" {
+		t.Fatal("created/commented should not parent to task.updated")
+	}
 	if !(Event{Type: EventSprintCreated}.isProjectLevel()) || !(Event{Type: EventProjectArchived}.isProjectLevel()) {
 		t.Fatal("sprint and project archive events should be project-level")
 	}
