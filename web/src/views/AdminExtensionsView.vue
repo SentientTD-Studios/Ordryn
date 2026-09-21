@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast'
 import AdminSubnav from '@/components/AdminSubnav.vue'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 import { withBase } from '@/base'
+import { rateLimitNotice } from '@/utils/extensionDeliveries'
 
 const toast = useToast()
 const loading = ref(false)
@@ -294,13 +295,17 @@ onMounted(load)
                 />
               </div>
             </div>
-            <div v-if="ext.settings.last_error" class="alert alert-warning">Last delivery error: {{ ext.settings.last_error }}</div>
+            <div v-if="rateLimitNotice(ext.settings.last_error, ext.deliveries)" class="alert alert-warning">
+              {{ rateLimitNotice(ext.settings.last_error, ext.deliveries) }}
+            </div>
+            <div v-else-if="ext.settings.last_error" class="alert alert-warning">Last delivery error: {{ ext.settings.last_error }}</div>
             <div v-if="ext.deliveries?.length" class="small mb-2">
               <div class="fw-semibold">Recent deliveries</div>
               <ul class="mb-0 ps-3">
                 <li v-for="row in ext.deliveries" :key="row.id">
                   {{ row.created_at }} · {{ row.event }} · {{ row.status }}
                   <span v-if="row.error" class="text-warning"> {{ row.error }}</span>
+                  <span v-if="row.next_attempt_at && (row.status === 'pending' || row.status === 'failed')" class="text-muted"> retry {{ row.next_attempt_at }}</span>
                   <button
                     v-if="row.status === 'failed' || row.status === 'dead'"
                     type="button"
