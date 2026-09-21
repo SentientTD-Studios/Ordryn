@@ -57,7 +57,7 @@ func CreateEmailAuditTable() error {
 			status TEXT NOT NULL,
 			error TEXT NOT NULL DEFAULT '',
 			provider TEXT NOT NULL DEFAULT '',
-			CONSTRAINT email_audit_status_check CHECK (status IN ('sent', 'failed', 'not_configured'))
+			CONSTRAINT email_audit_status_check CHECK (status IN ('sent', 'failed', 'not_configured', 'rate_limited'))
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_email_audit_created_at ON email_audit (created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_email_audit_status_created ON email_audit (status, created_at DESC)`,
@@ -246,4 +246,25 @@ func runEmailAuditPurge() {
 	if n > 0 {
 		log.Printf("email audit purge: deleted %d row(s) older than %d day(s)", n, days)
 	}
+}
+
+// MigrateEmailAuditAddRateLimitedStatus allows audit rows when core mail is rate-limited.
+func MigrateEmailAuditAddRateLimitedStatus() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `ALTER TABLE email_audit DROP CONSTRAINT IF EXISTS email_audit_status_check`); err != nil {
+		return fmt.Errorf("drop email_audit_status_check: %w", err)
+	}
+	_, err = pool.Exec(ctx, `
+		ALTER TABLE email_audit ADD CONSTRAINT email_audit_status_check
+		CHECK (status IN ('sent', 'failed', 'not_configured', 'rate_limited'))`)
+	if err != nil {
+		return fmt.Errorf("add email_audit_status_check: %w", err)
+	}
+	return nil
 }

@@ -55,7 +55,7 @@ func APIV1Export(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="gotodo-export-%s.csv"`, stamp))
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"id", "title", "description", "completed", "due_date", "project", "priority", "favorite", "tags"})
+	_ = cw.Write([]string{"id", "title", "description", "completed", "due_date", "project", "priority", "position", "tags", "created_at", "modified_at"})
 	for _, t := range taskList {
 		_ = cw.Write(taskToCSVRow(t))
 	}

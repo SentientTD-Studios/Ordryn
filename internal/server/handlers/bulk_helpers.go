@@ -231,7 +231,10 @@ func bulkSetDueDate(ctx context.Context, db *pgxpool.Pool, ids []int, userID int
 		}
 		logTaskEvent(id, userID, "edited", map[string]interface{}{"fields": []string{"due_date"}})
 	}
-	live.AfterTasksChange(userID, live.TypeTaskUpdated, ids)
+	live.AfterTasksChangeLive(userID, live.TypeTaskUpdated, ids)
+	for _, id := range ids {
+		live.DispatchHook(userID, id, live.TypeTaskDueChanged, &live.TaskHookMeta{Changed: []string{"due_date"}})
+	}
 	return nil
 }
 
@@ -329,7 +332,10 @@ func bulkAddTag(ctx context.Context, db *pgxpool.Pool, ids []int, userID, tagID 
 		}
 		logTaskEvent(taskID, userID, "tag_added", map[string]interface{}{"tag": dest.Name, "tag_id": dest.ID})
 	}
-	live.AfterTasksChange(userID, live.TypeTaskUpdated, ids)
+	live.AfterTasksChangeLive(userID, live.TypeTaskUpdated, ids)
+	for _, id := range ids {
+		live.DispatchHook(userID, id, live.TypeTaskTagged, &live.TaskHookMeta{Changed: []string{"tags"}})
+	}
 	return nil
 }
 
@@ -355,6 +361,9 @@ func bulkRemoveTag(ctx context.Context, db *pgxpool.Pool, ids []int, userID, tag
 		}
 		logTaskEvent(taskID, userID, "tag_removed", map[string]interface{}{"tag": src.Name, "tag_id": tagID})
 	}
-	live.AfterTasksChange(userID, live.TypeTaskUpdated, ids)
+	live.AfterTasksChangeLive(userID, live.TypeTaskUpdated, ids)
+	for _, id := range ids {
+		live.DispatchHook(userID, id, live.TypeTaskTagged, &live.TaskHookMeta{Changed: []string{"tags"}})
+	}
 	return nil
 }

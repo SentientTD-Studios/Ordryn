@@ -116,7 +116,7 @@ func shareLinkToJSON(r *http.Request, link storage.ShareLink) apiShareLinkJSON {
 	}
 }
 
-// handleProjectSubResource routes /api/v1/projects/{id}/members|invites|events...
+// handleProjectSubResource routes /api/v2/projects/{id}/members|invites|events...
 // Returns true if the request was handled.
 func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string) bool {
 	parts := strings.Split(sub, "/")
@@ -150,6 +150,20 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 			apiV1ProjectGitHub(w, r, projectID)
 			return true
 		}
+	case "extensions":
+		apiV1ProjectExtensions(w, r, projectID, parts[2:])
+		return true
+	case "inbound":
+		if len(parts) == 2 {
+			apiV1ProjectInbound(w, r, projectID)
+			return true
+		}
+	case "custom-fields":
+		if len(parts) != 2 {
+			return false
+		}
+		apiV1ProjectCustomFields(w, r, projectID)
+		return true
 	case "archive":
 		if len(parts) != 2 {
 			return false
@@ -497,7 +511,7 @@ func metadataBool(metadata map[string]interface{}, key string) bool {
 	return ok && b
 }
 
-// APIV1ProjectInvitesRouter handles /api/v1/project-invites and accept/decline.
+// APIV1ProjectInvitesRouter handles /api/v2/project-invites and accept/decline.
 func APIV1ProjectInvitesRouter(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -566,7 +580,7 @@ func APIV1ProjectInvitesRouter(w http.ResponseWriter, r *http.Request) {
 func APIV1ShareLinksRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "share-links")
 
-	// Public view: /api/v1/share-links/view/{token}
+	// Public view: /api/v2/share-links/view/{token}
 	if strings.HasPrefix(sub, "view/") {
 		token := strings.TrimPrefix(sub, "view/")
 		if token == "" || strings.Contains(token, "/") {
@@ -672,7 +686,7 @@ func apiV1ShareLinkView(w http.ResponseWriter, r *http.Request, token string) {
 	})
 }
 
-// APIV1ShareLinkViewPublic serves GET /api/v1/share-links/view/{token} without auth.
+// APIV1ShareLinkViewPublic serves GET /api/v2/share-links/view/{token} without auth.
 func APIV1ShareLinkViewPublic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

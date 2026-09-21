@@ -29,7 +29,7 @@ type apiEmailAuditListResponse struct {
 	Offset int                 `json:"offset"`
 }
 
-// APIV1AdminEmailAudit handles GET /api/v1/admin/email-audit.
+// APIV1AdminEmailAudit handles GET /api/v2/admin/email-audit.
 func APIV1AdminEmailAudit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -75,7 +75,7 @@ func parseEmailAuditListQuery(r *http.Request) (storage.EmailAuditFilter, string
 	status := strings.TrimSpace(q.Get("status"))
 	if status != "" {
 		if !mailer.KnownStatus(status) {
-			return f, "status must be sent, failed, or not_configured."
+			return f, "status must be sent, failed, not_configured, or rate_limited."
 		}
 		f.Status = status
 	}

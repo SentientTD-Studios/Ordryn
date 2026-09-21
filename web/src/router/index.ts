@@ -29,9 +29,13 @@ const router = createRouter({
       component: () => import('@/views/UserGuideView.vue'),
     },
     {
-      path: '/docs/api/v1',
+      path: '/docs/api/v2',
       name: 'api-docs',
       component: () => import('@/views/ApiDocsView.vue'),
+    },
+    {
+      path: '/docs/api/v1',
+      redirect: { name: 'api-docs' },
     },
     {
       path: '/s/:token',
@@ -137,6 +141,16 @@ const router = createRouter({
       name: 'admin',
       component: () => import('@/views/AdminView.vue'),
       meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
+      path: '/admin/extensions',
+      name: 'admin-extensions',
+      component: () => import('@/views/AdminExtensionsView.vue'),
+      meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
+      path: '/admin/mods',
+      redirect: '/admin/extensions',
     },
     {
       path: '/admin/requests',

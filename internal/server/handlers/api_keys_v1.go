@@ -42,7 +42,7 @@ func normalizeAPIKeyName(raw string) (string, string) {
 	return name, ""
 }
 
-// APIV1APIKeysRouter handles /api/v1/api-keys and /api/v1/api-keys/{id}.
+// APIV1APIKeysRouter handles /api/v2/api-keys and /api/v2/api-keys/{id}.
 func APIV1APIKeysRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "api-keys")
 	if sub == "" {

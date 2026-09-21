@@ -483,7 +483,7 @@ watch(
 onMounted(loadStatuses)
 
 useLiveUpdates((event) => {
-  if (event.type !== 'project.updated') return
+  if (event.type !== 'project.updated' && event.type !== 'project.created' && event.type !== 'project.deleted') return
   if (event.project_id && event.project_id !== props.project.id) return
   if (renameId.value != null || deleteTarget.value) return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return

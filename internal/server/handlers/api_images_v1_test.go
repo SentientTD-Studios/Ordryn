@@ -61,7 +61,7 @@ func multipartPNG(t *testing.T, field, filename string, data []byte) (*bytes.Buf
 }
 
 func TestAPIV1ImagesMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/images", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/images", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1Images(rec, req)
@@ -72,7 +72,7 @@ func TestAPIV1ImagesMethodNotAllowed(t *testing.T) {
 
 func TestAPIV1ImagesUnauthorized(t *testing.T) {
 	body, ctype := multipartPNG(t, "file", "dot.png", handlerTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	rec := httptest.NewRecorder()
 	APIV1Images(rec, req)
@@ -84,7 +84,7 @@ func TestAPIV1ImagesUnauthorized(t *testing.T) {
 func TestAPIV1ImagesNotConfigured(t *testing.T) {
 	withImageHosting(t, imagehost.Config{}, nil)
 	body, ctype := multipartPNG(t, "file", "dot.png", handlerTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -101,7 +101,7 @@ func TestAPIV1ImagesRejectsNonImage(t *testing.T) {
 	dir := t.TempDir()
 	withImageHosting(t, imagehost.Config{Provider: imagehost.ProviderLocal, MaxBytes: imagehost.DefaultMaxBytes, LocalPath: dir}, nil)
 	body, ctype := multipartPNG(t, "file", "notes.txt", []byte("hello world this is not an image"))
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -117,7 +117,7 @@ func TestAPIV1ImagesRejectsOversize(t *testing.T) {
 	big := make([]byte, imagehost.MinMaxBytes+1)
 	copy(big, handlerTinyPNG)
 	body, ctype := multipartPNG(t, "file", "big.png", big)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -131,7 +131,7 @@ func TestAPIV1ImagesLocalUpload(t *testing.T) {
 	dir := t.TempDir()
 	withImageHosting(t, imagehost.Config{Provider: imagehost.ProviderLocal, MaxBytes: imagehost.DefaultMaxBytes, LocalPath: dir}, nil)
 	body, ctype := multipartPNG(t, "file", "dot.png", handlerTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	req.Host = "gotodo.test"
 	req = utils.SetAPIUserID(req, 7)
@@ -223,7 +223,7 @@ func TestAPIV1ImagesS3Upload(t *testing.T) {
 	}
 	withImageHosting(t, cfg, stub)
 	body, ctype := multipartPNG(t, "file", "dot.png", handlerTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -258,7 +258,7 @@ func TestAPIV1ImagesStoreClientError(t *testing.T) {
 	}
 	withImageHosting(t, cfg, stub)
 	body, ctype := multipartPNG(t, "file", "dot.png", handlerTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -289,7 +289,7 @@ func TestAPIV1ImagesStoreGatewayError(t *testing.T) {
 	}
 	withImageHosting(t, cfg, stub)
 	body, ctype := multipartPNG(t, "file", "dot.png", handlerTinyPNG)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", body)
 	req.Header.Set("Content-Type", ctype)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -312,7 +312,7 @@ func TestAPIV1ImagesMissingFile(t *testing.T) {
 	w := multipart.NewWriter(&buf)
 	_ = w.WriteField("name", "nope")
 	_ = w.Close()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/images", &buf)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/images", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()

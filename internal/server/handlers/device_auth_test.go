@@ -119,7 +119,7 @@ func TestDeviceDecisionRedirectURI(t *testing.T) {
 
 func TestAPIDeviceCodeInvalidRedirectURI(t *testing.T) {
 	body := bytes.NewBufferString(`{"client_name":"Android app","redirect_uri":"https://evil.example/"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/device/code", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/auth/device/code", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -139,7 +139,7 @@ func TestAPIDeviceCodeInvalidRedirectURI(t *testing.T) {
 
 func TestAPIDeviceTokenMissingDeviceCode(t *testing.T) {
 	body := bytes.NewBufferString(`{"grant_type":"urn:ietf:params:oauth:grant-type:device_code"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/device/token", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/auth/device/token", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -167,7 +167,7 @@ func TestAPIDeviceCodeVerificationURLWithFullBasePath(t *testing.T) {
 
 	// Redis is required by the middleware chain; call handler directly.
 	body := bytes.NewBufferString(`{"client_name":"Android app"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/device/code", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/auth/device/code", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Host = "demo.ryanmalacina.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
@@ -183,7 +183,7 @@ func TestAPIDeviceCodeVerificationURLWithFullBasePath(t *testing.T) {
 }
 
 func TestAPIDeviceCodeMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/device/code", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/auth/device/code", nil)
 	rec := httptest.NewRecorder()
 
 	APIDeviceCode(rec, req)
@@ -194,7 +194,7 @@ func TestAPIDeviceCodeMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIDeviceTokenMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/device/token", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/auth/device/token", nil)
 	rec := httptest.NewRecorder()
 
 	APIDeviceToken(rec, req)

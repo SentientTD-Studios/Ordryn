@@ -109,6 +109,7 @@ func TestAdminSettingsJSONIncludesImageHosting(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{
+		"enable_inbound_webhooks",
 		"image_hosting_provider",
 		"image_max_bytes",
 		"image_s3_endpoint",
@@ -130,7 +131,7 @@ func TestAdminSettingsJSONIncludesImageHosting(t *testing.T) {
 }
 
 func TestAPIV1AdminSettingsMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/settings", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/settings", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 	APIV1AdminSettings(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {

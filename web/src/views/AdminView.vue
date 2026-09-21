@@ -36,6 +36,7 @@ const settings = reactive<AdminSettings>({
   enable_global_announcement: false,
   global_announcement_text: '',
   enable_api: false,
+  enable_inbound_webhooks: false,
   email_provider: '',
   email_from_address: '',
   email_from_name: '',
@@ -92,6 +93,7 @@ async function saveSettings() {
       enable_global_announcement: settings.enable_global_announcement,
       global_announcement_text: settings.global_announcement_text,
       enable_api: settings.enable_api,
+      enable_inbound_webhooks: settings.enable_inbound_webhooks,
     })
     Object.assign(settings, saved)
     await refreshSite()
@@ -293,6 +295,14 @@ onMounted(load)
           </div>
           <p class="text-muted small">The web app always uses the JSON API with your session cookie. This toggle controls Bearer access for scripts and mobile clients.</p>
           <div class="form-check mb-2">
+            <input id="admin-inbound" v-model="settings.enable_inbound_webhooks" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="admin-inbound">Enable inbound webhooks</label>
+          </div>
+          <p class="text-muted small">
+            Allows project owners to expose a public receiver at <code>/api/v2/webhooks/inbound</code>
+            (HMAC or shared secret, not API keys). Disabled until you turn this on.
+          </p>
+          <div class="form-check mb-2">
             <input id="admin-announcement" v-model="settings.enable_global_announcement" class="form-check-input" type="checkbox" />
             <label class="form-check-label" for="admin-announcement">Global announcement</label>
           </div>
@@ -314,7 +324,7 @@ onMounted(load)
         <p class="text-muted small">
           Optional. When configured, users can connect GitHub via OAuth in Settings.
           Create an OAuth App on GitHub with callback
-          <code>/api/v1/auth/github/callback</code>
+          <code>/api/v2/auth/github/callback</code>
           (include your site base path if applicable). Users can always connect with a personal access token instead.
         </p>
         <form @submit.prevent="saveGitHubOAuthSettings">
@@ -358,6 +368,11 @@ onMounted(load)
     <div class="card mb-4">
       <div class="card-header"><h2 class="h5 mb-0">Email</h2></div>
       <div class="card-body">
+		<p class="text-muted small">
+          System mail only: password resets, site invites, project invites, and join-request alerts.
+          Sends are rate-limited per recipient and site-wide.
+          Extensions and project members cannot send through this mailer — use an email relay, ntfy, or a chat webhook instead.
+        </p>
         <form @submit.prevent="saveEmailSettings">
           <div class="mb-3">
             <label class="form-label" for="email-provider">Provider</label>
@@ -447,7 +462,7 @@ onMounted(load)
           </template>
 
           <p v-if="!settings.email_provider" class="text-muted small">
-            Outbound email is disabled. Password resets and notifications will not send until a provider is configured.
+            Outbound email is disabled. Password resets, invites, and join-request alerts will not send until a provider is configured.
           </p>
 
           <div class="mb-3">

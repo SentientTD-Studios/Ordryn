@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// UserProfile is the public account view for /api/v1/me and auth responses.
+// UserProfile is the public account view for /api/v2/me and auth responses.
 type UserProfile struct {
 	ID                      int
 	Email                   string

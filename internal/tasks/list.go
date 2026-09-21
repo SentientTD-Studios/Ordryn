@@ -1,9 +1,11 @@
 package tasks
 
 import (
+	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -49,7 +51,6 @@ func ReturnTaskListForUser(userID *int) []Task {
 	return tasks
 }
 
-const nonFavoriteCond = " AND (is_favorite IS NULL OR is_favorite = false)"
 const rootCond = " AND parent_id IS NULL"
 const rootCondT = " AND t.parent_id IS NULL"
 
@@ -60,16 +61,6 @@ func taskSelectSQL() string {
 		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_created,
 		COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified,
 		COALESCE(t.is_favorite,false), COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,''), t.parent_id
-		FROM tasks t LEFT JOIN projects p ON t.project_id = p.id `
-}
-
-func nonFavSelectSQL() string {
-	return `SELECT t.id, t.title, t.description, t.completed,
-		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_added,
-		COALESCE(CAST(t.due_date AS TEXT), '') AS due_date,
-		TO_CHAR((t.time_stamp AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM') AS date_created,
-		COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified,
-		COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,''), t.parent_id
 		FROM tasks t LEFT JOIN projects p ON t.project_id = p.id `
 }
 
@@ -84,36 +75,11 @@ func ReturnPaginationForUserWithFilters(page, pageSize int, userID *int, timezon
 		return []Task{}, 0, nil
 	}
 
-	taskSelect := taskSelectSQL()
-	nonFavSelect := nonFavSelectSQL()
-
-	visT := storage.TaskListVisibleCondition("t", "$1", filters.ProjectFilter)
-	favArgs := []interface{}{*userID, timezone}
-	favWhere := "WHERE " + visT + " AND t.is_favorite = true" + filters.rootOnlySQL("t")
-	favWhere, favArgs = appendFilterSQL(favWhere, favArgs, filters, timezone, "t", *userID)
-	favRows, err := pool.Query(context.Background(), taskSelect+favWhere+filters.orderByClause("t"), favArgs...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer favRows.Close()
-
-	favs := make([]Task, 0)
-	for favRows.Next() {
-		task, err := scanFavoriteTaskRow(favRows)
-		if err != nil {
-			return nil, 0, err
-		}
-		favs = append(favs, task)
-	}
-
 	countArgs := []interface{}{*userID}
 	var countWhere string
 	if filters.SprintFilter != nil {
 		countWhere = "WHERE " + storage.TaskListVisibleCondition("", "$1", filters.ProjectFilter)
 	} else {
-		// Include favorites in the total so a starred incomplete root is not
-		// reported as 0 tasks (favorites are extra rows on page 1, but they
-		// still belong in the matching-task count and empty-state check).
 		countWhere = "WHERE " + storage.TaskListVisibleCondition("", "$1", filters.ProjectFilter) + filters.rootOnlySQL("")
 	}
 	countWhere, countArgs = appendFilterSQL(countWhere, countArgs, filters, timezone, "", *userID)
@@ -127,31 +93,26 @@ func ReturnPaginationForUserWithFilters(page, pageSize int, userID *int, timezon
 		offset = 0
 	}
 
-	nonFavArgs := []interface{}{pageSize, timezone, *userID, offset}
-	nonFavWhere := "WHERE " + storage.TaskListVisibleCondition("t", "$3", filters.ProjectFilter) + " AND (t.is_favorite IS NULL OR t.is_favorite = false)" + filters.rootOnlySQL("t")
-	nonFavWhere, nonFavArgs = appendFilterSQL(nonFavWhere, nonFavArgs, filters, timezone, "t", *userID)
+	selectArgs := []interface{}{*userID, timezone, pageSize, offset}
+	selectWhere := "WHERE " + storage.TaskListVisibleCondition("t", "$1", filters.ProjectFilter) + filters.rootOnlySQL("t")
+	selectWhere, selectArgs = appendFilterSQL(selectWhere, selectArgs, filters, timezone, "t", *userID)
 	rows, err := pool.Query(
 		context.Background(),
-		nonFavSelect+nonFavWhere+filters.orderByClause("t")+" LIMIT $1 OFFSET $4",
-		nonFavArgs...,
+		taskSelectSQL()+selectWhere+filters.orderByClause("t")+" LIMIT $3 OFFSET $4",
+		selectArgs...,
 	)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
-	nonFavs := make([]Task, 0)
+	taskList := make([]Task, 0)
 	for rows.Next() {
-		task, err := scanTaskRow(rows)
+		task, err := scanFavoriteTaskRow(rows)
 		if err != nil {
 			return nil, 0, err
 		}
-		nonFavs = append(nonFavs, task)
-	}
-
-	taskList := nonFavs
-	if page == 1 && len(favs) > 0 {
-		taskList = append(favs, nonFavs...)
+		taskList = append(taskList, task)
 	}
 	if err := attachTagsToTasks(taskList); err != nil {
 		return nil, 0, err
@@ -478,7 +439,134 @@ func attachGitHubFieldsToTasks(taskList []Task) error {
 			applyGitHub(&taskList[i].Children[j])
 		}
 	}
+	return attachCustomFieldsToTasks(taskList)
+}
+
+func attachCustomFieldsToTasks(taskList []Task) error {
+	if len(taskList) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(taskList))
+	for _, t := range taskList {
+		ids = append(ids, t.ID)
+		for _, c := range t.Children {
+			ids = append(ids, c.ID)
+		}
+	}
+	values, err := storage.GetCustomFieldValuesForTasks(ids)
+	if err != nil {
+		return err
+	}
+	defsCache := map[int][]storage.CustomFieldDef{}
+	defsFor := func(projectID int) ([]storage.CustomFieldDef, error) {
+		if projectID <= 0 {
+			return nil, nil
+		}
+		if defs, ok := defsCache[projectID]; ok {
+			return defs, nil
+		}
+		defs, err := storage.ListApplicableCustomFieldDefs(projectID, extensions.FieldExtensionIDs())
+		if err != nil {
+			return nil, err
+		}
+		defsCache[projectID] = defs
+		return defs, nil
+	}
+
+	userIDs := make([]int, 0)
+	seenUsers := map[int]struct{}{}
+	type pending struct {
+		task *Task
+		defs []storage.CustomFieldDef
+	}
+	var work []pending
+	collect := func(t *Task) error {
+		defs, err := defsFor(t.ProjectID)
+		if err != nil {
+			return err
+		}
+		if len(defs) == 0 {
+			return nil
+		}
+		work = append(work, pending{task: t, defs: defs})
+		stored := values[t.ID]
+		for _, d := range defs {
+			if d.Type != "user" {
+				continue
+			}
+			raw, ok := stored[d.FieldKey]
+			if !ok {
+				continue
+			}
+			var id float64
+			if json.Unmarshal(raw, &id) == nil {
+				uid := int(id)
+				if uid > 0 {
+					if _, seen := seenUsers[uid]; !seen {
+						seenUsers[uid] = struct{}{}
+						userIDs = append(userIDs, uid)
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for i := range taskList {
+		if err := collect(&taskList[i]); err != nil {
+			return err
+		}
+		for j := range taskList[i].Children {
+			if err := collect(&taskList[i].Children[j]); err != nil {
+				return err
+			}
+		}
+	}
+	names, err := storage.UserDisplayNames(userIDs)
+	if err != nil {
+		return err
+	}
+	for _, item := range work {
+		stored := values[item.task.ID]
+		if len(stored) == 0 {
+			continue
+		}
+		fields := make([]AttachedField, 0)
+		for _, d := range item.defs {
+			raw, ok := stored[d.FieldKey]
+			if !ok {
+				continue
+			}
+			val := decodeFieldValue(d, raw, names)
+			if val == nil {
+				continue
+			}
+			fields = append(fields, AttachedField{Key: d.FieldKey, Value: val, ShowOn: d.ShowOn})
+		}
+		item.task.Fields = fields
+	}
 	return nil
+}
+
+func decodeFieldValue(def storage.CustomFieldDef, raw []byte, names map[int]string) any {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if def.Type == "user" {
+		var id float64
+		if json.Unmarshal(raw, &id) != nil {
+			return nil
+		}
+		uid := int(id)
+		if uid <= 0 {
+			return nil
+		}
+		return map[string]any{"id": uid, "user_name": names[uid]}
+	}
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		return nil
+	}
+	return v
 }
 
 func scanFavoriteTaskRow(rows interface {
@@ -492,30 +580,6 @@ func scanFavoriteTaskRow(rows interface {
 		&task.ID, &task.Title, &task.Description, &task.Completed,
 		&task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified,
 		&task.IsFavorite, &task.Position, &task.Priority, &pid, &pname, &parentID,
-	); err != nil {
-		return task, err
-	}
-	if pid.Valid {
-		task.ProjectID = int(pid.Int64)
-	}
-	task.ProjectName = pname.String
-	if parentID.Valid {
-		task.ParentID = int(parentID.Int64)
-	}
-	return task, nil
-}
-
-func scanTaskRow(rows interface {
-	Scan(...interface{}) error
-}) (Task, error) {
-	var task Task
-	var pid sql.NullInt64
-	var pname sql.NullString
-	var parentID sql.NullInt64
-	if err := rows.Scan(
-		&task.ID, &task.Title, &task.Description, &task.Completed,
-		&task.DateAdded, &task.DueDate, &task.DateCreated, &task.DateModified,
-		&task.Position, &task.Priority, &pid, &pname, &parentID,
 	); err != nil {
 		return task, err
 	}

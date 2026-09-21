@@ -181,7 +181,7 @@ func clearPendingUndo(r *http.Request, w http.ResponseWriter) error {
 func restoreDeletedTasks(ctx context.Context, db *pgxpool.Pool, userID int, tasks []DeletedTaskSnapshot) error {
 	var nextPos int
 	if err := db.QueryRow(ctx,
-		"SELECT COALESCE(MAX(position),0) + 1 FROM tasks WHERE user_id = $1 AND (is_favorite IS NULL OR is_favorite = false) AND parent_id IS NULL",
+		"SELECT COALESCE(MAX(position),0) + 1 FROM tasks WHERE user_id = $1 AND parent_id IS NULL",
 		userID).Scan(&nextPos); err != nil {
 		return err
 	}

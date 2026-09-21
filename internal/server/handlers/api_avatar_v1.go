@@ -12,7 +12,7 @@ import (
 	"GoTodo/internal/server/utils"
 )
 
-// APIV1MeAvatar handles POST/DELETE /api/v1/me/avatar.
+// APIV1MeAvatar handles POST/DELETE /api/v2/me/avatar.
 func APIV1MeAvatar(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:

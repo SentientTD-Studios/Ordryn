@@ -44,8 +44,8 @@ func TestApplyRelativeReorder(t *testing.T) {
 }
 
 func TestAPIV1ReorderUnauthorized(t *testing.T) {
-	body := bytes.NewBufferString(`{"task_ids":[1,2],"favorite":false}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/reorder", body)
+	body := bytes.NewBufferString(`{"task_ids":[1,2]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/tasks/reorder", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -68,15 +68,14 @@ func TestAPIV1ReorderInvalidBody(t *testing.T) {
 		name string
 		body string
 	}{
-		{name: "missing task_ids", body: `{"favorite":false}`},
-		{name: "empty task_ids", body: `{"task_ids":[],"favorite":false}`},
-		{name: "missing favorite", body: `{"task_ids":[1,2]}`},
+		{name: "missing task_ids", body: `{}`},
+		{name: "empty task_ids", body: `{"task_ids":[]}`},
 		{name: "invalid json", body: `{`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/reorder", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v2/tasks/reorder", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			req = utils.SetAPIUserID(req, 1)
 			rec := httptest.NewRecorder()
@@ -91,7 +90,7 @@ func TestAPIV1ReorderInvalidBody(t *testing.T) {
 }
 
 func TestAPIV1ReorderMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/reorder", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/tasks/reorder", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 

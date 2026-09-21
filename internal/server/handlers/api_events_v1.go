@@ -12,7 +12,7 @@ import (
 const livePingInterval = 25 * time.Second
 
 // APIV1Events streams task/project invalidation events for the current user.
-// GET /api/v1/events (text/event-stream)
+// GET /api/v2/events (text/event-stream)
 func APIV1Events(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

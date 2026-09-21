@@ -141,6 +141,38 @@ func TestMain(m *testing.M) {
 			UNIQUE (issue_id),
 			CHECK (issue_number > 0)
 		);
+		CREATE TABLE custom_field_defs (
+			field_key TEXT PRIMARY KEY,
+			extension_id TEXT,
+			local_key TEXT NOT NULL,
+			label TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			type TEXT NOT NULL,
+			required BOOLEAN NOT NULL DEFAULT FALSE,
+			options JSONB NOT NULL DEFAULT '[]',
+			show_on TEXT[] NOT NULL DEFAULT ARRAY['sidebar']::TEXT[],
+			active BOOLEAN NOT NULL DEFAULT TRUE,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE custom_field_values (
+			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			field_key TEXT NOT NULL,
+			value JSONB NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (task_id, field_key)
+		);
+		CREATE TABLE extension_settings (
+			extension_id VARCHAR(64) PRIMARY KEY,
+			data JSONB NOT NULL DEFAULT '{}',
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE extension_project_settings (
+			extension_id VARCHAR(64) NOT NULL,
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			data JSONB NOT NULL DEFAULT '{}',
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (extension_id, project_id)
+		);
 		INSERT INTO users (id, email) VALUES
 			(1, 'user@example.com'),
 			(2, 'other@example.com'),

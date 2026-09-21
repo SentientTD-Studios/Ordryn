@@ -8,7 +8,7 @@ import (
 )
 
 func TestAPIV1SiteMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/site", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/site", nil)
 	rec := httptest.NewRecorder()
 	APIV1Site(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -46,6 +46,7 @@ func TestAPISiteResponsePublicFields(t *testing.T) {
 		"allow_user_invites",
 		"user_invite_limit",
 		"invite_expiration_days",
+		"enable_inbound_webhooks",
 	} {
 		if _, ok := m[key]; !ok {
 			t.Fatalf("missing key %q in %s", key, string(raw))

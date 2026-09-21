@@ -10,7 +10,7 @@ import (
 )
 
 func TestAPIV1UsersSearchMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/search", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/users/search", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1UsersSearch(rec, req)
@@ -20,7 +20,7 @@ func TestAPIV1UsersSearchMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1UsersSearchUnauthorized(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/search?q=al", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/users/search?q=al", nil)
 	rec := httptest.NewRecorder()
 	APIV1UsersSearch(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -30,10 +30,10 @@ func TestAPIV1UsersSearchUnauthorized(t *testing.T) {
 
 func TestAPIV1UsersSearchEmptyQuery(t *testing.T) {
 	for _, path := range []string{
-		"/api/v1/users/search",
-		"/api/v1/users/search?q=",
-		"/api/v1/users/search?q=%20",
-		"/api/v1/users/search?q=a",
+		"/api/v2/users/search",
+		"/api/v2/users/search?q=",
+		"/api/v2/users/search?q=%20",
+		"/api/v2/users/search?q=a",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req = utils.SetAPIUserID(req, 1)
@@ -54,9 +54,9 @@ func TestAPIV1UsersSearchEmptyQuery(t *testing.T) {
 
 func TestAPIV1UsersSearchInvalidProjectID(t *testing.T) {
 	for _, path := range []string{
-		"/api/v1/users/search?q=al&project_id=abc",
-		"/api/v1/users/search?q=al&project_id=0",
-		"/api/v1/users/search?q=al&project_id=-3",
+		"/api/v2/users/search?q=al&project_id=abc",
+		"/api/v2/users/search?q=al&project_id=0",
+		"/api/v2/users/search?q=al&project_id=-3",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req = utils.SetAPIUserID(req, 1)

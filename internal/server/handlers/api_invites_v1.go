@@ -82,7 +82,7 @@ func isUserAdmin(r *http.Request, userID int) bool {
 	return false
 }
 
-// APIV1InvitesRouter handles user-scoped /api/v1/invites and /api/v1/invites/{id}.
+// APIV1InvitesRouter handles user-scoped /api/v2/invites and /api/v2/invites/{id}.
 func APIV1InvitesRouter(w http.ResponseWriter, r *http.Request) {
 	userID, ok := utils.GetAPIUserID(r)
 	if !ok {

@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ const (
 	StatusSent          = "sent"
 	StatusFailed        = "failed"
 	StatusNotConfigured = "not_configured"
+	StatusRateLimited   = "rate_limited"
 
 	maxAuditErrorLen = 1024
 )
@@ -58,7 +60,7 @@ func KnownTrigger(t string) bool {
 // KnownStatus reports whether s is a stored audit status.
 func KnownStatus(s string) bool {
 	switch strings.TrimSpace(s) {
-	case StatusSent, StatusFailed, StatusNotConfigured:
+	case StatusSent, StatusFailed, StatusNotConfigured, StatusRateLimited:
 		return true
 	default:
 		return false
@@ -99,6 +101,9 @@ func classifyAudit(cfg Config, sendErr error) (status, errText string) {
 		return StatusSent, ""
 	}
 	errText = truncateAuditError(sendErr.Error())
+	if errors.Is(sendErr, ErrRateLimited) {
+		return StatusRateLimited, errText
+	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
 	if provider == "" || provider == "none" {
 		return StatusNotConfigured, errText

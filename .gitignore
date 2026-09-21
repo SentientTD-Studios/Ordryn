@@ -1,6 +1,7 @@
 *.db
 *.exe
 .env
+.DS_STORE
 GoTodo
 nodemon.json
 config.json
@@ -11,6 +12,15 @@ docs/*
 
 # Uploaded images when using local hosting
 data/uploads/
+
+# Operator-installed extensions (keep the folder)
+data/extensions/*
+!data/extensions/.gitkeep
+data/mods/*
+!data/mods/.gitkeep
+
+# Extension examples live in a separate repo; keep a local copy out of git
+examples/*
 
 # Node/npm
 node_modules/

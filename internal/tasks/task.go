@@ -49,6 +49,14 @@ type Task struct {
 	GitHubIssueState    string
 	GitHubIssueTitle    string
 	GitHubLastSyncError string
+	Fields              []AttachedField
+}
+
+// AttachedField is a custom field value loaded for API serialization.
+type AttachedField struct {
+	Key    string
+	Value  any
+	ShowOn []string
 }
 
 func (t *Task) Validate() error {

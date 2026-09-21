@@ -239,7 +239,7 @@ func isWriteMethod(method string) bool {
 	}
 }
 
-// APIChain composes the standard /api/v1 middleware chain.
+// APIChain composes the standard /api/v2 middleware chain.
 // Accepts a session cookie (SPA) or Bearer API key; Redis is required for rate limiting.
 func APIChain(handler http.HandlerFunc) http.HandlerFunc {
 	return RequireAPIRedis(
@@ -328,16 +328,19 @@ func AuthSessionChain(handler http.HandlerFunc) http.HandlerFunc {
 	return RequireSessionOrAPIKey(handler)
 }
 
-// ParseAPIV1Subpath returns the path segment after /api/v1/<resource>/.
+// ParseAPIV1Subpath returns the path segment after /api/v2/<resource>/ or
+// the /api/v1 compatibility alias.
 func ParseAPIV1Subpath(r *http.Request, resource string) string {
 	base := strings.TrimSuffix(GetBasePath(), "/")
 	path := r.URL.Path
 	if base != "" && base != "/" {
 		path = strings.TrimPrefix(path, base)
 	}
-	prefix := "/api/v1/" + resource + "/"
-	if strings.HasPrefix(path, prefix) {
-		return strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	for _, ver := range []string{"/api/v2/", "/api/v1/"} {
+		prefix := ver + resource + "/"
+		if strings.HasPrefix(path, prefix) {
+			return strings.Trim(strings.TrimPrefix(path, prefix), "/")
+		}
 	}
 	return ""
 }

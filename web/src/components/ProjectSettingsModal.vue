@@ -9,10 +9,11 @@ import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
 import ProjectSprintsPanel from '@/components/ProjectSprintsPanel.vue'
 import ProjectGitHubPanel from '@/components/ProjectGitHubPanel.vue'
+import ProjectExtensionsPanel from '@/components/ProjectExtensionsPanel.vue'
 import ProjectTagsPanel from '@/components/ProjectTagsPanel.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
 
-type SettingsTab = 'details' | 'board' | 'sprints' | 'tags' | 'github' | 'sharing'
+type SettingsTab = 'details' | 'board' | 'sprints' | 'tags' | 'github' | 'extensions' | 'sharing'
 
 const props = defineProps<{
   open: boolean
@@ -42,11 +43,9 @@ const tabs = computed(() => {
     { id: 'board', label: 'Board' },
   ]
   if (isKanban.value) items.push({ id: 'sprints', label: 'Sprints' })
-  items.push(
-    { id: 'tags', label: 'Tags' },
-    { id: 'github', label: 'GitHub' },
-    { id: 'sharing', label: 'Sharing' },
-  )
+  items.push({ id: 'tags', label: 'Tags' }, { id: 'github', label: 'GitHub' })
+  items.push({ id: 'extensions', label: 'Extensions' })
+  items.push({ id: 'sharing', label: 'Sharing' })
   return items
 })
 
@@ -248,6 +247,11 @@ async function archiveOrRestore() {
             v-else-if="tab === 'github'"
             :project="project"
             @changed="onPanelChanged"
+          />
+
+          <ProjectExtensionsPanel
+            v-else-if="tab === 'extensions'"
+            :project="project"
           />
 
           <ProjectSharePanel
