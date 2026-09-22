@@ -344,11 +344,8 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	oldTitle := title
 	oldDescription := description
 	oldPriority := priority
-	oldParentID := nullInt(parentID)
-	oldEstimate := 0
-	if estimatePoints.Valid {
-		oldEstimate = int(estimatePoints.Int64)
-	}
+	oldParentID := parentID
+	oldEstimate := estimatePoints
 	statusTouched := false
 	completedTouched := in.Completed != nil
 	originalProjectID := projectID
@@ -662,16 +659,16 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	sprintChanged := newSprintID != oldSprintID
 	titleChanged := oldTitle != title
 	descriptionChanged := oldDescription != description
-	parentChanged := oldParentID != nullInt(newParentID)
+	parentChanged := !sameNullInt64(oldParentID, newParentID)
 	newEstimate := oldEstimate
 	if in.EstimatePoints != nil {
 		if *in.EstimatePoints == nil {
-			newEstimate = 0
+			newEstimate = sql.NullInt64{}
 		} else {
-			newEstimate = **in.EstimatePoints
+			newEstimate = sql.NullInt64{Int64: int64(**in.EstimatePoints), Valid: true}
 		}
 	}
-	estimateChanged := oldEstimate != newEstimate
+	estimateChanged := !sameNullInt64(oldEstimate, newEstimate)
 	completedChanged := oldCompleted != completed
 	statusChanged := statusTouched && newStatusID != oldStatusID
 
@@ -710,10 +707,10 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		changed = append(changed, "tags")
 	}
 	if parentChanged {
-		appendChange("parent", strconv.Itoa(oldParentID), strconv.Itoa(nullInt(newParentID)))
+		appendChange("parent", strconv.Itoa(nullInt(oldParentID)), strconv.Itoa(nullInt(newParentID)))
 	}
 	if estimateChanged {
-		appendChange("estimate", strconv.Itoa(oldEstimate), strconv.Itoa(newEstimate))
+		appendChange("estimate", strconv.Itoa(nullInt(oldEstimate)), strconv.Itoa(nullInt(newEstimate)))
 	}
 	changed = append(changed, fieldKeys...)
 
