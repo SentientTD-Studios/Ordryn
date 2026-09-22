@@ -32,11 +32,11 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 
 ## Extensions
 
-Ordryn loads folders from `data/extensions/` (or `EXTENSIONS_DIR`) at startup. Each folder is one extension. Copy examples from `examples/extensions/` (or keep a local copy under `data/extensions/`), enable them in **Admin → Extensions**, then configure destinations on the project **Extensions** tab.
+Ordryn loads folders from `data/extensions/` (or `EXTENSIONS_DIR`) at startup. Each folder is one extension. Copy examples from `examples/extensions/` (or keep a local copy under `data/extensions/`), enable them in **Admin → Extensions**, then configure destinations where `settings.scope` allows: classic project Extensions, kanban Extensions, Profile → Integrations, or Admin for site-only hooks. Project members can open the Extensions tab to see which destinations are turned on (name, description, triggers, and the webhook hostname) without the secret, quiet hours, or other owner settings.
 
-Bundled examples cover chat destinations (Discord, Slack, Teams, Google Chat, ntfy, generic webhook, email relay), focused hooks (due-dates including `task.due_soon`, comments + mentions, claimed, activity, lifecycle, join-requests), a personal **Mentions** ntfy destination, **Callback bot** (sandboxed panel, callback tokens, inbound `complete`/`set_field`), and custom fields (`severity`, `estimate`, `fields-demo` including `date` and `markdown`).
+Bundled examples cover chat destinations (Discord, Slack, Teams, Google Chat, ntfy, generic webhook, email relay), focused hooks (due-dates including `task.due_soon`, comments + mentions, claimed, activity, lifecycle, join-requests), a personal **Mentions** ntfy destination, **Standup** (sandboxed daily check-in panel), **Retro** (kanban-tab retrospective using the document store), **Callback bot** (sandboxed panel, callback tokens, inbound `complete`/`set_field`), and custom fields (`severity`, `estimate`, `fields-demo` including `date` and `markdown`).
 
-A `manifest.json` is the whole contract (`host_api` 1). No JavaScript or WASM plugin runtime: Ordryn delivers events to Discord, Slack, Teams, Google Chat, ntfy, or a generic HTTPS webhook, optionally serves a sandboxed HTML panel, and can accept inbound actions.
+A `manifest.json` is the whole contract (`host_api` 1 or 2). No JavaScript or WASM plugin runtime: Ordryn delivers events to Discord, Slack, Teams, Google Chat, ntfy, or a generic HTTPS webhook, optionally serves a sandboxed HTML panel (including a kanban tab in host API 2), and can accept inbound actions.
 
 ### Identity
 
@@ -75,11 +75,26 @@ Status filters (`status_ids` / `status_exclude_ids`) work like tag filters. Quie
 
 Setting widgets: `secret`, `bool`, `string`, `int`, `select` (requires `options`), `status`, `user`, `hook_select`, `priority`, `tag_ids`, `status_ids`, `status_exclude_ids`, `time`, `digest`, `field_filter`, `mention_map`, `project_ids`.
 
+Each setting has `scope`: a string or array that controls **where it can be configured**. Omitted scope is `site`.
+
+| Scope | Configurable at |
+| --- | --- |
+| `site` | Admin → Extensions only |
+| `project` | Classic/list project Extensions tab only |
+| `kanban` | Kanban board Extensions tab only |
+| `user` | Profile → Integrations. Classic project owners can also use “Notify me” on the Extensions tab |
+
+`member` is accepted as an alias of `user`. A setting can list more than one surface: `"scope": ["project", "kanban"]` is the usual team webhook (classic project and board). `"scope": "project"` does **not** include kanban boards.
+
+Site-only extensions (for example join-request hooks) stay in Admin. User-only settings do not appear on kanban boards. Custom fields and sandboxed panels still show on both workflows.
+
 Custom field types: `string`, `number`, `boolean`, `enum`, `url`, `user`, `date` (`YYYY-MM-DD`), `markdown`.
 
 ### Sandboxed UI
 
-Set `ui` to an HTML file in the folder. Project members see it in an iframe (`sandbox` without `allow-same-origin`, so it cannot read the session). Extra files next to that HTML are served under `/api/v2/projects/{id}/extensions/{id}/ui/…`. Do not put secrets in the panel; use outbound JSON callbacks instead.
+Set `ui` to an HTML file in the folder. Project members see it in an iframe (`sandbox` without `allow-same-origin`, so it cannot read the session). Extra files next to that HTML are served under `/api/v2/projects/{id}/extensions/{id}/ui/…`. Do not put secrets in the panel; use outbound JSON callbacks instead. The **Standup** example is a working check-in worksheet in that iframe.
+
+Host API 2 adds `surfaces` so a panel can also sit on the kanban board (`at: "kanban.tab"`). Those frames still cannot read the session. The parent SPA forwards `store.get` / `store.put` / `store.list` over `postMessage` to `GET`/`PUT /api/v2/projects/{id}/extensions/{id}/store/{key}` (64 KiB JSON, optimistic `revision`, SSE `extension.store`). Permissions: `store:read`, `store:write` (viewers are read-only). The **Retro** example is a Went well / Improve / Actions board keyed to the sprint switcher.
 
 ### Callback tokens and inbound actions
 
@@ -130,6 +145,6 @@ The git tag is the version. Nothing in source is bumped for a release.
 - [`openapi.yaml`](openapi.yaml) — `/api/v2` contract (also `GET /openapi.yaml` on a running instance)
 - [`web/README.md`](web/README.md) — Vue SPA development
 - [License](LICENSE)
-- Extensions authoring: see **Extensions** above
+- Extensions authoring (including `settings.scope` of `site`, `project`, `kanban`, and `user`): see **Extensions** above. The wiki covers hosting, not the hook manifest.
 
 SPA source lives in `web/`. Vite hot reload and tests: [Local development](https://github.com/SentientTD-Studios/Ordryn/wiki/Local-development).

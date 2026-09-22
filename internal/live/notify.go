@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"GoTodo/internal/hooks"
@@ -317,6 +318,25 @@ func AfterProjectChange(actorID, projectID int, typ string, extraUserIDs ...int)
 // AfterProjectChangeLive is SSE-only (no outbound extension hooks).
 func AfterProjectChangeLive(actorID, projectID int, typ string, extraUserIDs ...int) {
 	afterProjectChange(actorID, projectID, typ, false, extraUserIDs...)
+}
+
+// AfterExtensionStoreChange notifies project members that an extension document changed.
+func AfterExtensionStoreChange(actorID, projectID int, extensionID, key string) {
+	h := currentHub()
+	if h == nil || projectID <= 0 {
+		return
+	}
+	users, err := storage.ProjectMemberUserIDs(projectID)
+	if err != nil {
+		return
+	}
+	h.Publish(Event{
+		Type:        TypeExtensionStore,
+		ProjectID:   projectID,
+		ActorID:     actorID,
+		ExtensionID: strings.TrimSpace(extensionID),
+		Key:         strings.TrimSpace(key),
+	}, users)
 }
 
 func afterProjectChange(actorID, projectID int, typ string, emitHooks bool, extraUserIDs ...int) {

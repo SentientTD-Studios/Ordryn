@@ -107,6 +107,8 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/projects/{id}/extensions/{extensionId}/test",
 	"/api/v2/projects/{id}/extensions/{extensionId}/me",
 	"/api/v2/projects/{id}/extensions/{extensionId}/me/test",
+	"/api/v2/projects/{id}/extensions/{extensionId}/store",
+	"/api/v2/projects/{id}/extensions/{extensionId}/store/{key}",
 	"/api/v2/projects/{id}/inbound",
 	"/api/v2/projects/{id}/custom-fields",
 	"/api/v2/me/extensions",

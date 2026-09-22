@@ -7,6 +7,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useSite } from '@/composables/useSite'
 import { useToast } from '@/composables/useToast'
 import { rateLimitNotice } from '@/utils/extensionDeliveries'
+import { settingHasScope } from '@/utils/extensionScope'
 
 const { push } = useToast()
 const { askConfirm } = useConfirm()
@@ -49,7 +50,7 @@ function destKey(ext: ProjectExtension) {
 
 function memberFields(ext: ProjectExtension) {
   const all = ext.manifest.settings || []
-  const fields = all.filter((f) => f.scope === 'member')
+  const fields = all.filter((f) => settingHasScope(f, 'user'))
   const dest = all.find((f) => f.key === destKey(ext) && f.type === 'secret')
   if (dest && !fields.some((f) => f.key === dest.key)) {
     return [dest, ...fields]
@@ -58,7 +59,7 @@ function memberFields(ext: ProjectExtension) {
 }
 
 function hasMemberSettings(ext: ProjectExtension) {
-  return (ext.manifest.settings || []).some((f) => f.scope === 'member')
+  return (ext.manifest.settings || []).some((f) => settingHasScope(f, 'user'))
 }
 
 function hasMemberSetting(ext: ProjectExtension, key: string) {

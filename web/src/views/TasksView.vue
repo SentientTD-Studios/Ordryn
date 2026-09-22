@@ -2,12 +2,13 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { Project, ProjectSprint, ProjectStatus, SavedView, Tag, Task } from '@/api/types'
+import type { Project, ProjectExtension, ProjectSprint, ProjectStatus, SavedView, Tag, Task } from '@/api/types'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
 import ModernTaskCard from '@/components/modern/ModernTaskCard.vue'
 import KanbanBoard from '@/components/KanbanBoard.vue'
+import ExtensionSurfaceFrame from '@/components/ExtensionSurfaceFrame.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import ProjectSettingsModal from '@/components/ProjectSettingsModal.vue'
@@ -26,6 +27,7 @@ import { projectOptionLabel, activeProjects, isArchivedProject, isProjectOwner }
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
 import { kanbanSprintQueryValue, kanbanWorkflowClaimScope } from '@/utils/kanbanTaskQuery'
 import { uniqueTagsByName, isArchivedTask } from '@/utils/tags'
+import { withBase } from '@/base'
 
 const route = useRoute()
 const router = useRouter()
@@ -146,7 +148,7 @@ const tagFilterByName = computed(() => !filters.project)
 const displayTags = computed(() => (tagFilterByName.value ? uniqueTagsByName(tags.value) : tags.value))
 
 const VIEW_MODE_KEY = 'gotodo.viewMode'
-type TaskViewMode = 'list' | 'board'
+type TaskViewMode = 'list' | 'board' | string
 
 function readStoredViewMode(): TaskViewMode {
   try {
@@ -158,6 +160,7 @@ function readStoredViewMode(): TaskViewMode {
 }
 
 const viewMode = ref<TaskViewMode>(readStoredViewMode())
+const projectExtensions = ref<ProjectExtension[]>([])
 
 const isKanbanProjectView = computed(() => {
   const p = activeProjectObj.value
@@ -169,19 +172,86 @@ const isKanbanProjectView = computed(() => {
   )
 })
 
+const kanbanSurfaceTabs = computed(() => {
+  const tabs: { viewKey: string; label: string; icon?: string }[] = []
+  for (const ext of projectExtensions.value) {
+    if (!ext.site_enabled || !ext.settings?.enabled) continue
+    const surfaces = ext.manifest.surfaces || []
+    const ui = ext.manifest.ui
+    const hasSettings = surfaces.some((s) => s.at === 'project.extensions')
+    const resolved = [...surfaces]
+    if (!hasSettings && ui) {
+      resolved.unshift({ id: 'settings', file: ui, at: 'project.extensions', label: ext.name })
+    }
+    for (const s of resolved) {
+      if (s.at !== 'kanban.tab') continue
+      tabs.push({
+        viewKey: `ext:${ext.id}:${s.id}`,
+        label: s.label || ext.name,
+        icon: ext.manifest.icon ? withBase(`/api/v2/extensions/${ext.id}/icon`) : undefined,
+      })
+    }
+  }
+  return tabs
+})
+
 const showBoardView = computed(
   () => isKanbanProjectView.value && viewMode.value === 'board',
 )
+const showExtensionSurface = computed(
+  () => isKanbanProjectView.value && String(viewMode.value).startsWith('ext:'),
+)
+const activeExtensionSurface = computed(() => {
+  const m = /^ext:([^:]+):(.+)$/.exec(String(viewMode.value))
+  if (!m) return null
+  const extensionId = m[1]
+  const surfaceId = m[2]
+  const ext = projectExtensions.value.find((e) => e.id === extensionId)
+  if (!ext) return null
+  return { extensionId, surfaceId, ext }
+})
+const extensionSprintId = computed(() => {
+  if (boardSprintKey.value === 'backlog') return 0
+  const n = parseInt(boardSprintKey.value, 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+})
+const extensionBridgeContext = computed(() => ({
+  project_id: activeProjectObj.value?.id || 0,
+  sprint_id: extensionSprintId.value,
+  role: activeProjectObj.value?.role || '',
+  user_id: user.value?.id || 0,
+  user_name: user.value?.user_name || '',
+  can_write: (activeProjectObj.value?.role || '') !== 'viewer',
+}))
 
 function setViewMode(mode: TaskViewMode) {
   if (viewMode.value === mode) return
   viewMode.value = mode
-  try {
-    localStorage.setItem(VIEW_MODE_KEY, mode)
-  } catch {
-    /* ignore */
+  const persist = mode === 'list' || mode === 'board'
+  if (persist) {
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode)
+    } catch {
+      /* ignore */
+    }
   }
-  void reloadInitial()
+  if (!String(mode).startsWith('ext:')) {
+    void reloadInitial()
+  }
+}
+
+async function loadProjectExtensions() {
+  const p = activeProjectObj.value
+  if (!p || !isKanbanProjectView.value) {
+    projectExtensions.value = []
+    return
+  }
+  try {
+    const out = await api.listProjectExtensions(p.id)
+    projectExtensions.value = out.extensions || []
+  } catch {
+    projectExtensions.value = []
+  }
 }
 
 /** Keep column order + status_id in sync without a full reload after drag. */
@@ -633,6 +703,7 @@ async function loadMeta() {
     projects.value = projs
     savedViews.value = views
     await loadTags()
+    await loadProjectExtensions()
   } catch {
     /* non-fatal */
   }
@@ -773,8 +844,17 @@ watch(
   () => filters.project,
   () => {
     void loadTags()
+    void loadProjectExtensions()
   },
 )
+
+watch(kanbanSurfaceTabs, (tabs) => {
+  const mode = String(viewMode.value)
+  if (!mode.startsWith('ext:')) return
+  if (!tabs.some((t) => t.viewKey === mode)) {
+    setViewMode('board')
+  }
+})
 
 function isArchivedTagFilter(): boolean {
   const q = (filters.tag || '').trim().toLowerCase()
@@ -1254,6 +1334,7 @@ onMounted(async () => {
 
 useLiveUpdates((event) => {
   if (event.type === 'task.commented') return
+  if (event.type === 'extension.store') return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
   if (event.type === 'project.updated' || event.type === 'project.created' || event.type === 'project.deleted') {
     void loadMeta()
@@ -1394,6 +1475,8 @@ onUnmounted(() => {
           :tag-by-name="tagFilterByName"
           :show-view-mode="isKanbanProjectView"
           :view-mode="viewMode"
+          :surface-tabs="kanbanSurfaceTabs"
+          :hide-task-filters="showExtensionSurface"
           @update:status="setFilterAndReload('status', $event)"
           @update:tag="setFilterAndReload('tag', $event)"
           @update:priority="setFilterAndReload('priority', $event)"
@@ -1653,8 +1736,19 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <div v-if="showExtensionSurface && activeExtensionSurface && activeProjectObj" class="mb-3">
+          <ExtensionSurfaceFrame
+            :key="`${activeExtensionSurface.extensionId}:${activeExtensionSurface.surfaceId}`"
+            :project-id="activeProjectObj.id"
+            :extension-id="activeExtensionSurface.extensionId"
+            :surface-id="activeExtensionSurface.surfaceId"
+            :sprint-id="extensionSprintId"
+            :context="extensionBridgeContext"
+          />
+        </div>
+
         <!-- Task Lists Container -->
-        <div v-if="!showBoardView" id="task-container" aria-live="polite">
+        <div v-if="!showBoardView && !showExtensionSurface" id="task-container" aria-live="polite">
           <div v-if="loading && !tasks.length" class="text-center py-5 text-muted">
             <div class="spinner-border spinner-border-sm me-2" role="status" />Loading tasks…
           </div>

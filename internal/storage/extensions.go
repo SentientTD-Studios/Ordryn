@@ -50,25 +50,25 @@ type ExtensionProjectSettings struct {
 
 // ExtensionMemberSettings is per-user destination config (project or personal inbox).
 type ExtensionMemberSettings struct {
-	Enabled         bool              `json:"enabled"`
-	Triggers        []string          `json:"triggers"`
-	Templates       map[string]string `json:"templates"`
-	SkipSelf        *bool             `json:"skip_self,omitempty"`
-	StatusOnly      bool              `json:"status_only,omitempty"`
+	Enabled          bool              `json:"enabled"`
+	Triggers         []string          `json:"triggers"`
+	Templates        map[string]string `json:"templates"`
+	SkipSelf         *bool             `json:"skip_self,omitempty"`
+	StatusOnly       bool              `json:"status_only,omitempty"`
 	MinPriority      int               `json:"min_priority,omitempty"`
 	TagIDs           []int             `json:"tag_ids,omitempty"`
 	StatusIDs        []int             `json:"status_ids,omitempty"`
 	StatusExcludeIDs []int             `json:"status_exclude_ids,omitempty"`
 	ClaimedOnly      bool              `json:"claimed_only,omitempty"`
-	ClaimedIsMe     bool              `json:"claimed_is_me,omitempty"`
-	FieldKey        string            `json:"field_key,omitempty"`
-	FieldValue      string            `json:"field_value,omitempty"`
-	QuietHoursStart string            `json:"quiet_hours_start,omitempty"`
-	QuietHoursEnd   string            `json:"quiet_hours_end,omitempty"`
-	Digest          string            `json:"digest,omitempty"`
-	Values          map[string]string `json:"values,omitempty"`
-	LastError       string            `json:"last_error,omitempty"`
-	LastDeliveryAt  string            `json:"last_delivery_at,omitempty"`
+	ClaimedIsMe      bool              `json:"claimed_is_me,omitempty"`
+	FieldKey         string            `json:"field_key,omitempty"`
+	FieldValue       string            `json:"field_value,omitempty"`
+	QuietHoursStart  string            `json:"quiet_hours_start,omitempty"`
+	QuietHoursEnd    string            `json:"quiet_hours_end,omitempty"`
+	Digest           string            `json:"digest,omitempty"`
+	Values           map[string]string `json:"values,omitempty"`
+	LastError        string            `json:"last_error,omitempty"`
+	LastDeliveryAt   string            `json:"last_delivery_at,omitempty"`
 }
 
 // SkipSelfOrDefault is true when skip_self is unset (member/personal default).
@@ -205,6 +205,16 @@ func CreateExtensionTables() error {
 			message_id TEXT NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (extension_id, project_id, task_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS extension_store (
+			extension_id VARCHAR(64) NOT NULL,
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			doc_key VARCHAR(64) NOT NULL,
+			revision INTEGER NOT NULL DEFAULT 1,
+			payload JSONB NOT NULL DEFAULT '{}',
+			updated_by INTEGER NOT NULL DEFAULT 0,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (extension_id, project_id, doc_key)
 		)`,
 	}
 	for _, q := range stmts {

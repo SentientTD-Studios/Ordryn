@@ -115,17 +115,17 @@ func TestAPIV1MeExtensionsUnauthorized(t *testing.T) {
 }
 
 func TestProjectExtensionVisibleRequiresLoadedSurface(t *testing.T) {
-	ok, err := projectExtensionVisible(extensions.Entry{Loaded: false, Manifest: extensions.Manifest{ID: "x"}})
+	ok, err := projectExtensionVisible(extensions.Entry{Loaded: false, Manifest: extensions.Manifest{ID: "x"}}, "")
 	if err != nil || ok {
 		t.Fatalf("unloaded visible=%v err=%v", ok, err)
 	}
 	ok, err = projectExtensionVisible(extensions.Entry{
 		Loaded: true,
 		Manifest: extensions.Manifest{
-			ID:      "join-requests",
+			ID:       "join-requests",
 			Settings: []extensions.Setting{{Key: "webhook_url", Type: "secret", Label: "URL"}},
 		},
-	})
+	}, "")
 	if err != nil || ok {
 		t.Fatalf("site-only visible=%v err=%v", ok, err)
 	}
@@ -138,7 +138,7 @@ func TestPersonalInboxVisibleRequiresMemberScope(t *testing.T) {
 			ID:       "discord",
 			Delivery: &extensions.Delivery{Type: extensions.DeliveryDiscordWebhook, URLFrom: "webhook_url"},
 			Settings: []extensions.Setting{
-				{Key: "webhook_url", Type: "secret", Label: "URL", Scope: extensions.ScopeProject},
+				{Key: "webhook_url", Type: "secret", Label: "URL", Scope: extensions.ScopeList{extensions.ScopeProject}},
 			},
 		},
 	}
@@ -146,7 +146,7 @@ func TestPersonalInboxVisibleRequiresMemberScope(t *testing.T) {
 		t.Fatal("project-only discord should not appear under profile integrations")
 	}
 	e.Manifest.Settings = append(e.Manifest.Settings, extensions.Setting{
-		Key: "claimed_is_me", Type: "bool", Label: "Mine", Scope: extensions.ScopeMember,
+		Key: "claimed_is_me", Type: "bool", Label: "Mine", Scope: extensions.ScopeList{extensions.ScopeMember},
 	})
 	if !personalInboxVisible(e) {
 		t.Fatal("member-scoped settings should appear under profile integrations")
@@ -155,17 +155,64 @@ func TestPersonalInboxVisibleRequiresMemberScope(t *testing.T) {
 
 func TestApplyHookFiltersIgnoresUndeclaredSettings(t *testing.T) {
 	m := extensions.Manifest{Settings: []extensions.Setting{
-		{Key: "skip_self", Type: "bool", Label: "Skip", Scope: extensions.ScopeProject},
+		{Key: "skip_self", Type: "bool", Label: "Skip", Scope: extensions.ScopeList{extensions.ScopeProject}},
 	}}
 	cur := storage.ExtensionProjectSettings{}
 	skip := true
 	pri := 3
 	claimed := true
-	applyHookFiltersToProject(m, &cur, projectExtensionPatch{SkipSelf: &skip, MinPriority: &pri, ClaimedOnly: &claimed})
+	applyHookFiltersToProject(m, &cur, projectExtensionPatch{SkipSelf: &skip, MinPriority: &pri, ClaimedOnly: &claimed}, extensions.ScopeProject)
 	if !cur.SkipSelf {
 		t.Fatal("declared skip_self should apply")
 	}
 	if cur.MinPriority != 0 || cur.ClaimedOnly {
 		t.Fatal("undeclared filters should be ignored")
+	}
+}
+
+func TestApplyHookFiltersIgnoresOtherWorkflowScope(t *testing.T) {
+	m := extensions.Manifest{Settings: []extensions.Setting{
+		{Key: "skip_self", Type: "bool", Label: "Skip", Scope: extensions.ScopeList{extensions.ScopeKanban}},
+	}}
+	cur := storage.ExtensionProjectSettings{}
+	skip := true
+	applyHookFiltersToProject(m, &cur, projectExtensionPatch{SkipSelf: &skip}, extensions.ScopeProject)
+	if cur.SkipSelf {
+		t.Fatal("kanban-only skip_self should not apply on a classic project")
+	}
+	applyHookFiltersToProject(m, &cur, projectExtensionPatch{SkipSelf: &skip}, extensions.ScopeKanban)
+	if !cur.SkipSelf {
+		t.Fatal("kanban-only skip_self should apply on a kanban board")
+	}
+}
+
+func TestTeamDestinationHostRequiresDelivery(t *testing.T) {
+	if got := teamDestinationHost(extensions.Entry{ID: "discord"}, 1); got != "" {
+		t.Fatalf("no delivery: got %q", got)
+	}
+	if got := teamDestinationHost(extensions.Entry{
+		ID:       "discord",
+		Manifest: extensions.Manifest{Delivery: &extensions.Delivery{Type: extensions.DeliveryDiscordWebhook}},
+	}, 0); got != "" {
+		t.Fatalf("no project: got %q", got)
+	}
+}
+
+func TestProjectExtensionVisibleRespectsWorkflowScope(t *testing.T) {
+	e := extensions.Entry{
+		Loaded: true,
+		Manifest: extensions.Manifest{
+			ID: "board-hook",
+			Settings: []extensions.Setting{
+				{Key: "webhook_url", Type: "secret", Label: "URL", Scope: extensions.ScopeList{extensions.ScopeKanban}},
+			},
+		},
+	}
+	if e.Manifest.VisibleOnProject("classic") || !e.Manifest.VisibleOnProject("kanban") {
+		t.Fatal("expected kanban-only surface")
+	}
+	ok, err := projectExtensionVisible(e, "classic")
+	if err != nil || ok {
+		t.Fatalf("kanban-only visible on classic=%v err=%v", ok, err)
 	}
 }

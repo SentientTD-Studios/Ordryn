@@ -35,6 +35,7 @@ type projectExtensionJSON struct {
 	MemberCallbackSet bool                             `json:"member_callback_set,omitempty"`
 	Deliveries        []extensionDeliveryJSON          `json:"deliveries,omitempty"`
 	MemberDeliveries  []extensionDeliveryJSON          `json:"member_deliveries,omitempty"`
+	DestinationHost   string                           `json:"destination_host,omitempty"`
 }
 
 type extensionDeliveryJSON struct {
@@ -56,28 +57,28 @@ type projectExtensionsListJSON struct {
 }
 
 type projectExtensionPatch struct {
-	Enabled         *bool             `json:"enabled"`
-	Triggers        *[]string         `json:"triggers"`
-	Templates       map[string]string `json:"templates"`
-	StatusOnly      *bool             `json:"status_only"`
-	SkipSelf        *bool             `json:"skip_self"`
-	MinPriority     *int              `json:"min_priority"`
-	TagIDs          *[]int            `json:"tag_ids"`
-	ClaimedOnly     *bool             `json:"claimed_only"`
-	ClaimedIsMe     *bool             `json:"claimed_is_me"`
-	FieldKey        *string           `json:"field_key"`
-	FieldValue      *string           `json:"field_value"`
-	QuietHoursStart *string           `json:"quiet_hours_start"`
-	QuietHoursEnd   *string           `json:"quiet_hours_end"`
-	Digest          *string           `json:"digest"`
-	StatusIDs       *[]int            `json:"status_ids"`
-	StatusExcludeIDs *[]int           `json:"status_exclude_ids"`
-	MentionMap      map[string]string `json:"mention_map"`
-	WebhookURL      *string           `json:"webhook_url"`
-	NtfyAuth        *string           `json:"ntfy_auth"`
-	RotateSigning   *bool             `json:"rotate_signing"`
-	RotateCallback  *bool             `json:"rotate_callback"`
-	Values          map[string]string `json:"values"`
+	Enabled          *bool             `json:"enabled"`
+	Triggers         *[]string         `json:"triggers"`
+	Templates        map[string]string `json:"templates"`
+	StatusOnly       *bool             `json:"status_only"`
+	SkipSelf         *bool             `json:"skip_self"`
+	MinPriority      *int              `json:"min_priority"`
+	TagIDs           *[]int            `json:"tag_ids"`
+	ClaimedOnly      *bool             `json:"claimed_only"`
+	ClaimedIsMe      *bool             `json:"claimed_is_me"`
+	FieldKey         *string           `json:"field_key"`
+	FieldValue       *string           `json:"field_value"`
+	QuietHoursStart  *string           `json:"quiet_hours_start"`
+	QuietHoursEnd    *string           `json:"quiet_hours_end"`
+	Digest           *string           `json:"digest"`
+	StatusIDs        *[]int            `json:"status_ids"`
+	StatusExcludeIDs *[]int            `json:"status_exclude_ids"`
+	MentionMap       map[string]string `json:"mention_map"`
+	WebhookURL       *string           `json:"webhook_url"`
+	NtfyAuth         *string           `json:"ntfy_auth"`
+	RotateSigning    *bool             `json:"rotate_signing"`
+	RotateCallback   *bool             `json:"rotate_callback"`
+	Values           map[string]string `json:"values"`
 }
 
 func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID int, rest []string) {
@@ -98,7 +99,7 @@ func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID in
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 			return
 		}
-		projectExtensionsList(w, projectID, userID, isOwner)
+		projectExtensionsList(w, projectID, userID, isOwner, proj.WorkflowMode)
 		return
 	}
 
@@ -116,11 +117,15 @@ func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID in
 			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only the project owner can manage the team webhook.")
 			return
 		}
-		projectExtensionPatchHandler(w, r, projectID, extensionID, userID, true)
+		projectExtensionPatchHandler(w, r, projectID, extensionID, userID, true, proj.WorkflowMode)
 		return
 	}
 	if rest[1] == "ui" {
 		projectExtensionUI(w, r, projectID, extensionID, rest[2:])
+		return
+	}
+	if rest[1] == "store" {
+		projectExtensionStore(w, r, projectID, extensionID, userID, rest[2:])
 		return
 	}
 	if rest[1] == "test" && len(rest) == 2 {
@@ -164,11 +169,11 @@ func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID in
 	utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
 }
 
-func projectExtensionsList(w http.ResponseWriter, projectID, userID int, isOwner bool) {
+func projectExtensionsList(w http.ResponseWriter, projectID, userID int, isOwner bool, workflowMode string) {
 	entries := extensions.Snapshot()
 	out := make([]projectExtensionJSON, 0)
 	for _, e := range entries {
-		ok, err := projectExtensionVisible(e)
+		ok, err := projectExtensionVisible(e, workflowMode)
 		if err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 			return
@@ -176,7 +181,7 @@ func projectExtensionsList(w http.ResponseWriter, projectID, userID int, isOwner
 		if !ok {
 			continue
 		}
-		item, err := projectExtensionFromEntry(e, projectID, userID, isOwner)
+		item, err := projectExtensionFromEntry(e, projectID, userID, isOwner, workflowMode)
 		if err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 			return
@@ -187,8 +192,8 @@ func projectExtensionsList(w http.ResponseWriter, projectID, userID int, isOwner
 	_ = json.NewEncoder(w).Encode(projectExtensionsListJSON{Extensions: out, IsOwner: isOwner})
 }
 
-func projectExtensionVisible(e extensions.Entry) (bool, error) {
-	if !e.Loaded || !e.Manifest.HasProjectSurface() {
+func projectExtensionVisible(e extensions.Entry, workflowMode string) (bool, error) {
+	if !e.Loaded || !e.Manifest.VisibleOnProject(workflowMode) {
 		return false, nil
 	}
 	site, err := storage.GetExtensionSettings(e.ID)
@@ -198,32 +203,32 @@ func projectExtensionVisible(e extensions.Entry) (bool, error) {
 	return site.Enabled, nil
 }
 
-func applyHookFiltersToProject(m extensions.Manifest, cur *storage.ExtensionProjectSettings, req projectExtensionPatch) {
+func applyHookFiltersToProject(m extensions.Manifest, cur *storage.ExtensionProjectSettings, req projectExtensionPatch, scope string) {
 	if req.Enabled != nil {
 		cur.Enabled = *req.Enabled
 	}
-	if req.StatusOnly != nil && m.HasSetting("status_only") {
+	if req.StatusOnly != nil && m.HasSettingForScope("status_only", scope) {
 		cur.StatusOnly = *req.StatusOnly
 	}
-	if req.SkipSelf != nil && m.HasSetting("skip_self") {
+	if req.SkipSelf != nil && m.HasSettingForScope("skip_self", scope) {
 		cur.SkipSelf = *req.SkipSelf
 	}
-	if req.MinPriority != nil && m.HasSetting("min_priority") {
+	if req.MinPriority != nil && m.HasSettingForScope("min_priority", scope) {
 		cur.MinPriority = *req.MinPriority
 	}
-	if req.TagIDs != nil && m.HasSetting("tag_ids") {
+	if req.TagIDs != nil && m.HasSettingForScope("tag_ids", scope) {
 		cur.TagIDs = *req.TagIDs
 	}
-	if req.StatusIDs != nil && m.HasSetting("status_ids") {
+	if req.StatusIDs != nil && m.HasSettingForScope("status_ids", scope) {
 		cur.StatusIDs = *req.StatusIDs
 	}
-	if req.StatusExcludeIDs != nil && m.HasSetting("status_exclude_ids") {
+	if req.StatusExcludeIDs != nil && m.HasSettingForScope("status_exclude_ids", scope) {
 		cur.StatusExcludeIDs = *req.StatusExcludeIDs
 	}
-	if req.ClaimedOnly != nil && m.HasSetting("claimed_only") {
+	if req.ClaimedOnly != nil && m.HasSettingForScope("claimed_only", scope) {
 		cur.ClaimedOnly = *req.ClaimedOnly
 	}
-	if (req.FieldKey != nil || req.FieldValue != nil) && (m.HasSetting("field_key") || m.HasSetting("field_value") || m.HasSetting("field_filter")) {
+	if (req.FieldKey != nil || req.FieldValue != nil) && (m.HasSettingForScope("field_key", scope) || m.HasSettingForScope("field_value", scope) || m.HasSettingForScope("field_filter", scope)) {
 		if req.FieldKey != nil {
 			cur.FieldKey = strings.TrimSpace(*req.FieldKey)
 		}
@@ -231,50 +236,51 @@ func applyHookFiltersToProject(m extensions.Manifest, cur *storage.ExtensionProj
 			cur.FieldValue = strings.TrimSpace(*req.FieldValue)
 		}
 	}
-	if req.QuietHoursStart != nil && m.HasSetting("quiet_hours_start") {
+	if req.QuietHoursStart != nil && m.HasSettingForScope("quiet_hours_start", scope) {
 		cur.QuietHoursStart = strings.TrimSpace(*req.QuietHoursStart)
 	}
-	if req.QuietHoursEnd != nil && m.HasSetting("quiet_hours_end") {
+	if req.QuietHoursEnd != nil && m.HasSettingForScope("quiet_hours_end", scope) {
 		cur.QuietHoursEnd = strings.TrimSpace(*req.QuietHoursEnd)
 	}
-	if req.Digest != nil && m.HasSetting("digest") {
+	if req.Digest != nil && m.HasSettingForScope("digest", scope) {
 		cur.Digest = strings.ToLower(strings.TrimSpace(*req.Digest))
 	}
-	if req.MentionMap != nil && m.HasSetting("mention_map") {
+	if req.MentionMap != nil && m.HasSettingForScope("mention_map", scope) {
 		cur.MentionMap = req.MentionMap
 	}
-	applySettingValues(m, &cur.Values, req.Values)
+	applySettingValues(m, &cur.Values, req.Values, scope)
 }
 
 func applyHookFiltersToMember(m extensions.Manifest, cur *storage.ExtensionMemberSettings, req projectExtensionPatch) {
+	scope := extensions.ScopeUser
 	if req.Enabled != nil {
 		cur.Enabled = *req.Enabled
 	}
-	if req.StatusOnly != nil && m.HasSetting("status_only") {
+	if req.StatusOnly != nil && m.HasSettingForScope("status_only", scope) {
 		cur.StatusOnly = *req.StatusOnly
 	}
-	if req.SkipSelf != nil && m.HasSetting("skip_self") {
+	if req.SkipSelf != nil && m.HasSettingForScope("skip_self", scope) {
 		cur.SkipSelf = req.SkipSelf
 	}
-	if req.MinPriority != nil && m.HasSetting("min_priority") {
+	if req.MinPriority != nil && m.HasSettingForScope("min_priority", scope) {
 		cur.MinPriority = *req.MinPriority
 	}
-	if req.TagIDs != nil && m.HasSetting("tag_ids") {
+	if req.TagIDs != nil && m.HasSettingForScope("tag_ids", scope) {
 		cur.TagIDs = *req.TagIDs
 	}
-	if req.StatusIDs != nil && m.HasSetting("status_ids") {
+	if req.StatusIDs != nil && m.HasSettingForScope("status_ids", scope) {
 		cur.StatusIDs = *req.StatusIDs
 	}
-	if req.StatusExcludeIDs != nil && m.HasSetting("status_exclude_ids") {
+	if req.StatusExcludeIDs != nil && m.HasSettingForScope("status_exclude_ids", scope) {
 		cur.StatusExcludeIDs = *req.StatusExcludeIDs
 	}
-	if req.ClaimedOnly != nil && m.HasSetting("claimed_only") {
+	if req.ClaimedOnly != nil && m.HasSettingForScope("claimed_only", scope) {
 		cur.ClaimedOnly = *req.ClaimedOnly
 	}
-	if req.ClaimedIsMe != nil && m.HasSetting("claimed_is_me") {
+	if req.ClaimedIsMe != nil && m.HasSettingForScope("claimed_is_me", scope) {
 		cur.ClaimedIsMe = *req.ClaimedIsMe
 	}
-	if (req.FieldKey != nil || req.FieldValue != nil) && (m.HasSetting("field_key") || m.HasSetting("field_value") || m.HasSetting("field_filter")) {
+	if (req.FieldKey != nil || req.FieldValue != nil) && (m.HasSettingForScope("field_key", scope) || m.HasSettingForScope("field_value", scope) || m.HasSettingForScope("field_filter", scope)) {
 		if req.FieldKey != nil {
 			cur.FieldKey = strings.TrimSpace(*req.FieldKey)
 		}
@@ -282,23 +288,23 @@ func applyHookFiltersToMember(m extensions.Manifest, cur *storage.ExtensionMembe
 			cur.FieldValue = strings.TrimSpace(*req.FieldValue)
 		}
 	}
-	if req.QuietHoursStart != nil && m.HasSetting("quiet_hours_start") {
+	if req.QuietHoursStart != nil && m.HasSettingForScope("quiet_hours_start", scope) {
 		cur.QuietHoursStart = strings.TrimSpace(*req.QuietHoursStart)
 	}
-	if req.QuietHoursEnd != nil && m.HasSetting("quiet_hours_end") {
+	if req.QuietHoursEnd != nil && m.HasSettingForScope("quiet_hours_end", scope) {
 		cur.QuietHoursEnd = strings.TrimSpace(*req.QuietHoursEnd)
 	}
-	if req.Digest != nil && m.HasSetting("digest") {
+	if req.Digest != nil && m.HasSettingForScope("digest", scope) {
 		cur.Digest = strings.ToLower(strings.TrimSpace(*req.Digest))
 	}
-	applySettingValues(m, &cur.Values, req.Values)
+	applySettingValues(m, &cur.Values, req.Values, scope)
 }
 
-func applySettingValues(m extensions.Manifest, dest *map[string]string, req map[string]string) {
+func applySettingValues(m extensions.Manifest, dest *map[string]string, req map[string]string, scope string) {
 	if req == nil {
 		return
 	}
-	allowed := m.ValueSettingKeys()
+	allowed := m.ValueSettingKeysForScope(scope)
 	if *dest == nil {
 		*dest = map[string]string{}
 	}
@@ -315,7 +321,7 @@ func applySettingValues(m extensions.Manifest, dest *map[string]string, req map[
 	}
 }
 
-func saveDeliverySecrets(w http.ResponseWriter, e extensions.Entry, projectID, userID int, req projectExtensionPatch) (shownSigning, shownCallback string, ok bool) {
+func saveDeliverySecrets(w http.ResponseWriter, e extensions.Entry, projectID, userID int, req projectExtensionPatch, scope string) (shownSigning, shownCallback string, ok bool) {
 	key := "webhook_url"
 	if e.Manifest.Delivery != nil {
 		if k := e.Manifest.Delivery.DestinationKey(); k != "" {
@@ -323,22 +329,34 @@ func saveDeliverySecrets(w http.ResponseWriter, e extensions.Entry, projectID, u
 		}
 	}
 	if req.WebhookURL != nil && strings.TrimSpace(*req.WebhookURL) != "" {
-		url := strings.TrimSpace(*req.WebhookURL)
-		if e.Manifest.Delivery != nil {
-			if err := hooks.ValidateDeliveryURL(e.Manifest.Delivery, url); err != nil {
-				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error()+".")
+		allowDest := e.Manifest.HasSetting(key)
+		if userID == 0 {
+			allowDest = e.Manifest.HasSettingForScope(key, scope)
+		}
+		if allowDest {
+			url := strings.TrimSpace(*req.WebhookURL)
+			if e.Manifest.Delivery != nil {
+				if err := hooks.ValidateDeliveryURL(e.Manifest.Delivery, url); err != nil {
+					utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error()+".")
+					return "", "", false
+				}
+			}
+			if err := storage.SetExtensionSecretForUser(e.ID, projectID, userID, key, url); err != nil {
+				utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save webhook URL.")
 				return "", "", false
 			}
 		}
-		if err := storage.SetExtensionSecretForUser(e.ID, projectID, userID, key, url); err != nil {
-			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save webhook URL.")
-			return "", "", false
-		}
 	}
 	if req.NtfyAuth != nil && strings.TrimSpace(*req.NtfyAuth) != "" {
-		if err := storage.SetExtensionSecretForUser(e.ID, projectID, userID, "ntfy_auth", strings.TrimSpace(*req.NtfyAuth)); err != nil {
-			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save ntfy token.")
-			return "", "", false
+		allowAuth := e.Manifest.HasSetting("ntfy_auth")
+		if userID == 0 {
+			allowAuth = e.Manifest.HasSettingForScope("ntfy_auth", scope)
+		}
+		if allowAuth {
+			if err := storage.SetExtensionSecretForUser(e.ID, projectID, userID, "ntfy_auth", strings.TrimSpace(*req.NtfyAuth)); err != nil {
+				utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save ntfy token.")
+				return "", "", false
+			}
 		}
 	}
 	if req.RotateSigning != nil && *req.RotateSigning {
@@ -368,13 +386,13 @@ func saveDeliverySecrets(w http.ResponseWriter, e extensions.Entry, projectID, u
 	return shownSigning, shownCallback, true
 }
 
-func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projectID int, extensionID string, userID int, isOwner bool) {
+func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projectID int, extensionID string, userID int, isOwner bool, workflowMode string) {
 	e, ok := extensions.Get(extensionID)
 	if !ok {
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension not found.")
 		return
 	}
-	visible, err := projectExtensionVisible(e)
+	visible, err := projectExtensionVisible(e, workflowMode)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 		return
@@ -393,7 +411,8 @@ func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projec
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 		return
 	}
-	applyHookFiltersToProject(e.Manifest, &cur, req)
+	scope := extensions.WorkflowSettingScope(workflowMode)
+	applyHookFiltersToProject(e.Manifest, &cur, req, scope)
 	if req.Triggers != nil {
 		cur.Triggers = filterDeclaredTriggers(e.Manifest, *req.Triggers)
 	}
@@ -408,7 +427,7 @@ func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projec
 			cur.Templates[k] = v
 		}
 	}
-	sec, callback, ok := saveDeliverySecrets(w, e, projectID, 0, req)
+	sec, callback, ok := saveDeliverySecrets(w, e, projectID, 0, req, scope)
 	if !ok {
 		return
 	}
@@ -416,7 +435,7 @@ func projectExtensionPatchHandler(w http.ResponseWriter, r *http.Request, projec
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save extension settings.")
 		return
 	}
-	item, err := projectExtensionFromEntry(e, projectID, userID, isOwner)
+	item, err := projectExtensionFromEntry(e, projectID, userID, isOwner, workflowMode)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 		return
@@ -441,7 +460,7 @@ func projectMemberExtensionGet(w http.ResponseWriter, projectID int, extensionID
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Member destinations are not available on kanban projects.")
 		return
 	}
-	item, err := projectExtensionFromEntry(e, projectID, userID, false)
+	item, err := projectExtensionFromEntry(e, projectID, userID, false, "")
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load settings.")
 		return
@@ -501,7 +520,7 @@ func projectMemberExtensionPatch(w http.ResponseWriter, r *http.Request, project
 			cur.Templates[k] = v
 		}
 	}
-	sec, callback, ok := saveDeliverySecrets(w, e, projectID, userID, req)
+	sec, callback, ok := saveDeliverySecrets(w, e, projectID, userID, req, extensions.ScopeUser)
 	if !ok {
 		return
 	}
@@ -509,7 +528,7 @@ func projectMemberExtensionPatch(w http.ResponseWriter, r *http.Request, project
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
 		return
 	}
-	item, err := projectExtensionFromEntry(e, projectID, userID, false)
+	item, err := projectExtensionFromEntry(e, projectID, userID, false, "")
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load settings.")
 		return
@@ -575,7 +594,51 @@ func projectExtensionRetry(w http.ResponseWriter, r *http.Request, projectID, us
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
-func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwner bool) (projectExtensionJSON, error) {
+func teamDestinationHost(e extensions.Entry, projectID int) string {
+	if projectID <= 0 || e.Manifest.Delivery == nil {
+		return ""
+	}
+	key := e.Manifest.Delivery.DestinationKey()
+	if key == "" {
+		return ""
+	}
+	raw, err := storage.GetExtensionSecret(e.ID, projectID, key)
+	if err != nil {
+		return ""
+	}
+	return hooks.DestinationHost(raw)
+}
+
+func memberSecretKeys(m extensions.Manifest, workflowMode string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(keys []string) {
+		for _, key := range keys {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, key)
+		}
+	}
+	add(m.UserSecretKeys())
+	if dest := m.Delivery.DestinationKey(); dest != "" && m.HasSetting(dest) {
+		add([]string{dest})
+	}
+	if m.HasSetting("ntfy_auth") {
+		add([]string{"ntfy_auth"})
+	}
+	if workflowMode != "" {
+		add(m.TeamSecretKeys(workflowMode))
+	}
+	return out
+}
+
+func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwner bool, workflowMode string) (projectExtensionJSON, error) {
 	item := projectExtensionJSON{
 		ID:            e.ID,
 		Name:          e.Manifest.Name,
@@ -601,8 +664,9 @@ func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwne
 			return item, err
 		}
 		item.Settings = s
+		item.DestinationHost = teamDestinationHost(e, projectID)
 		if isOwner {
-			for _, key := range e.Manifest.ProjectSecretKeys() {
+			for _, key := range e.Manifest.TeamSecretKeys(workflowMode) {
 				item.Secrets[key] = storage.ExtensionSecretIsSet(e.ID, projectID, key)
 			}
 			item.SigningSet = storage.ExtensionSecretIsSet(e.ID, projectID, storage.SigningSecretKey)
@@ -618,7 +682,7 @@ func projectExtensionFromEntry(e extensions.Entry, projectID, userID int, isOwne
 			return item, err
 		}
 		item.Member = mem
-		for _, key := range e.Manifest.ProjectSecretKeys() {
+		for _, key := range memberSecretKeys(e.Manifest, workflowMode) {
 			item.MemberSecrets[key] = storage.ExtensionSecretIsSetForUser(e.ID, projectID, userID, key)
 		}
 		if rows, err := storage.ListRecentDeliveries(e.ID, projectID, userID, 10); err == nil {
@@ -673,22 +737,41 @@ func projectExtensionUI(w http.ResponseWriter, r *http.Request, projectID int, e
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension not found.")
 		return
 	}
-	visible, err := projectExtensionVisible(e)
+	mode, modeErr := storage.GetProjectWorkflowMode(projectID)
+	if modeErr != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
+		return
+	}
+	visible, err := projectExtensionVisible(e, mode)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 		return
 	}
-	if !visible || !e.Manifest.HasUI() {
+	if !visible || (!e.Manifest.HasUI() && !e.Manifest.HasSurfaces()) {
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension UI not found.")
 		return
 	}
-	ui := strings.TrimSpace(e.Manifest.UI)
-	rel := ui
+	rel := strings.TrimSpace(e.Manifest.UI)
+	if surfaceID := strings.TrimSpace(r.URL.Query().Get("surface")); surfaceID != "" {
+		s, ok := e.Manifest.SurfaceByID(surfaceID)
+		if !ok {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension UI not found.")
+			return
+		}
+		rel = s.File
+	} else if rel == "" {
+		surfaces := e.Manifest.ResolvedSurfaces()
+		if len(surfaces) == 0 {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Extension UI not found.")
+			return
+		}
+		rel = surfaces[0].File
+	}
 	asPanel := true
 	if len(extra) > 0 {
 		asPanel = false
 		joined := strings.Trim(strings.Join(extra, "/"), "/")
-		base := strings.TrimSuffix(strings.ReplaceAll(ui, "\\", "/"), "/")
+		base := strings.TrimSuffix(strings.ReplaceAll(rel, "\\", "/"), "/")
 		if i := strings.LastIndex(base, "/"); i >= 0 {
 			base = base[:i]
 		} else {
@@ -702,4 +785,85 @@ func projectExtensionUI(w http.ResponseWriter, r *http.Request, projectID int, e
 	}
 	_ = projectID
 	serveExtensionFile(w, r, e.Dir, rel, asPanel)
+}
+
+type extensionStorePutBody struct {
+	Revision int             `json:"revision"`
+	Value    json.RawMessage `json:"value"`
+}
+
+func projectExtensionStore(w http.ResponseWriter, r *http.Request, projectID int, extensionID string, userID int, extra []string) {
+	if len(extra) == 0 {
+		if r.Method != http.MethodGet {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		keys, err := domain.ListExtensionStoreKeys(userID, projectID, extensionID)
+		if err != nil {
+			writeExtensionStoreError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+		return
+	}
+	key := strings.Trim(strings.Join(extra, "/"), "/")
+	switch r.Method {
+	case http.MethodGet:
+		doc, err := domain.GetExtensionStoreDoc(userID, projectID, extensionID, key)
+		if err != nil {
+			writeExtensionStoreError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(doc)
+	case http.MethodPut:
+		var body extensionStorePutBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON.")
+			return
+		}
+		revision := body.Revision
+		if match := strings.TrimSpace(r.Header.Get("If-Match")); match != "" {
+			n, err := strconv.Atoi(match)
+			if err != nil || n < 0 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "If-Match must be a revision number.")
+				return
+			}
+			revision = n
+		}
+		doc, err := domain.PutExtensionStoreDoc(userID, projectID, extensionID, key, revision, body.Value)
+		if err != nil {
+			writeExtensionStoreError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(doc)
+	default:
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+	}
+}
+
+func writeExtensionStoreError(w http.ResponseWriter, err error) {
+	var conflict *domain.StoreConflictError
+	if errors.As(err, &conflict) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":   "conflict",
+			"message": "Store revision does not match.",
+			"current": conflict.Current,
+		})
+		return
+	}
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
+	case errors.Is(err, domain.ErrForbidden):
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden", "You cannot access this extension store.")
+	case errors.Is(err, domain.ErrValidation):
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	default:
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
+	}
 }

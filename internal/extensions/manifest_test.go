@@ -96,7 +96,7 @@ func TestValidateManifestIdentityAndSelect(t *testing.T) {
 	m.Permissions = []string{"tasks:read", "tasks:write"}
 	m.Actions = []string{"complete", "set_field"}
 	m.Settings = append(m.Settings, Setting{
-		Key: "severity", Type: "select", Label: "Severity", Scope: ScopeProject,
+		Key: "severity", Type: "select", Label: "Severity", Scope: ScopeList{ScopeProject},
 		Options: []FieldOption{{Value: "high", Label: "High"}},
 	})
 	m.Fields = append(m.Fields, Field{Key: "due", Type: "date", Label: "Review date"})
@@ -119,7 +119,7 @@ func TestValidateManifestBadHomepageAndSelect(t *testing.T) {
 		t.Fatal("expected homepage error")
 	}
 	m = validDiscord()
-	m.Settings = append(m.Settings, Setting{Key: "choice", Type: "select", Label: "Choice", Scope: ScopeProject})
+	m.Settings = append(m.Settings, Setting{Key: "choice", Type: "select", Label: "Choice", Scope: ScopeList{ScopeProject}})
 	if err := ValidateManifest("discord", m); err == nil {
 		t.Fatal("expected select options error")
 	}
@@ -134,6 +134,79 @@ func TestValidateManifestHostAPITooNew(t *testing.T) {
 	}
 }
 
+func TestValidateManifestSurfacesAndStoreRequireHostAPI2(t *testing.T) {
+	m := Manifest{
+		ID:      "pad",
+		Name:    "Pad",
+		Version: "1.0.0",
+		HostAPI: 1,
+		UI:      "panel.html",
+		Surfaces: []Surface{
+			{ID: "board", File: "board.html", At: SurfaceKanbanTab, Label: "Pad"},
+		},
+		Permissions: []string{PermStoreRead, PermStoreWrite},
+	}
+	err := ValidateManifest("pad", m)
+	if err == nil || !strings.Contains(err.Error(), "host_api 2") {
+		t.Fatalf("err=%v", err)
+	}
+	m.HostAPI = 2
+	if err := ValidateManifest("pad", m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasSurfaces() || !m.HasProjectSurface() {
+		t.Fatal("expected kanban.tab to be a project surface")
+	}
+	tabs := m.SurfacesAt(SurfaceKanbanTab)
+	if len(tabs) != 1 || tabs[0].File != "board.html" {
+		t.Fatalf("tabs=%v", tabs)
+	}
+	settings := m.SurfacesAt(SurfaceProjectExtensions)
+	if len(settings) != 1 || settings[0].File != "panel.html" {
+		t.Fatalf("settings surface=%v", settings)
+	}
+}
+
+func TestValidateManifestUnknownSurfaceAt(t *testing.T) {
+	m := Manifest{
+		ID: "pad", Name: "Pad", Version: "1", HostAPI: 2,
+		Surfaces: []Surface{{ID: "x", File: "x.html", At: "task.sidebar"}},
+	}
+	err := ValidateManifest("pad", m)
+	if err == nil || !strings.Contains(err.Error(), "unknown surfaces.at") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateManifestDuplicateSurfaceID(t *testing.T) {
+	m := Manifest{
+		ID: "pad", Name: "Pad", Version: "1", HostAPI: 2, UI: "panel.html",
+		Surfaces: []Surface{
+			{ID: "board", File: "a.html", At: SurfaceKanbanTab},
+			{ID: "board", File: "b.html", At: SurfaceKanbanTab},
+		},
+	}
+	err := ValidateManifest("pad", m)
+	if err == nil || !strings.Contains(err.Error(), "duplicate surfaces id") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateManifestKanbanTabRequiresProjectSurface(t *testing.T) {
+	m := Manifest{
+		ID: "pad", Name: "Pad", Version: "1", HostAPI: 2,
+		Surfaces: []Surface{{ID: "board", File: "board.html", At: SurfaceKanbanTab}},
+	}
+	err := ValidateManifest("pad", m)
+	if err == nil || !strings.Contains(err.Error(), "kanban.tab requires") {
+		t.Fatalf("err=%v", err)
+	}
+	m.UI = "panel.html"
+	if err := ValidateManifest("pad", m); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateManifestMissingName(t *testing.T) {
 	m := validDiscord()
 	m.Name = "  "
@@ -144,7 +217,7 @@ func TestValidateManifestMissingName(t *testing.T) {
 
 func TestValidateManifestUnknownScope(t *testing.T) {
 	m := validDiscord()
-	m.Settings[0].Scope = "workspace"
+	m.Settings[0].Scope = ScopeList{"workspace"}
 	err := ValidateManifest("discord", m)
 	if err == nil || !strings.Contains(err.Error(), "unknown settings scope") {
 		t.Fatalf("err=%v", err)
@@ -152,7 +225,7 @@ func TestValidateManifestUnknownScope(t *testing.T) {
 }
 
 func TestSettingScopeDefaultsToSite(t *testing.T) {
-	s := Setting{Key: "x", Scope: ""}
+	s := Setting{Key: "x"}
 	if s.ScopeName() != ScopeSite {
 		t.Fatalf("scope=%q", s.ScopeName())
 	}
@@ -160,11 +233,11 @@ func TestSettingScopeDefaultsToSite(t *testing.T) {
 	if m.HasProjectSettings() {
 		t.Fatal("default discord fixture is site-scoped")
 	}
-	m.Settings[0].Scope = ScopeProject
+	m.Settings[0].Scope = ScopeList{ScopeProject}
 	if !m.HasProjectSettings() || m.HasMemberSettings() {
 		t.Fatal("expected project settings only")
 	}
-	m.Settings = append(m.Settings, Setting{Key: "claimed_is_me", Type: "bool", Label: "Mine", Scope: ScopeMember})
+	m.Settings = append(m.Settings, Setting{Key: "claimed_is_me", Type: "bool", Label: "Mine", Scope: ScopeList{ScopeMember}})
 	if err := ValidateManifest("discord", m); err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +258,75 @@ func TestSettingScopeDefaultsToSite(t *testing.T) {
 	}
 }
 
+func TestSettingScopeListAndUserAlias(t *testing.T) {
+	raw := []byte(`{"key":"webhook_url","type":"secret","label":"URL","scope":["project","kanban"]}`)
+	var s Setting
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatal(err)
+	}
+	if !s.HasScope(ScopeProject) || !s.HasScope(ScopeKanban) || s.HasScope(ScopeUser) {
+		t.Fatalf("scopes=%v", s.Scopes())
+	}
+	m := validDiscord()
+	m.Settings[0].Scope = ScopeList{ScopeProject, ScopeKanban}
+	m.Settings = append(m.Settings, Setting{Key: "claimed_is_me", Type: "bool", Label: "Mine", Scope: ScopeList{ScopeUser}})
+	if err := ValidateManifest("discord", m); err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasProjectSettings() || !m.HasKanbanSettings() || !m.HasMemberSettings() {
+		t.Fatal("expected project, kanban, and user settings")
+	}
+	if !m.VisibleOnProject("") || !m.VisibleOnProject("classic") || !m.VisibleOnProject("kanban") {
+		t.Fatal("multi-scope team settings should appear on classic and kanban")
+	}
+	kanbanOnly := validDiscord()
+	kanbanOnly.Settings[0].Scope = ScopeList{ScopeKanban}
+	if err := ValidateManifest("discord", kanbanOnly); err != nil {
+		t.Fatal(err)
+	}
+	if kanbanOnly.VisibleOnProject("classic") || !kanbanOnly.VisibleOnProject("kanban") {
+		t.Fatal("kanban-only should not appear on classic projects")
+	}
+	projectOnly := validDiscord()
+	projectOnly.Settings[0].Scope = ScopeList{ScopeProject}
+	if err := ValidateManifest("discord", projectOnly); err != nil {
+		t.Fatal(err)
+	}
+	if !projectOnly.VisibleOnProject("classic") || projectOnly.VisibleOnProject("kanban") {
+		t.Fatal("project-only should not appear on kanban boards")
+	}
+	userOnly := validDiscord()
+	userOnly.Settings[0].Scope = ScopeList{ScopeMember}
+	if err := ValidateManifest("discord", userOnly); err != nil {
+		t.Fatal(err)
+	}
+	if userOnly.Settings[0].ScopeName() != ScopeUser {
+		t.Fatalf("member should normalize to user, got %q", userOnly.Settings[0].ScopeName())
+	}
+	if !userOnly.VisibleOnProject("classic") || userOnly.VisibleOnProject("kanban") {
+		t.Fatal("user settings are a classic Notify-me surface only")
+	}
+}
+
+func TestSettingScopeJSONRoundTrip(t *testing.T) {
+	single := Setting{Key: "x", Scope: ScopeList{ScopeProject}}
+	b, err := json.Marshal(single)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"scope":"project"`) {
+		t.Fatalf("single scope json=%s", b)
+	}
+	multi := Setting{Key: "x", Scope: ScopeList{ScopeProject, ScopeKanban}}
+	b, err = json.Marshal(multi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"scope":["project","kanban"]`) {
+		t.Fatalf("multi scope json=%s", b)
+	}
+}
+
 func TestHasSettingAndFilterTypes(t *testing.T) {
 	m := Manifest{
 		ID:      "discord",
@@ -192,14 +334,14 @@ func TestHasSettingAndFilterTypes(t *testing.T) {
 		Version: "1.0.0",
 		HostAPI: 1,
 		Settings: []Setting{
-			{Key: "webhook_url", Type: "secret", Label: "URL", Scope: ScopeProject},
-			{Key: "skip_self", Type: "bool", Label: "Skip", Scope: ScopeProject},
-			{Key: "min_priority", Type: "priority", Label: "Min", Scope: ScopeProject},
-			{Key: "tag_ids", Type: "tag_ids", Label: "Tags", Scope: ScopeProject},
-			{Key: "quiet_hours_start", Type: "time", Label: "Start", Scope: ScopeProject},
-			{Key: "digest", Type: "digest", Label: "Digest", Scope: ScopeProject},
-			{Key: "field_filter", Type: "field_filter", Label: "Field", Scope: ScopeProject},
-			{Key: "mention_map", Type: "mention_map", Label: "Mentions", Scope: ScopeProject},
+			{Key: "webhook_url", Type: "secret", Label: "URL", Scope: ScopeList{ScopeProject}},
+			{Key: "skip_self", Type: "bool", Label: "Skip", Scope: ScopeList{ScopeProject}},
+			{Key: "min_priority", Type: "priority", Label: "Min", Scope: ScopeList{ScopeProject}},
+			{Key: "tag_ids", Type: "tag_ids", Label: "Tags", Scope: ScopeList{ScopeProject}},
+			{Key: "quiet_hours_start", Type: "time", Label: "Start", Scope: ScopeList{ScopeProject}},
+			{Key: "digest", Type: "digest", Label: "Digest", Scope: ScopeList{ScopeProject}},
+			{Key: "field_filter", Type: "field_filter", Label: "Field", Scope: ScopeList{ScopeProject}},
+			{Key: "mention_map", Type: "mention_map", Label: "Mentions", Scope: ScopeList{ScopeProject}},
 		},
 	}
 	if err := ValidateManifest("discord", m); err != nil {
@@ -211,7 +353,7 @@ func TestHasSettingAndFilterTypes(t *testing.T) {
 	if m.HasSetting("claimed_only") {
 		t.Fatal("undeclared setting")
 	}
-	m.Settings = append(m.Settings, Setting{Key: "wrong", Type: "priority", Label: "X", Scope: ScopeProject})
+	m.Settings = append(m.Settings, Setting{Key: "wrong", Type: "priority", Label: "X", Scope: ScopeList{ScopeProject}})
 	err := ValidateManifest("discord", m)
 	if err == nil || !strings.Contains(err.Error(), "requires key min_priority") {
 		t.Fatalf("err=%v", err)
@@ -317,8 +459,8 @@ func TestDueDatesRelayManifestValidates(t *testing.T) {
 		},
 		Delivery: &Delivery{Type: DeliveryHTTPWebhook, URLFrom: "webhook_url", Format: DeliveryFormatJSON},
 		Settings: []Setting{
-			{Key: "webhook_url", Type: "secret", Label: "Relay URL", Description: "Public HTTPS URL of your email relay.", Required: true, Scope: ScopeProject},
-			{Key: "triggers", Type: "hook_select", Label: "Triggers", Description: "Choose due-date events.", Scope: ScopeProject},
+			{Key: "webhook_url", Type: "secret", Label: "Relay URL", Description: "Public HTTPS URL of your email relay.", Required: true, Scope: ScopeList{ScopeProject}},
+			{Key: "triggers", Type: "hook_select", Label: "Triggers", Description: "Choose due-date events.", Scope: ScopeList{ScopeProject}},
 		},
 		Templates: map[string]string{
 			"task.due_changed": "Due date for {name} is now {due_date}",
@@ -352,7 +494,7 @@ func TestValidateManifestHTTPWebhookFormat(t *testing.T) {
 		Version:  "1.0.0",
 		HostAPI:  1,
 		Delivery: &Delivery{Type: DeliveryHTTPWebhook, URLFrom: "webhook_url", Format: DeliveryFormatJSON},
-		Settings: []Setting{{Key: "webhook_url", Type: "secret", Label: "Webhook URL", Required: true, Scope: ScopeProject}},
+		Settings: []Setting{{Key: "webhook_url", Type: "secret", Label: "Webhook URL", Required: true, Scope: ScopeList{ScopeProject}}},
 	}
 	if err := ValidateManifest("webhook", m); err != nil {
 		t.Fatal(err)
@@ -485,8 +627,8 @@ func TestExampleNotificationManifestsValidate(t *testing.T) {
 				if s.Description == "" {
 					t.Fatalf("%s setting %s missing description", id, s.Key)
 				}
-				if s.Key == "webhook_url" && s.ScopeName() != ScopeProject {
-					t.Fatalf("%s webhook_url scope=%q", id, s.ScopeName())
+				if s.Key == "webhook_url" && (!s.HasScope(ScopeProject) || !s.HasScope(ScopeKanban)) {
+					t.Fatalf("%s webhook_url scopes=%v want project and kanban", id, s.Scopes())
 				}
 			}
 		})
@@ -614,6 +756,150 @@ func TestExampleFieldsManifestsValidate(t *testing.T) {
 				t.Fatal("fields-demo should include date and markdown fields")
 			}
 		}
+	}
+}
+
+func TestExampleStandupManifestValidate(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "standup", "manifest.json"))
+	if err != nil {
+		raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", "standup", "manifest.json"))
+	}
+	if err != nil {
+		t.Skipf("standup example not present: %v", err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateManifest("standup", m); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(m.UI) != "panel.html" || strings.TrimSpace(m.Icon) == "" {
+		t.Fatal("standup should declare panel.html ui and an icon")
+	}
+	if !m.HasUI() || !m.HasProjectSurface() {
+		t.Fatal("standup should appear on the project Extensions tab via ui")
+	}
+	if m.Delivery != nil {
+		t.Fatal("standup should be UI-first (no outbound delivery)")
+	}
+	if !m.HasCallbackPermissions() || !m.DeclaresAction(ActionComment) || !m.DeclaresAction(ActionSetField) {
+		t.Fatal("standup should declare callback permissions and inbound comment/set_field")
+	}
+	var sawDate, sawMarkdown bool
+	for _, f := range m.Fields {
+		if f.Type == "date" && f.Key == "last" {
+			sawDate = true
+		}
+		if f.Type == "markdown" && f.Key == "notes" {
+			sawMarkdown = true
+		}
+	}
+	if !sawDate || !sawMarkdown {
+		t.Fatal("standup should register standup.last and standup.notes")
+	}
+	uiPath := filepath.Join("..", "..", "data", "extensions", "standup", "panel.html")
+	if _, err := os.Stat(uiPath); err != nil {
+		uiPath = filepath.Join("..", "..", "examples", "extensions", "standup", "panel.html")
+		if _, err := os.Stat(uiPath); err != nil {
+			t.Fatal("standup panel.html is missing")
+		}
+	}
+}
+
+func TestLoadStandupExample(t *testing.T) {
+	src := filepath.Join("..", "..", "data", "extensions", "standup")
+	if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
+		src = filepath.Join("..", "..", "examples", "extensions", "standup")
+		if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
+			t.Skipf("standup example not present: %v", err)
+		}
+	}
+	root := t.TempDir()
+	dst := filepath.Join(root, "standup")
+	if err := os.Mkdir(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"manifest.json", "panel.html", "icon.svg"} {
+		raw, err := os.ReadFile(filepath.Join(src, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("EXTENSIONS_DIR", root)
+	Load()
+	e, ok := Get("standup")
+	if !ok || !e.Loaded {
+		t.Fatalf("standup not loaded: %#v ok=%v", e, ok)
+	}
+	if e.Manifest.UI != "panel.html" || !e.Manifest.HasUI() {
+		t.Fatalf("standup ui=%q loaded with error %q", e.Manifest.UI, e.Error)
+	}
+}
+
+func TestExampleRetroManifestValidate(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "retro", "manifest.json"))
+	if err != nil {
+		raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", "retro", "manifest.json"))
+	}
+	if err != nil {
+		t.Skipf("retro example not present: %v", err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateManifest("retro", m); err != nil {
+		t.Fatal(err)
+	}
+	if m.HostAPI != 2 {
+		t.Fatalf("host_api=%d", m.HostAPI)
+	}
+	if !m.HasPermission(PermStoreRead) || !m.HasPermission(PermStoreWrite) {
+		t.Fatal("retro should declare store permissions")
+	}
+	if m.HasCallbackPermissions() {
+		t.Fatal("store permissions should not mint callback tokens")
+	}
+	tabs := m.SurfacesAt(SurfaceKanbanTab)
+	if len(tabs) != 1 || tabs[0].ID != "board" || tabs[0].File != "board.html" {
+		t.Fatalf("kanban tab=%v", tabs)
+	}
+}
+
+func TestLoadRetroExample(t *testing.T) {
+	src := filepath.Join("..", "..", "data", "extensions", "retro")
+	if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
+		src = filepath.Join("..", "..", "examples", "extensions", "retro")
+		if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
+			t.Skipf("retro example not present: %v", err)
+		}
+	}
+	root := t.TempDir()
+	dst := filepath.Join(root, "retro")
+	if err := os.Mkdir(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"manifest.json", "panel.html", "board.html", "icon.svg"} {
+		raw, err := os.ReadFile(filepath.Join(src, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("EXTENSIONS_DIR", root)
+	Load()
+	e, ok := Get("retro")
+	if !ok || !e.Loaded {
+		t.Fatalf("retro not loaded: %#v ok=%v", e, ok)
+	}
+	if len(e.Manifest.SurfacesAt(SurfaceKanbanTab)) != 1 {
+		t.Fatal("retro should expose a kanban.tab surface")
 	}
 }
 

@@ -16,6 +16,8 @@ import { useSite } from '@/composables/useSite'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 import { withBase } from '@/base'
 import { rateLimitNotice } from '@/utils/extensionDeliveries'
+import { destinationSite, enabledTeamExtensions, triggerLabels } from '@/utils/extensionDisclosure'
+import { settingHasScope } from '@/utils/extensionScope'
 
 const props = defineProps<{
   project: Project
@@ -44,6 +46,7 @@ const listIsOwner = ref(false)
 
 const isOwner = computed(() => listIsOwner.value || (props.project.role || 'owner') === 'owner')
 const isKanban = computed(() => (props.project.workflow_mode || 'classic') === 'kanban')
+const turnedOn = computed(() => enabledTeamExtensions(extensions.value))
 
 function hookNames(ext: ProjectExtension): string[] {
   return (ext.manifest.hooks || []).map((h) => h.on)
@@ -52,6 +55,11 @@ function hookNames(ext: ProjectExtension): string[] {
 function hookLabel(ext: ProjectExtension, on: string): string {
   const hook = (ext.manifest.hooks || []).find((h) => h.on === on)
   return hook?.label || on
+}
+
+function triggerSummary(ext: ProjectExtension): string {
+  const labels = triggerLabels(ext)
+  return labels.length ? labels.join(', ') : 'None'
 }
 
 function hasUI(ext: ProjectExtension) {
@@ -83,14 +91,10 @@ function memberLabel(m: ProjectMember): string {
   return m.user_name || m.email || String(m.user_id)
 }
 
-function settingScope(field: { scope?: string }) {
-  return field.scope || 'site'
-}
-
 function settingsForForm(ext: ProjectExtension, member: boolean) {
-  const scope = member ? 'member' : 'project'
+  const scope = member ? 'user' : isKanban.value ? 'kanban' : 'project'
   const all = ext.manifest.settings || []
-  const fields = all.filter((f) => settingScope(f) === scope)
+  const fields = all.filter((f) => settingHasScope(f, scope))
   if (!member || fields.length === 0) return fields
   const extras: typeof fields = []
   for (const key of [destKey(ext), 'ntfy_auth']) {
@@ -569,12 +573,49 @@ watch(inboundAllowed, () => {
       </div>
     </div>
 
-    <div v-if="!extensions.length" class="alert alert-secondary mb-0">
+    <div v-if="!isOwner" class="card mb-3">
+      <div class="card-header">
+        <span class="h6 mb-0">Enabled extensions</span>
+      </div>
+      <div class="card-body">
+        <p class="small text-muted">
+          This project can send events to off-site destinations. Only the owner can change
+          extension settings; secrets, quiet hours, and other configuration stay hidden.
+        </p>
+        <div v-if="turnedOn.length" class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th scope="col">Extension</th>
+                <th scope="col">Description</th>
+                <th scope="col">Triggers</th>
+                <th scope="col">Webhook / Site</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="ext in turnedOn" :key="`on-${ext.id}`">
+                <td class="text-nowrap">
+                  <img v-if="iconSrc(ext)" :src="iconSrc(ext)" alt="" width="16" height="16" class="rounded me-1" />
+                  {{ ext.name || ext.id }}
+                </td>
+                <td>{{ ext.manifest.description || '—' }}</td>
+                <td>{{ triggerSummary(ext) }}</td>
+                <td class="text-break">{{ destinationSite(ext) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="small text-muted mb-0">No project extensions are currently turned on.</p>
+      </div>
+    </div>
+
+    <div v-if="isOwner && !extensions.length" class="alert alert-secondary mb-0">
       No extensions are available for this project. A site admin must enable them in Admin →
       Extensions after copying a folder from <code>examples/extensions/</code> into
       <code>data/extensions/</code>.
     </div>
 
+    <template v-if="isOwner">
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
       <button
         type="button"
@@ -587,6 +628,11 @@ watch(inboundAllowed, () => {
           <img v-if="iconSrc(ext)" :src="iconSrc(ext)" alt="" width="20" height="20" class="rounded" />
           <span class="h6 mb-0">{{ ext.name || ext.id }}</span>
         </span>
+        <span class="d-flex align-items-center gap-2">
+          <span v-if="ext.settings.enabled" class="badge text-bg-success">On</span>
+          <span v-else class="badge text-bg-secondary">Off</span>
+          <span v-if="ext.settings.enabled && ext.destination_host" class="small text-muted">{{ ext.destination_host }}</span>
+        </span>
       </button>
       <div class="card-body pt-0">
         <div v-if="expanded[ext.id]">
@@ -596,10 +642,6 @@ watch(inboundAllowed, () => {
             <span v-if="ext.manifest.license"> · {{ ext.manifest.license }}</span>
             <a v-if="ext.manifest.homepage" :href="ext.manifest.homepage" target="_blank" rel="noopener noreferrer">Homepage</a>
           </p>
-          <p v-if="!isOwner && !hasMemberForm(ext) && !customFields(ext).length" class="small text-muted mb-0">
-            The project owner configures this extension.
-          </p>
-
           <div v-if="customFields(ext).length" class="mb-3">
             <div class="fw-semibold mb-2">Custom fields</div>
             <ul class="small mb-0 ps-3">
@@ -1143,7 +1185,7 @@ watch(inboundAllowed, () => {
             <div class="fw-semibold mb-2">Extension panel</div>
             <iframe
               class="w-100 border rounded"
-              style="min-height: 280px; background: var(--bs-body-bg)"
+              style="min-height: 520px; background: var(--bs-body-bg)"
               :src="uiSrc(ext)"
               sandbox="allow-scripts allow-forms allow-popups"
               referrerpolicy="no-referrer"
@@ -1153,6 +1195,7 @@ watch(inboundAllowed, () => {
         </div>
       </div>
     </div>
+    </template>
     </template>
   </div>
 </template>

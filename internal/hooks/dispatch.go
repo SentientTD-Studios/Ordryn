@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -463,11 +462,7 @@ func publicBaseURL() string {
 }
 
 func hostOf(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	return u.Hostname()
+	return DestinationHost(raw)
 }
 
 func randomSecret() string {

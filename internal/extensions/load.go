@@ -145,6 +145,14 @@ func loadFolder(root, folder string) Entry {
 			return e
 		}
 	}
+	for _, s := range m.ResolvedSurfaces() {
+		field := "surfaces." + s.ID
+		if err := requireFileInFolder(dir, s.File, field); err != nil {
+			e.Error = err.Error()
+			e.Manifest = m
+			return e
+		}
+	}
 	if icon := strings.TrimSpace(m.Icon); icon != "" {
 		if err := requireFileInFolder(dir, icon, "icon"); err != nil {
 			e.Error = err.Error()

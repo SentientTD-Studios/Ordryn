@@ -18,12 +18,12 @@ func testManifest() extensions.Manifest {
 		},
 		Templates: map[string]string{"task.updated": "default"},
 		Settings: []extensions.Setting{
-			{Key: "status_only", Type: "bool", Label: "Status only", Scope: extensions.ScopeProject},
-			{Key: "skip_self", Type: "bool", Label: "Skip self", Scope: extensions.ScopeProject},
-			{Key: "min_priority", Type: "priority", Label: "Min priority", Scope: extensions.ScopeProject},
-			{Key: "tag_ids", Type: "tag_ids", Label: "Tags", Scope: extensions.ScopeProject},
-			{Key: "claimed_only", Type: "bool", Label: "Claimed", Scope: extensions.ScopeProject},
-			{Key: "claimed_is_me", Type: "bool", Label: "Claimed by me", Scope: extensions.ScopeProject},
+			{Key: "status_only", Type: "bool", Label: "Status only", Scope: extensions.ScopeList{extensions.ScopeProject}},
+			{Key: "skip_self", Type: "bool", Label: "Skip self", Scope: extensions.ScopeList{extensions.ScopeProject}},
+			{Key: "min_priority", Type: "priority", Label: "Min priority", Scope: extensions.ScopeList{extensions.ScopeProject}},
+			{Key: "tag_ids", Type: "tag_ids", Label: "Tags", Scope: extensions.ScopeList{extensions.ScopeProject}},
+			{Key: "claimed_only", Type: "bool", Label: "Claimed", Scope: extensions.ScopeList{extensions.ScopeProject}},
+			{Key: "claimed_is_me", Type: "bool", Label: "Claimed by me", Scope: extensions.ScopeList{extensions.ScopeProject}},
 		},
 	}
 }
@@ -281,9 +281,9 @@ func TestShouldDeliverWildcardAndStatusFilters(t *testing.T) {
 			{On: "task.created"},
 		},
 		Settings: []extensions.Setting{
-			{Key: "status_ids", Type: "status_ids", Scope: extensions.ScopeProject},
-			{Key: "status_exclude_ids", Type: "status_exclude_ids", Scope: extensions.ScopeProject},
-			{Key: "status_only", Type: "bool", Scope: extensions.ScopeProject},
+			{Key: "status_ids", Type: "status_ids", Scope: extensions.ScopeList{extensions.ScopeProject}},
+			{Key: "status_exclude_ids", Type: "status_exclude_ids", Scope: extensions.ScopeList{extensions.ScopeProject}},
+			{Key: "status_only", Type: "bool", Scope: extensions.ScopeList{extensions.ScopeProject}},
 		},
 	}
 	site := storage.ExtensionSettings{Enabled: true}
@@ -341,7 +341,7 @@ func TestShouldDeliverTaskUpdatedMatchesSpecializedEvents(t *testing.T) {
 			"task.updated": "Task {name} updated to {status}",
 		},
 		Settings: []extensions.Setting{
-			{Key: "status_only", Type: "bool", Scope: extensions.ScopeProject},
+			{Key: "status_only", Type: "bool", Scope: extensions.ScopeList{extensions.ScopeProject}},
 		},
 	}
 	site := storage.ExtensionSettings{Enabled: true}

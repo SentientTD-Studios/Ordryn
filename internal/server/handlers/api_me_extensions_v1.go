@@ -71,7 +71,7 @@ func personalExtensionsList(w http.ResponseWriter, userID int) {
 		if !site.Enabled {
 			continue
 		}
-		item, err := projectExtensionFromEntry(e, 0, userID, false)
+		item, err := projectExtensionFromEntry(e, 0, userID, false, "")
 		if err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 			return
