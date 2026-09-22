@@ -9,6 +9,7 @@ import type {
   ProjectExtensionsList,
   ProjectExtension,
   ProjectExtensionPatch,
+  ExtensionStoreDoc,
   ProjectInboundWebhook,
   ProjectInboundPatch,
   CustomFieldDefList,
@@ -93,7 +94,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         : typeof data === 'string' && data.includes('<html')
           ? 'Request failed (proxy returned an HTML error page).'
           : res.statusText || 'Request failed'
-    throw new APIError(res.status, body?.error || 'request_failed', message)
+    throw new APIError(res.status, body?.error || 'request_failed', message, data)
   }
 
   return data as T
@@ -485,6 +486,31 @@ export const api = {
     return request<{ ok: boolean }>(
       `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/me/deliveries/${deliveryId}/retry`,
       { method: 'POST' },
+    )
+  },
+
+  getExtensionStore(projectId: number, extensionId: string, key: string) {
+    return request<ExtensionStoreDoc>(
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/store/${encodeURIComponent(key)}`,
+    )
+  },
+
+  putExtensionStore(
+    projectId: number,
+    extensionId: string,
+    key: string,
+    revision: number,
+    value: unknown,
+  ) {
+    return request<ExtensionStoreDoc>(
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/store/${encodeURIComponent(key)}`,
+      { method: 'PUT', body: JSON.stringify({ revision, value }) },
+    )
+  },
+
+  listExtensionStore(projectId: number, extensionId: string) {
+    return request<{ keys: string[] }>(
+      `/api/v2/projects/${projectId}/extensions/${encodeURIComponent(extensionId)}/store`,
     )
   },
 

@@ -1,6 +1,8 @@
 package extensions
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -8,7 +10,7 @@ import (
 )
 
 // CurrentHostAPI is the highest hook host API this build understands.
-const CurrentHostAPI = 1
+const CurrentHostAPI = 2
 
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,32}$`)
 
@@ -110,6 +112,8 @@ var settingKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,32}$`)
 const (
 	ScopeSite    = "site"
 	ScopeProject = "project"
+	ScopeKanban  = "kanban"
+	ScopeUser    = "user"
 	ScopeMember  = "member"
 )
 
@@ -154,12 +158,26 @@ const (
 	PermTasksRead     = "tasks:read"
 	PermTasksWrite    = "tasks:write"
 	PermCommentsWrite = "comments:write"
+	PermStoreRead     = "store:read"
+	PermStoreWrite    = "store:write"
 )
 
 var knownPermissions = map[string]struct{}{
 	PermTasksRead:     {},
 	PermTasksWrite:    {},
 	PermCommentsWrite: {},
+	PermStoreRead:     {},
+	PermStoreWrite:    {},
+}
+
+const (
+	SurfaceProjectExtensions = "project.extensions"
+	SurfaceKanbanTab         = "kanban.tab"
+)
+
+var knownSurfaces = map[string]struct{}{
+	SurfaceProjectExtensions: {},
+	SurfaceKanbanTab:         {},
 }
 
 const (
@@ -199,6 +217,7 @@ type Manifest struct {
 	License     string            `json:"license,omitempty"`
 	Icon        string            `json:"icon,omitempty"`
 	UI          string            `json:"ui,omitempty"`
+	Surfaces    []Surface         `json:"surfaces,omitempty"`
 	Hooks       []Hook            `json:"hooks,omitempty"`
 	Delivery    *Delivery         `json:"delivery,omitempty"`
 	Settings    []Setting         `json:"settings,omitempty"`
@@ -207,6 +226,14 @@ type Manifest struct {
 	Controls    []string          `json:"controls,omitempty"`
 	Permissions []string          `json:"permissions,omitempty"`
 	Actions     []string          `json:"actions,omitempty"`
+}
+
+// Surface is a sandboxed HTML panel placement (host API 2).
+type Surface struct {
+	ID    string `json:"id"`
+	File  string `json:"file"`
+	At    string `json:"at"`
+	Label string `json:"label,omitempty"`
 }
 
 // Field registers a core custom field. Stored values use key "{id}.{key}".
@@ -246,8 +273,8 @@ type Delivery struct {
 	Format string `json:"format,omitempty"`
 }
 
-// Setting is a schema-driven form field (site admin, project team, or Notify me).
-// Project-scoped well-known keys bind to hook filters: skip_self, claimed_only,
+// Setting is a schema-driven form field (site admin, classic project, kanban, or user).
+// Project/kanban well-known keys bind to hook filters: skip_self, claimed_only,
 // claimed_is_me, min_priority, tag_ids, quiet_hours_start, quiet_hours_end,
 // digest, field_key, field_value, field_filter, mention_map, status_only, and triggers.
 type Setting struct {
@@ -256,25 +283,128 @@ type Setting struct {
 	Label       string        `json:"label"`
 	Description string        `json:"description,omitempty"`
 	Required    bool          `json:"required"`
-	Scope       string        `json:"scope,omitempty"`
+	Scope       ScopeList     `json:"scope,omitempty"`
 	Options     []FieldOption `json:"options,omitempty"`
 }
 
-// ScopeName returns site (default), project (team channel), or member (Notify me).
-func (s Setting) ScopeName() string {
-	switch strings.ToLower(strings.TrimSpace(s.Scope)) {
+// ScopeList is settings.scope: a JSON string or array of strings.
+type ScopeList []string
+
+// UnmarshalJSON accepts "project" or ["project", "kanban"].
+func (s *ScopeList) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*s = nil
+		return nil
+	}
+	if b[0] == '"' {
+		var one string
+		if err := json.Unmarshal(b, &one); err != nil {
+			return err
+		}
+		if strings.TrimSpace(one) == "" {
+			*s = nil
+			return nil
+		}
+		*s = ScopeList{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return fmt.Errorf("scope must be a string or array of strings")
+	}
+	*s = many
+	return nil
+}
+
+// MarshalJSON writes a single scope as a string and multiple scopes as an array.
+func (s ScopeList) MarshalJSON() ([]byte, error) {
+	if len(s) == 0 {
+		return []byte("null"), nil
+	}
+	if len(s) == 1 {
+		return json.Marshal(s[0])
+	}
+	return json.Marshal([]string(s))
+}
+
+// CanonicalScope maps a raw scope name to site, project, kanban, or user.
+// member is accepted as an alias of user. Empty defaults to site.
+func CanonicalScope(name string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", ScopeSite:
-		return ScopeSite
+		return ScopeSite, true
 	case ScopeProject:
-		return ScopeProject
-	case ScopeMember:
-		return ScopeMember
+		return ScopeProject, true
+	case ScopeKanban:
+		return ScopeKanban, true
+	case ScopeUser, ScopeMember:
+		return ScopeUser, true
 	default:
-		return strings.TrimSpace(s.Scope)
+		return strings.ToLower(strings.TrimSpace(name)), false
 	}
 }
 
-// ValidateManifest checks host_api 1 rules. folderName must equal id.
+// WorkflowSettingScope is the team settings scope for a project's workflow mode.
+func WorkflowSettingScope(workflowMode string) string {
+	if strings.EqualFold(strings.TrimSpace(workflowMode), "kanban") {
+		return ScopeKanban
+	}
+	return ScopeProject
+}
+
+// Scopes returns the normalized scope list. Missing/empty scope is site.
+func (s Setting) Scopes() []string {
+	if len(s.Scope) == 0 {
+		return []string{ScopeSite}
+	}
+	out := make([]string, 0, len(s.Scope))
+	seen := make(map[string]struct{}, len(s.Scope))
+	for _, raw := range s.Scope {
+		name, ok := CanonicalScope(raw)
+		if !ok {
+			name = strings.ToLower(strings.TrimSpace(raw))
+		}
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	if len(out) == 0 {
+		return []string{ScopeSite}
+	}
+	return out
+}
+
+// ScopeName returns the first normalized scope (site when unset).
+func (s Setting) ScopeName() string {
+	return s.Scopes()[0]
+}
+
+// HasScope reports whether the setting is configurable at scope.
+// user and member match each other.
+func (s Setting) HasScope(scope string) bool {
+	want, ok := CanonicalScope(scope)
+	if !ok {
+		want = strings.ToLower(strings.TrimSpace(scope))
+	}
+	for _, got := range s.Scopes() {
+		name, known := CanonicalScope(got)
+		if !known {
+			name = got
+		}
+		if name == want {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateManifest checks host API rules. folderName must equal id.
 func ValidateManifest(folderName string, m Manifest) error {
 	id := strings.TrimSpace(m.ID)
 	if !idPattern.MatchString(id) {
@@ -395,11 +525,20 @@ func ValidateManifest(folderName string, m Manifest) error {
 		if want, ok := wellKnownSettingKeys[typ]; ok && key != want {
 			return fmt.Errorf("settings type %s requires key %s", typ, want)
 		}
-		switch s.ScopeName() {
-		case ScopeSite, ScopeProject, ScopeMember:
-		default:
-			return fmt.Errorf("unknown settings scope %q for %s", s.Scope, key)
+		normalized := ScopeList{}
+		seenScope := make(map[string]struct{})
+		for _, raw := range s.Scope {
+			name, ok := CanonicalScope(raw)
+			if !ok {
+				return fmt.Errorf("unknown settings scope %q for %s", strings.TrimSpace(raw), key)
+			}
+			if _, dup := seenScope[name]; dup {
+				continue
+			}
+			seenScope[name] = struct{}{}
+			normalized = append(normalized, name)
 		}
+		s.Scope = normalized
 		if typ == "select" {
 			opts, err := normalizeFieldOptions(s.Options)
 			if err != nil {
@@ -506,6 +645,60 @@ func ValidateManifest(folderName string, m Manifest) error {
 		seenActions[a] = struct{}{}
 		m.Actions[i] = a
 	}
+	needsHost2 := len(m.Surfaces) > 0
+	for _, p := range m.Permissions {
+		if p == PermStoreRead || p == PermStoreWrite {
+			needsHost2 = true
+			break
+		}
+	}
+	if needsHost2 && m.HostAPI < 2 {
+		return fmt.Errorf("surfaces and store permissions require host_api 2")
+	}
+	seenSurfaceIDs := make(map[string]struct{})
+	for i := range m.Surfaces {
+		s := &m.Surfaces[i]
+		id := strings.TrimSpace(s.ID)
+		if !settingKeyPattern.MatchString(id) {
+			return fmt.Errorf("surfaces id %q is invalid", s.ID)
+		}
+		if _, dup := seenSurfaceIDs[id]; dup {
+			return fmt.Errorf("duplicate surfaces id %q", id)
+		}
+		seenSurfaceIDs[id] = struct{}{}
+		s.ID = id
+		file := strings.TrimSpace(s.File)
+		if file == "" {
+			return fmt.Errorf("surfaces.file is required for %s", id)
+		}
+		if err := validateRelPath("surfaces.file", file); err != nil {
+			return err
+		}
+		s.File = file
+		at := strings.ToLower(strings.TrimSpace(s.At))
+		if _, ok := knownSurfaces[at]; !ok {
+			return fmt.Errorf("unknown surfaces.at %q for %s", s.At, id)
+		}
+		s.At = at
+		label := strings.TrimSpace(s.Label)
+		if len(label) > maxHookLabelLen {
+			return fmt.Errorf("surfaces.label is too long for %s", id)
+		}
+		s.Label = label
+	}
+	hasKanban := false
+	hasEnableSurface := m.HasUI() || m.HasFields() || m.HasProjectSettings() || m.HasKanbanSettings() || m.HasMemberSettings()
+	for _, s := range m.Surfaces {
+		if s.At == SurfaceKanbanTab {
+			hasKanban = true
+		}
+		if s.At == SurfaceProjectExtensions {
+			hasEnableSurface = true
+		}
+	}
+	if hasKanban && !hasEnableSurface {
+		return fmt.Errorf("kanban.tab requires a project.extensions surface (or ui) so the extension can be enabled")
+	}
 	return nil
 }
 
@@ -602,7 +795,7 @@ func (m Manifest) secretKeys(scope string) []string {
 		if s.Type != "secret" {
 			continue
 		}
-		if scope != "" && s.ScopeName() != scope {
+		if scope != "" && !s.HasScope(scope) {
 			continue
 		}
 		out = append(out, s.Key)
@@ -610,20 +803,39 @@ func (m Manifest) secretKeys(scope string) []string {
 	return out
 }
 
-// HasProjectSettings reports whether any setting is project-scoped.
+// KanbanSecretKeys returns kanban-scoped secret keys.
+func (m Manifest) KanbanSecretKeys() []string {
+	return m.secretKeys(ScopeKanban)
+}
+
+// UserSecretKeys returns user-scoped secret keys (Notify me / Profile).
+func (m Manifest) UserSecretKeys() []string {
+	return m.secretKeys(ScopeUser)
+}
+
+// TeamSecretKeys returns secret keys for a project's workflow (project or kanban).
+func (m Manifest) TeamSecretKeys(workflowMode string) []string {
+	return m.secretKeys(WorkflowSettingScope(workflowMode))
+}
+
+// HasProjectSettings reports whether any setting is configurable on classic projects.
 func (m Manifest) HasProjectSettings() bool {
-	for _, s := range m.Settings {
-		if s.ScopeName() == ScopeProject {
-			return true
-		}
-	}
-	return false
+	return m.hasScopeSettings(ScopeProject)
+}
+
+// HasKanbanSettings reports whether any setting is configurable on kanban boards.
+func (m Manifest) HasKanbanSettings() bool {
+	return m.hasScopeSettings(ScopeKanban)
 }
 
 // HasMemberSettings reports whether any setting is for Notify me or Profile inbox.
 func (m Manifest) HasMemberSettings() bool {
+	return m.hasScopeSettings(ScopeUser)
+}
+
+func (m Manifest) hasScopeSettings(scope string) bool {
 	for _, s := range m.Settings {
-		if s.ScopeName() == ScopeMember {
+		if s.HasScope(scope) {
 			return true
 		}
 	}
@@ -635,15 +847,85 @@ func (m Manifest) HasFields() bool {
 	return len(m.Fields) > 0
 }
 
-// HasProjectSurface reports whether the extension should appear on the project Extensions tab.
+// HasProjectSurface reports whether the extension should appear on some project Extensions tab.
 // Site-only hook extensions (for example join.request) stay in Admin → Extensions.
 func (m Manifest) HasProjectSurface() bool {
-	return m.HasProjectSettings() || m.HasMemberSettings() || m.HasFields() || m.HasUI()
+	return m.HasProjectSettings() || m.HasKanbanSettings() || m.HasMemberSettings() || m.HasFields() || m.HasUI() || m.HasSurfaces()
+}
+
+// VisibleOnProject reports whether the extension should appear on this project's Extensions tab.
+// Fields, sandboxed UI, and surfaces stay visible on both workflows. Team settings follow
+// project (classic) vs kanban. User/member settings are a classic-project surface only.
+func (m Manifest) VisibleOnProject(workflowMode string) bool {
+	if m.HasFields() || m.HasUI() || m.HasSurfaces() {
+		return true
+	}
+	if WorkflowSettingScope(workflowMode) == ScopeKanban {
+		return m.HasKanbanSettings()
+	}
+	return m.HasProjectSettings() || m.HasMemberSettings()
 }
 
 // HasUI reports whether the manifest declares a sandboxed panel.
 func (m Manifest) HasUI() bool {
 	return strings.TrimSpace(m.UI) != ""
+}
+
+// HasSurfaces reports whether the manifest declares host API 2 surfaces (or a legacy ui panel).
+func (m Manifest) HasSurfaces() bool {
+	return len(m.ResolvedSurfaces()) > 0
+}
+
+// ResolvedSurfaces returns declared surfaces, synthesizing project.extensions from ui when needed.
+func (m Manifest) ResolvedSurfaces() []Surface {
+	out := make([]Surface, 0, len(m.Surfaces)+1)
+	hasSettings := false
+	for _, s := range m.Surfaces {
+		id := strings.TrimSpace(s.ID)
+		file := strings.TrimSpace(s.File)
+		at := strings.ToLower(strings.TrimSpace(s.At))
+		if id == "" || file == "" || at == "" {
+			continue
+		}
+		label := strings.TrimSpace(s.Label)
+		if label == "" {
+			label = strings.TrimSpace(m.Name)
+		}
+		if at == SurfaceProjectExtensions {
+			hasSettings = true
+		}
+		out = append(out, Surface{ID: id, File: file, At: at, Label: label})
+	}
+	if !hasSettings {
+		if ui := strings.TrimSpace(m.UI); ui != "" {
+			label := strings.TrimSpace(m.Name)
+			out = append([]Surface{{ID: "settings", File: ui, At: SurfaceProjectExtensions, Label: label}}, out...)
+		}
+	}
+	return out
+}
+
+// SurfaceByID returns a resolved surface by id.
+func (m Manifest) SurfaceByID(id string) (Surface, bool) {
+	id = strings.TrimSpace(id)
+	for _, s := range m.ResolvedSurfaces() {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return Surface{}, false
+}
+
+// SurfacesAt returns resolved surfaces for a placement.
+func (m Manifest) SurfacesAt(at string) []Surface {
+	at = strings.ToLower(strings.TrimSpace(at))
+	out := make([]Surface, 0)
+	for _, s := range m.ResolvedSurfaces() {
+		if s.At == at {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // DestinationKey is the settings key used to look up the outbound URL.
@@ -675,7 +957,7 @@ func ShowsOnList(showOn []string) bool {
 	return false
 }
 
-// SettingsForScope returns settings with the given scope (site, project, or member).
+// SettingsForScope returns settings configurable at the given scope.
 func (m Manifest) SettingsForScope(scope string) []Setting {
 	scope = strings.ToLower(strings.TrimSpace(scope))
 	if scope == "" {
@@ -683,11 +965,21 @@ func (m Manifest) SettingsForScope(scope string) []Setting {
 	}
 	out := make([]Setting, 0)
 	for _, s := range m.Settings {
-		if s.ScopeName() == scope {
+		if s.HasScope(scope) {
 			out = append(out, s)
 		}
 	}
 	return out
+}
+
+func settingMatchesKey(s Setting, key string) bool {
+	if strings.TrimSpace(s.Key) == key {
+		return true
+	}
+	if strings.TrimSpace(s.Type) == "field_filter" && (key == "field_key" || key == "field_value" || key == "field_filter") {
+		return true
+	}
+	return wellKnownSettingKeys[strings.TrimSpace(s.Type)] == key
 }
 
 // HasSetting reports whether the manifest declares a settings key.
@@ -698,14 +990,21 @@ func (m Manifest) HasSetting(key string) bool {
 		return false
 	}
 	for _, s := range m.Settings {
-		k := strings.TrimSpace(s.Key)
-		if k == key {
+		if settingMatchesKey(s, key) {
 			return true
 		}
-		if strings.TrimSpace(s.Type) == "field_filter" && (key == "field_key" || key == "field_value" || key == "field_filter") {
-			return true
-		}
-		if wellKnownSettingKeys[strings.TrimSpace(s.Type)] == key {
+	}
+	return false
+}
+
+// HasSettingForScope reports whether key is declared and configurable at scope.
+func (m Manifest) HasSettingForScope(key, scope string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return false
+	}
+	for _, s := range m.Settings {
+		if s.HasScope(scope) && settingMatchesKey(s, key) {
 			return true
 		}
 	}
@@ -751,17 +1050,27 @@ func (m Manifest) DeclaresAction(name string) bool {
 // HasCallbackPermissions reports whether outbound JSON payloads may include a callback token.
 func (m Manifest) HasCallbackPermissions() bool {
 	for _, p := range m.Permissions {
-		if strings.TrimSpace(p) != "" {
-			return true
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p == "" || p == PermStoreRead || p == PermStoreWrite {
+			continue
 		}
+		return true
 	}
 	return false
 }
 
 // ValueSettingKeys returns setting keys stored in the extra values map (select/status/user/string/int).
 func (m Manifest) ValueSettingKeys() map[string]struct{} {
+	return m.ValueSettingKeysForScope("")
+}
+
+// ValueSettingKeysForScope returns value-map keys declared for scope. Empty scope means any.
+func (m Manifest) ValueSettingKeysForScope(scope string) map[string]struct{} {
 	out := make(map[string]struct{})
 	for _, s := range m.Settings {
+		if scope != "" && !s.HasScope(scope) {
+			continue
+		}
 		switch strings.TrimSpace(s.Type) {
 		case "select", "status", "user", "string", "int":
 			if _, wellKnown := wellKnownSettingKeys[s.Type]; wellKnown {

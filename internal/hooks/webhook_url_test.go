@@ -122,6 +122,26 @@ func TestIsBlockedIP(t *testing.T) {
 	}
 }
 
+func TestDestinationHostOmitsPathAndSecrets(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"https://discord.com/api/webhooks/123/abc-secret", "discord.com"},
+		{"https://hooks.slack.com/services/T00/B00/xxx", "hooks.slack.com"},
+		{"https://ntfy.sh/my-topic", "ntfy.sh"},
+		{"https://chat.googleapis.com/v1/spaces/AAA/messages?key=secret&token=tok", "chat.googleapis.com"},
+		{"https://hooks.example.com:8443/path?token=1", "hooks.example.com"},
+		{"not a url", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := DestinationHost(tc.raw); got != tc.want {
+			t.Fatalf("DestinationHost(%q)=%q want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
 func TestValidateNtfyWebhookURL(t *testing.T) {
 	if err := validateWebhookURL(extensions.DeliveryNtfyWebhook, "https://ntfy.sh/my-topic"); err != nil {
 		t.Fatal(err)

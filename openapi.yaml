@@ -896,7 +896,7 @@ paths:
     get:
       tags: [Extensions]
       summary: List personal-inbox hook destinations
-      description: Only site-enabled extensions that declare member-scoped settings are returned.
+      description: Only site-enabled extensions that declare user-scoped settings (scope user or member) are returned.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1830,8 +1830,8 @@ paths:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [Projects]
-      summary: List site-enabled project-scoped extensions for members
-      description: Only extensions enabled in Admin → Extensions and that declare a project surface are returned.
+      summary: List site-enabled extensions for a project
+      description: Only extensions enabled in Admin → Extensions and visible on this project are returned. Team settings with scope project appear on classic/list projects; scope kanban appears on kanban boards. Use both scopes for a destination that is configurable on either. Project members receive destination_host (hostname only) for the team webhook so they can see where enabled extensions send data; the URL path, query, and secret are never included.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -2085,6 +2085,12 @@ paths:
       security:
         - SessionCookie: []
         - BearerAuth: []
+      parameters:
+        - name: surface
+          in: query
+          schema:
+            type: string
+          description: Host API 2 surface id (for example board)
       responses:
         "200":
           description: HTML or static asset from the extension folder
@@ -2092,6 +2098,102 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/extensions/{extensionId}/store:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Projects]
+      summary: List extension store keys for this project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Key list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/extensions/{extensionId}/store/{key}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: extensionId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Projects]
+      summary: Get an extension store document
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Document with revision
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Projects]
+      summary: Put an extension store document (optimistic revision)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Expected revision; overrides body revision when set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: integer
+                value: {}
+      responses:
+        "200":
+          description: Written document
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Revision conflict
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/v2/projects/{id}/inbound:
     parameters:
@@ -5865,6 +5967,7 @@ components:
         manifest:
           type: object
           additionalProperties: true
+          description: Extension manifest.json. settings[].scope is a string or array of site, project, kanban, or user (member is an alias of user). project is classic/list projects only; kanban is boards only.
         settings:
           $ref: "#/components/schemas/AdminExtensionSettings"
         secrets:
@@ -5974,6 +6077,7 @@ components:
         manifest:
           type: object
           additionalProperties: true
+          description: Extension manifest.json. settings[].scope is a string or array of site, project, kanban, or user (member is an alias of user). project is classic/list projects only; kanban is boards only.
         settings:
           $ref: "#/components/schemas/ProjectExtensionSettings"
         secrets:
@@ -6003,6 +6107,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExtensionDelivery"
+        destination_host:
+          type: string
+          description: Hostname of the project's team webhook destination. Path, query, and tokens are omitted so members can see the off-site site without the secret.
 
     ProjectExtensionsList:
       type: object

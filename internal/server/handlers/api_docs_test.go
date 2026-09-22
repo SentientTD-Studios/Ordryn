@@ -45,6 +45,7 @@ func TestOpenAPISpecIncludesSavedViews(t *testing.T) {
 		"/api/v2/me/github/pat",
 		"/api/v2/projects/{id}/github",
 		"/api/v2/projects/{id}/extensions",
+		"destination_host",
 		"/api/v2/projects/{id}/custom-fields",
 		"/api/v2/projects/{id}/sprints",
 		"/api/v2/projects/{id}/inbound",
@@ -59,6 +60,7 @@ func TestOpenAPISpecIncludesSavedViews(t *testing.T) {
 		"/api/v2/ext/callback",
 		"/api/v2/extensions/{id}/icon",
 		"/api/v2/projects/{id}/extensions/{extensionId}/ui",
+		"/api/v2/projects/{id}/extensions/{extensionId}/store",
 		"version: 2.0.0",
 	}
 	for _, value := range required {

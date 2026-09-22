@@ -8,6 +8,7 @@ import AdminSubnav from '@/components/AdminSubnav.vue'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 import { withBase } from '@/base'
 import { rateLimitNotice } from '@/utils/extensionDeliveries'
+import { settingHasScope } from '@/utils/extensionScope'
 
 const toast = useToast()
 const loading = ref(false)
@@ -20,7 +21,7 @@ const siteSecretDraft = reactive<Record<string, string>>({})
 const emptyHint = computed(() => extensions.value.length === 0)
 
 function siteFields(ext: AdminExtension): ExtensionSettingField[] {
-  return (ext.manifest.settings || []).filter((f) => !f.scope || f.scope === 'site')
+  return (ext.manifest.settings || []).filter((f) => settingHasScope(f, 'site'))
 }
 
 function siteSecretFields(ext: AdminExtension): ExtensionSettingField[] {
@@ -28,7 +29,7 @@ function siteSecretFields(ext: AdminExtension): ExtensionSettingField[] {
 }
 
 function hasProjectSettings(ext: AdminExtension): boolean {
-  return (ext.manifest.settings || []).some((f) => f.scope === 'project')
+  return (ext.manifest.settings || []).some((f) => settingHasScope(f, 'project') || settingHasScope(f, 'kanban'))
 }
 
 function customFields(ext: AdminExtension) {

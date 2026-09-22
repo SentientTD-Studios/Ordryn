@@ -174,6 +174,20 @@ func hostMatches(host, domain string) bool {
 	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
+// DestinationHost returns the hostname of a stored webhook URL for disclosure.
+// Path, query, userinfo, and fragment (tokens) are omitted.
+func DestinationHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(u.Hostname()))
+}
+
 func isBlockedIP(ip net.IP) bool {
 	if ip == nil {
 		return true

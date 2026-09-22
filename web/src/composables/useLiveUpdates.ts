@@ -8,6 +8,8 @@ export type LiveEvent = {
   actor_id?: number
   origin?: string
   timestamp?: string
+  extension_id?: string
+  key?: string
 }
 
 type LiveHandler = (event: LiveEvent) => void
