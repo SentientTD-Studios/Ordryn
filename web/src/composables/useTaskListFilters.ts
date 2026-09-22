@@ -8,6 +8,9 @@ const filterKeys = ['status', 'due', 'completed', 'priority', 'tag', 'sort', 'pr
 type FilterKey = (typeof filterKeys)[number]
 type TaskListFilterState = Record<FilterKey, string>
 
+/** Project is navigation context, not a list filter that Clear should drop. */
+const listFilterKeys = filterKeys.filter((k): k is Exclude<FilterKey, 'project'> => k !== 'project')
+
 const defaultFilters: TaskListFilterState = {
   status: DEFAULT_TASK_LIST_STATUS,
   due: '',
@@ -21,9 +24,13 @@ const defaultFilters: TaskListFilterState = {
 
 export const taskListFilters = reactive<TaskListFilterState>({ ...defaultFilters })
 
+function resetFilterState() {
+  for (const key of filterKeys) taskListFilters[key] = defaultFilters[key]
+}
+
 export function useTaskListFilters() {
   const hasActiveFilters = computed(() =>
-    filterKeys.some((k) => taskListFilters[k] !== defaultFilters[k]),
+    listFilterKeys.some((k) => taskListFilters[k] !== defaultFilters[k]),
   )
 
   function toApiParams(page: number, perPage: number) {
@@ -49,12 +56,15 @@ export function useTaskListFilters() {
     taskListFilters[key] = value
   }
 
+  /** Reset list filters (status, tag, search, …) without leaving the current project. */
   function clearFilters() {
-    for (const key of filterKeys) taskListFilters[key] = defaultFilters[key]
+    const project = taskListFilters.project
+    resetFilterState()
+    taskListFilters.project = project
   }
 
   function applySavedView(filter: SavedViewFilter) {
-    clearFilters()
+    resetFilterState()
     for (const key of filterKeys) {
       const v = filter[key]
       if (typeof v === 'string' && v) taskListFilters[key] = v

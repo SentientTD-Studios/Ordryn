@@ -62,7 +62,7 @@ Browser: `/gotodo/…` · Go receives: `/…` · SPA still knows the public pref
 ## Surfaces
 
 - Auth: login / register / forgot password / reset password (session cookie), optional TOTP MFA
-- Tasks: create, complete, delete, undo, bulk
+- Tasks: create, complete, delete, undo, bulk. Clearing list filters (status, tag, due, priority, search) keeps the open project; use the sidebar to leave it.
 - Projects, tags, saved views, dashboard
 - Import: CSV preview + confirm
 - Settings: profile, password, two-factor authentication, calendar feed + ICS sync, export, API keys
