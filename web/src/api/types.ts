@@ -236,8 +236,6 @@ export type Task = {
   project_id?: number | null
   project?: string
   priority: number
-  /** @deprecated Task favoriting will be removed in API v2. */
-  favorite: boolean
   position: number
   parent_id?: number | null
   child_count?: number
@@ -257,8 +255,7 @@ export type Task = {
   sprint_name?: string
   parent_title?: string
   github?: TaskGitHubIssue | null
-  /** Present on write responses that used the deprecated favorite field. */
-  deprecation_notice?: string
+  fields?: Record<string, unknown>
 }
 
 export type GitHubConnection = {
@@ -339,6 +336,7 @@ export type SiteInfo = {
   allow_user_invites?: boolean
   user_invite_limit?: number
   invite_expiration_days?: number
+  enable_inbound_webhooks?: boolean
 }
 
 export type ChangelogEntry = {
@@ -451,6 +449,7 @@ export type AdminSettings = {
   enable_global_announcement: boolean
   global_announcement_text: string
   enable_api: boolean
+  enable_inbound_webhooks: boolean
   allow_user_invites: boolean
   user_invite_limit: number
   invite_expiration_days: number
@@ -502,6 +501,260 @@ export type ImageHostingTestResult = {
   public_url_ok: boolean
 }
 
+export type AdminProjectRef = {
+  id: number
+  name: string
+  archived: boolean
+}
+
+export type ExtensionSettingField = {
+  key: string
+  type:
+    | 'secret'
+    | 'project_ids'
+    | 'hook_select'
+    | 'bool'
+    | 'string'
+    | 'int'
+    | 'select'
+    | 'status'
+    | 'user'
+    | 'priority'
+    | 'tag_ids'
+    | 'status_ids'
+    | 'status_exclude_ids'
+    | 'time'
+    | 'digest'
+    | 'field_filter'
+    | 'mention_map'
+    | string
+  label: string
+  description?: string
+  required?: boolean
+  scope?: 'site' | 'project' | 'kanban' | 'user' | 'member' | string | string[]
+  options?: CustomFieldOption[]
+}
+
+export type ExtensionSurface = {
+  id: string
+  file: string
+  at: string
+  label?: string
+}
+
+export type ExtensionHook = {
+  on: string
+  label?: string
+}
+
+export type ExtensionManifest = {
+  id: string
+  name: string
+  version: string
+  host_api: number
+  description?: string
+  author?: string
+  homepage?: string
+  license?: string
+  icon?: string
+  ui?: string
+  surfaces?: ExtensionSurface[]
+  hooks?: ExtensionHook[]
+  delivery?: { type: string; url_from?: string; format?: string }
+  settings?: ExtensionSettingField[]
+  templates?: Record<string, string>
+  fields?: ExtensionField[]
+  controls?: string[]
+  permissions?: string[]
+  actions?: string[]
+}
+
+export type ExtensionField = {
+  key: string
+  type: string
+  label: string
+  description?: string
+  required?: boolean
+  show_on?: string[]
+  options?: CustomFieldOption[]
+}
+
+export type CustomFieldOption = {
+  value: string
+  label?: string
+  color?: string
+}
+
+export type CustomFieldDef = {
+  field_key: string
+  extension_id?: string
+  local_key: string
+  label: string
+  description?: string
+  type: 'string' | 'number' | 'boolean' | 'enum' | 'url' | 'user' | 'date' | 'markdown' | string
+  required?: boolean
+  options?: CustomFieldOption[]
+  show_on?: string[]
+  active?: boolean
+}
+
+export type CustomFieldDefList = {
+  fields: CustomFieldDef[]
+}
+
+export type AdminExtensionSettings = {
+  enabled: boolean
+  triggers?: string[]
+  templates?: Record<string, string>
+  last_error?: string
+  last_delivery_at?: string
+}
+
+export type AdminExtension = {
+  id: string
+  name: string
+  version: string
+  host_api: number
+  status: 'loaded' | 'failed' | string
+  error?: string
+  manifest: ExtensionManifest
+  settings: AdminExtensionSettings
+  secrets: Record<string, boolean>
+  deliveries?: ExtensionDelivery[]
+}
+
+export type AdminExtensionsList = {
+  extensions: AdminExtension[]
+}
+
+export type AdminExtensionPatch = {
+  enabled?: boolean
+  webhook_url?: string
+  triggers?: string[]
+  templates?: Record<string, string>
+}
+
+export type ExtensionDelivery = {
+  id: number
+  event: string
+  event_id?: string
+  host?: string
+  status: string
+  http_code?: number
+  error?: string
+  attempts: number
+  created_at: string
+  next_attempt_at?: string
+}
+
+export type ProjectExtensionSettings = {
+  enabled: boolean
+  triggers: string[]
+  templates: Record<string, string>
+  status_only: boolean
+  skip_self?: boolean
+  min_priority?: number
+  tag_ids?: number[]
+  status_ids?: number[]
+  status_exclude_ids?: number[]
+  claimed_only?: boolean
+  field_key?: string
+  field_value?: string
+  quiet_hours_start?: string
+  quiet_hours_end?: string
+  digest?: string
+  mention_map?: Record<string, string>
+  values?: Record<string, string>
+  last_error?: string
+  last_delivery_at?: string
+}
+
+export type MemberExtensionSettings = ProjectExtensionSettings & {
+  claimed_is_me?: boolean
+  skip_self?: boolean
+}
+
+export type ExtensionStoreDoc = {
+  extension_id: string
+  project_id: number
+  key: string
+  revision: number
+  value: unknown
+  updated_by?: number
+  updated_at?: string
+}
+
+export type ProjectExtension = {
+  id: string
+  name: string
+  version: string
+  host_api: number
+  site_enabled: boolean
+  manifest: ExtensionManifest
+  settings: ProjectExtensionSettings
+  secrets: Record<string, boolean>
+  member?: MemberExtensionSettings
+  member_secrets?: Record<string, boolean>
+  signing_set?: boolean
+  member_signing_set?: boolean
+  signing_secret?: string
+  callback_token?: string
+  sample_json?: string
+  callback_set?: boolean
+  member_callback_set?: boolean
+  deliveries?: ExtensionDelivery[]
+  member_deliveries?: ExtensionDelivery[]
+  destination_host?: string
+}
+
+export type ProjectExtensionsList = {
+  extensions: ProjectExtension[]
+  is_owner?: boolean
+}
+
+export type ProjectExtensionPatch = {
+  enabled?: boolean
+  triggers?: string[]
+  templates?: Record<string, string>
+  status_only?: boolean
+  skip_self?: boolean
+  min_priority?: number
+  tag_ids?: number[]
+  status_ids?: number[]
+  status_exclude_ids?: number[]
+  claimed_only?: boolean
+  claimed_is_me?: boolean
+  field_key?: string
+  field_value?: string
+  quiet_hours_start?: string
+  quiet_hours_end?: string
+  digest?: string
+  mention_map?: Record<string, string>
+  webhook_url?: string
+  ntfy_auth?: string
+  rotate_signing?: boolean
+  rotate_callback?: boolean
+  values?: Record<string, string>
+}
+
+export type ProjectInboundWebhook = {
+  enabled: boolean
+  allow_create: boolean
+  allow_comment: boolean
+  secret_set: boolean
+  secret?: string
+  url: string
+  last_error?: string
+  last_delivery_at?: string
+}
+
+export type ProjectInboundPatch = {
+  enabled?: boolean
+  allow_create?: boolean
+  allow_comment?: boolean
+  rotate_secret?: boolean
+}
+
 export type AdminUser = {
   id: number
   email: string
@@ -509,7 +762,7 @@ export type AdminUser = {
   is_banned: boolean
 }
 
-export type EmailAuditStatus = 'sent' | 'failed' | 'not_configured'
+export type EmailAuditStatus = 'sent' | 'failed' | 'not_configured' | 'rate_limited'
 
 export type EmailAuditTrigger =
   | 'password_reset'
@@ -569,16 +822,19 @@ export type DeviceDecisionResult = {
 export type APIErrorBody = {
   error: string
   message: string
+  current?: unknown
 }
 
 export class APIError extends Error {
   code: string
   status: number
+  payload?: unknown
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, payload?: unknown) {
     super(message)
     this.name = 'APIError'
     this.status = status
     this.code = code
+    this.payload = payload
   }
 }

@@ -280,12 +280,29 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateEmailAuditTable failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateEmailAuditAddRateLimitedStatus(); err != nil {
+		fmt.Printf("migration: MigrateEmailAuditAddRateLimitedStatus failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateSiteSettingsAddUserInvitesAndExpiration(); err != nil {
 		fmt.Printf("migration: MigrateSiteSettingsAddUserInvitesAndExpiration failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateSiteSettingsAddInboundWebhooks(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddInboundWebhooks failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateInvitesAddFields(); err != nil {
 		fmt.Printf("migration: MigrateInvitesAddFields failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreateExtensionTables(); err != nil {
+		fmt.Printf("migration: CreateExtensionTables failed: %v\n", err)
+		errCount++
+	}
+	if err := CreateCustomFieldTables(); err != nil {
+		fmt.Printf("migration: CreateCustomFieldTables failed: %v\n", err)
 		errCount++
 	}
 

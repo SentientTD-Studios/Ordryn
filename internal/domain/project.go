@@ -37,7 +37,12 @@ func CreateProject(ctx context.Context, userID int, name, description string) (*
 	if len(description) > MaxProjectDescriptionLength {
 		return nil, fmt.Errorf("%w: project description must be %d characters or less", ErrValidation, MaxProjectDescriptionLength)
 	}
-	return storage.CreateProject(userID, name, description)
+	proj, err := storage.CreateProject(userID, name, description)
+	if err != nil {
+		return nil, err
+	}
+	live.AfterProjectChange(userID, proj.ID, live.TypeProjectCreated)
+	return proj, nil
 }
 
 // RenameProject updates a project name (owner only) and returns the updated project.
@@ -202,7 +207,8 @@ func DeleteProject(ctx context.Context, userID, projectID int) error {
 	if !storage.RoleCanManage(proj.Role) {
 		return ErrForbidden
 	}
-	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, projectID, live.TypeProjectDeleted, nil)
+	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectDeleted)
 	return storage.DeleteProject(projectID, proj.OwnerUserID)
 }
 
@@ -226,7 +232,8 @@ func ArchiveProject(ctx context.Context, userID, projectID int) (*storage.Projec
 		return nil, err
 	}
 	_ = storage.LogProjectEvent(projectID, userID, "archived", nil)
-	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, projectID, live.TypeProjectArchived, nil)
 	return storage.GetProjectByID(projectID, proj.OwnerUserID)
 }
 
@@ -250,7 +257,8 @@ func RestoreProject(ctx context.Context, userID, projectID int) (*storage.Projec
 		return nil, err
 	}
 	_ = storage.LogProjectEvent(projectID, userID, "restored", nil)
-	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, projectID, live.TypeProjectRestored, nil)
 	return storage.GetProjectByID(projectID, proj.OwnerUserID)
 }
 

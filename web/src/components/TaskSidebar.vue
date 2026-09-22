@@ -7,6 +7,7 @@ import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import TaskDiscussion from '@/components/TaskDiscussion.vue'
+import TaskSidebarFields from '@/components/TaskSidebarFields.vue'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
 import { useImageUpload } from '@/composables/useImageUpload'
@@ -101,6 +102,7 @@ const githubIssue = ref<TaskGitHubIssue | null>(null)
 const projectHasGitHub = ref(false)
 const githubIssueRef = ref('')
 const githubBusy = ref(false)
+const customFieldValues = ref<Record<string, unknown>>({})
 const isSubtask = computed(() => parentId.value !== '' && Number(parentId.value) > 0)
 const selectedProject = computed(() => {
   if (projectId.value === '') return null
@@ -231,7 +233,6 @@ function stubParentTask(id: number, titleText: string, pid: number | ''): Task {
     due_date: '',
     project_id: pid === '' ? null : Number(pid),
     priority: 0,
-    favorite: false,
     position: 0,
     tags: [],
     created_at: '',
@@ -337,6 +338,7 @@ function resetForm() {
   githubIssue.value = null
   projectHasGitHub.value = false
   githubIssueRef.value = ''
+  customFieldValues.value = {}
   editingDescription.value = true
 }
 
@@ -501,6 +503,7 @@ async function loadTask(id: number) {
   taskWorkflow.value = task.project_workflow || ''
   githubIssue.value = task.github ?? null
   githubIssueRef.value = ''
+  customFieldValues.value = { ...(task.fields || {}) }
   await loadStatusesForProject(projectId.value)
   await loadSprintsForProject(projectId.value)
   await loadTagsForProject(projectId.value)
@@ -518,6 +521,27 @@ function sameIdSet(a: number[], b: number[]) {
   return b.every((id) => seen.has(id))
 }
 
+function fieldPatchValue(value: unknown): unknown {
+  if (value === '' || value === undefined) return null
+  if (value && typeof value === 'object' && 'id' in (value as object)) {
+    const id = Number((value as { id?: number }).id)
+    return Number.isFinite(id) && id > 0 ? id : null
+  }
+  return value
+}
+
+function fieldsPayload(from: Record<string, unknown> = customFieldValues.value): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(from)) {
+    out[key] = fieldPatchValue(value)
+  }
+  return out
+}
+
+function sameFields(a: Record<string, unknown>, b: Record<string, unknown>) {
+  return JSON.stringify(fieldsPayload(a)) === JSON.stringify(fieldsPayload(b))
+}
+
 type FormSnapshot = {
   title: string
   description: string
@@ -530,6 +554,7 @@ type FormSnapshot = {
   statusId: number | ''
   sprintId: number | ''
   estimatePoints: number | ''
+  customFields: Record<string, unknown>
 }
 
 const addFormBaseline = ref<FormSnapshot | null>(null)
@@ -547,6 +572,7 @@ function captureFormSnapshot(): FormSnapshot {
     statusId: statusId.value,
     sprintId: formSprintId(sprintId.value),
     estimatePoints: estimatePoints.value,
+    customFields: { ...customFieldValues.value },
   }
 }
 
@@ -572,7 +598,8 @@ function isFormDirty(): boolean {
     formSprintId(sprintId.value) !== sprint ||
     estimatePoints.value !== estimate ||
     newTags.value.trim() !== '' ||
-    !sameIdSet(selectedTagIds.value, tagIds)
+    !sameIdSet(selectedTagIds.value, tagIds) ||
+    !sameFields(customFieldValues.value, t.fields || {})
   )
 }
 
@@ -590,7 +617,8 @@ function isAddFormDirty(): boolean {
     newTags.value.trim() !== b.newTags.trim() ||
     statusId.value !== b.statusId ||
     formSprintId(sprintId.value) !== b.sprintId ||
-    estimatePoints.value !== b.estimatePoints
+    estimatePoints.value !== b.estimatePoints ||
+    !sameFields(customFieldValues.value, b.customFields)
   )
 }
 
@@ -618,7 +646,7 @@ useLiveUpdates(async (event: LiveEvent) => {
     }
     return
   }
-  if (event.type === 'project.updated') {
+  if (event.type === 'project.updated' || event.type === 'project.created' || event.type === 'project.deleted') {
     if (currentTask.value?.project_id && event.project_id === currentTask.value.project_id) {
       await loadMeta()
       await loadTagsForProject(projectId.value)
@@ -716,6 +744,7 @@ async function save(keepOpen = false): Promise<boolean> {
         ...(isKanbanTask.value && estimatePoints.value !== ''
           ? { estimate_points: Number(estimatePoints.value) }
           : {}),
+        ...(Object.keys(fieldsPayload()).length ? { fields: fieldsPayload() } : {}),
       })
       notifySaved(created, !keepOpen)
       toast.push(isSubtask.value ? 'Subtask created' : 'Task created', 'success')
@@ -757,6 +786,7 @@ async function save(keepOpen = false): Promise<boolean> {
       payload.estimate_points =
         estimatePoints.value === '' ? null : Number(estimatePoints.value)
     }
+    payload.fields = fieldsPayload()
     const updated = await api.patchTask(taskId.value, payload)
     currentTask.value = updated
     notifySaved(updated, false)
@@ -868,6 +898,7 @@ async function onProjectChange() {
   }
   await refreshProjectGitHub(projectId.value)
   await loadTagsForProject(projectId.value)
+  customFieldValues.value = {}
   selectedTagIds.value = allTags.value.filter((t) => names.has(t.name.toLowerCase())).map((t) => t.id)
   const previousParent = isSubtask.value ? Number(parentId.value) : null
   await loadParentCandidates(projectId.value)
@@ -1570,7 +1601,14 @@ async function removeTimeEntry(entryId: number) {
             <option :value="1">Low</option>
             <option :value="2">Medium</option>
             <option :value="3">High</option>
-          </select>
+            </select>
+        </div>
+        <div v-if="projectId !== ''" class="kanban-order-fields">
+          <TaskSidebarFields
+            v-model="customFieldValues"
+            :project-id="Number(projectId)"
+            :read-only="readOnly"
+          />
         </div>
         <div class="form-group mt-2 kanban-order-due">
           <label for="due_date">Due Date (optional):</label>
@@ -1965,16 +2003,18 @@ textarea.task-description-input {
 .kanban-task-aside :deep(.kanban-order-related) { order: 6; }
 .kanban-task-aside .kanban-order-priority,
 .kanban-task-aside :deep(.kanban-order-priority) { order: 7; }
+.kanban-task-aside .kanban-order-fields,
+.kanban-task-aside :deep(.kanban-order-fields) { order: 8; }
 .kanban-task-aside .kanban-order-estimate,
-.kanban-task-aside :deep(.kanban-order-estimate) { order: 8; }
+.kanban-task-aside :deep(.kanban-order-estimate) { order: 9; }
 .kanban-task-aside .kanban-order-due,
-.kanban-task-aside :deep(.kanban-order-due) { order: 9; }
+.kanban-task-aside :deep(.kanban-order-due) { order: 10; }
 .kanban-task-aside .kanban-order-tags,
-.kanban-task-aside :deep(.kanban-order-tags) { order: 10; }
+.kanban-task-aside :deep(.kanban-order-tags) { order: 11; }
 .kanban-task-aside .kanban-order-github,
-.kanban-task-aside :deep(.kanban-order-github) { order: 11; }
+.kanban-task-aside :deep(.kanban-order-github) { order: 12; }
 .kanban-task-aside .kanban-order-time,
-.kanban-task-aside :deep(.kanban-order-time) { order: 12; }
+.kanban-task-aside :deep(.kanban-order-time) { order: 13; }
 
 .kanban-title-group {
   margin-bottom: 0.75rem;

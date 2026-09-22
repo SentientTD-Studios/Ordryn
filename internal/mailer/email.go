@@ -41,26 +41,58 @@ func SendEmail(cfg Config, trigger, subject, message, toEmail string) error {
 }
 
 func sendEmail(cfg Config, subject, message, toEmail string) error {
+	fromAddr, from, err := checkConfigured(cfg)
+	if err != nil {
+		return err
+	}
+	if err := allowCoreSend(toEmail); err != nil {
+		return err
+	}
+	return deliverConfigured(cfg, subject, message, toEmail, from, fromAddr)
+}
+
+func checkConfigured(cfg Config) (fromAddr, from string, err error) {
 	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
 	if provider == "" || provider == "none" {
-		return fmt.Errorf("email not configured")
+		return "", "", fmt.Errorf("email not configured")
 	}
 
-	fromAddr := strings.TrimSpace(cfg.FromAddress)
+	fromAddr = strings.TrimSpace(cfg.FromAddress)
 	if fromAddr == "" {
-		return fmt.Errorf("email from address not configured")
+		return "", "", fmt.Errorf("email from address not configured")
 	}
-	from := formatFrom(cfg.FromName, fromAddr)
 
 	switch provider {
+	case ProviderMailgun:
+		if strings.TrimSpace(cfg.MailgunDomain) == "" || cfg.MailgunAPIKeyEnc == "" {
+			return "", "", fmt.Errorf("mailgun credentials not configured")
+		}
+	case ProviderSMTP:
+		if strings.TrimSpace(cfg.SMTPHost) == "" || cfg.SMTPPort <= 0 || strings.TrimSpace(cfg.SMTPUsername) == "" || cfg.SMTPPasswordEnc == "" {
+			return "", "", fmt.Errorf("smtp credentials not configured")
+		}
+	default:
+		return "", "", fmt.Errorf("unsupported email provider %q", provider)
+	}
+	return fromAddr, formatFrom(cfg.FromName, fromAddr), nil
+}
+
+func deliverConfigured(cfg Config, subject, message, toEmail, from, fromAddr string) error {
+	if f := testDeliver; f != nil {
+		return f(cfg, subject, message, toEmail, from, fromAddr)
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
 	case ProviderMailgun:
 		return sendViaMailgun(cfg, subject, message, toEmail, from, fromAddr)
 	case ProviderSMTP:
 		return sendViaSMTP(cfg, subject, message, toEmail, from, fromAddr)
 	default:
-		return fmt.Errorf("unsupported email provider %q", provider)
+		return fmt.Errorf("unsupported email provider %q", cfg.Provider)
 	}
 }
+
+// testDeliver, when set, replaces SMTP/Mailgun so tests can exercise rate limits.
+var testDeliver func(cfg Config, subject, message, toEmail, from, fromAddr string) error
 
 func formatFrom(name, address string) string {
 	name = strings.TrimSpace(name)

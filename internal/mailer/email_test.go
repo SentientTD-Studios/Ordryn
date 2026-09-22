@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -167,5 +168,80 @@ func TestClassifyAudit(t *testing.T) {
 	}
 	if status, msg := classifyAudit(Config{Provider: ProviderSMTP}, fmt.Errorf("failed to send email: connection refused")); status != StatusFailed || msg == "" {
 		t.Fatalf("smtp failure status = %q msg = %q", status, msg)
+	}
+	if status, _ := classifyAudit(Config{Provider: ProviderSMTP}, ErrRateLimited); status != StatusRateLimited {
+		t.Fatalf("rate limited status = %q", status)
+	}
+}
+
+func readySMTPConfig() Config {
+	return Config{
+		Provider:        ProviderSMTP,
+		FromAddress:     "noreply@example.com",
+		SMTPHost:        "smtp.example.com",
+		SMTPPort:        587,
+		SMTPUsername:    "user",
+		SMTPPasswordEnc: "enc",
+	}
+}
+
+func TestSendEmailRateLimited(t *testing.T) {
+	t.Cleanup(func() {
+		testDeliver = nil
+		coreLimiter.reset()
+		SetAuditor(nil)
+	})
+	coreLimiter.reset()
+	testDeliver = func(Config, string, string, string, string, string) error { return nil }
+
+	var last AuditEntry
+	SetAuditor(func(entry AuditEntry) { last = entry })
+
+	cfg := readySMTPConfig()
+	origN := coreLimiter.recipientN
+	coreLimiter.recipientN = 2
+	t.Cleanup(func() { coreLimiter.recipientN = origN })
+
+	for i := 0; i < 2; i++ {
+		if err := SendEmail(cfg, TriggerPasswordReset, "s", "b", "user@example.com"); err != nil {
+			t.Fatalf("send %d: %v", i, err)
+		}
+		if last.Status != StatusSent {
+			t.Fatalf("status = %q", last.Status)
+		}
+	}
+	err := SendEmail(cfg, TriggerPasswordReset, "s", "b", "user@example.com")
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+	if last.Status != StatusRateLimited {
+		t.Fatalf("audit status = %q", last.Status)
+	}
+	if err := SendEmail(cfg, TriggerSiteInvite, "s", "b", "other@example.com"); err != nil {
+		t.Fatalf("other recipient: %v", err)
+	}
+}
+
+func TestSendEmailUnconfiguredDoesNotConsumeQuota(t *testing.T) {
+	t.Cleanup(func() {
+		testDeliver = nil
+		coreLimiter.reset()
+		SetAuditor(nil)
+	})
+	coreLimiter.reset()
+	origN := coreLimiter.recipientN
+	coreLimiter.recipientN = 1
+	t.Cleanup(func() { coreLimiter.recipientN = origN })
+	testDeliver = func(Config, string, string, string, string, string) error { return nil }
+
+	to := "user@example.com"
+	for i := 0; i < 3; i++ {
+		err := SendEmail(Config{FromAddress: "noreply@example.com"}, TriggerPasswordReset, "s", "b", to)
+		if err == nil || !strings.Contains(err.Error(), "email not configured") {
+			t.Fatalf("send %d: %v", i, err)
+		}
+	}
+	if err := SendEmail(readySMTPConfig(), TriggerPasswordReset, "s", "b", to); err != nil {
+		t.Fatalf("configured send after unconfigured attempts: %v", err)
 	}
 }

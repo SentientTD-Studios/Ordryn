@@ -74,6 +74,11 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 	_ = storage.LogProjectEvent(projectID, actorUserID, "invited", map[string]interface{}{
 		"role": role, "invite_id": inv.ID, "username": user.UserName,
 	})
+	live.DispatchProjectHook(actorUserID, projectID, live.TypeProjectInviteSent, &live.TaskHookMeta{
+		MemberID:   user.ID,
+		MemberName: hookDisplayName(user.ID),
+		JoinEmail:  user.Email,
+	})
 	return inv, nil
 }
 
@@ -107,7 +112,11 @@ func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, member
 	_ = storage.LogProjectEvent(projectID, actorUserID, "role_changed", map[string]interface{}{
 		"user_id": memberUserID, "role": role,
 	})
-	live.AfterProjectChange(actorUserID, projectID, live.TypeProjectUpdated)
+	live.AfterProjectChangeLive(actorUserID, projectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(actorUserID, projectID, live.TypeProjectMemberRoleChanged, &live.TaskHookMeta{
+		MemberID:   memberUserID,
+		MemberName: hookDisplayName(memberUserID),
+	})
 	return nil
 }
 
@@ -142,7 +151,12 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 	_ = storage.LogProjectEvent(projectID, actorUserID, event, map[string]interface{}{
 		"user_id": memberUserID,
 	})
-	live.AfterProjectChange(actorUserID, projectID, live.TypeProjectUpdated, memberUserID)
+	memberName := hookDisplayName(memberUserID)
+	live.AfterProjectChangeLive(actorUserID, projectID, live.TypeProjectUpdated, memberUserID)
+	live.DispatchProjectHook(actorUserID, projectID, live.TypeProjectMemberLeft, &live.TaskHookMeta{
+		MemberID:   memberUserID,
+		MemberName: memberName,
+	})
 	return nil
 }
 
@@ -162,16 +176,27 @@ func AcceptProjectInvite(ctx context.Context, userID int, userEmail string, invi
 	_ = storage.LogProjectEvent(inv.ProjectID, userID, "accepted", map[string]interface{}{
 		"invite_id": inviteID, "role": inv.Role,
 	})
-	live.AfterProjectChange(userID, inv.ProjectID, live.TypeProjectUpdated)
+	live.AfterProjectChangeLive(userID, inv.ProjectID, live.TypeProjectUpdated)
+	live.DispatchProjectHook(userID, inv.ProjectID, live.TypeProjectMemberJoined, &live.TaskHookMeta{
+		MemberID:   userID,
+		MemberName: hookDisplayName(userID),
+	})
 	return nil
 }
 
 // DeclineProjectInvite declines a pending invite.
 func DeclineProjectInvite(ctx context.Context, userEmail string, inviteID int) error {
 	_ = ctx
+	inv, err := storage.GetProjectInviteByID(inviteID)
+	if err != nil {
+		return ErrNotFound
+	}
 	if err := storage.DeclineProjectInvite(inviteID, userEmail); err != nil {
 		return ErrNotFound
 	}
+	live.DispatchProjectHook(inv.InvitedBy, inv.ProjectID, live.TypeProjectInviteDeclined, &live.TaskHookMeta{
+		JoinEmail: userEmail,
+	})
 	return nil
 }
 
@@ -250,4 +275,18 @@ func PublicSharePathForTask(taskID int) string {
 		return ""
 	}
 	return "/s/" + link.Token + "?task=" + strconv.Itoa(taskID)
+}
+
+func hookDisplayName(userID int) string {
+	if userID <= 0 {
+		return ""
+	}
+	p, err := storage.GetUserProfileByID(userID)
+	if err != nil || p == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(p.UserName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(p.Email)
 }

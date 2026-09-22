@@ -10,7 +10,7 @@ import (
 	"GoTodo/internal/server/utils"
 )
 
-func TestDocumentationAPIV1Redirect(t *testing.T) {
+func TestDocumentationAPIV1LegacyPathRedirectsToV2(t *testing.T) {
 	orig := utils.BasePath
 	t.Cleanup(func() { utils.BasePath = orig })
 	utils.BasePath = "/"
@@ -21,7 +21,23 @@ func TestDocumentationAPIV1Redirect(t *testing.T) {
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if loc := rec.Header().Get("Location"); loc != "/docs/api/v1" {
+	if loc := rec.Header().Get("Location"); loc != "/docs/api/v2" {
+		t.Fatalf("Location = %q", loc)
+	}
+}
+
+func TestDocumentationAPIV1Redirect(t *testing.T) {
+	orig := utils.BasePath
+	t.Cleanup(func() { utils.BasePath = orig })
+	utils.BasePath = "/"
+
+	req := httptest.NewRequest(http.MethodGet, "/documentation/api/v2", nil)
+	rec := httptest.NewRecorder()
+	documentationAPIV1Redirect(rec, req)
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/docs/api/v2" {
 		t.Fatalf("Location = %q", loc)
 	}
 }
@@ -31,10 +47,10 @@ func TestDocumentationAPIV1RedirectWithBasePath(t *testing.T) {
 	t.Cleanup(func() { utils.BasePath = orig })
 	utils.BasePath = "/gotodo"
 
-	req := httptest.NewRequest(http.MethodGet, "/gotodo/documentation/api/v1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/gotodo/documentation/api/v2", nil)
 	rec := httptest.NewRecorder()
 	documentationAPIV1Redirect(rec, req)
-	if loc := rec.Header().Get("Location"); loc != "/gotodo/docs/api/v1" {
+	if loc := rec.Header().Get("Location"); loc != "/gotodo/docs/api/v2" {
 		t.Fatalf("Location = %q", loc)
 	}
 }
@@ -214,7 +230,7 @@ func TestIsSPAStaticPath(t *testing.T) {
 		{"dashboard", false},
 		{"calendar", false},
 		{"tasks/1", false},
-		{"docs/api/v1", false},
+		{"docs/api/v2", false},
 	}
 	for _, tc := range cases {
 		if got := isSPAStaticPath(tc.rel); got != tc.want {

@@ -14,7 +14,7 @@ func TestSiteInviteRegisterURL(t *testing.T) {
 	})
 	utils.BasePath = ""
 
-	req := httptest.NewRequest("POST", "/api/v1/invites", nil)
+	req := httptest.NewRequest("POST", "/api/v2/invites", nil)
 	req.Host = "gotodo.example"
 	req.Header.Set("X-Forwarded-Proto", "https")
 

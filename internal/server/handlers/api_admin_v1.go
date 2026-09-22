@@ -28,6 +28,7 @@ type adminSettingsJSON struct {
 	EnableGlobalAnnouncement bool   `json:"enable_global_announcement"`
 	GlobalAnnouncementText   string `json:"global_announcement_text"`
 	EnableAPI                bool   `json:"enable_api"`
+	EnableInboundWebhooks    bool   `json:"enable_inbound_webhooks"`
 	AllowUserInvites         bool   `json:"allow_user_invites"`
 	UserInviteLimit          int    `json:"user_invite_limit"`
 	InviteExpirationDays     int    `json:"invite_expiration_days"`
@@ -71,6 +72,7 @@ type adminSettingsPatch struct {
 	EnableGlobalAnnouncement *bool   `json:"enable_global_announcement"`
 	GlobalAnnouncementText   *string `json:"global_announcement_text"`
 	EnableAPI                *bool   `json:"enable_api"`
+	EnableInboundWebhooks    *bool   `json:"enable_inbound_webhooks"`
 	AllowUserInvites         *bool   `json:"allow_user_invites"`
 	UserInviteLimit          *int    `json:"user_invite_limit"`
 	InviteExpirationDays     *int    `json:"invite_expiration_days"`
@@ -102,7 +104,7 @@ type adminSettingsPatch struct {
 	ImageLocalPath        *string `json:"image_local_path"`
 }
 
-// APIV1AdminSettings handles GET/PATCH /api/v1/admin/settings.
+// APIV1AdminSettings handles GET/PATCH /api/v2/admin/settings.
 func APIV1AdminSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -165,6 +167,9 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.EnableAPI != nil {
 		next.EnableAPI = *req.EnableAPI
+	}
+	if req.EnableInboundWebhooks != nil {
+		next.EnableInboundWebhooks = *req.EnableInboundWebhooks
 	}
 	if req.AllowUserInvites != nil {
 		next.AllowUserInvites = *req.AllowUserInvites
@@ -409,6 +414,7 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 		EnableGlobalAnnouncement:   s.EnableGlobalAnnouncement,
 		GlobalAnnouncementText:     s.GlobalAnnouncementText,
 		EnableAPI:                  s.EnableAPI,
+		EnableInboundWebhooks:      s.EnableInboundWebhooks,
 		AllowUserInvites:           s.AllowUserInvites,
 		UserInviteLimit:            s.UserInviteLimit,
 		InviteExpirationDays:       s.InviteExpirationDays,
@@ -439,7 +445,7 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 	})
 }
 
-// APIV1AdminUsersRouter handles /api/v1/admin/users and ban/unban.
+// APIV1AdminUsersRouter handles /api/v2/admin/users and ban/unban.
 func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "admin/users")
 	if sub == "" {

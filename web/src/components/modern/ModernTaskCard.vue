@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Task } from '@/api/types'
+import TaskFieldBadges from '@/components/TaskFieldBadges.vue'
 import type { ViewDensity } from '@/composables/useViewDensity'
 import { hasImageMarkdown, previewWithoutImages } from '@/utils/taskCommentBody'
 
@@ -255,6 +256,7 @@ function formatMinutes(total: number) {
                 {{ tag.name }}
               </span>
             </template>
+            <TaskFieldBadges :task="task" surface="list" />
           </div>
 
           <!-- Inline Description Editor or Preview (Comfortable mode only) -->
@@ -376,6 +378,7 @@ function formatMinutes(total: number) {
           >
             {{ priorityLabel(task.priority) }}
           </span>
+          <TaskFieldBadges :task="task" surface="list" />
         </div>
         <div v-if="canWrite" class="d-flex align-items-center gap-1 flex-shrink-0">
           <button

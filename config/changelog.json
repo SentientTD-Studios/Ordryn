@@ -1,5 +1,25 @@
 [
   {
+    "version": "4.0.0",
+    "date": "2026-09-17",
+    "title": "Hook contract freeze and API v2",
+    "notes": [
+      "Outbound hooks cover CSV import, calendar due-date sync, custom field writes, project create/delete, comment edit/delete/restore, sprint update/delete, member role changes, invites, and import.completed",
+      "Breaking: comment edit/delete/restore no longer fire outbound task.commented; they use task.comment_edited, task.comment_deleted, and task.comment_restored. The live UI still refreshes on task.commented",
+      "Breaking: inbound webhooks require project_id. HMAC signatures must include X-Ordryn-Timestamp and sign timestamp + \".\" + body",
+      "Breaking: deleting a project fires project.deleted instead of project.updated",
+      "Breaking: the public REST API is now /api/v2 (OpenAPI 2.0.0). /api/v1 remains as a compatibility alias for existing webhooks, OAuth callbacks, and clients",
+      "Breaking: task favoriting is removed. The favorite field is no longer accepted or returned; reorder no longer groups by favorite; CSV import ignores a favorite column",
+      "task.updated is no longer double-fired with status/due/project/sprint/tag hooks; it remains for leftover field edits. Subscribe to task.status_changed for column moves",
+      "Catch-all trigger *, status include/exclude filters, nested JSON objects (actor_detail, task_detail, project_detail, changes), digest event lists, dead-letter status, and delivery retry APIs",
+      "Site Admin → Extensions can set site triggers/templates, send a test, and retry failed deliveries",
+      "Host API 2: extensions can declare kanban.tab surfaces and a project document store; the board Retro tab is a sandboxed iframe that talks through a parent postMessage bridge",
+      "settings.scope accepts a string or array (site, project, kanban, user). member remains an alias of user",
+      "Breaking: settings.scope project is classic/list projects only and no longer includes kanban boards. Use [\"project\", \"kanban\"] for a team destination on both",
+      "Project members can review enabled extensions (name, description, triggers, and webhook hostname) without seeing secrets, quiet hours, or other owner settings"
+    ]
+  },
+  {
     "version": "3.8.0",
     "date": "2026-08-31",
     "title": "Configurable image hosting",
@@ -31,7 +51,7 @@
     "notes": [
       "Starred tasks are removed from the web UI; starring is no longer available in the Vue app",
       "The API still accepts favorite on create, update, reorder, and import, and returns a deprecation notice when it is used",
-      "Task favoriting will be removed in API v4"
+      "Task favoriting is removed in API v2"
     ]
   },
   {

@@ -36,7 +36,7 @@ type savedViewAPIRequest struct {
 	SortOrder *int                     `json:"sort_order"`
 }
 
-// APIV1SavedViewsRouter handles /api/v1/saved-views and /api/v1/saved-views/{id}.
+// APIV1SavedViewsRouter handles /api/v2/saved-views and /api/v2/saved-views/{id}.
 func APIV1SavedViewsRouter(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -129,7 +129,7 @@ func apiV1CreateSavedView(w http.ResponseWriter, r *http.Request, userID int) {
 	}
 
 	basePath := strings.TrimSuffix(utils.GetBasePath(), "/")
-	w.Header().Set("Location", basePath+"/api/v1/saved-views/"+strconv.Itoa(view.ID))
+	w.Header().Set("Location", basePath+"/api/v2/saved-views/"+strconv.Itoa(view.ID))
 	writeSavedViewAPIJSON(w, http.StatusCreated, savedViewToAPIResponse(*view))
 }
 

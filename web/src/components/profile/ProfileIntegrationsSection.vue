@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '@/api/client'
-import type { CalendarInfo, GitHubConnection } from '@/api/types'
+import type { CalendarInfo, GitHubConnection, ProjectExtension, ProjectExtensionPatch } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useConfirm } from '@/composables/useConfirm'
 import { useSite } from '@/composables/useSite'
 import { useToast } from '@/composables/useToast'
+import { rateLimitNotice } from '@/utils/extensionDeliveries'
+import { settingHasScope } from '@/utils/extensionScope'
 
 const { push } = useToast()
 const { askConfirm } = useConfirm()
@@ -18,14 +20,188 @@ const githubOAuthEnabled = computed(() => !!siteInfo.value?.github_oauth_configu
 
 const calendar = ref<CalendarInfo | null>(null)
 const icsFile = ref<File | null>(null)
+const inbox = ref<ProjectExtension[]>([])
+const inboxBusy = ref<string | null>(null)
+const inboxDraft = reactive<Record<string, string>>({})
+const inboxExpanded = reactive<Record<string, boolean>>({})
 
 async function load() {
   try {
-    const [c, g] = await Promise.all([api.getCalendar(), api.getGitHubConnection()])
+    const [c, g, ext] = await Promise.all([
+      api.getCalendar(),
+      api.getGitHubConnection(),
+      api.listMyExtensions().catch(() => ({ extensions: [] as ProjectExtension[] })),
+    ])
     calendar.value = c
     github.value = g
+    inbox.value = (ext.extensions || []).filter(hasMemberSettings)
+    for (const e of inbox.value) {
+      if (!e.member) e.member = { enabled: false, triggers: (e.manifest.hooks || []).map((h) => h.on), templates: {}, status_only: false }
+      if (!(e.member.triggers || []).length) e.member.triggers = (e.manifest.hooks || []).map((h) => h.on)
+    }
   } catch (err) {
     push(err instanceof APIError ? err.message : 'Failed to load integrations', 'error')
+  }
+}
+
+function destKey(ext: ProjectExtension) {
+  return ext.manifest.delivery?.url_from || 'webhook_url'
+}
+
+function memberFields(ext: ProjectExtension) {
+  const all = ext.manifest.settings || []
+  const fields = all.filter((f) => settingHasScope(f, 'user'))
+  const dest = all.find((f) => f.key === destKey(ext) && f.type === 'secret')
+  if (dest && !fields.some((f) => f.key === dest.key)) {
+    return [dest, ...fields]
+  }
+  return fields
+}
+
+function hasMemberSettings(ext: ProjectExtension) {
+  return (ext.manifest.settings || []).some((f) => settingHasScope(f, 'user'))
+}
+
+function hasMemberSetting(ext: ProjectExtension, key: string) {
+  return memberFields(ext).some(
+    (f) =>
+      f.key === key ||
+      f.type === key ||
+      (f.type === 'hook_select' && key === 'triggers') ||
+      (f.type === 'field_filter' && (key === 'field_key' || key === 'field_value')),
+  )
+}
+
+function hasControl(ext: ProjectExtension, name: string) {
+  return (ext.manifest.controls || []).includes(name)
+}
+
+function inboxPlaceholder(ext: ProjectExtension, key: string) {
+  if (key === 'ntfy_auth') return 'tk_…'
+  switch (ext.manifest.delivery?.type) {
+    case 'ntfy.webhook':
+      return 'https://ntfy.sh/my-topic'
+    case 'discord.webhook':
+      return 'https://discord.com/api/webhooks/…'
+    case 'googlechat.webhook':
+      return 'https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…'
+    default:
+      return 'https://example.com/hooks/…'
+  }
+}
+
+function hookNames(ext: ProjectExtension) {
+  return (ext.manifest.hooks || []).map((h) => h.on)
+}
+
+function hookLabel(ext: ProjectExtension, on: string) {
+  const hook = (ext.manifest.hooks || []).find((h) => h.on === on)
+  return hook?.label || on
+}
+
+function boolValue(ext: ProjectExtension, key: string): boolean {
+  const src = ext.member
+  if (!src) return false
+  switch (key) {
+    case 'status_only':
+      return !!src.status_only
+    case 'skip_self':
+      return src.skip_self !== false
+    case 'claimed_only':
+      return !!src.claimed_only
+    case 'claimed_is_me':
+      return !!src.claimed_is_me
+    default:
+      return false
+  }
+}
+
+function setBool(ext: ProjectExtension, key: string, value: boolean) {
+  if (!ext.member) return
+  switch (key) {
+    case 'status_only':
+      ext.member.status_only = value
+      break
+    case 'skip_self':
+      ext.member.skip_self = value
+      break
+    case 'claimed_only':
+      ext.member.claimed_only = value
+      break
+    case 'claimed_is_me':
+      ext.member.claimed_is_me = value
+      break
+  }
+}
+
+async function saveInbox(ext: ProjectExtension) {
+  inboxBusy.value = ext.id
+  try {
+    const payload: ProjectExtensionPatch = {
+      enabled: ext.member?.enabled,
+    }
+    if (hasMemberSetting(ext, 'triggers')) payload.triggers = [...(ext.member?.triggers || [])]
+    if (hasMemberSetting(ext, 'status_only')) payload.status_only = ext.member?.status_only
+    if (hasMemberSetting(ext, 'skip_self')) payload.skip_self = ext.member?.skip_self !== false
+    if (hasMemberSetting(ext, 'claimed_only')) payload.claimed_only = ext.member?.claimed_only
+    if (hasMemberSetting(ext, 'claimed_is_me')) payload.claimed_is_me = ext.member?.claimed_is_me
+    const draft = inboxDraft[ext.id]?.trim()
+    if (draft) payload.webhook_url = draft
+    const saved = await api.patchMyExtension(ext.id, payload)
+    inbox.value = inbox.value.map((e) => (e.id === saved.id ? saved : e))
+    inboxDraft[ext.id] = ''
+    push('Inbox notifications saved', 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Save failed', 'error')
+  } finally {
+    inboxBusy.value = null
+  }
+}
+
+async function testInbox(ext: ProjectExtension) {
+  inboxBusy.value = `${ext.id}:test`
+  try {
+    const res = await api.testMyExtension(ext.id)
+    push(res.message || 'Test message sent', 'success')
+    await load()
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Test failed', 'error')
+  } finally {
+    inboxBusy.value = null
+  }
+}
+
+function toggleInboxTrigger(ext: ProjectExtension, hook: string, checked: boolean) {
+  const names = hookNames(ext)
+  let cur = new Set(ext.member?.triggers || [])
+  if (hook === '*') {
+    ext.member!.triggers = checked ? ['*'] : []
+    return
+  }
+  if (cur.has('*')) {
+    cur = new Set(names)
+  }
+  if (checked) cur.add(hook)
+  else cur.delete(hook)
+  cur.delete('*')
+  ext.member!.triggers = [...cur]
+}
+
+function inboxTriggerChecked(ext: ProjectExtension, hook: string): boolean {
+  const cur = ext.member?.triggers || []
+  return cur.includes('*') || cur.includes(hook)
+}
+
+async function retryInbox(ext: ProjectExtension, row: { id: number }) {
+  inboxBusy.value = `${ext.id}:retry:${row.id}`
+  try {
+    await api.retryMyExtension(ext.id, row.id)
+    push('Delivery queued for retry', 'success')
+    await load()
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Retry failed', 'error')
+  } finally {
+    inboxBusy.value = null
   }
 }
 
@@ -167,6 +343,106 @@ onMounted(() => {
           </div>
         </form>
       </template>
+    </div>
+  </div>
+
+  <div v-if="inbox.length" id="inbox-hooks" class="card mb-4">
+    <div class="card-header">
+      <h3 class="card-title mb-0">Personal inbox notifications</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small">
+        Destinations for tasks that are not in a project.
+      </p>
+      <div v-for="ext in inbox" :key="ext.id" class="border rounded p-3 mb-3">
+        <button type="button" class="btn btn-link p-0 text-decoration-none" @click="inboxExpanded[ext.id] = !inboxExpanded[ext.id]">
+          {{ ext.name || ext.id }}
+        </button>
+        <form v-if="inboxExpanded[ext.id]" class="mt-3" @submit.prevent="saveInbox(ext)">
+          <fieldset>
+            <div class="form-check mb-2">
+              <input v-model="ext.member!.enabled" class="form-check-input" type="checkbox" />
+              <label class="form-check-label">Enable for my inbox</label>
+            </div>
+            <div v-for="field in memberFields(ext)" :key="field.key" class="mb-2">
+              <template v-if="field.type === 'secret'">
+                <label class="form-label">{{ field.label }}</label>
+                <input
+                  v-model="inboxDraft[ext.id]"
+                  type="password"
+                  class="form-control"
+                  autocomplete="off"
+                  :placeholder="ext.member_secrets?.[field.key] ? 'Set — leave blank to keep' : inboxPlaceholder(ext, field.key)"
+                />
+                <div v-if="field.description" class="form-text">{{ field.description }}</div>
+              </template>
+              <template v-else-if="field.type === 'hook_select'">
+                <div class="fw-semibold mb-1">{{ field.label }}</div>
+                <div class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="(ext.member?.triggers || []).includes('*')"
+                    @change="toggleInboxTrigger(ext, '*', ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">All declared events</label>
+                </div>
+                <div v-for="hook in hookNames(ext)" :key="hook" class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="inboxTriggerChecked(ext, hook)"
+                    @change="toggleInboxTrigger(ext, hook, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">{{ hookLabel(ext, hook) }}</label>
+                </div>
+              </template>
+              <template v-else-if="field.type === 'bool'">
+                <div class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="boolValue(ext, field.key)"
+                    @change="setBool(ext, field.key, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label">{{ field.label }}</label>
+                </div>
+              </template>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button type="submit" class="btn btn-sm btn-primary" :disabled="inboxBusy === ext.id">
+                {{ inboxBusy === ext.id ? 'Saving…' : 'Save' }}
+              </button>
+              <button
+                v-if="hasControl(ext, 'send_test')"
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                :disabled="!!inboxBusy"
+                @click="testInbox(ext)"
+              >
+                Send test
+              </button>
+            </div>
+            <p v-if="rateLimitNotice(ext.member?.last_error, ext.member_deliveries)" class="small text-warning mt-2 mb-0">
+              {{ rateLimitNotice(ext.member?.last_error, ext.member_deliveries) }}
+            </p>
+            <p v-else-if="ext.member?.last_error" class="small text-warning mt-2 mb-0">{{ ext.member.last_error }}</p>
+            <ul v-if="ext.member_deliveries?.length" class="small mt-2 mb-0 ps-3">
+              <li v-for="row in ext.member_deliveries" :key="row.id">
+                {{ row.created_at }} · {{ row.event }} · {{ row.status }}
+                <span v-if="row.next_attempt_at && (row.status === 'pending' || row.status === 'failed')" class="text-muted"> retry {{ row.next_attempt_at }}</span>
+                <button
+                  v-if="row.status === 'failed' || row.status === 'dead'"
+                  type="button"
+                  class="btn btn-link btn-sm py-0"
+                  :disabled="!!inboxBusy"
+                  @click="retryInbox(ext, row)"
+                >Retry</button>
+              </li>
+            </ul>
+          </fieldset>
+        </form>
+      </div>
     </div>
   </div>
 

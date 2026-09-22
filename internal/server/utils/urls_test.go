@@ -12,7 +12,7 @@ func TestAbsoluteURLForRequestWithFullBasePath(t *testing.T) {
 	})
 	BasePath = "https://demo.ryanmalacina.com/gotodo"
 
-	req := httptest.NewRequest("POST", "/api/v1/auth/device/code", nil)
+	req := httptest.NewRequest("POST", "/api/v2/auth/device/code", nil)
 	req.Host = "demo.ryanmalacina.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
 
@@ -30,7 +30,7 @@ func TestAbsoluteURLForRequestWithPathBase(t *testing.T) {
 	})
 	BasePath = "/gotodo"
 
-	req := httptest.NewRequest("POST", "/api/v1/auth/device/code", nil)
+	req := httptest.NewRequest("POST", "/api/v2/auth/device/code", nil)
 	req.Host = "demo.ryanmalacina.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
 

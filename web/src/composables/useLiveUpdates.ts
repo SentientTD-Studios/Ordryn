@@ -8,6 +8,8 @@ export type LiveEvent = {
   actor_id?: number
   origin?: string
   timestamp?: string
+  extension_id?: string
+  key?: string
 }
 
 type LiveHandler = (event: LiveEvent) => void
@@ -50,7 +52,7 @@ function dispatch(event: LiveEvent): void {
 
 export function startLiveUpdates(): void {
   if (source || typeof EventSource === 'undefined') return
-  const url = withBase('/api/v1/events')
+  const url = withBase('/api/v2/events')
   source = new EventSource(url)
   source.addEventListener('task-update', (raw) => {
     const msg = raw as MessageEvent<string>

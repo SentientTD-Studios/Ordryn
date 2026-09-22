@@ -3,6 +3,12 @@ import { onMounted, ref } from 'vue'
 import type { Tag } from '@/api/types'
 import type { ViewDensity } from '@/composables/useViewDensity'
 
+export type KanbanSurfaceTab = {
+  viewKey: string
+  label: string
+  icon?: string
+}
+
 const props = withDefaults(
   defineProps<{
     status: string
@@ -14,13 +20,17 @@ const props = withDefaults(
     density: ViewDensity
     tags: Tag[]
     showViewMode?: boolean
-    viewMode?: 'list' | 'board'
+    viewMode?: string
     tagByName?: boolean
+    surfaceTabs?: KanbanSurfaceTab[]
+    hideTaskFilters?: boolean
   }>(),
   {
     showViewMode: false,
     viewMode: 'list',
     tagByName: false,
+    surfaceTabs: () => [],
+    hideTaskFilters: false,
   },
 )
 
@@ -32,7 +42,7 @@ const emit = defineEmits<{
   'update:sort': [val: string]
   'update:search': [val: string]
   'update:density': [val: ViewDensity]
-  'update:viewMode': [val: 'list' | 'board']
+  'update:viewMode': [val: string]
   'clear-filters': []
 }>()
 
@@ -70,7 +80,7 @@ function getDueDateLabel(preset: string) {
   <div class="ordryn-filter-bar mb-2">
     <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
       <!-- Search Input & Filter Fold Toggle Button -->
-        <div class="d-flex align-items-center gap-2 flex-grow-1 oryryn-filter-search">
+        <div v-if="!hideTaskFilters" class="d-flex align-items-center gap-2 flex-grow-1 oryryn-filter-search">
         <div class="position-relative flex-grow-1">
           <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted" />
           <input
@@ -130,6 +140,26 @@ function getDueDateLabel(preset: string) {
             >
               <i class="bi bi-kanban me-1" />Board
             </button>
+            <button
+              v-for="tab in surfaceTabs"
+              :key="tab.viewKey"
+              type="button"
+              class="btn btn-sm rounded-pill px-2.5 py-0.5 border-0 fw-medium transition-all"
+              :class="viewMode === tab.viewKey ? 'shadow-xs fw-bold' : 'text-muted'"
+              :style="viewMode === tab.viewKey ? 'background: var(--ordryn-card-bg); color: var(--ordryn-text);' : ''"
+              @click="emit('update:viewMode', tab.viewKey)"
+            >
+              <img
+                v-if="tab.icon"
+                :src="tab.icon"
+                alt=""
+                width="14"
+                height="14"
+                class="me-1"
+                style="object-fit: contain"
+              />
+              {{ tab.label }}
+            </button>
           </div>
         </div>
 
@@ -162,7 +192,7 @@ function getDueDateLabel(preset: string) {
     </div>
 
     <!-- Foldable Filter Pills Row -->
-    <div v-if="showFilterPills" class="filter-pills-container mt-2">
+    <div v-if="showFilterPills && !hideTaskFilters" class="filter-pills-container mt-2">
       <!-- Status Dropdown Pill (default: incomplete) -->
       <div class="dropdown d-inline-block">
         <button

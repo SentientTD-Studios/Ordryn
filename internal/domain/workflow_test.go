@@ -150,6 +150,14 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "tags: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateExtensionTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "extensions: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateCustomFieldTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "custom fields: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Reproduce production DBs that still have UNIQUE(user_id, name) while a
 	// personal tag is used on both inbox and project tasks. The migration must
@@ -565,7 +573,7 @@ func TestReorderSkipsEventForKanbanColumn(t *testing.T) {
 	}
 
 	statusFilter := todoID
-	if err := ReorderTasks(ctx, 1, []int{id2, id1}, false, &pid, nil, &statusFilter); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{id2, id1}, &pid, nil, &statusFilter); err != nil {
 		t.Fatalf("kanban reorder: %v", err)
 	}
 	if n := len(eventsOfType(t, id1, 1, "reordered")); n != 0 {
@@ -608,7 +616,7 @@ func TestReorderMovesTaskIntoKanbanColumn(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{taskID}, false, &pid, nil, &doneID); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &doneID); err != nil {
 		t.Fatalf("move via reorder: %v", err)
 	}
 
@@ -637,7 +645,7 @@ func TestReorderMovesTaskIntoKanbanColumn(t *testing.T) {
 		t.Fatalf("completed events=%d want 1", n)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{taskID}, false, &pid, nil, &todoID); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &todoID); err != nil {
 		t.Fatalf("move back: %v", err)
 	}
 	if err := pool.QueryRow(ctx,
@@ -687,7 +695,7 @@ func TestSubtaskKanbanColumnMoveUsesUpdateNotReorder(t *testing.T) {
 		t.Fatalf("create child: %v", err)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{childID}, false, &pid, nil, &doneID); err == nil {
+	if err := ReorderTasks(ctx, 1, []int{childID}, &pid, nil, &doneID); err == nil {
 		t.Fatal("expected reorder of subtask to fail")
 	} else if !errors.Is(err, ErrValidation) {
 		t.Fatalf("reorder subtask: err=%v want validation", err)
@@ -734,7 +742,7 @@ func TestReorderLogsEventWithoutStatusFilter(t *testing.T) {
 		t.Fatalf("create Two: %v", err)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{id2, id1}, false, &pid, nil, nil); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{id2, id1}, &pid, nil, nil); err != nil {
 		t.Fatalf("list reorder: %v", err)
 	}
 	if n := len(eventsOfType(t, id2, 1, "reordered")); n != 1 {

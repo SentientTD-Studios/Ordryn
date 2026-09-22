@@ -12,7 +12,7 @@ import (
 )
 
 func TestAPIV1ProjectsUnauthorized(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/projects", nil)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -33,7 +33,7 @@ func TestAPIV1ProjectsCreateValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v2/projects", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			req = utils.SetAPIUserID(req, 1)
 			rec := httptest.NewRecorder()
@@ -46,7 +46,7 @@ func TestAPIV1ProjectsCreateValidation(t *testing.T) {
 }
 
 func TestAPIV1ProjectsPatchValidation(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1", bytes.NewBufferString(`{"name":""}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v2/projects/1", bytes.NewBufferString(`{"name":""}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -57,7 +57,7 @@ func TestAPIV1ProjectsPatchValidation(t *testing.T) {
 }
 
 func TestAPIV1ProjectsPatchNothingToUpdate(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v2/projects/1", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -78,7 +78,7 @@ func TestAPIV1ProjectsReorderValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/reorder", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v2/projects/reorder", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			req = utils.SetAPIUserID(req, 1)
 			rec := httptest.NewRecorder()
@@ -91,7 +91,7 @@ func TestAPIV1ProjectsReorderValidation(t *testing.T) {
 }
 
 func TestAPIV1ProjectsReorderMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/reorder", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/projects/reorder", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
@@ -102,7 +102,7 @@ func TestAPIV1ProjectsReorderMethodNotAllowed(t *testing.T) {
 
 func TestAPIV1ProjectsCreateDescriptionTooLong(t *testing.T) {
 	body := `{"name":"ok","description":"` + strings.Repeat("d", 1001) + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/projects", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -113,7 +113,7 @@ func TestAPIV1ProjectsCreateDescriptionTooLong(t *testing.T) {
 }
 
 func TestAPIV1ProjectsInvalidID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/abc", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v2/projects/abc", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
@@ -123,7 +123,7 @@ func TestAPIV1ProjectsInvalidID(t *testing.T) {
 }
 
 func TestAPIV1ProjectsMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects", nil)
+	req := httptest.NewRequest(http.MethodPut, "/api/v2/projects", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
@@ -133,7 +133,7 @@ func TestAPIV1ProjectsMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1ProjectsArchiveMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/1/archive", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/projects/1/archive", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
@@ -143,7 +143,7 @@ func TestAPIV1ProjectsArchiveMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1ProjectsRestoreMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/1/restore", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/projects/1/restore", nil)
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
@@ -153,7 +153,7 @@ func TestAPIV1ProjectsRestoreMethodNotAllowed(t *testing.T) {
 }
 
 func TestAPIV1ProjectsArchiveUnauthorized(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/1/archive", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/projects/1/archive", nil)
 	rec := httptest.NewRecorder()
 	APIV1ProjectsRouter(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -174,7 +174,7 @@ func TestAPIV1TagsPatchValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPatch, "/api/v1/tags/1", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPatch, "/api/v2/tags/1", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			req = utils.SetAPIUserID(req, 1)
 			rec := httptest.NewRecorder()
@@ -194,7 +194,7 @@ func TestAPIV1TagsPatchValidation(t *testing.T) {
 }
 
 func TestAPIV1TagsPatchMethodRequiresID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tags", bytes.NewBufferString(`{"name":"x"}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v2/tags", bytes.NewBufferString(`{"name":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = utils.SetAPIUserID(req, 1)
 	rec := httptest.NewRecorder()
@@ -206,7 +206,7 @@ func TestAPIV1TagsPatchMethodRequiresID(t *testing.T) {
 
 func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
 	t.Run("patch project with blank backlog_name", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1", bytes.NewBufferString(`{"backlog_name":"   "}`))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v2/projects/1", bytes.NewBufferString(`{"backlog_name":"   "}`))
 		req.Header.Set("Content-Type", "application/json")
 		req = utils.SetAPIUserID(req, 1)
 		rec := httptest.NewRecorder()
@@ -217,7 +217,7 @@ func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
 	})
 
 	t.Run("patch backlog sprint with dates rejected", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1/sprints/backlog", bytes.NewBufferString(`{"name":"Icebox","start_date":"2026-10-01"}`))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v2/projects/1/sprints/backlog", bytes.NewBufferString(`{"name":"Icebox","start_date":"2026-10-01"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req = utils.SetAPIUserID(req, 1)
 		rec := httptest.NewRecorder()
@@ -232,7 +232,7 @@ func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
 
 	t.Run("patch project with too long backlog_description", func(t *testing.T) {
 		tooLong := strings.Repeat("d", 81)
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1", bytes.NewBufferString(`{"backlog_description":"`+tooLong+`"}`))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v2/projects/1", bytes.NewBufferString(`{"backlog_description":"`+tooLong+`"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req = utils.SetAPIUserID(req, 1)
 		rec := httptest.NewRecorder()
@@ -243,7 +243,7 @@ func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
 	})
 
 	t.Run("patch backlog sprint with nothing to update", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/1/sprints/backlog", bytes.NewBufferString(`{}`))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v2/projects/1/sprints/backlog", bytes.NewBufferString(`{}`))
 		req.Header.Set("Content-Type", "application/json")
 		req = utils.SetAPIUserID(req, 1)
 		rec := httptest.NewRecorder()
@@ -257,7 +257,7 @@ func TestAPIV1ProjectsBacklogSprintEndpoints(t *testing.T) {
 	})
 
 	t.Run("delete backlog sprint rejected", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/1/sprints/backlog", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/v2/projects/1/sprints/backlog", nil)
 		req = utils.SetAPIUserID(req, 1)
 		rec := httptest.NewRecorder()
 		APIV1ProjectsRouter(rec, req)

@@ -14,22 +14,60 @@ const userChannelPrefix = "user:"
 
 // Event is a lightweight invalidation payload pushed over SSE.
 type Event struct {
-	Type      string `json:"type"`
-	TaskID    int    `json:"task_id,omitempty"`
-	ProjectID int    `json:"project_id,omitempty"`
-	ActorID   int    `json:"actor_id,omitempty"`
-	Origin    string `json:"origin,omitempty"`
-	Timestamp string `json:"timestamp"`
+	Type        string `json:"type"`
+	TaskID      int    `json:"task_id,omitempty"`
+	ProjectID   int    `json:"project_id,omitempty"`
+	ActorID     int    `json:"actor_id,omitempty"`
+	Origin      string `json:"origin,omitempty"`
+	Timestamp   string `json:"timestamp"`
+	ExtensionID string `json:"extension_id,omitempty"`
+	Key         string `json:"key,omitempty"`
 }
 
 const (
-	TypeTaskCreated    = "task.created"
-	TypeTaskUpdated    = "task.updated"
-	TypeTaskDeleted    = "task.deleted"
-	TypeTaskReordered  = "task.reordered"
-	TypeTaskCommented  = "task.commented"
-	TypeProjectUpdated = "project.updated"
-	TypeJoinRequest    = "join.request"
+	TypeTaskCreated              = "task.created"
+	TypeTaskUpdated              = "task.updated"
+	TypeTaskDeleted              = "task.deleted"
+	TypeTaskReordered            = "task.reordered"
+	TypeTaskCommented            = "task.commented"
+	TypeTaskClaimed              = "task.claimed"
+	TypeTaskUnclaimed            = "task.unclaimed"
+	TypeTaskDueChanged           = "task.due_changed"
+	TypeTaskMoved                = "task.moved"
+	TypeTaskProjectChanged       = "task.project_changed"
+	TypeTaskSprintChanged        = "task.sprint_changed"
+	TypeTaskTagged               = "task.tagged"
+	TypeTaskOverdue              = "task.overdue"
+	TypeTaskMentioned            = "task.mentioned"
+	TypeTaskCompleted            = "task.completed"
+	TypeTaskReopened             = "task.reopened"
+	TypeTaskDueSoon              = "task.due_soon"
+	TypeTaskArchived             = "task.archived"
+	TypeTaskRestored             = "task.restored"
+	TypeTaskStatusChanged        = "task.status_changed"
+	TypeTaskCommentEdited        = "task.comment_edited"
+	TypeTaskCommentDeleted       = "task.comment_deleted"
+	TypeTaskCommentRestored      = "task.comment_restored"
+	TypeProjectUpdated           = "project.updated"
+	TypeProjectCreated           = "project.created"
+	TypeProjectDeleted           = "project.deleted"
+	TypeProjectArchived          = "project.archived"
+	TypeProjectRestored          = "project.restored"
+	TypeProjectMemberJoined      = "project.member_joined"
+	TypeProjectMemberLeft        = "project.member_left"
+	TypeProjectMemberRoleChanged = "project.member_role_changed"
+	TypeProjectInviteSent        = "project.invite_sent"
+	TypeProjectInviteDeclined    = "project.invite_declined"
+	TypeSprintCreated            = "sprint.created"
+	TypeSprintUpdated            = "sprint.updated"
+	TypeSprintDeleted            = "sprint.deleted"
+	TypeSprintStarted            = "sprint.started"
+	TypeSprintEnded              = "sprint.ended"
+	TypeImportCompleted          = "import.completed"
+	TypeJoinRequest              = "join.request"
+	TypeJoinApproved             = "join.approved"
+	TypeJoinDenied               = "join.denied"
+	TypeExtensionStore           = "extension.store"
 )
 
 // Hub fans events out to in-process SSE subscribers and, when Redis is

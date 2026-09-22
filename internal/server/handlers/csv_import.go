@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"GoTodo/internal/domain"
+	"GoTodo/internal/live"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
@@ -59,7 +60,7 @@ type importPreviewRow struct {
 
 const importStagingSessionKey = "import_staging"
 
-// APIV1ImportRouter handles /api/v1/import preview/confirm/cancel.
+// APIV1ImportRouter handles /api/v2/import preview/confirm/cancel.
 func APIV1ImportRouter(w http.ResponseWriter, r *http.Request) {
 	sub := utils.ParseAPIV1Subpath(r, "import")
 	switch {
@@ -109,15 +110,11 @@ func apiV1ImportPreview(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	notice := favoriteDeprecationNoticeIfUsed(w, cols.favorite >= 0)
 	payload := map[string]interface{}{
 		"preview":      out,
 		"would_import": wouldImport,
 		"would_skip":   wouldSkip,
 		"total_rows":   len(rows),
-	}
-	if notice != "" {
-		payload["deprecation_notice"] = notice
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(payload)
@@ -144,16 +141,13 @@ func apiV1ImportConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notice := favoriteDeprecationNoticeIfUsed(w, cols.favorite >= 0)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(struct {
-		Imported          int    `json:"imported"`
-		Skipped           int    `json:"skipped"`
-		DeprecationNotice string `json:"deprecation_notice,omitempty"`
+		Imported int `json:"imported"`
+		Skipped  int `json:"skipped"`
 	}{
-		Imported:          imported,
-		Skipped:           skipped,
-		DeprecationNotice: notice,
+		Imported: imported,
+		Skipped:  skipped,
 	})
 }
 
@@ -454,9 +448,17 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 	defer tx.Rollback(ctx)
 
 	var nextPos int
-	if err := tx.QueryRow(ctx, "SELECT COALESCE(MAX(position),0) + 1 FROM tasks WHERE user_id = $1 AND (is_favorite IS NULL OR is_favorite = false)", userID).Scan(&nextPos); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT COALESCE(MAX(position),0) + 1 FROM tasks WHERE user_id = $1", userID).Scan(&nextPos); err != nil {
 		return 0, 0, err
 	}
+
+	type importedTask struct {
+		id        int
+		projectID int
+		tagged    bool
+	}
+	created := make([]importedTask, 0, len(rows))
+	newProjects := make([]int, 0)
 
 	projectCache := make(map[string]int)
 
@@ -482,7 +484,7 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 				priority = p
 			}
 		}
-		isFavorite := parseBoolCell(cellValue(row, cols.favorite))
+		isFavorite := false
 
 		var exists bool
 		exists, err = importRowIsDuplicate(ctx, tx, userID, title, dueDate)
@@ -506,6 +508,7 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 					if err != nil {
 						return imported, skipped, err
 					}
+					newProjects = append(newProjects, foundID)
 				}
 				pid = foundID
 				projectCache[projectName] = pid
@@ -539,6 +542,7 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 		}
 
 		tagCSV := cellValue(row, cols.tags)
+		tagged := false
 		if tagCSV != "" {
 			tagIDs, tagErr := resolveImportTagIDs(userID, projectID, tagCSV)
 			if tagErr != nil {
@@ -548,14 +552,42 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 				if err := setTaskTagsInTx(ctx, tx, taskID, userID, projectID, tagIDs); err != nil {
 					return imported, skipped, err
 				}
+				tagged = true
 			}
 		}
 
+		pid := 0
+		if projectID != nil {
+			pid = *projectID
+		}
+		created = append(created, importedTask{id: taskID, projectID: pid, tagged: tagged})
 		imported++
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return imported, skipped, err
+	}
+	for _, pid := range newProjects {
+		live.AfterProjectChange(userID, pid, live.TypeProjectCreated)
+	}
+	projectCounts := map[int]int{}
+	inboxCount := 0
+	for _, row := range created {
+		live.AfterTaskChange(userID, row.id, live.TypeTaskCreated)
+		if row.tagged {
+			live.DispatchHook(userID, row.id, live.TypeTaskTagged, &live.TaskHookMeta{Changed: []string{"tags"}})
+		}
+		if row.projectID > 0 {
+			projectCounts[row.projectID]++
+		} else {
+			inboxCount++
+		}
+	}
+	for pid, n := range projectCounts {
+		live.DispatchProjectHook(userID, pid, live.TypeImportCompleted, &live.TaskHookMeta{Count: n})
+	}
+	if inboxCount > 0 {
+		live.DispatchOwnerHook(userID, userID, live.TypeImportCompleted, &live.TaskHookMeta{Count: inboxCount})
 	}
 	return imported, skipped, nil
 }
