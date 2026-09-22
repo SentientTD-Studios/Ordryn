@@ -1118,6 +1118,7 @@ function setFilterAndReload(key: Parameters<typeof setFilter>[0], value: string)
 function clearFilters() {
   activeViewId.value = null
   search.value = ''
+  // Keep the current project: Clear is for list filters, not leaving the project.
   resetFilters()
   void reloadInitial()
 }
