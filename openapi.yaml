@@ -1561,6 +1561,7 @@ paths:
     get:
       tags: [Tasks]
       summary: Task activity timeline
+      description: Returns newest-first activity for a task, including title, estimate, priority, due date, parent, status, sprint, tag, and completion changes.
       security:
         - SessionCookie: []
         - BearerAuth: []

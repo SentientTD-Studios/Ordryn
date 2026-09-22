@@ -97,6 +97,26 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 			return "Priority · " + to
 		}
 		return "Priority changed"
+	case "title_changed":
+		if to, ok := meta["to"].(string); ok && to != "" {
+			return "Title · " + to
+		}
+		return "Title changed"
+	case "estimate_changed":
+		if to, ok := meta["to"]; ok && to != nil {
+			return fmt.Sprintf("Estimate · %v", to)
+		}
+		return "Estimate cleared"
+	case "due_date_changed":
+		if to, ok := meta["to"].(string); ok && to != "" {
+			return "Due date · " + to
+		}
+		return "Due date cleared"
+	case "parent_changed":
+		if to, ok := meta["to"].(string); ok && to != "" {
+			return "Parent · " + to
+		}
+		return "Parent cleared"
 	case "claimed":
 		return "Claimed"
 	case "unclaimed":

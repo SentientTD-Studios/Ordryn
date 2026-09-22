@@ -400,8 +400,8 @@ Content-Type: application/json
                     <p>Restores tasks from the token (or from the session cookie undo buffer if no token is sent).</p>
 
                     <h3 class="h5 mt-3">Task events</h3>
-                    <p><span class="badge bg-success">GET</span> <code>/api/v2/tasks/{id}/events</code></p>
-                    <p>Returns a JSON array of activity entries (<code>event_type</code>, <code>label</code>, <code>metadata</code>, <code>created_at</code>).</p>
+                    <p><span class="badge bg-success">GET</span> <code>/api/v1/tasks/{id}/events</code></p>
+                    <p>Returns a JSON array of activity entries (<code>event_type</code>, <code>label</code>, <code>metadata</code>, <code>created_at</code>). Tracked changes include title, estimate, priority, due date, parent, status, sprint, tags, and completion.</p>
 
                     <h3 class="h5 mt-3">Reorder tasks</h3>
                     <p><span class="badge bg-primary">POST</span> <code>/api/v2/tasks/reorder</code></p>

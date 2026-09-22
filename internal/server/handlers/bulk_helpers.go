@@ -194,13 +194,14 @@ func bulkSetSprint(ctx context.Context, db *pgxpool.Pool, ids []int, userID int,
 }
 
 func bulkSetPriority(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, priority int) error {
+	_ = db
 	for _, id := range ids {
-		if _, err := db.Exec(ctx, "UPDATE tasks SET priority = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2", priority, id); err != nil {
+		p := priority
+		in := domain.UpdateTaskInput{Priority: &p}
+		if _, err := domain.UpdateTask(ctx, userID, id, in); err != nil {
 			return err
 		}
-		logTaskEvent(id, userID, "priority_changed", map[string]interface{}{"to": priorityLabel(priority)})
 	}
-	live.AfterTasksChange(userID, live.TypeTaskUpdated, ids)
 	return nil
 }
 
@@ -219,17 +220,18 @@ func parseBulkDueDate(raw string) (string, error) {
 }
 
 func bulkSetDueDate(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, dueDate string) error {
+	_ = db
 	for _, id := range ids {
+		in := domain.UpdateTaskInput{}
 		if dueDate == "" {
-			if _, err := db.Exec(ctx, "UPDATE tasks SET due_date = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1", id); err != nil {
-				return err
-			}
+			in.ClearDue = true
 		} else {
-			if _, err := db.Exec(ctx, "UPDATE tasks SET due_date = $1::date, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2", dueDate, id); err != nil {
-				return err
-			}
+			d := dueDate
+			in.DueDate = &d
 		}
-		logTaskEvent(id, userID, "edited", map[string]interface{}{"fields": []string{"due_date"}})
+		if _, err := domain.UpdateTask(ctx, userID, id, in); err != nil {
+			return err
+		}
 	}
 	live.AfterTasksChangeLive(userID, live.TypeTaskUpdated, ids)
 	for _, id := range ids {
