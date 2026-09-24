@@ -1,6 +1,6 @@
 # Ordryn
 
-Ordryn (formerly GoTodo) is a self-hosted task manager built with Go, PostgreSQL, Redis, and a Vue 3 SPA. It focuses on simplicity and a pleasant experience: user accounts, per-user tasks, invite flow, role-based permissions, and a JSON `/api/v2` for web and mobile clients (`/api/v1` remains as a compatibility alias).
+Ordryn (formerly GoTodo) is a self-hosted project and task management platform built with Go, PostgreSQL, Redis, and Vue 3. It brings personal tasks, collaborative projects, and Kanban boards together with user accounts, invite-based access, role-based permissions, and a JSON /api/v2 API for web and mobile clients (/api/v1 remains a compatibility alias).
 
 Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordryn/releases).
 
