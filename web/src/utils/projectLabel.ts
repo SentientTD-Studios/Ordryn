@@ -6,7 +6,9 @@ export function isArchivedProject(project: Project): boolean {
 
 /** Sidebar/nav label: shared projects include role. Does not append (archived). */
 export function projectNavLabel(project: Project): string {
-  return project.role && project.role !== 'owner' ? `${project.name} (${project.role})` : project.name
+  if (!project.role || project.role === 'owner') return project.name
+  const role = project.role_name || project.role
+  return `${project.name} (${role})`
 }
 
 /** Label for project selects: shared projects include role, e.g. "Shared One (viewer)". */

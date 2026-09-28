@@ -107,7 +107,10 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Get one saved view</td></tr>
                             <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Replace or update a saved view</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Delete a saved view</td></tr>
-                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/projects</code></a></td><td>List projects</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/project-roles</code></a></td><td>Site project-role catalog</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/roles</code></a></td><td>Assignable roles for a project</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span> <span class="badge bg-warning text-dark">PATCH</span> <span class="badge bg-danger">DELETE</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/roles</code></a></td><td>Project custom roles</td></tr>
+                            <tr><td><span class="badge bg-info text-dark">PUT</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/statuses/{statusId}/gates</code></a></td><td>Status enter/leave role gates</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects</code></a></td><td>Create a project</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#projects"><code>/api/v2/projects/{id}</code></a></td><td>Rename a project</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/archive</code></a></td><td>Archive a project (owner only)</td></tr>
@@ -370,7 +373,7 @@ Content-Type: application/json
                     <p>
                       Applies the protected <code>archived</code> tag in the task’s namespace (and to subtasks).
                       Archived tasks are hidden from default lists unless you filter by that tag. Returns the updated task.
-                      Owners and editors only (403 for viewers).
+                      Requires <code>tasks:archive</code> on the project role (403 otherwise).
                     </p>
                     <p><span class="badge bg-primary">POST</span> <code>/api/v2/tasks/{id}/restore</code></p>
                     <p>Removes the protected <code>archived</code> tag from the task and its subtasks. Returns the updated task.</p>
@@ -527,10 +530,10 @@ Content-Type: application/json
 
                     <h3 class="h5 mt-3">List projects</h3>
                     <p><span class="badge bg-success">GET</span> <code>/api/v2/projects</code></p>
-                    <p>Returns a JSON array of project objects:</p>
+                    <p>Returns a JSON array of project objects. Shared projects include <code>role</code>, <code>role_name</code>, and <code>permissions</code>:</p>
                     <pre class="api-docs-pre"><code>[
-  { "id": 1, "name": "Work", "archived": false },
-  { "id": 2, "name": "Personal", "archived": false }
+  { "id": 1, "name": "Work", "archived": false, "role": "owner", "role_name": "Owner", "permissions": ["tasks:create", "project:manage"] },
+  { "id": 2, "name": "Shared", "archived": false, "role": "qa", "role_name": "QA", "permissions": ["tasks:status", "tasks:claim"] }
 ]</code></pre>
 
                     <h3 class="h5 mt-3">Create project</h3>
@@ -573,10 +576,33 @@ Content-Type: application/json
                     </p>
                     <p>Returns the updated project object with <code>archived: false</code>.</p>
 
+                    <h3 class="h5 mt-3">Project roles</h3>
+                    <p><span class="badge bg-success">GET</span> <code>/api/v2/project-roles</code></p>
+                    <p>
+                        Returns the permission catalog and site-level role templates (Owner, Editor, Viewer,
+                        Developer, QA, plus any admin-created roles). Site admins manage templates at
+                        <code>/api/v2/admin/project-roles</code>.
+                    </p>
+                    <p><span class="badge bg-success">GET</span> <code>/api/v2/projects/{id}/roles</code></p>
+                    <p>
+                        Assignable roles for that project (site templates plus project-only custom roles).
+                        Owners with <code>project:manage</code> can <code>POST</code>/<code>PATCH</code>/<code>DELETE</code>
+                        custom roles built from the catalog.
+                    </p>
+                    <p><span class="badge bg-info text-dark">PUT</span> <code>/api/v2/projects/{id}/statuses/{statusId}/gates</code></p>
+                    <pre class="api-docs-pre"><code>{
+  "enter_role_slugs": ["qa"],
+  "leave_role_slugs": ["qa"]
+}</code></pre>
+                    <p>
+                        Empty arrays leave that direction unrestricted for any role with <code>tasks:status</code>.
+                        Project owners and site admins always bypass gates. The owner slug is implied and omitted.
+                    </p>
+
                     <h2 id="tags" class="h4 mt-4">Tags</h2>
                     <p>
                         Tags are either personal (inbox tasks) or scoped to a project.
-                        Project tags are shared with members; only the project owner or editors can create, update, or delete them.
+                        Project tags are shared with members; creating or editing them requires <code>project:tags</code>.
                     </p>
 
                     <h3 class="h5 mt-3">List tags</h3>
@@ -602,7 +628,7 @@ Content-Type: application/json
                         Returns <code>201 Created</code> with the tag object.
                         Names are unique per namespace (personal per user, or per project), case-insensitive;
                         if a tag with the same name already exists in that namespace, that tag is returned.
-                        Creating a project tag requires owner or editor access (<code>403</code> otherwise).
+                        Creating a project tag requires <code>project:tags</code> (<code>403</code> otherwise).
                     </p>
 
                     <h3 class="h5 mt-3">Update tag</h3>
@@ -614,13 +640,13 @@ Content-Type: application/json
 }</code></pre>
                     <p>
                         Returns the updated tag object. Duplicate names in the same namespace return
-                        <code>400 invalid_request</code>. Viewers receive <code>403</code>.
+                        <code>400 invalid_request</code>. Missing <code>project:tags</code> returns <code>403</code>.
                         Protected system tags cannot be renamed or recolored.
                     </p>
 
                     <h3 class="h5 mt-3">Delete tag</h3>
                     <p><span class="badge bg-danger">DELETE</span> <code>/api/v2/tags/{id}</code></p>
-                    <p>Removes the tag and its associations on tasks. Returns <code>204 No Content</code> on success. Project tags may be deleted by the owner or editors.</p>
+                    <p>Removes the tag and its associations on tasks. Returns <code>204 No Content</code> on success. Project tags may be deleted by members with <code>project:tags</code>.</p>
 
                     <p class="text-muted small mb-0">
                         Pass <code>tag_ids</code> when creating or updating tasks to assign tags from the task’s namespace

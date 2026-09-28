@@ -16,6 +16,7 @@ const links = [
   { name: 'admin-requests', label: 'Requests', to: '/admin/requests' },
   { name: 'admin-invites', label: 'Invites', to: '/admin/invites' },
   { name: 'admin-users', label: 'Users', to: '/admin/users' },
+  { name: 'admin-project-roles', label: 'Roles', to: '/admin/roles' },
   { name: 'admin-email-audit', label: 'Email log', to: '/admin/email-audit' },
   { name: 'admin-comment-audit', label: 'Comment history', to: '/admin/comment-audit' },
 ] as const

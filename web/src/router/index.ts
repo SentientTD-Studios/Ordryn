@@ -165,6 +165,12 @@ const router = createRouter({
       meta: { requiresAuth: true, permission: 'admin' },
     },
     {
+      path: '/admin/roles',
+      name: 'admin-project-roles',
+      component: () => import('@/views/AdminProjectRolesView.vue'),
+      meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
       path: '/admin/email-audit',
       name: 'admin-email-audit',
       component: () => import('@/views/AdminEmailAuditView.vue'),

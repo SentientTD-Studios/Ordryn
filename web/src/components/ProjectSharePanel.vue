@@ -4,15 +4,14 @@
     <ul class="list-unstyled mb-3">
       <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
         <span>{{ m.user_name || m.email }}</span>
-        <span class="badge text-bg-secondary">{{ m.role }}</span>
+        <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
         <template v-if="isOwner && m.role !== 'owner'">
           <select
             class="form-select form-select-sm w-auto"
             :value="m.role"
             @change="onRoleChange(m.user_id, ($event.target as HTMLSelectElement).value)"
           >
-            <option value="editor">editor</option>
-            <option value="viewer">viewer</option>
+            <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
           </select>
           <button class="btn btn-sm btn-outline-danger" type="button" @click="removeMember(m.user_id)">
             Remove
@@ -31,8 +30,7 @@
         <div class="col-sm-3">
           <label class="form-label small mb-0">Role</label>
           <select v-model="inviteRole" class="form-select form-select-sm">
-            <option value="editor">editor</option>
-            <option value="viewer">viewer</option>
+            <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
           </select>
         </div>
         <div class="col-sm-3">
@@ -45,7 +43,7 @@
       <h4 class="h6">Pending invites</h4>
       <ul class="list-unstyled mb-0">
         <li v-for="inv in invites" :key="inv.id" class="d-flex justify-content-between align-items-center mb-1">
-          <span class="small">{{ inv.user_name || inv.email }} ({{ inv.role }})</span>
+          <span class="small">{{ inv.user_name || inv.email }} ({{ assignableRoles.find((r) => r.slug === inv.role)?.name || inv.role }})</span>
           <button
             v-if="isOwner"
             class="btn btn-sm btn-link text-danger"
@@ -128,11 +126,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
-import type { Project, ProjectEvent, ProjectInvite, ProjectMember, ShareLink } from '@/api/types'
+import type { Project, ProjectEvent, ProjectInvite, ProjectMember, ProjectRoleDef, ShareLink } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
+import { canManageProject } from '@/utils/projectPerms'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -142,11 +141,12 @@ const invites = ref<ProjectInvite[]>([])
 const links = ref<ShareLink[]>([])
 const events = ref<ProjectEvent[]>([])
 const inviteUsername = ref('')
-const inviteRole = ref<'editor' | 'viewer'>('editor')
+const inviteRole = ref('')
+const assignableRoles = ref<ProjectRoleDef[]>([])
 const activityOpen = ref(false)
 const toast = useToast()
 const { askConfirm } = useConfirm()
-const isOwner = computed(() => (props.project.role || 'owner') === 'owner')
+const isOwner = computed(() => canManageProject(props.project))
 
 const excludeUsernames = computed(() => {
   const names: string[] = []
@@ -161,16 +161,22 @@ const excludeUsernames = computed(() => {
 
 async function loadPanel() {
   try {
-    const [m, inv, ln, ev] = await Promise.all([
+    const [m, inv, ln, ev, roles] = await Promise.all([
       api.listProjectMembers(props.project.id),
       api.listProjectInvites(props.project.id),
       api.listShareLinks('project', props.project.id),
       api.listProjectEvents(props.project.id),
+      api.listProjectRoles(props.project.id).catch(() => ({ catalog: [], roles: [] })),
     ])
     members.value = m
     invites.value = inv
     links.value = ln
     events.value = ev
+    assignableRoles.value = roles.roles || []
+    if (!inviteRole.value && assignableRoles.value.length) {
+      const editor = assignableRoles.value.find((r) => r.slug === 'editor')
+      inviteRole.value = editor?.slug || assignableRoles.value[0].slug
+    }
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load sharing', 'error')
   }
@@ -189,7 +195,7 @@ async function sendInvite() {
 }
 
 async function onRoleChange(userId: number, role: string) {
-  if (role !== 'editor' && role !== 'viewer') return
+  if (!role || role === 'owner') return
   try {
     await api.updateProjectMember(props.project.id, userId, role)
     toast.push('Role updated', 'success')

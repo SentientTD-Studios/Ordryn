@@ -6,6 +6,7 @@ import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { isProtectedTag } from '@/utils/tags'
+import { hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
 
 const props = defineProps<{
   project: Project
@@ -24,10 +25,7 @@ const renameTagValue = ref('')
 const renameTagColor = ref('#6c757d')
 const loading = ref(false)
 
-const canManage = computed(() => {
-  const role = props.project.role || 'owner'
-  return role === 'owner' || role === 'editor'
-})
+const canManage = computed(() => hasProjectPerm(props.project, PROJECT_PERMS.PROJECT_TAGS))
 
 async function load() {
   loading.value = true

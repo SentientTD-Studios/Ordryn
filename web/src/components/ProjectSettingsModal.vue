@@ -11,9 +11,11 @@ import ProjectSprintsPanel from '@/components/ProjectSprintsPanel.vue'
 import ProjectGitHubPanel from '@/components/ProjectGitHubPanel.vue'
 import ProjectExtensionsPanel from '@/components/ProjectExtensionsPanel.vue'
 import ProjectTagsPanel from '@/components/ProjectTagsPanel.vue'
+import ProjectRolesPanel from '@/components/ProjectRolesPanel.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
+import { canManageProject } from '@/utils/projectPerms'
 
-type SettingsTab = 'details' | 'board' | 'sprints' | 'tags' | 'github' | 'extensions' | 'sharing'
+type SettingsTab = 'details' | 'board' | 'sprints' | 'tags' | 'github' | 'extensions' | 'sharing' | 'roles'
 
 const props = defineProps<{
   open: boolean
@@ -35,6 +37,7 @@ const saving = ref(false)
 const archiving = ref(false)
 const tab = ref<SettingsTab>('details')
 const isOwner = computed(() => (props.project?.role || 'owner') === 'owner')
+const canManage = computed(() => canManageProject(props.project))
 const isKanban = computed(() => (props.project?.workflow_mode || 'classic') === 'kanban')
 
 const tabs = computed(() => {
@@ -46,6 +49,7 @@ const tabs = computed(() => {
   items.push({ id: 'tags', label: 'Tags' }, { id: 'github', label: 'GitHub' })
   items.push({ id: 'extensions', label: 'Extensions' })
   items.push({ id: 'sharing', label: 'Sharing' })
+  if (canManage.value) items.push({ id: 'roles', label: 'Roles' })
   return items
 })
 
@@ -256,6 +260,12 @@ async function archiveOrRestore() {
 
           <ProjectSharePanel
             v-else-if="tab === 'sharing'"
+            :project="project"
+            @changed="onPanelChanged"
+          />
+
+          <ProjectRolesPanel
+            v-else-if="tab === 'roles' && canManage"
             :project="project"
             @changed="onPanelChanged"
           />

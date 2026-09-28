@@ -24,6 +24,7 @@ import { useSidebarState } from '@/composables/useSidebarState'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
 import { projectOptionLabel, activeProjects, isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
+import { hasAnyProjectWrite, hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
 import { kanbanSprintQueryValue, kanbanWorkflowClaimScope } from '@/utils/kanbanTaskQuery'
 import { uniqueTagsByName, isArchivedTask } from '@/utils/tags'
@@ -136,13 +137,21 @@ const activeProjectObj = computed(() => {
   return projects.value.find((p) => p.id === pid) ?? null
 })
 
-const isViewerProjectView = computed(
-  () => activeProjectObj.value?.role === 'viewer',
+const isReadOnlyProjectView = computed(
+  () => !!activeProjectObj.value && !hasAnyProjectWrite(activeProjectObj.value),
 )
 
 const isArchivedProjectView = computed(() => !!activeProjectObj.value?.archived)
 
-const canAddTasks = computed(() => !isViewerProjectView.value && !isArchivedProjectView.value)
+const canAddTasks = computed(
+  () => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_CREATE) && !isArchivedProjectView.value,
+)
+
+const canBulkComplete = computed(() => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_COMPLETE))
+const canBulkDelete = computed(() => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_DELETE))
+const canBulkEditDetails = computed(() => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_EDIT))
+const canBulkStatus = computed(() => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_STATUS))
+const canBulkSprint = computed(() => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_SPRINT))
 
 const tagFilterByName = computed(() => !filters.project)
 const displayTags = computed(() => (tagFilterByName.value ? uniqueTagsByName(tags.value) : tags.value))
@@ -221,7 +230,7 @@ const extensionBridgeContext = computed(() => ({
   role: activeProjectObj.value?.role || '',
   user_id: user.value?.id || 0,
   user_name: user.value?.user_name || '',
-  can_write: (activeProjectObj.value?.role || '') !== 'viewer',
+  can_write: hasAnyProjectWrite(activeProjectObj.value),
 }))
 
 function setViewMode(mode: TaskViewMode) {
@@ -407,13 +416,25 @@ function ensureKanbanBoardDefault() {
   return true
 }
 
+function projectForTask(task: Task): Project | null | undefined {
+  if (!task.project_id) return null
+  return projects.value.find((pr) => pr.id === task.project_id) ?? activeProjectObj.value
+}
+
 function canWriteTask(task: Task): boolean {
-  if (isViewerProjectView.value) return false
-  if (task.project_id) {
-    const p = projects.value.find((pr) => pr.id === task.project_id)
-    if (p && p.role === 'viewer') return false
-  }
-  return true
+  return hasAnyProjectWrite(projectForTask(task))
+}
+
+function canEditTaskDetails(task: Task): boolean {
+  return hasProjectPerm(projectForTask(task), PROJECT_PERMS.TASKS_EDIT)
+}
+
+function canDeleteTaskItem(task: Task): boolean {
+  return hasProjectPerm(projectForTask(task), PROJECT_PERMS.TASKS_DELETE)
+}
+
+function canCompleteTaskItem(task: Task): boolean {
+  return hasProjectPerm(projectForTask(task), PROJECT_PERMS.TASKS_COMPLETE)
 }
 
 function canMoveTaskProject(task: Task): boolean {
@@ -437,7 +458,7 @@ function openTaskDetails(id: number) {
     openView(id)
     return
   }
-  if (!found && isViewerProjectView.value) {
+  if (!found && isReadOnlyProjectView.value) {
     openView(id)
     return
   }
@@ -916,7 +937,7 @@ watch(
 )
 
 async function toggleComplete(task: Task) {
-  if (!canWriteTask(task)) return
+  if (!canCompleteTaskItem(task)) return
   try {
     const updated = await api.patchTask(task.id, { completed: !task.completed })
     applyTaskUpdate(updated)
@@ -926,6 +947,8 @@ async function toggleComplete(task: Task) {
 }
 
 async function handleInlineTaskPatch(payload: { id: number; title?: string; description?: string }) {
+  const found = findTaskInTree(payload.id)
+  if (found && !canEditTaskDetails(found.task)) return
   try {
     const updated = await api.patchTask(payload.id, {
       title: payload.title,
@@ -939,7 +962,7 @@ async function handleInlineTaskPatch(payload: { id: number; title?: string; desc
 }
 
 async function removeTask(task: Task) {
-  if (!canWriteTask(task)) return
+  if (!canDeleteTaskItem(task)) return
   const childCount = task.child_count ?? task.children?.length ?? 0
   if (childCount > 0) {
     deleteDialogTask.value = task
@@ -1003,6 +1026,7 @@ function expandParent(taskId: number) {
 }
 
 function openAddSubtask(task: Task) {
+  if (!hasProjectPerm(projectForTask(task), PROJECT_PERMS.TASKS_CREATE)) return
   if (task.project_id) {
     const p = projects.value.find((pr) => pr.id === task.project_id)
     if (p && isArchivedProject(p)) {
@@ -1054,7 +1078,7 @@ function toggleSelectAll(checked: boolean) {
 }
 
 async function toggleCompleteChild(child: Task) {
-  if (!canWriteTask(child)) return
+  if (!canCompleteTaskItem(child)) return
   try {
     const updated = await api.patchTask(child.id, { completed: !child.completed })
     applyTaskUpdate(updated)
@@ -1064,7 +1088,7 @@ async function toggleCompleteChild(child: Task) {
 }
 
 async function bulk(action: string, extra: Record<string, unknown> = {}) {
-  if (!selected.value.length || isViewerProjectView.value) return
+  if (!selected.value.length || isReadOnlyProjectView.value) return
   if (action === 'move_project' && !canBulkMoveProject.value) return
   if (action === 'delete') {
     const nestedCount = selected.value.reduce((n, id) => {
@@ -1384,8 +1408,11 @@ onUnmounted(() => {
             <span class="badge rounded-pill bg-warning bg-opacity-10 text-warning border border-warning border-opacity-20 px-2 py-1">
               {{ incompleteCount }} <span class="d-none d-sm-inline">open</span>
             </span>
-            <span v-if="isViewerProjectView" class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-20 px-2 py-1">
-              Viewer
+            <span
+              v-if="activeProjectObj?.role && activeProjectObj.role !== 'owner'"
+              class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-20 px-2 py-1"
+            >
+              {{ activeProjectObj.role_name || activeProjectObj.role }}
             </span>
             <span v-if="isArchivedProjectView" class="badge rounded-pill bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-20 px-2 py-1">
               Archived
@@ -1395,7 +1422,7 @@ onUnmounted(() => {
           <!-- Actions Group: Import/Export & Add Task -->
           <div class="d-flex align-items-center gap-2">
             <button
-              v-if="!isViewerProjectView && !isArchivedProjectView && showTaskTable"
+              v-if="!isReadOnlyProjectView && !isArchivedProjectView && showTaskTable"
               type="button"
               class="btn btn-sm btn-outline-secondary rounded-pill px-2 py-1 d-md-none"
               :class="{ active: isSelecting }"
@@ -1525,7 +1552,7 @@ onUnmounted(() => {
             Tasks not assigned to a sprint
           </span>
           <div
-            v-if="!isViewerProjectView && showBoardView"
+            v-if="!isReadOnlyProjectView && showBoardView"
             class="form-check align-items-center m-0 p-0 ms-auto d-flex"
           >
             <input
@@ -1545,13 +1572,13 @@ onUnmounted(() => {
 
         <!-- Sleek Bulk Actions Bar -->
         <div
-          v-if="selected.length && !isViewerProjectView"
+          v-if="selected.length && !isReadOnlyProjectView"
           class="bulk-action-bar alert alert-info py-1.5 px-3 rounded-3 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
         >
           <span class="fw-semibold small">{{ selected.length }} task{{ selected.length === 1 ? '' : 's' }} selected</span>
           <div class="d-flex align-items-center gap-2">
-            <button type="button" class="btn btn-xs btn-success rounded-pill" @click="bulk('complete')">Complete</button>
-            <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill" @click="bulk('incomplete')">Incomplete</button>
+            <button v-if="canBulkComplete" type="button" class="btn btn-xs btn-success rounded-pill" @click="bulk('complete')">Complete</button>
+            <button v-if="canBulkComplete" type="button" class="btn btn-xs btn-outline-secondary rounded-pill" @click="bulk('incomplete')">Incomplete</button>
 
             <!-- Compact Feature-Rich "More Actions" Popover Panel -->
             <div class="dropdown d-inline-block">
@@ -1584,7 +1611,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Select Tag -->
-                <div class="mb-3 border-top pt-2">
+                <div v-if="canBulkEditDetails" class="mb-3 border-top pt-2">
                   <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Select tag...</label>
                   <select v-model="bulkTag" class="form-select form-select-sm mb-2">
                     <option value="">Select tag...</option>
@@ -1611,7 +1638,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Priority -->
-                <div class="mb-3 border-top pt-2">
+                <div v-if="canBulkEditDetails" class="mb-3 border-top pt-2">
                   <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Priority</label>
                   <select v-model="bulkPriority" class="form-select form-select-sm mb-2">
                     <option value="">Select priority...</option>
@@ -1631,7 +1658,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Move to sprint (kanban) -->
-                <div v-if="isKanbanProjectView" class="mb-3 border-top pt-2">
+                <div v-if="isKanbanProjectView && canBulkSprint" class="mb-3 border-top pt-2">
                   <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Move to sprint...</label>
                   <select v-model="bulkSprint" class="form-select form-select-sm mb-2">
                     <option value="">Select sprint...</option>
@@ -1656,7 +1683,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Move to board column (kanban) -->
-                <div v-if="isKanbanProjectView" class="mb-3 border-top pt-2">
+                <div v-if="isKanbanProjectView && canBulkStatus" class="mb-3 border-top pt-2">
                   <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Move to column...</label>
                   <select v-model="bulkStatus" class="form-select form-select-sm mb-2">
                     <option value="">Select column...</option>
@@ -1675,7 +1702,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Due Date -->
-                <div class="border-top pt-2">
+                <div v-if="canBulkEditDetails" class="border-top pt-2">
                   <label class="form-label text-muted small fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Due Date</label>
                   <div class="btn-group btn-group-sm w-100 mb-2">
                     <button type="button" class="btn btn-xs btn-outline-secondary" @click="bulk('set_due_date', { due_date: getTodayStr() })">Today</button>
@@ -1705,7 +1732,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <button type="button" class="btn btn-xs btn-danger rounded-pill" @click="bulk('delete')">Delete</button>
+            <button v-if="canBulkDelete" type="button" class="btn btn-xs btn-danger rounded-pill" @click="bulk('delete')">Delete</button>
             <button type="button" class="btn btn-xs btn-link text-muted" @click="selected = []">Deselect</button>
           </div>
         </div>
@@ -1720,6 +1747,7 @@ onUnmounted(() => {
             :key="activeProjectObj.id"
             :project-id="activeProjectObj.id"
             :tasks="tasks"
+            :project="activeProjectObj"
             :role="activeProjectObj.role"
             :density="density"
             :columns-rev="kanbanColumnsRev"
@@ -1759,7 +1787,7 @@ onUnmounted(() => {
             <div class="d-flex align-items-center justify-content-between mb-2 px-1">
               <div class="d-flex align-items-center gap-3">
                 <div
-                  v-if="!isViewerProjectView"
+                  v-if="!isReadOnlyProjectView"
                   class="form-check align-items-center m-0 p-0"
                   :class="isSelecting ? 'd-flex' : 'd-none d-md-flex'"
                 >
