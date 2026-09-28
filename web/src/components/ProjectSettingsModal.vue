@@ -122,7 +122,7 @@ async function attachOrganization() {
   const orgName = org?.name || 'this organization'
   const ok = await askConfirm({
     title: 'Attach organization?',
-    message: `Attach “${orgName}” to this project? People who are not in that organization will be removed from the project. Members and roles will then be inherited from the organization.`,
+    message: `Attach “${orgName}” to this project? People who are not in that organization will be removed. Current org members are copied onto this project, and you can still change roles here afterward.`,
     confirmLabel: 'Attach',
     danger: true,
   })
@@ -247,9 +247,9 @@ async function archiveOrRestore() {
             <div v-if="orgManaged" class="mb-3">
               <label class="form-label small fw-bold">Organization</label>
               <p class="small mb-0">
-                Members and roles are inherited from
-                <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
-                and cannot be edited on this project.
+                Members were imported from
+                <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>.
+                You can still change sharing and roles on this project.
               </p>
             </div>
             <div v-else-if="isOwner && manageableOrgs.length" class="mb-3">
@@ -271,8 +271,8 @@ async function archiveOrRestore() {
                 </button>
               </div>
               <small class="form-hint">
-                Attaching an organization imports its members and removes anyone who is not in the org.
-                Sharing and custom roles on this project become read-only.
+                Attaching an organization copies its members onto this project and removes anyone who is not in the org.
+                You can still change sharing and custom roles afterward.
               </small>
             </div>
 

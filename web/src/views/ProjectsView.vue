@@ -332,8 +332,8 @@
                   </option>
                 </select>
                 <small class="form-hint">
-                  Org-based projects inherit members and roles. Permission changes on the organization
-                  apply here, and project sharing cannot be edited separately.
+                  Copies the organization's current members onto this project. You can change roles here afterward;
+                  later organization changes do not overwrite this board.
                 </small>
               </div>
               <div class="d-flex gap-2">

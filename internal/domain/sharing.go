@@ -37,9 +37,6 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
-	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
-		return nil, err
-	}
 
 	user, err := storage.GetUserByUsername(name)
 	if err != nil {
@@ -99,9 +96,6 @@ func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, member
 	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
 	}
-	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
-		return err
-	}
 	current, err := storage.GetProjectRole(projectID, memberUserID)
 	if err != nil {
 		return err
@@ -136,12 +130,6 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 	selfLeave := actorUserID == memberUserID
 	if !selfLeave && !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
-	}
-	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
-		if selfLeave {
-			return fmt.Errorf("%w: leave the organization to drop access to this project", ErrForbidden)
-		}
-		return err
 	}
 	targetRole, err := storage.GetProjectRole(projectID, memberUserID)
 	if err != nil {
@@ -178,9 +166,6 @@ func AcceptProjectInvite(ctx context.Context, userID int, userEmail string, invi
 	inv, err := storage.GetProjectInviteByID(inviteID)
 	if err != nil {
 		return ErrNotFound
-	}
-	if storage.ProjectIsOrgManaged(inv.ProjectID) {
-		return fmt.Errorf("%w: membership for this project is managed by the organization", ErrForbidden)
 	}
 	if err := storage.AcceptProjectInvite(inviteID, userID, userEmail); err != nil {
 		if strings.Contains(err.Error(), "mismatch") || strings.Contains(err.Error(), "expired") || strings.Contains(err.Error(), "accepted") {

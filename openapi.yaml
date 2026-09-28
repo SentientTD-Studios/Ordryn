@@ -1711,7 +1711,7 @@ paths:
     post:
       tags: [Organizations]
       summary: Invite a user by username
-      description: Creates a pending invite. The user must accept before they become a member or inherit org-based project access.
+      description: Creates a pending invite. The user must accept before they become an organization member. Accepting does not add them to existing imported projects.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1807,7 +1807,7 @@ paths:
     post:
       tags: [Organizations]
       summary: Invite a user by username
-      description: The invited user must accept before they join or inherit org-based projects.
+      description: The invited user must accept before they join the organization. Accepting does not add them to existing imported projects.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -5467,12 +5467,12 @@ components:
         organization_id:
           type: integer
           nullable: true
-          description: Organization this project inherits members from when org_managed is true
+          description: Organization this project imported members from when org_managed is true
         organization_name:
           type: string
         org_managed:
           type: boolean
-          description: When true, members and roles are inherited from the organization and cannot be edited on the project
+          description: When true, members were copied from the organization at create or attach time. Project sharing and roles remain independently editable.
 
     ProjectCreate:
       type: object
@@ -5486,7 +5486,7 @@ components:
           maxLength: 1000
         organization_id:
           type: integer
-          description: When set, the project inherits organization members and roles live
+          description: When set, current organization members are copied onto the project as a starting roster
 
     ProjectPatch:
       type: object
@@ -5524,7 +5524,7 @@ components:
           description: Days before the automatic sprint end to set lock_date. Null clears the lock. Must be less than auto_sprint_length_days.
         organization_id:
           type: integer
-          description: Attach an organization the caller can manage. The project then inherits org members and roles live. Non-owner members who are not in the organization are removed, pending invites are cancelled, and project sharing/roles become read-only.
+          description: Attach an organization the caller can manage. Current org members are copied onto the project. Non-owner members who are not in the organization are removed, pending invites are cancelled, and project sharing/roles stay independently editable.
       description: At least one field required. Disabling kanban fails with 409 if the project has tasks.
 
     ProjectStatus:
@@ -5735,7 +5735,7 @@ components:
           type: string
         inherited:
           type: boolean
-          description: True when membership comes from the parent organization
+          description: True when membership is shown as inherited from a parent organization. Snapshot-imported members are regular project members.
         created_at:
           type: string
           format: date-time

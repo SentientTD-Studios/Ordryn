@@ -234,9 +234,10 @@ func TestCopyAndReorderSiteRoles(t *testing.T) {
 	_ = ctx
 }
 
-func TestOrgManagedProjectInheritsMembersAndLocksEdits(t *testing.T) {
+func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
 	ctx := context.Background()
 	setTestUsername(t, 2, "editor_user")
+	setTestUsername(t, 3, "viewer_user")
 	org, err := CreateOrganizationForUser(ctx, 1, "Acme Org", "team")
 	if err != nil {
 		t.Fatalf("create org: %v", err)
@@ -290,47 +291,60 @@ func TestOrgManagedProjectInheritsMembersAndLocksEdits(t *testing.T) {
 
 	role, err := storage.GetProjectRole(proj.ID, 2)
 	if err != nil || role != storage.RoleEditor {
-		t.Fatalf("inherited role: %q err=%v", role, err)
+		t.Fatalf("imported role: %q err=%v", role, err)
 	}
 	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err != nil {
-		t.Fatalf("editor should access org project: %v", err)
+		t.Fatalf("editor should access imported project: %v", err)
 	}
 	members, err := storage.ListProjectMembers(proj.ID)
 	if err != nil {
 		t.Fatalf("list members: %v", err)
 	}
-	var sawInherited bool
+	var sawEditor bool
 	for _, m := range members {
-		if m.UserID == 2 && m.Inherited && m.Role == storage.RoleEditor {
-			sawInherited = true
+		if m.UserID == 2 && !m.Inherited && m.Role == storage.RoleEditor {
+			sawEditor = true
 		}
 	}
-	if !sawInherited {
-		t.Fatalf("expected inherited editor, got %+v", members)
+	if !sawEditor {
+		t.Fatalf("expected copied editor membership, got %+v", members)
 	}
 
-	if _, err := InviteToProject(ctx, 1, proj.ID, "viewer_user", storage.RoleViewer); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("invite on org project: err=%v", err)
+	if _, err := InviteToProject(ctx, 1, proj.ID, "viewer_user", storage.RoleViewer); err != nil {
+		t.Fatalf("invite on imported project: %v", err)
 	}
-	if _, err := CreateProjectCustomRoleForUser(ctx, 1, proj.ID, CreateSiteProjectRoleInput{
-		Slug: "project-only", Name: "Nope", Permissions: []string{storage.PermTasksEdit},
-	}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("custom role on org project: err=%v", err)
+	custom, err := CreateProjectCustomRoleForUser(ctx, 1, proj.ID, CreateSiteProjectRoleInput{
+		Slug: "project-only", Name: "Board Only", Permissions: []string{storage.PermTasksEdit},
+	})
+	if err != nil {
+		t.Fatalf("custom role on imported project: %v", err)
+	}
+	if custom.ProjectID == nil || *custom.ProjectID != proj.ID {
+		t.Fatalf("project custom role scope: %+v", custom)
+	}
+	if err := UpdateProjectMemberRole(ctx, 1, proj.ID, 2, "project-only"); err != nil {
+		t.Fatalf("change imported member role: %v", err)
 	}
 
 	pid := proj.ID
-	taskID, err := CreateTask(ctx, 2, CreateTaskInput{Title: "From org editor", ProjectID: &pid})
-	if err != nil {
-		t.Fatalf("org editor create: %v", err)
+	if _, err := CreateTask(ctx, 2, CreateTaskInput{Title: "From project-only", ProjectID: &pid}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("project-only create: err=%v want forbidden", err)
 	}
 
 	if err := storage.UpsertOrganizationMember(org.ID, 2, "org-qa"); err != nil {
 		t.Fatalf("change org role: %v", err)
 	}
-	if _, err := CreateTask(ctx, 2, CreateTaskInput{Title: "Should fail", ProjectID: &pid}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("org-qa create after trickle: err=%v want forbidden", err)
+	got, err := storage.GetProjectRole(proj.ID, 2)
+	if err != nil || got != "project-only" {
+		t.Fatalf("org role change should not overwrite project role: %q err=%v", got, err)
 	}
-	_ = taskID
+
+	if err := storage.UpsertOrganizationMember(org.ID, 3, storage.RoleViewer); err != nil {
+		t.Fatalf("add later org member: %v", err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 3); err == nil {
+		t.Fatal("later org member should not auto-join existing imported project")
+	}
 }
 
 func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
@@ -402,20 +416,20 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list members: %v", err)
 	}
-	var sawOutsider, sawInheritedEditor bool
+	var sawOutsider, sawCopiedEditor bool
 	for _, m := range members {
 		if m.UserID == 3 {
 			sawOutsider = true
 		}
-		if m.UserID == 2 && m.Inherited && m.Role == storage.RoleEditor {
-			sawInheritedEditor = true
+		if m.UserID == 2 && !m.Inherited && m.Role == storage.RoleEditor {
+			sawCopiedEditor = true
 		}
 	}
 	if sawOutsider {
 		t.Fatalf("outsider still listed: %+v", members)
 	}
-	if !sawInheritedEditor {
-		t.Fatalf("expected inherited editor, got %+v", members)
+	if !sawCopiedEditor {
+		t.Fatalf("expected copied editor membership, got %+v", members)
 	}
 
 	pendingProjectInvites, err := storage.ListProjectInvites(proj.ID)
@@ -425,8 +439,8 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	if len(pendingProjectInvites) != 0 {
 		t.Fatalf("pending invites should be cancelled, got %+v", pendingProjectInvites)
 	}
-	if _, err := InviteToProject(ctx, 1, proj.ID, "attach_outsider", storage.RoleViewer); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("invite after attach: err=%v", err)
+	if _, err := InviteToProject(ctx, 1, proj.ID, "attach_outsider", storage.RoleViewer); err != nil {
+		t.Fatalf("invite after attach: %v", err)
 	}
 
 	other, err := CreateOrganizationForUser(ctx, 1, "Second Attach Org", "")
@@ -482,8 +496,8 @@ func TestInviteToOrganizationRequiresAccept(t *testing.T) {
 	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != storage.RoleEditor {
 		t.Fatalf("membership after accept: %q err=%v", role, err)
 	}
-	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err != nil {
-		t.Fatalf("accepted member should access org project: %v", err)
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err == nil {
+		t.Fatal("accepting an org invite should not add the user to existing imported projects")
 	}
 
 	declined, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_viewer", storage.RoleViewer)

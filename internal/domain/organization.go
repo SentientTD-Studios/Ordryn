@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
 
 	"github.com/jackc/pgx/v5"
@@ -50,13 +49,6 @@ func requireOrgManage(orgID, userID int) (*storage.Organization, error) {
 		return nil, ErrForbidden
 	}
 	return org, nil
-}
-
-func denyOrgManagedMembershipEdits(projectID int) error {
-	if storage.ProjectIsOrgManaged(projectID) {
-		return fmt.Errorf("%w: membership and roles for this project are managed by the organization", ErrForbidden)
-	}
-	return nil
 }
 
 // ListOrganizationsForUser returns organizations the user belongs to.
@@ -161,7 +153,7 @@ func ListOrganizationMembersForUser(ctx context.Context, userID, orgID int) ([]s
 }
 
 // InviteToOrganization creates a pending invite. The user must accept before
-// they become a member or inherit org-based project access.
+// they become a member. Accepting does not add them to existing imported projects.
 func InviteToOrganization(ctx context.Context, actorUserID, orgID int, rawUsername, role string) (*storage.OrganizationInvite, error) {
 	_ = ctx
 	org, err := requireOrgManage(orgID, actorUserID)
@@ -250,8 +242,7 @@ func RevokeOrganizationInviteForUser(ctx context.Context, userID, orgID, inviteI
 // AcceptOrganizationInviteForUser accepts a pending invite for the current user.
 func AcceptOrganizationInviteForUser(ctx context.Context, userID int, userEmail string, inviteID int) error {
 	_ = ctx
-	inv, err := storage.GetOrganizationInviteByID(inviteID)
-	if err != nil {
+	if _, err := storage.GetOrganizationInviteByID(inviteID); err != nil {
 		return ErrNotFound
 	}
 	if err := storage.AcceptOrganizationInvite(inviteID, userID, userEmail); err != nil {
@@ -259,16 +250,6 @@ func AcceptOrganizationInviteForUser(ctx context.Context, userID int, userEmail 
 			return fmt.Errorf("%w: %s", ErrValidation, err.Error())
 		}
 		return err
-	}
-	ids, err := storage.ListOrgManagedProjectIDs(inv.OrganizationID)
-	if err == nil {
-		for _, pid := range ids {
-			live.AfterProjectChangeLive(userID, pid, live.TypeProjectUpdated)
-			live.DispatchProjectHook(userID, pid, live.TypeProjectMemberJoined, &live.TaskHookMeta{
-				MemberID:   userID,
-				MemberName: hookDisplayName(userID),
-			})
-		}
 	}
 	return nil
 }
@@ -539,9 +520,6 @@ func ReorderSiteProjectRolesForAdmin(ctx context.Context, userID int, roleIDs []
 func ReorderProjectCustomRolesForUser(ctx context.Context, userID, projectID int, roleIDs []int) error {
 	_ = ctx
 	if _, err := requireProjectManage(projectID, userID); err != nil {
-		return err
-	}
-	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
 		return err
 	}
 	if err := storage.ReorderProjectRoleDefs(roleIDs, false, projectID, 0); err != nil {

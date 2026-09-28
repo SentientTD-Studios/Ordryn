@@ -28,14 +28,14 @@ func CreateProject(ctx context.Context, userID int, name, description string) (*
 	return CreateProjectForUser(ctx, userID, CreateProjectInput{Name: name, Description: description})
 }
 
-// CreateProjectInput is the create payload, including optional organization inheritance.
+// CreateProjectInput is the create payload, including optional organization import.
 type CreateProjectInput struct {
 	Name           string
 	Description    string
 	OrganizationID *int
 }
 
-// CreateProjectForUser validates and creates a project, optionally inheriting an organization.
+// CreateProjectForUser validates and creates a project, optionally importing an organization roster.
 func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput) (*storage.Project, error) {
 	_ = ctx
 	name := strings.TrimSpace(in.Name)
@@ -67,8 +67,9 @@ func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput
 }
 
 // AttachOrganizationToProject binds an existing project to an organization.
-// Non-owner members who are not in the organization lose access. Org members
-// inherit organization roles live. Pending invites are cancelled.
+// Non-owner members who are not in the organization lose access. Current org
+// members are copied onto the project as independently editable memberships.
+// Pending invites are cancelled.
 func AttachOrganizationToProject(ctx context.Context, userID, projectID, organizationID int) (*storage.Project, error) {
 	_ = ctx
 	if organizationID <= 0 {

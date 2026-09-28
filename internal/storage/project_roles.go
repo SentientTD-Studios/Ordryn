@@ -507,13 +507,12 @@ func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bind != nil && bind.OrgManaged && bind.OrganizationID != nil {
+	if bind != nil && bind.OrganizationID != nil {
 		orgRoles, err := ListOrganizationRoles(*bind.OrganizationID)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, orgRoles...)
-		return out, nil
 	}
 	custom, err := ListProjectCustomRoles(projectID)
 	if err != nil {
@@ -552,10 +551,8 @@ func ResolveRoleDef(projectID int, slug string) *ProjectRoleDef {
 	var bind *ProjectOrgBinding
 	if projectID > 0 {
 		bind, _ = GetProjectOrgBinding(projectID)
-		if bind == nil || !bind.OrgManaged {
-			if d, err := getRoleDefBySlug(projectID, slug, false); err == nil && d != nil {
-				return d
-			}
+		if d, err := getRoleDefBySlug(projectID, slug, false); err == nil && d != nil {
+			return d
 		}
 		if bind != nil && bind.OrganizationID != nil {
 			if d, err := getOrgRoleDefBySlug(*bind.OrganizationID, slug); err == nil && d != nil {

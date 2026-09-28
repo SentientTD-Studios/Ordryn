@@ -35,7 +35,7 @@ const siteRoles = computed(() => roles.value.filter((r) => !r.project_id && !r.o
 const orgRoles = computed(() => roles.value.filter((r) => !!r.organization_id && !r.project_id))
 const customRoles = computed(() => roles.value.filter((r) => r.project_id === props.project.id))
 const editing = computed(() => customRoles.value.find((r) => r.id === editingId.value) || null)
-const canEditProjectRoles = computed(() => canManage.value && !orgManaged.value)
+const canEditProjectRoles = computed(() => canManage.value)
 
 async function load() {
   loading.value = true
@@ -189,9 +189,9 @@ onBeforeUnmount(destroySortable)
 <template>
   <div class="project-roles-panel">
     <div v-if="orgManaged" class="alert alert-info py-2 small">
-      Roles for this project come from
+      Members were imported from
       <RouterLink :to="'/organizations'">{{ project.organization_name || 'the organization' }}</RouterLink>.
-      Change permissions there; they apply to every org-based project.
+      Organization roles stay available to assign, and you can still create roles just for this project.
     </div>
 
     <h4 class="h6">Site roles</h4>
@@ -222,13 +222,21 @@ onBeforeUnmount(destroySortable)
         <li v-for="role in orgRoles" :key="role.id" class="mb-2">
           <strong>{{ role.name }}</strong>
           <span class="badge text-bg-info ms-1">organization</span>
+          <button
+            v-if="canEditProjectRoles"
+            class="btn btn-sm btn-link py-0"
+            type="button"
+            @click="startCopy(role)"
+          >
+            Copy
+          </button>
           <div class="small text-muted">{{ role.description || role.slug }}</div>
           <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
         </li>
       </ul>
     </template>
 
-    <template v-if="!orgManaged">
+    <template>
       <h4 class="h6">Project roles</h4>
       <ul ref="roleListEl" class="list-unstyled mb-3">
         <li

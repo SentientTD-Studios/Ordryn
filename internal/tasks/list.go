@@ -304,12 +304,10 @@ func appendTagCondition(where string, args []interface{}, filters ListFilters, u
 				OR EXISTS (
 					SELECT 1 FROM projects p
 					LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $%d
-					LEFT JOIN organization_members om ON COALESCE(p.org_managed, false) AND p.organization_id IS NOT NULL
-						AND om.organization_id = p.organization_id AND om.user_id = $%d
-					WHERE p.id = tg.project_id AND (p.user_id = $%d OR pm.user_id IS NOT NULL OR om.user_id IS NOT NULL)
+					WHERE p.id = tg.project_id AND (p.user_id = $%d OR pm.user_id IS NOT NULL)
 				)
 			  )
-		)`, idCol, tagMatchClause, userIdx, userIdx, userIdx, userIdx)
+		)`, idCol, tagMatchClause, userIdx, userIdx, userIdx)
 		return where, args
 	}
 	if filters.TagFilter == nil {

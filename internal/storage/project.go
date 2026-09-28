@@ -94,7 +94,7 @@ func CreateProject(userID int, name, description string) (*Project, error) {
 	return CreateProjectWithOrg(userID, name, description, nil)
 }
 
-// CreateProjectWithOrg inserts a project, optionally inheriting members from an organization.
+// CreateProjectWithOrg inserts a project, optionally copying members from an organization.
 func CreateProjectWithOrg(userID int, name, description string, organizationID *int) (*Project, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -122,6 +122,11 @@ func CreateProjectWithOrg(userID int, name, description string, organizationID *
 	}
 	if err := EnsureProjectOwnerMember(p.ID, userID); err != nil {
 		return nil, fmt.Errorf("failed to create project owner membership: %v", err)
+	}
+	if orgManaged {
+		if err := ImportOrganizationMembersToProject(p.ID, userID, *organizationID); err != nil {
+			return nil, err
+		}
 	}
 	pid := p.ID
 	if _, err := EnsureArchivedTag(userID, &pid); err != nil {

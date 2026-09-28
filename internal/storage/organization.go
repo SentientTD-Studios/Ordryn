@@ -20,7 +20,7 @@ const (
 	MaxOrganizationCustomRoles = 20
 )
 
-// Organization is a team whose members and roles can be inherited by projects.
+// Organization is a team whose members and roles can be copied onto projects.
 type Organization struct {
 	ID           int
 	Name         string
@@ -423,7 +423,7 @@ func CountOrgMembersWithRole(slug string, orgID int) (int, error) {
 	return n, err
 }
 
-// ProjectOrgBinding is the org inheritance state for a project.
+// ProjectOrgBinding is the organization linkage for a project (imported-from badge).
 type ProjectOrgBinding struct {
 	OrganizationID *int
 	OrgManaged     bool
@@ -459,15 +459,47 @@ func GetProjectOrgBinding(projectID int) (*ProjectOrgBinding, error) {
 	return out, nil
 }
 
-// ProjectIsOrgManaged reports whether membership/roles are inherited from an org.
-func ProjectIsOrgManaged(projectID int) bool {
-	b, err := GetProjectOrgBinding(projectID)
-	return err == nil && b != nil && b.OrgManaged && b.OrganizationID != nil
+const importOrganizationMembersSQL = `
+		INSERT INTO project_members (project_id, user_id, role)
+		SELECT $1, om.user_id,
+			CASE WHEN om.role = $4 THEN $5 ELSE om.role END
+		FROM organization_members om
+		WHERE om.organization_id = $2
+		  AND om.user_id <> $3
+		ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`
+
+// ImportOrganizationMembersToProject copies current org members onto project_members.
+// The project owner is skipped; extra org owners are stored as editor so the board
+// keeps a single owner. Later org membership changes do not rewrite these rows.
+func ImportOrganizationMembersToProject(projectID, ownerUserID, orgID int) error {
+	if projectID <= 0 || ownerUserID <= 0 || orgID <= 0 {
+		return fmt.Errorf("invalid project or organization")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(), importOrganizationMembersSQL,
+		projectID, orgID, ownerUserID, RoleOwner, RoleEditor)
+	if err != nil {
+		return fmt.Errorf("failed to import organization members: %v", err)
+	}
+	return nil
+}
+
+func importOrganizationMembersTx(tx pgx.Tx, projectID, ownerUserID, orgID int) error {
+	_, err := tx.Exec(context.Background(), importOrganizationMembersSQL,
+		projectID, orgID, ownerUserID, RoleOwner, RoleEditor)
+	if err != nil {
+		return fmt.Errorf("failed to import organization members: %v", err)
+	}
+	return nil
 }
 
 // AttachProjectOrganization binds a project to an organization, drops non-owner
-// project_members rows (so org members inherit live and non-org members lose access),
-// and cancels pending invites. Returns user IDs that were removed from project_members.
+// project_members rows, copies current org members onto the project, and cancels
+// pending invites. Returns user IDs that were removed from project_members.
 func AttachProjectOrganization(projectID, ownerUserID, orgID int) ([]int, error) {
 	if projectID <= 0 || ownerUserID <= 0 || orgID <= 0 {
 		return nil, fmt.Errorf("invalid project or organization")
@@ -533,6 +565,9 @@ func AttachProjectOrganization(projectID, ownerUserID, orgID int) ([]int, error)
 	}
 	if tag.RowsAffected() == 0 {
 		return nil, fmt.Errorf("project not found")
+	}
+	if err := importOrganizationMembersTx(tx, projectID, ownerUserID, orgID); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(context.Background()); err != nil {
 		return nil, err
@@ -783,31 +818,6 @@ func DeclineOrganizationInvite(inviteID int, userEmail string) error {
 		return fmt.Errorf("invite not found")
 	}
 	return nil
-}
-
-// ListOrgManagedProjectIDs returns org-based project ids for live membership updates.
-func ListOrgManagedProjectIDs(orgID int) ([]int, error) {
-	pool, err := OpenDatabase()
-	if err != nil {
-		return nil, err
-	}
-	defer CloseDatabase(pool)
-
-	rows, err := pool.Query(context.Background(),
-		`SELECT id FROM projects WHERE organization_id = $1 AND COALESCE(org_managed, false)`, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []int
-	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
 }
 
 // CountOrganizationInvitesWithRole counts pending org invites using slug.

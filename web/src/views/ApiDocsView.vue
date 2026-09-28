@@ -557,7 +557,8 @@ Content-Type: application/json
                     <p>
                         Returns the updated project object. Missing ids return <code>404 not_found</code>.
                         Setting <code>organization_id</code> attaches that organization: non-org members
-                        are removed, pending invites are cancelled, and membership is inherited live.
+                        are removed, pending invites are cancelled, and current org members are copied onto
+                        the project. Sharing and roles stay editable afterward.
                     </p>
 
                     <h3 class="h5 mt-3">Delete project</h3>

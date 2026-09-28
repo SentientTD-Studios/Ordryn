@@ -215,7 +215,7 @@ async function removeMember(userId: number) {
   if (!selectedId.value) return
   const ok = await askConfirm({
     title: 'Remove member?',
-    message: 'Remove this person from the organization? They will lose access to org-based projects.',
+    message: 'Remove this person from the organization? They keep access to projects they were already imported onto.',
     confirmLabel: 'Remove',
     danger: true,
   })
@@ -370,9 +370,9 @@ onBeforeUnmount(destroySortable)
   <div class="container mt-4">
     <h1>Organizations</h1>
     <p class="text-muted">
-      Groups of people and roles you can reuse on projects. Create a project from an organization to
-      import members live — permission changes here apply to every org-based project, and those
-      projects cannot edit membership at the board level.
+      Groups of people and roles you can reuse when creating or attaching a project.
+      Importing copies the current roster onto that board; you can then change membership and roles
+      per project. New organization members are not added to existing imported projects.
     </p>
 
     <div v-if="myInvites.length" class="card mb-4 border-primary">
@@ -460,7 +460,7 @@ onBeforeUnmount(destroySortable)
         <div v-if="org" class="card mb-3">
           <div class="card-body">
             <h2 class="h6">Members</h2>
-            <p class="small text-muted">These people are imported into every org-based project. Invites must be accepted before access starts.</p>
+            <p class="small text-muted">These people are copied onto a project when you import this organization. Invites must be accepted before they are included in a later import.</p>
             <ul class="list-unstyled mb-3">
               <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-2">
                 <span>{{ m.user_name || m.email }}</span>

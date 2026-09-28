@@ -87,10 +87,10 @@ onUnmounted(() => {
             <RouterLink to="/organizations">Organizations</RouterLink>
             and import those members when you create a project, or attach an organization later
             from project settings. Inviting someone to an organization works like a project invite:
-            they must accept before they join or inherit org-based boards. Attaching an org removes
-            anyone who is not an org member.
-            Org permission changes apply to every org-based board, and those projects cannot
-            edit membership themselves. Archived projects move
+            they must accept before they join. Attaching an org copies current members onto the
+            project and removes anyone who is not an org member. After import, you can still change
+            membership and roles on that project; later organization changes do not overwrite them.
+            Archived projects move
             into an Archived section so they do not clutter the main list, are tagged archived
             automatically, and cannot accept new tasks until the owner restores them. Kanban projects can name sprints
             with optional descriptions, date ranges, and a lock date on the Sprints tab
@@ -118,8 +118,8 @@ onUnmounted(() => {
           complete, claim, reorder, change status, assign sprints, manage tags, log time, configure
           extensions, moderate comments, and manage the project. Site admins maintain those templates
           under Admin → Roles. Copy a role to start from an existing permission set, and drag to
-          reorder the list. Organizations can define extra roles that org-based projects inherit.
-          Independent projects may still create extra roles for that board only, picking from the
+          reorder the list. Organizations can define extra roles that are copied onto a project at
+          import time; that board can still add its own roles afterward, picking from the
           same catalog.
         </p>
         <ul>

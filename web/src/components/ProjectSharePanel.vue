@@ -2,9 +2,9 @@
   <div class="share-panel">
     <h4 class="h6">Members</h4>
     <p v-if="orgManaged" class="small text-muted">
-      Members are imported from
+      Members were imported from
       <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
-      and cannot be changed on this project. Organization permission changes apply here automatically.
+      as a starting point. You can change roles on this project without affecting the organization.
     </p>
     <ul class="list-unstyled mb-3">
       <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
@@ -155,7 +155,7 @@ const toast = useToast()
 const { askConfirm } = useConfirm()
 const isOwner = computed(() => canManageProject(props.project))
 const orgManaged = computed(() => !!props.project.org_managed && !!props.project.organization_id)
-const canEditMembers = computed(() => isOwner.value && !orgManaged.value)
+const canEditMembers = computed(() => isOwner.value)
 
 const excludeUsernames = computed(() => {
   const names: string[] = []
