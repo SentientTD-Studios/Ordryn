@@ -714,3 +714,136 @@ func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
 		t.Fatal("unselected member should not be on attached project")
 	}
 }
+
+func TestOrgCustomizeDefaultRoles(t *testing.T) {
+	ctx := context.Background()
+	org, err := CreateOrganizationForUser(ctx, 1, "Override Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if err := storage.UpsertOrganizationMember(org.ID, 2, storage.RoleEditor); err != nil {
+		t.Fatalf("add editor member: %v", err)
+	}
+
+	site, err := storage.ListSiteProjectRoles()
+	if err != nil {
+		t.Fatalf("list site roles: %v", err)
+	}
+	var owner, editor storage.ProjectRoleDef
+	for _, d := range site {
+		switch d.Slug {
+		case storage.RoleOwner:
+			owner = d
+		case storage.RoleEditor:
+			editor = d
+		}
+	}
+	if owner.ID == 0 || editor.ID == 0 {
+		t.Fatalf("missing built-in roles: owner=%+v editor=%+v", owner, editor)
+	}
+	if !storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksCreate) {
+		t.Fatal("site editor should create tasks before override")
+	}
+
+	name := "Org Editor"
+	desc := "Trimmed for this org"
+	perms := []string{storage.PermTasksEdit, storage.PermTasksStatus}
+	overridden, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, editor.ID, UpdateSiteProjectRoleInput{
+		Name:        &name,
+		Description: &desc,
+		Permissions: &perms,
+	})
+	if err != nil {
+		t.Fatalf("customize editor: %v", err)
+	}
+	if overridden.OrganizationID == nil || *overridden.OrganizationID != org.ID || overridden.Slug != storage.RoleEditor {
+		t.Fatalf("override scope: %+v", overridden)
+	}
+	if !overridden.OverridesSite || overridden.Name != name {
+		t.Fatalf("override flags: %+v", overridden)
+	}
+
+	again, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, editor.ID, UpdateSiteProjectRoleInput{Name: &name})
+	if err != nil || again.ID != overridden.ID {
+		t.Fatalf("second customize should update existing override: %+v err=%v", again, err)
+	}
+
+	listed, _, err := ListOrganizationRolesForUser(ctx, 1, org.ID)
+	if err != nil {
+		t.Fatalf("list org roles: %v", err)
+	}
+	var sawSiteEditor, sawOverride bool
+	for _, d := range listed {
+		if d.Slug == storage.RoleEditor && d.OrganizationID == nil {
+			sawSiteEditor = true
+		}
+		if d.ID == overridden.ID && d.OverridesSite {
+			sawOverride = true
+		}
+	}
+	if sawSiteEditor || !sawOverride {
+		t.Fatalf("list should hide site editor and show override: %+v", listed)
+	}
+
+	if storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksCreate) {
+		t.Fatal("org editor override should drop create")
+	}
+	if !storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksEdit) {
+		t.Fatal("org editor override should keep edit")
+	}
+	if !storage.HasProjectPerm(0, storage.RoleEditor, storage.PermTasksCreate) {
+		t.Fatal("site editor template must stay unchanged")
+	}
+	if storage.OrgRoleDisplayName(org.ID, storage.RoleEditor) != name {
+		t.Fatalf("display name: %q", storage.OrgRoleDisplayName(org.ID, storage.RoleEditor))
+	}
+
+	proj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Override Board",
+		OrganizationID: &org.ID,
+	})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	assignable, err := storage.ListAssignableProjectRoles(proj.ID)
+	if err != nil {
+		t.Fatalf("assignable: %v", err)
+	}
+	var sawAssignableSiteEditor, sawAssignableOverride bool
+	for _, d := range assignable {
+		if d.Slug == storage.RoleEditor && d.OrganizationID == nil {
+			sawAssignableSiteEditor = true
+		}
+		if d.ID == overridden.ID {
+			sawAssignableOverride = true
+		}
+	}
+	if sawAssignableSiteEditor || !sawAssignableOverride {
+		t.Fatalf("assignable should prefer org editor: %+v", assignable)
+	}
+	if storage.HasProjectPerm(proj.ID, storage.RoleEditor, storage.PermTasksCreate) {
+		t.Fatal("project should use org editor override")
+	}
+
+	if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &name}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("customize owner: err=%v want validation", err)
+	}
+	if _, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
+		Slug: storage.RoleOwner, Name: "Not Owner", Permissions: []string{storage.PermTasksEdit},
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("create owner slug: err=%v want validation", err)
+	}
+
+	if err := DeleteOrganizationRoleForUser(ctx, 1, org.ID, overridden.ID); err != nil {
+		t.Fatalf("reset override while assigned: %v", err)
+	}
+	if !storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksCreate) {
+		t.Fatal("reset should restore site editor permissions")
+	}
+	if storage.OrgRoleDisplayName(org.ID, storage.RoleEditor) == name {
+		t.Fatal("reset should restore site editor name")
+	}
+	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != storage.RoleEditor {
+		t.Fatalf("member should keep editor slug after reset: %q err=%v", role, err)
+	}
+}

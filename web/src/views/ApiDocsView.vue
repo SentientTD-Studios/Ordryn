@@ -602,8 +602,9 @@ Content-Type: application/json
                     </p>
                     <p><span class="badge bg-success">GET</span> <code>/api/v2/projects/{id}/roles</code></p>
                     <p>
-                        Assignable roles for that project (site templates plus project-only custom roles).
-                        Owners with <code>project:manage</code> can <code>POST</code>/<code>PATCH</code>/<code>DELETE</code>
+                        Assignable roles for that project (site templates plus organization overrides
+                        and project-only custom roles). An organization override replaces the matching
+                        site slug. Owners with <code>project:manage</code> can <code>POST</code>/<code>PATCH</code>/<code>DELETE</code>
                         custom roles built from the catalog.
                     </p>
                     <p><span class="badge bg-info text-dark">PUT</span> <code>/api/v2/projects/{id}/statuses/{statusId}/gates</code></p>
