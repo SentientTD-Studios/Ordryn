@@ -31,8 +31,8 @@ func TestTaskVisibleCondition(t *testing.T) {
 	if strings.Contains(cond, "pm.role IN ('owner', 'editor')") {
 		t.Fatalf("full visible condition should not restrict membership roles: %s", cond)
 	}
-	if !strings.Contains(cond, "pm.project_id = t.project_id") {
-		t.Fatalf("aliased condition should correlate to outer alias: %s", cond)
+	if !strings.Contains(cond, "organization_members") {
+		t.Fatalf("visible condition should include organization membership: %s", cond)
 	}
 
 	unaliased := TaskVisibleCondition("", "$1")

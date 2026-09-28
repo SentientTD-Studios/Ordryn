@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Sortable from 'sortablejs'
 import { api } from '@/api/client'
 import type { ProjectPermInfo, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
@@ -19,7 +20,10 @@ const formName = ref('')
 const formSlug = ref('')
 const formDescription = ref('')
 const formPermissions = ref<string[]>([])
+const formCopyFromId = ref<number | null>(null)
 const slugTouched = ref(false)
+const roleListEl = ref<HTMLElement | null>(null)
+let sortable: Sortable | null = null
 
 const editing = computed(() => roles.value.find((r) => r.id === editingId.value) || null)
 const ownerLocked = computed(() => editing.value?.slug === 'owner')
@@ -40,6 +44,7 @@ function resetForm() {
   formSlug.value = ''
   formDescription.value = ''
   formPermissions.value = []
+  formCopyFromId.value = null
   slugTouched.value = false
 }
 
@@ -49,6 +54,17 @@ function startEdit(role: ProjectRoleDef) {
   formSlug.value = role.slug
   formDescription.value = role.description || ''
   formPermissions.value = [...(role.permissions || [])]
+  formCopyFromId.value = null
+  slugTouched.value = true
+}
+
+function startCopy(role: ProjectRoleDef) {
+  editingId.value = null
+  formName.value = `${role.name} (copy)`
+  formSlug.value = slugifyRoleName(`${role.slug}-copy`)
+  formDescription.value = role.description || ''
+  formPermissions.value = [...(role.permissions || [])]
+  formCopyFromId.value = role.id
   slugTouched.value = true
 }
 
@@ -62,9 +78,7 @@ async function saveRole() {
   if (!name) return
   saving.value = true
   try {
-    const permissions = ownerLocked.value
-      ? Object.values(PROJECT_PERMS)
-      : formPermissions.value
+    const permissions = ownerLocked.value ? Object.values(PROJECT_PERMS) : formPermissions.value
     if (editingId.value) {
       await api.updateAdminProjectRole(editingId.value, {
         name,
@@ -78,6 +92,7 @@ async function saveRole() {
         name,
         description: formDescription.value.trim(),
         permissions,
+        copy_from_id: formCopyFromId.value || undefined,
       })
       toast.push('Site role created', 'success')
     }
@@ -109,7 +124,44 @@ async function deleteRole(role: ProjectRoleDef) {
   }
 }
 
+function destroySortable() {
+  sortable?.destroy()
+  sortable = null
+}
+
+function collectRoleIds(el: HTMLElement): number[] {
+  return Array.from(el.querySelectorAll(':scope > .role-reorder-item'))
+    .map((node) => parseInt((node as HTMLElement).dataset.roleId || '', 10))
+    .filter((id) => !Number.isNaN(id))
+}
+
+function initSortable() {
+  destroySortable()
+  if (!roleListEl.value || roles.value.length < 2) return
+  sortable = Sortable.create(roleListEl.value, {
+    handle: '.role-drag-handle',
+    draggable: '.role-reorder-item',
+    animation: 150,
+    async onEnd(evt) {
+      const ids = collectRoleIds(evt.to as HTMLElement)
+      if (ids.length !== roles.value.length) return
+      try {
+        await api.reorderAdminProjectRoles(ids)
+      } catch (err) {
+        toast.push(err instanceof APIError ? err.message : 'Could not reorder roles', 'error')
+        await load()
+      }
+    },
+  })
+}
+
+watch(roles, async () => {
+  await nextTick()
+  initSortable()
+})
+
 onMounted(load)
+onBeforeUnmount(destroySortable)
 </script>
 
 <template>
@@ -117,26 +169,31 @@ onMounted(load)
     <AdminSubnav />
     <h1>Project roles</h1>
     <p class="text-muted">
-      Site-wide roles that project owners can assign. Built-in Owner, Editor, and Viewer stay available.
-      Add roles such as Developer or QA, or change their permission catalog. Projects may also create
-      extra roles for that board only.
+      Site-wide roles that project owners and organizations can assign. Drag to change the display
+      order. Copy a role to start from its permission catalog. Built-in Owner, Editor, and Viewer
+      stay available. Organizations can override these for org-based projects.
     </p>
 
-    <ul class="list-unstyled mb-4">
+    <ul ref="roleListEl" class="list-unstyled mb-4">
       <li
         v-for="role in roles"
         :key="role.id"
-        class="card mb-2"
+        class="card mb-2 role-reorder-item"
+        :data-role-id="role.id"
       >
         <div class="card-body py-3 d-flex flex-wrap justify-content-between gap-2">
-          <div>
-            <strong>{{ role.name }}</strong>
-            <span class="badge text-bg-secondary ms-1">{{ role.slug }}</span>
-            <span v-if="role.is_system" class="badge text-bg-info ms-1">built-in</span>
-            <div class="small text-muted">{{ role.description || 'No description' }}</div>
-            <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
+          <div class="d-flex gap-2">
+            <span class="role-drag-handle text-muted mt-1" title="Drag to reorder"><i class="bi bi-grip-vertical" /></span>
+            <div>
+              <strong>{{ role.name }}</strong>
+              <span class="badge text-bg-secondary ms-1">{{ role.slug }}</span>
+              <span v-if="role.is_system" class="badge text-bg-info ms-1">built-in</span>
+              <div class="small text-muted">{{ role.description || 'No description' }}</div>
+              <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
+            </div>
           </div>
           <div class="d-flex gap-1 align-items-start">
+            <button class="btn btn-sm btn-outline-secondary" type="button" @click="startCopy(role)">Copy</button>
             <button class="btn btn-sm btn-outline-secondary" type="button" @click="startEdit(role)">Edit</button>
             <button
               v-if="!role.is_system"
@@ -153,7 +210,9 @@ onMounted(load)
     </ul>
 
     <form class="card card-body" @submit.prevent="saveRole">
-      <h2 class="h5">{{ editing ? `Edit ${editing.name}` : 'Create a site role' }}</h2>
+      <h2 class="h5">
+        {{ editing ? `Edit ${editing.name}` : formCopyFromId ? 'Create a copy' : 'Create a site role' }}
+      </h2>
       <div class="mb-2">
         <label class="form-label small mb-0" for="admin-role-name">Name</label>
         <input
@@ -196,8 +255,19 @@ onMounted(load)
         <button class="btn btn-primary" type="submit" :disabled="saving || !formName.trim()">
           {{ editing ? 'Save role' : 'Create role' }}
         </button>
-        <button v-if="editing" class="btn btn-outline-secondary" type="button" @click="resetForm">Cancel</button>
+        <button v-if="editing || formCopyFromId" class="btn btn-outline-secondary" type="button" @click="resetForm">
+          Cancel
+        </button>
       </div>
     </form>
   </div>
 </template>
+
+<style scoped>
+.role-drag-handle {
+  cursor: grab;
+}
+.role-drag-handle:active {
+  cursor: grabbing;
+}
+</style>

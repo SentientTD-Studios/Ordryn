@@ -48,17 +48,18 @@ type ProjectPermInfo struct {
 	Group       string `json:"group"`
 }
 
-// ProjectRoleDef is a site-level or project-specific role with a permission set.
+// ProjectRoleDef is a site-level, organization, or project-specific role with a permission set.
 type ProjectRoleDef struct {
-	ID          int
-	ProjectID   *int
-	Slug        string
-	Name        string
-	Description string
-	Permissions []string
-	IsSystem    bool
-	SortOrder   int
-	CreatedAt   time.Time
+	ID             int
+	ProjectID      *int
+	OrganizationID *int
+	Slug           string
+	Name           string
+	Description    string
+	Permissions    []string
+	IsSystem       bool
+	SortOrder      int
+	CreatedAt      time.Time
 }
 
 // ProjectStatusGate restricts which roles may enter or leave a status.
@@ -254,6 +255,32 @@ func CreateProjectRoleTables() error {
 	return nil
 }
 
+// MigrateProjectRoleDefsAddOrganizationID adds organization-scoped roles and tightens the site unique index.
+func MigrateProjectRoleDefsAddOrganizationID() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	stmts := []string{
+		`ALTER TABLE project_role_defs ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE`,
+		`DROP INDEX IF EXISTS idx_project_role_defs_site_slug`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_role_defs_site_slug
+			ON project_role_defs (slug) WHERE project_id IS NULL AND organization_id IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_role_defs_org_slug
+			ON project_role_defs (organization_id, slug) WHERE organization_id IS NOT NULL AND project_id IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_project_role_defs_organization
+			ON project_role_defs (organization_id)`,
+	}
+	for _, s := range stmts {
+		if _, err := pool.Exec(context.Background(), s); err != nil {
+			return fmt.Errorf("failed to migrate project role organization_id: %v", err)
+		}
+	}
+	return nil
+}
+
 func dropRoleCheckConstraints(table string) error {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -325,9 +352,9 @@ func seedSiteRole(slug, name, description string, perms []string, system bool, s
 		perms = []string{}
 	}
 	_, err = pool.Exec(context.Background(), `
-		INSERT INTO project_role_defs (project_id, slug, name, description, permissions, is_system, sort_order)
-		VALUES (NULL, $1, $2, $3, $4, $5, $6)
-		ON CONFLICT (slug) WHERE project_id IS NULL DO NOTHING`,
+		INSERT INTO project_role_defs (project_id, organization_id, slug, name, description, permissions, is_system, sort_order)
+		VALUES (NULL, NULL, $1, $2, $3, $4, $5, $6)
+		ON CONFLICT (slug) WHERE project_id IS NULL AND organization_id IS NULL DO NOTHING`,
 		slug, name, description, perms, system, sortOrder)
 	return err
 }
@@ -357,13 +384,18 @@ func SeedDefaultProjectRoles() error {
 
 func scanProjectRoleDef(row interface{ Scan(dest ...any) error }, d *ProjectRoleDef) error {
 	var projectID sql.NullInt64
+	var organizationID sql.NullInt64
 	var perms []string
-	if err := row.Scan(&d.ID, &projectID, &d.Slug, &d.Name, &d.Description, &perms, &d.IsSystem, &d.SortOrder, &d.CreatedAt); err != nil {
+	if err := row.Scan(&d.ID, &projectID, &organizationID, &d.Slug, &d.Name, &d.Description, &perms, &d.IsSystem, &d.SortOrder, &d.CreatedAt); err != nil {
 		return err
 	}
 	if projectID.Valid {
 		id := int(projectID.Int64)
 		d.ProjectID = &id
+	}
+	if organizationID.Valid {
+		id := int(organizationID.Int64)
+		d.OrganizationID = &id
 	}
 	if perms == nil {
 		perms = []string{}
@@ -372,9 +404,13 @@ func scanProjectRoleDef(row interface{ Scan(dest ...any) error }, d *ProjectRole
 	return nil
 }
 
-const projectRoleSelect = `SELECT id, project_id, slug, name, COALESCE(description, ''), COALESCE(permissions, '{}'),
+const projectRoleSelect = `SELECT id, project_id, organization_id, slug, name, COALESCE(description, ''), COALESCE(permissions, '{}'),
 		COALESCE(is_system, false), COALESCE(sort_order, 0), created_at
 	 FROM project_role_defs`
+
+func siteRoleWhere() string {
+	return `project_id IS NULL AND organization_id IS NULL`
+}
 
 // ListSiteProjectRoles returns global role templates.
 func ListSiteProjectRoles() ([]ProjectRoleDef, error) {
@@ -385,7 +421,7 @@ func ListSiteProjectRoles() ([]ProjectRoleDef, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(),
-		projectRoleSelect+` WHERE project_id IS NULL ORDER BY sort_order ASC, id ASC`)
+		projectRoleSelect+` WHERE `+siteRoleWhere()+` ORDER BY sort_order ASC, id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -428,22 +464,60 @@ func ListProjectCustomRoles(projectID int) ([]ProjectRoleDef, error) {
 	return out, rows.Err()
 }
 
-// ListAssignableProjectRoles returns site roles (except owner) plus project custom roles.
+// ListOrganizationRoles returns custom roles created for one organization.
+func ListOrganizationRoles(orgID int) ([]ProjectRoleDef, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(),
+		projectRoleSelect+` WHERE organization_id = $1 AND project_id IS NULL ORDER BY sort_order ASC, id ASC`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ProjectRoleDef
+	for rows.Next() {
+		var d ProjectRoleDef
+		if err := scanProjectRoleDef(rows, &d); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// ListAssignableProjectRoles returns site roles (except owner) plus org or project custom roles.
 func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
 	site, err := ListSiteProjectRoles()
 	if err != nil {
 		return nil, err
 	}
-	custom, err := ListProjectCustomRoles(projectID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ProjectRoleDef, 0, len(site)+len(custom))
+	out := make([]ProjectRoleDef, 0, len(site)+8)
 	for _, d := range site {
 		if d.Slug == RoleOwner {
 			continue
 		}
 		out = append(out, d)
+	}
+	bind, err := GetProjectOrgBinding(projectID)
+	if err != nil {
+		return nil, err
+	}
+	if bind != nil && bind.OrgManaged && bind.OrganizationID != nil {
+		orgRoles, err := ListOrganizationRoles(*bind.OrganizationID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, orgRoles...)
+		return out, nil
+	}
+	custom, err := ListProjectCustomRoles(projectID)
+	if err != nil {
+		return nil, err
 	}
 	out = append(out, custom...)
 	return out, nil
@@ -469,14 +543,46 @@ func GetProjectRoleDef(id int) (*ProjectRoleDef, error) {
 	return &d, nil
 }
 
-// ResolveRoleDef finds the project-specific role, then the site template.
+// ResolveRoleDef finds the project-specific role, then the org template, then the site template.
 func ResolveRoleDef(projectID int, slug string) *ProjectRoleDef {
 	slug = strings.TrimSpace(strings.ToLower(slug))
 	if slug == "" {
 		return nil
 	}
+	var bind *ProjectOrgBinding
 	if projectID > 0 {
-		if d, err := getRoleDefBySlug(projectID, slug, false); err == nil && d != nil {
+		bind, _ = GetProjectOrgBinding(projectID)
+		if bind == nil || !bind.OrgManaged {
+			if d, err := getRoleDefBySlug(projectID, slug, false); err == nil && d != nil {
+				return d
+			}
+		}
+		if bind != nil && bind.OrganizationID != nil {
+			if d, err := getOrgRoleDefBySlug(*bind.OrganizationID, slug); err == nil && d != nil {
+				return d
+			}
+		}
+	}
+	if cached := loadSiteRoleCache(); cached != nil {
+		if d, ok := cached[slug]; ok {
+			cp := d
+			return &cp
+		}
+	}
+	if d, err := getRoleDefBySlug(0, slug, true); err == nil && d != nil {
+		return d
+	}
+	return builtinRoleFallback(slug)
+}
+
+// ResolveOrgRoleDef finds an organization custom role, then the site template.
+func ResolveOrgRoleDef(orgID int, slug string) *ProjectRoleDef {
+	slug = strings.TrimSpace(strings.ToLower(slug))
+	if slug == "" {
+		return nil
+	}
+	if orgID > 0 {
+		if d, err := getOrgRoleDefBySlug(orgID, slug); err == nil && d != nil {
 			return d
 		}
 	}
@@ -516,13 +622,33 @@ func getRoleDefBySlug(projectID int, slug string, siteOnly bool) (*ProjectRoleDe
 	var q string
 	var args []any
 	if siteOnly || projectID <= 0 {
-		q = projectRoleSelect + ` WHERE project_id IS NULL AND slug = $1`
+		q = projectRoleSelect + ` WHERE ` + siteRoleWhere() + ` AND slug = $1`
 		args = []any{slug}
 	} else {
 		q = projectRoleSelect + ` WHERE project_id = $1 AND slug = $2`
 		args = []any{projectID, slug}
 	}
 	err = scanProjectRoleDef(pool.QueryRow(context.Background(), q, args...), &d)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
+func getOrgRoleDefBySlug(orgID int, slug string) (*ProjectRoleDef, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	var d ProjectRoleDef
+	err = scanProjectRoleDef(pool.QueryRow(context.Background(),
+		projectRoleSelect+` WHERE organization_id = $1 AND project_id IS NULL AND slug = $2`,
+		orgID, slug), &d)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -590,7 +716,7 @@ func SiteRoleSlugTaken(slug string, exceptID int) (bool, error) {
 	defer CloseDatabase(pool)
 	var n int
 	err = pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM project_role_defs WHERE project_id IS NULL AND slug = $1 AND id <> $2`,
+		`SELECT COUNT(*) FROM project_role_defs WHERE `+siteRoleWhere()+` AND slug = $1 AND id <> $2`,
 		slug, exceptID).Scan(&n)
 	return n > 0, err
 }
@@ -605,9 +731,44 @@ func ProjectRoleSlugTaken(projectID int, slug string, exceptID int) (bool, error
 	var n int
 	err = pool.QueryRow(context.Background(), `
 		SELECT COUNT(*) FROM project_role_defs
-		WHERE slug = $1 AND id <> $2 AND (project_id IS NULL OR project_id = $3)`,
+		WHERE slug = $1 AND id <> $2 AND (
+			(`+siteRoleWhere()+`)
+			OR project_id = $3
+			OR (organization_id = (SELECT organization_id FROM projects WHERE id = $3) AND project_id IS NULL)
+		)`,
 		slug, exceptID, projectID).Scan(&n)
 	return n > 0, err
+}
+
+// OrgRoleSlugTaken reports whether slug exists as a site role or this org's custom role.
+func OrgRoleSlugTaken(orgID int, slug string, exceptID int) (bool, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return false, err
+	}
+	defer CloseDatabase(pool)
+	var n int
+	err = pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM project_role_defs
+		WHERE slug = $1 AND id <> $2 AND (
+			(`+siteRoleWhere()+`)
+			OR (organization_id = $3 AND project_id IS NULL)
+		)`,
+		slug, exceptID, orgID).Scan(&n)
+	return n > 0, err
+}
+
+// CountOrganizationCustomRoles returns how many org-defined roles exist.
+func CountOrganizationCustomRoles(orgID int) (int, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return 0, err
+	}
+	defer CloseDatabase(pool)
+	var n int
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM project_role_defs WHERE organization_id = $1 AND project_id IS NULL`, orgID).Scan(&n)
+	return n, err
 }
 
 // CountProjectCustomRoles returns how many project-defined roles exist.
@@ -636,8 +797,16 @@ func CountMembersWithRole(slug string, projectID int) (int, error) {
 			`SELECT COUNT(*) FROM project_members WHERE role = $1 AND project_id = $2`,
 			slug, projectID).Scan(&n)
 	} else {
-		err = pool.QueryRow(context.Background(),
-			`SELECT COUNT(*) FROM project_members WHERE role = $1`, slug).Scan(&n)
+		var members, orgMembers int
+		if err = pool.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM project_members WHERE role = $1`, slug).Scan(&members); err != nil {
+			return 0, err
+		}
+		if err = pool.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM organization_members WHERE role = $1`, slug).Scan(&orgMembers); err != nil {
+			return 0, err
+		}
+		return members + orgMembers, nil
 	}
 	return n, err
 }
@@ -678,9 +847,9 @@ func CreateProjectRoleDef(projectID *int, slug, name, description string, perms 
 
 	var d ProjectRoleDef
 	err = scanProjectRoleDef(pool.QueryRow(context.Background(), `
-		INSERT INTO project_role_defs (project_id, slug, name, description, permissions, is_system, sort_order)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, project_id, slug, name, COALESCE(description, ''), COALESCE(permissions, '{}'),
+		INSERT INTO project_role_defs (project_id, organization_id, slug, name, description, permissions, is_system, sort_order)
+		VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
+		RETURNING id, project_id, organization_id, slug, name, COALESCE(description, ''), COALESCE(permissions, '{}'),
 		          COALESCE(is_system, false), COALESCE(sort_order, 0), created_at`,
 		projectID, slug, name, description, perms, system, sortOrder), &d)
 	if err != nil {
@@ -690,6 +859,31 @@ func CreateProjectRoleDef(projectID *int, slug, name, description string, perms 
 		InvalidateSiteRoleCache()
 	}
 	return &d, nil
+}
+
+// CreateOrganizationRoleDef inserts an organization-scoped custom role.
+func CreateOrganizationRoleDef(orgID int, slug, name, description string, perms []string, sortOrder int) (*ProjectRoleDef, error) {
+	perms, err := normalizePermList(perms)
+	if err != nil {
+		return nil, err
+	}
+	if perms == nil {
+		perms = []string{}
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	var d ProjectRoleDef
+	err = scanProjectRoleDef(pool.QueryRow(context.Background(), `
+		INSERT INTO project_role_defs (project_id, organization_id, slug, name, description, permissions, is_system, sort_order)
+		VALUES (NULL, $1, $2, $3, $4, $5, FALSE, $6)
+		RETURNING id, project_id, organization_id, slug, name, COALESCE(description, ''), COALESCE(permissions, '{}'),
+		          COALESCE(is_system, false), COALESCE(sort_order, 0), created_at`,
+		orgID, slug, name, description, perms, sortOrder), &d)
+	return &d, err
 }
 
 // UpdateProjectRoleDef patches name, description, permissions, and sort order.
@@ -730,16 +924,86 @@ func UpdateProjectRoleDef(id int, name, description *string, perms *[]string, so
 		UPDATE project_role_defs
 		SET name = $2, description = $3, permissions = $4, sort_order = $5
 		WHERE id = $1
-		RETURNING id, project_id, slug, name, COALESCE(description, ''), COALESCE(permissions, '{}'),
+		RETURNING id, project_id, organization_id, slug, name, COALESCE(description, ''), COALESCE(permissions, '{}'),
 		          COALESCE(is_system, false), COALESCE(sort_order, 0), created_at`,
 		id, newName, newDesc, newPerms, newOrder), &d)
 	if err != nil {
 		return nil, err
 	}
-	if cur.ProjectID == nil {
+	if cur.ProjectID == nil && cur.OrganizationID == nil {
 		InvalidateSiteRoleCache()
 	}
 	return &d, nil
+}
+
+// ReorderProjectRoleDefs sets sort_order from the given ids in a single scope.
+// siteOnly, projectID, and orgID select the scope; exactly one should apply.
+func ReorderProjectRoleDefs(ids []int, siteOnly bool, projectID, orgID int) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("role list is empty")
+	}
+	seen := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return fmt.Errorf("invalid role id")
+		}
+		if _, ok := seen[id]; ok {
+			return fmt.Errorf("duplicate role id")
+		}
+		seen[id] = struct{}{}
+	}
+
+	var existing []ProjectRoleDef
+	var err error
+	switch {
+	case siteOnly:
+		existing, err = ListSiteProjectRoles()
+	case orgID > 0:
+		existing, err = ListOrganizationRoles(orgID)
+	case projectID > 0:
+		existing, err = ListProjectCustomRoles(projectID)
+	default:
+		return fmt.Errorf("role scope is required")
+	}
+	if err != nil {
+		return err
+	}
+	if len(ids) != len(existing) {
+		return fmt.Errorf("role list mismatch")
+	}
+	have := make(map[int]struct{}, len(existing))
+	for _, d := range existing {
+		have[d.ID] = struct{}{}
+	}
+	for _, id := range ids {
+		if _, ok := have[id]; !ok {
+			return fmt.Errorf("role %d is not in this list", id)
+		}
+	}
+
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	tx, err := pool.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	for i, id := range ids {
+		if _, err := tx.Exec(context.Background(),
+			`UPDATE project_role_defs SET sort_order = $1 WHERE id = $2`, i, id); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		return err
+	}
+	if siteOnly {
+		InvalidateSiteRoleCache()
+	}
+	return nil
 }
 
 // DeleteProjectRoleDef removes a non-system role.
@@ -764,7 +1028,7 @@ func DeleteProjectRoleDef(id int) error {
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("role not found")
 	}
-	if cur.ProjectID == nil {
+	if cur.ProjectID == nil && cur.OrganizationID == nil {
 		InvalidateSiteRoleCache()
 	}
 	return nil
@@ -938,4 +1202,47 @@ func RoleCanManageProject(projectID int, role string) bool {
 // RoleCanManage reports whether the role may change project settings and membership.
 func RoleCanManage(role string) bool {
 	return RoleCanManageProject(0, role)
+}
+
+// HasOrgPerm reports whether an organization membership role includes perm.
+func HasOrgPerm(orgID int, role, perm string) bool {
+	role = strings.TrimSpace(strings.ToLower(role))
+	perm = strings.TrimSpace(strings.ToLower(perm))
+	if role == "" || perm == "" {
+		return false
+	}
+	if role == RoleOwner {
+		return ValidProjectPerm(perm)
+	}
+	def := ResolveOrgRoleDef(orgID, role)
+	if def == nil {
+		return false
+	}
+	return permListContains(def.Permissions, perm)
+}
+
+// RoleCanManageOrganization reports whether the role may change org members and roles.
+func RoleCanManageOrganization(orgID int, role string) bool {
+	if role == RoleOwner {
+		return true
+	}
+	return HasOrgPerm(orgID, role, PermProjectManage)
+}
+
+// ValidInviteRoleForOrg reports whether an org can assign slug to a member.
+func ValidInviteRoleForOrg(orgID int, role string) bool {
+	role = strings.TrimSpace(strings.ToLower(role))
+	if role == "" || role == RoleOwner {
+		return false
+	}
+	return ResolveOrgRoleDef(orgID, role) != nil
+}
+
+// OrgRoleDisplayName returns the human label for an org membership slug.
+func OrgRoleDisplayName(orgID int, role string) string {
+	def := ResolveOrgRoleDef(orgID, role)
+	if def == nil || strings.TrimSpace(def.Name) == "" {
+		return role
+	}
+	return def.Name
 }

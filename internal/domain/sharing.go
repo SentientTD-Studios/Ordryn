@@ -37,6 +37,9 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return nil, err
+	}
 
 	user, err := storage.GetUserByUsername(name)
 	if err != nil {
@@ -96,6 +99,9 @@ func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, member
 	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
 	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return err
+	}
 	current, err := storage.GetProjectRole(projectID, memberUserID)
 	if err != nil {
 		return err
@@ -130,6 +136,12 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 	selfLeave := actorUserID == memberUserID
 	if !selfLeave && !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		if selfLeave {
+			return fmt.Errorf("%w: leave the organization to drop access to this project", ErrForbidden)
+		}
+		return err
 	}
 	targetRole, err := storage.GetProjectRole(projectID, memberUserID)
 	if err != nil {

@@ -64,6 +64,9 @@ export type Project = {
   owner_email?: string
   owner_user_name?: string
   owner_user_id?: number
+  organization_id?: number | null
+  organization_name?: string
+  org_managed?: boolean
 }
 
 export type ProjectStatus = {
@@ -167,6 +170,7 @@ export type ProjectMember = {
   user_name: string
   role: string
   role_name?: string
+  inherited?: boolean
   created_at: string
 }
 
@@ -842,6 +846,7 @@ export type ProjectPermInfo = {
 export type ProjectRoleDef = {
   id: number
   project_id?: number | null
+  organization_id?: number | null
   slug: string
   name: string
   description?: string
@@ -862,6 +867,7 @@ export type ProjectRoleWrite = {
   description?: string
   permissions: string[]
   sort_order?: number
+  copy_from_id?: number
 }
 
 export type ProjectRolePatch = {
@@ -869,6 +875,30 @@ export type ProjectRolePatch = {
   description?: string
   permissions?: string[]
   sort_order?: number
+}
+
+export type Organization = {
+  id: number
+  name: string
+  description?: string
+  created_by: number
+  role?: string
+  role_name?: string
+  permissions?: string[]
+  can_manage?: boolean
+  member_count: number
+  project_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type OrganizationMember = {
+  user_id: number
+  email: string
+  user_name: string
+  role: string
+  role_name?: string
+  created_at?: string
 }
 
 export type StatusGates = {

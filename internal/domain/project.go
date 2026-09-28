@@ -25,19 +25,40 @@ const MaxBacklogDescriptionLength = storage.MaxSprintDescriptionLen
 
 // CreateProject validates and creates a project for the user.
 func CreateProject(ctx context.Context, userID int, name, description string) (*storage.Project, error) {
+	return CreateProjectForUser(ctx, userID, CreateProjectInput{Name: name, Description: description})
+}
+
+// CreateProjectInput is the create payload, including optional organization inheritance.
+type CreateProjectInput struct {
+	Name           string
+	Description    string
+	OrganizationID *int
+}
+
+// CreateProjectForUser validates and creates a project, optionally inheriting an organization.
+func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput) (*storage.Project, error) {
 	_ = ctx
-	name = strings.TrimSpace(name)
+	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, fmt.Errorf("%w: project name is required", ErrValidation)
 	}
 	if len(name) > MaxProjectNameLength {
 		return nil, fmt.Errorf("%w: project name must be %d characters or less", ErrValidation, MaxProjectNameLength)
 	}
-	description = strings.TrimSpace(description)
+	description := strings.TrimSpace(in.Description)
 	if len(description) > MaxProjectDescriptionLength {
 		return nil, fmt.Errorf("%w: project description must be %d characters or less", ErrValidation, MaxProjectDescriptionLength)
 	}
-	proj, err := storage.CreateProject(userID, name, description)
+	var orgID *int
+	if in.OrganizationID != nil && *in.OrganizationID > 0 {
+		org, err := requireOrgManage(*in.OrganizationID, userID)
+		if err != nil {
+			return nil, err
+		}
+		id := org.ID
+		orgID = &id
+	}
+	proj, err := storage.CreateProjectWithOrg(userID, name, description, orgID)
 	if err != nil {
 		return nil, err
 	}

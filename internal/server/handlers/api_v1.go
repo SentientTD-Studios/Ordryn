@@ -198,6 +198,9 @@ type apiProjectJSON struct {
 	OwnerEmail               string   `json:"owner_email,omitempty"`
 	OwnerUserName            string   `json:"owner_user_name,omitempty"`
 	OwnerUserID              int      `json:"owner_user_id,omitempty"`
+	OrganizationID           *int     `json:"organization_id,omitempty"`
+	OrganizationName         string   `json:"organization_name,omitempty"`
+	OrgManaged               bool     `json:"org_managed"`
 }
 
 type apiTagCreateRequest struct {
@@ -211,8 +214,9 @@ type apiTagPatchRequest struct {
 }
 
 type apiProjectCreateRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	OrganizationID *int   `json:"organization_id"`
 }
 
 type apiProjectPatchRequest struct {
@@ -1117,10 +1121,22 @@ func apiV1CreateProject(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	project, err := domain.CreateProject(r.Context(), userID, req.Name, req.Description)
+	project, err := domain.CreateProjectForUser(r.Context(), userID, domain.CreateProjectInput{
+		Name:           req.Name,
+		Description:    req.Description,
+		OrganizationID: req.OrganizationID,
+	})
 	if err != nil {
 		if errors.Is(err, domain.ErrValidation) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrForbidden) {
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "You cannot create a project in that organization.")
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Organization not found.")
 			return
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to create project.")

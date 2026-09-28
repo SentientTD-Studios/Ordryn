@@ -53,6 +53,7 @@ onUnmounted(() => {
                             <li class="list-inline-item"><a href="#tasks">Tasks</a></li>
                             <li class="list-inline-item"><a href="#saved-views">Saved views</a></li>
                             <li class="list-inline-item"><a href="#projects">Projects</a></li>
+                            <li class="list-inline-item"><a href="#organizations">Organizations</a></li>
                             <li class="list-inline-item"><a href="#tags">Tags</a></li>
                             <li class="list-inline-item"><a href="#images">Images</a></li>
                         </ul>
@@ -108,6 +109,7 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Replace or update a saved view</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Delete a saved view</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/project-roles</code></a></td><td>Site project-role catalog</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#organizations"><code>/api/v2/organizations</code></a></td><td>List / create organizations</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/roles</code></a></td><td>Assignable roles for a project</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span> <span class="badge bg-warning text-dark">PATCH</span> <span class="badge bg-danger">DELETE</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/roles</code></a></td><td>Project custom roles</td></tr>
                             <tr><td><span class="badge bg-info text-dark">PUT</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/statuses/{statusId}/gates</code></a></td><td>Status enter/leave role gates</td></tr>

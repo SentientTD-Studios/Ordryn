@@ -41,6 +41,9 @@ type ProjectWithAccess struct {
 	OwnerEmail               string
 	OwnerUserName            string
 	OwnerUserID              int
+	OrganizationID           *int
+	OrgManaged               bool
+	OrganizationName         string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }
@@ -51,6 +54,7 @@ type ProjectMember struct {
 	Email     string
 	UserName  string
 	Role      string
+	Inherited bool
 	CreatedAt time.Time
 }
 
@@ -282,49 +286,63 @@ func GetProjectRole(projectID, userID int) (string, error) {
 	}
 	defer CloseDatabase(pool)
 
-	var role string
-	err = pool.QueryRow(context.Background(),
-		`SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
-		projectID, userID).Scan(&role)
+	var role sql.NullString
+	err = pool.QueryRow(context.Background(), `
+		SELECT COALESCE(
+			(SELECT pm.role FROM project_members pm WHERE pm.project_id = $1 AND pm.user_id = $2),
+			CASE WHEN (SELECT user_id FROM projects WHERE id = $1) = $2 THEN 'owner' END,
+			(SELECT om.role
+			 FROM projects p
+			 JOIN organization_members om ON om.organization_id = p.organization_id AND om.user_id = $2
+			 WHERE p.id = $1 AND COALESCE(p.org_managed, false) AND p.organization_id IS NOT NULL)
+		)`, projectID, userID).Scan(&role)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-			// Fallback: project owner column (pre-migration or missing member row).
-			var ownerID int
-			err2 := pool.QueryRow(context.Background(),
-				`SELECT user_id FROM projects WHERE id = $1`, projectID).Scan(&ownerID)
-			if err2 != nil {
-				if errors.Is(err2, pgx.ErrNoRows) || errors.Is(err2, sql.ErrNoRows) {
-					return "", nil
-				}
-				return "", err2
-			}
-			if ownerID == userID {
-				_ = EnsureProjectOwnerMember(projectID, userID)
-				return RoleOwner, nil
-			}
 			return "", nil
 		}
 		return "", err
 	}
-	return role, nil
+	if !role.Valid || role.String == "" {
+		return "", nil
+	}
+	if role.String == RoleOwner {
+		var ownerID int
+		err = pool.QueryRow(context.Background(),
+			`SELECT user_id FROM projects WHERE id = $1`, projectID).Scan(&ownerID)
+		if err == nil && ownerID == userID {
+			_ = EnsureProjectOwnerMember(projectID, userID)
+		}
+	}
+	return role.String, nil
 }
 
 const projectAccessSelectCols = `p.id, p.user_id, p.name, COALESCE(p.description, ''), COALESCE(p.workflow_mode, 'classic'),
 		       COALESCE(p.position, 0), COALESCE(p.archived, false), COALESCE(p.backlog_name, 'Backlog'),
 		       COALESCE(p.backlog_description, ''), COALESCE(p.auto_create_next_sprint, false),
-		       p.auto_sprint_length_days, p.auto_sprint_lock_days_before, p.created_at, p.updated_at`
+		       p.auto_sprint_length_days, p.auto_sprint_lock_days_before, p.created_at, p.updated_at,
+		       p.organization_id, COALESCE(p.org_managed, false), COALESCE(o.name, '')`
 
 func scanProjectWithAccess(row interface{ Scan(dest ...any) error }, p *ProjectWithAccess) error {
 	var length, lock sql.NullInt32
+	var orgID sql.NullInt64
 	if err := row.Scan(
 		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position,
 		&p.Archived, &p.BacklogName, &p.BacklogDescription, &p.AutoCreateNextSprint, &length, &lock,
-		&p.CreatedAt, &p.UpdatedAt, &p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID,
+		&p.CreatedAt, &p.UpdatedAt, &orgID, &p.OrgManaged, &p.OrganizationName,
+		&p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID,
 	); err != nil {
 		return err
 	}
 	p.AutoSprintLengthDays = nullIntPtr(length)
 	p.AutoSprintLockDaysBefore = nullIntPtr(lock)
+	if orgID.Valid {
+		id := int(orgID.Int64)
+		p.OrganizationID = &id
+	}
+	if p.OrganizationID == nil {
+		p.OrgManaged = false
+		p.OrganizationName = ""
+	}
 	return nil
 }
 
@@ -338,12 +356,15 @@ func GetAccessibleProjects(userID int) ([]ProjectWithAccess, error) {
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT `+projectAccessSelectCols+`,
-		       COALESCE(pm.role, CASE WHEN p.user_id = $1 THEN 'owner' END),
+		       COALESCE(pm.role, CASE WHEN p.user_id = $1 THEN 'owner' END, om.role),
 		       u.email, COALESCE(u.user_name, ''), p.user_id
 		FROM projects p
 		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
+		LEFT JOIN organization_members om ON COALESCE(p.org_managed, false) AND p.organization_id IS NOT NULL
+			AND om.organization_id = p.organization_id AND om.user_id = $1
+		LEFT JOIN organizations o ON o.id = p.organization_id
 		JOIN users u ON u.id = p.user_id
-		WHERE p.user_id = $1 OR pm.user_id = $1
+		WHERE p.user_id = $1 OR pm.user_id = $1 OR om.user_id = $1
 		ORDER BY
 		  CASE WHEN COALESCE(p.archived, false) THEN 1 ELSE 0 END,
 		  CASE WHEN p.user_id = $1 THEN 0 ELSE 1 END,
@@ -377,12 +398,15 @@ func GetAccessibleProjectByID(projectID, userID int) (*ProjectWithAccess, error)
 	var p ProjectWithAccess
 	err = scanProjectWithAccess(pool.QueryRow(context.Background(), `
 		SELECT `+projectAccessSelectCols+`,
-		       COALESCE(pm.role, CASE WHEN p.user_id = $2 THEN 'owner' END),
+		       COALESCE(pm.role, CASE WHEN p.user_id = $2 THEN 'owner' END, om.role),
 		       u.email, COALESCE(u.user_name, ''), p.user_id
 		FROM projects p
 		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
+		LEFT JOIN organization_members om ON COALESCE(p.org_managed, false) AND p.organization_id IS NOT NULL
+			AND om.organization_id = p.organization_id AND om.user_id = $2
+		LEFT JOIN organizations o ON o.id = p.organization_id
 		JOIN users u ON u.id = p.user_id
-		WHERE p.id = $1 AND (p.user_id = $2 OR pm.user_id = $2)`,
+		WHERE p.id = $1 AND (p.user_id = $2 OR pm.user_id = $2 OR om.user_id = $2)`,
 		projectID, userID), &p)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
@@ -402,11 +426,24 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, pm.created_at
-		FROM project_members pm
-		JOIN users u ON u.id = pm.user_id
-		WHERE pm.project_id = $1
-		ORDER BY CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, u.email`,
+		SELECT user_id, email, user_name, role, inherited, created_at FROM (
+			SELECT pm.user_id, u.email, COALESCE(u.user_name, '') AS user_name, pm.role, FALSE AS inherited, pm.created_at,
+			       0 AS src
+			FROM project_members pm
+			JOIN users u ON u.id = pm.user_id
+			WHERE pm.project_id = $1
+			UNION ALL
+			SELECT om.user_id, u.email, COALESCE(u.user_name, ''), om.role, TRUE, om.created_at, 1
+			FROM projects p
+			JOIN organization_members om ON om.organization_id = p.organization_id
+			JOIN users u ON u.id = om.user_id
+			WHERE p.id = $1 AND COALESCE(p.org_managed, false) AND p.organization_id IS NOT NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM project_members pm2
+				WHERE pm2.project_id = p.id AND pm2.user_id = om.user_id
+			  )
+		) members
+		ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, src, email`,
 		projectID)
 	if err != nil {
 		return nil, err
@@ -416,7 +453,7 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	var out []ProjectMember
 	for rows.Next() {
 		var m ProjectMember
-		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.Inherited, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -948,14 +985,23 @@ func taskVisibleCondition(alias, userParam string, writeRolesOnly bool) string {
 		prefix = alias + "."
 	}
 	memberRoleFilter := ""
+	orgRoleFilter := ""
 	if writeRolesOnly {
 		memberRoleFilter = " AND pm.role <> 'viewer'"
+		orgRoleFilter = " AND om.role <> 'viewer'"
 	}
 	return fmt.Sprintf(`(%suser_id = %s OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM project_members pm WHERE pm.project_id = %sproject_id AND pm.user_id = %s%s
 	)) OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM projects p_own WHERE p_own.id = %sproject_id AND p_own.user_id = %s
-	)))`, prefix, userParam, prefix, prefix, userParam, memberRoleFilter, prefix, prefix, userParam)
+	)) OR (%sproject_id IS NOT NULL AND EXISTS (
+		SELECT 1 FROM projects p_org
+		JOIN organization_members om ON om.organization_id = p_org.organization_id
+		WHERE p_org.id = %sproject_id
+		  AND COALESCE(p_org.org_managed, false)
+		  AND p_org.organization_id IS NOT NULL
+		  AND om.user_id = %s%s
+	)))`, prefix, userParam, prefix, prefix, userParam, memberRoleFilter, prefix, prefix, userParam, prefix, prefix, userParam, orgRoleFilter)
 }
 
 // CanUserAccessTask reports whether userID can read the task and their effective write role.

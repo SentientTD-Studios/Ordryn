@@ -19,6 +19,7 @@ type apiProjectMemberJSON struct {
 	UserName  string `json:"user_name"`
 	Role      string `json:"role"`
 	RoleName  string `json:"role_name,omitempty"`
+	Inherited bool   `json:"inherited,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -222,6 +223,7 @@ func apiV1ProjectMembers(w http.ResponseWriter, r *http.Request, projectID int, 
 				UserName:  m.UserName,
 				Role:      m.Role,
 				RoleName:  storage.RoleDisplayName(projectID, m.Role),
+				Inherited: m.Inherited,
 				CreatedAt: formatRFC3339(m.CreatedAt),
 			})
 		}
@@ -720,13 +722,17 @@ func writeSharingDomainError(w http.ResponseWriter, err error) {
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", sharingClientMessage(err, "Not found."))
 		return
 	}
+	if errors.Is(err, domain.ErrConflict) {
+		utils.APIJSONError(w, http.StatusConflict, "conflict", sharingClientMessage(err, "Conflict."))
+		return
+	}
 	utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
 }
 
 // sharingClientMessage returns the detail after the sentinel prefix, or fallback.
 func sharingClientMessage(err error, fallback string) string {
 	msg := err.Error()
-	for _, prefix := range []string{"validation: ", "not found: ", "forbidden: "} {
+	for _, prefix := range []string{"validation: ", "not found: ", "forbidden: ", "conflict: "} {
 		if strings.HasPrefix(msg, prefix) {
 			return strings.TrimPrefix(msg, prefix)
 		}

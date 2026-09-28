@@ -142,6 +142,9 @@ func projectToAPIJSON(p *storage.ProjectWithAccess) apiProjectJSON {
 		OwnerEmail:               p.OwnerEmail,
 		OwnerUserName:            p.OwnerUserName,
 		OwnerUserID:              p.OwnerUserID,
+		OrganizationID:           p.OrganizationID,
+		OrganizationName:         p.OrganizationName,
+		OrgManaged:               p.OrgManaged,
 	}
 }
 
@@ -169,6 +172,9 @@ func projectStorageToAPIJSON(p *storage.Project, role string) apiProjectJSON {
 		RoleName:                 storage.RoleDisplayName(p.ID, role),
 		Permissions:              storage.RolePermissionList(p.ID, role),
 		OwnerUserID:              p.UserID,
+		OrganizationID:           p.OrganizationID,
+		OrganizationName:         "",
+		OrgManaged:               p.OrgManaged,
 	}
 }
 

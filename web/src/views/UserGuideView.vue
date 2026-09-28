@@ -83,7 +83,10 @@ onUnmounted(() => {
           <li>
             Manage projects from
             <RouterLink to="/projects">Projects</RouterLink>
-            — create, rename, share, invite collaborators, and archive. Archived projects move
+            — create, rename, share, invite collaborators, and archive. Group people in
+            <RouterLink to="/organizations">Organizations</RouterLink>
+            and import those members when you create a project; org permission changes apply to every
+            org-based board, and those projects cannot edit membership themselves. Archived projects move
             into an Archived section so they do not clutter the main list, are tagged archived
             automatically, and cannot accept new tasks until the owner restores them. Kanban projects can name sprints
             with optional descriptions, date ranges, and a lock date on the Sprints tab
@@ -110,8 +113,10 @@ onUnmounted(() => {
           Developer and QA) with a catalog of permissions: create, edit, delete, archive, restore,
           complete, claim, reorder, change status, assign sprints, manage tags, log time, configure
           extensions, moderate comments, and manage the project. Site admins maintain those templates
-          under Admin → Roles. Project owners can also create extra roles for that board only, picking
-          from the same catalog.
+          under Admin → Roles. Copy a role to start from an existing permission set, and drag to
+          reorder the list. Organizations can define extra roles that org-based projects inherit.
+          Independent projects may still create extra roles for that board only, picking from the
+          same catalog.
         </p>
         <ul>
           <li>

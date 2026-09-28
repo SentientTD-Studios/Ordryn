@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,15 +20,16 @@ type apiProjectPermJSON struct {
 }
 
 type apiProjectRoleDefJSON struct {
-	ID          int      `json:"id"`
-	ProjectID   *int     `json:"project_id,omitempty"`
-	Slug        string   `json:"slug"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Permissions []string `json:"permissions"`
-	IsSystem    bool     `json:"is_system"`
-	SortOrder   int      `json:"sort_order"`
-	CreatedAt   string   `json:"created_at"`
+	ID             int      `json:"id"`
+	ProjectID      *int     `json:"project_id,omitempty"`
+	OrganizationID *int     `json:"organization_id,omitempty"`
+	Slug           string   `json:"slug"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
+	Permissions    []string `json:"permissions"`
+	IsSystem       bool     `json:"is_system"`
+	SortOrder      int      `json:"sort_order"`
+	CreatedAt      string   `json:"created_at"`
 }
 
 type apiProjectRolesListJSON struct {
@@ -41,6 +43,11 @@ type apiProjectRoleWriteRequest struct {
 	Description string   `json:"description"`
 	Permissions []string `json:"permissions"`
 	SortOrder   *int     `json:"sort_order"`
+	CopyFromID  *int     `json:"copy_from_id"`
+}
+
+type apiRoleReorderRequest struct {
+	RoleIDs []int `json:"role_ids"`
 }
 
 type apiProjectRolePatchRequest struct {
@@ -75,15 +82,16 @@ func roleDefToJSON(d storage.ProjectRoleDef) apiProjectRoleDefJSON {
 		perms = []string{}
 	}
 	return apiProjectRoleDefJSON{
-		ID:          d.ID,
-		ProjectID:   d.ProjectID,
-		Slug:        d.Slug,
-		Name:        d.Name,
-		Description: d.Description,
-		Permissions: perms,
-		IsSystem:    d.IsSystem,
-		SortOrder:   d.SortOrder,
-		CreatedAt:   formatRFC3339(d.CreatedAt),
+		ID:             d.ID,
+		ProjectID:      d.ProjectID,
+		OrganizationID: d.OrganizationID,
+		Slug:           d.Slug,
+		Name:           d.Name,
+		Description:    d.Description,
+		Permissions:    perms,
+		IsSystem:       d.IsSystem,
+		SortOrder:      d.SortOrder,
+		CreatedAt:      formatRFC3339(d.CreatedAt),
 	}
 }
 
@@ -96,7 +104,18 @@ func roleDefsToJSON(list []storage.ProjectRoleDef) []apiProjectRoleDefJSON {
 }
 
 func writeProjectRoleDomainError(w http.ResponseWriter, err error) {
+	if errors.Is(err, domain.ErrConflict) {
+		utils.APIJSONError(w, http.StatusConflict, "conflict", sharingClientMessage(err, "Conflict."))
+		return
+	}
 	writeSharingDomainError(w, err)
+}
+
+func copyFromID(v *int) int {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func sortOrderValue(v *int) int {
@@ -162,6 +181,7 @@ func APIV1AdminProjectRolesRouter(w http.ResponseWriter, r *http.Request) {
 				Description: req.Description,
 				Permissions: req.Permissions,
 				SortOrder:   sortOrderValue(req.SortOrder),
+				CopyFromID:  copyFromID(req.CopyFromID),
 			})
 			if err != nil {
 				writeProjectRoleDomainError(w, err)
@@ -173,6 +193,24 @@ func APIV1AdminProjectRolesRouter(w http.ResponseWriter, r *http.Request) {
 		default:
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		}
+		return
+	}
+	if sub == "reorder" {
+		if r.Method != http.MethodPost {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		var req apiRoleReorderRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+			return
+		}
+		if err := domain.ReorderSiteProjectRolesForAdmin(r.Context(), userID, req.RoleIDs); err != nil {
+			writeProjectRoleDomainError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(apiReorderOKResponse{OK: true})
 		return
 	}
 	roleID, err := strconv.Atoi(sub)
@@ -241,6 +279,7 @@ func handleProjectRolesResource(w http.ResponseWriter, r *http.Request, projectI
 				Description: req.Description,
 				Permissions: req.Permissions,
 				SortOrder:   sortOrderValue(req.SortOrder),
+				CopyFromID:  copyFromID(req.CopyFromID),
 			})
 			if err != nil {
 				writeProjectRoleDomainError(w, err)
@@ -252,6 +291,24 @@ func handleProjectRolesResource(w http.ResponseWriter, r *http.Request, projectI
 		default:
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		}
+		return
+	}
+	if len(rest) == 1 && rest[0] == "reorder" {
+		if r.Method != http.MethodPost {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		var req apiRoleReorderRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+			return
+		}
+		if err := domain.ReorderProjectCustomRolesForUser(r.Context(), userID, projectID, req.RoleIDs); err != nil {
+			writeProjectRoleDomainError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(apiReorderOKResponse{OK: true})
 		return
 	}
 	if len(rest) != 1 {

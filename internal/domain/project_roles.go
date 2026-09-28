@@ -207,6 +207,7 @@ type CreateSiteProjectRoleInput struct {
 	Description string
 	Permissions []string
 	SortOrder   int
+	CopyFromID  int
 }
 
 // CreateSiteProjectRoleForAdmin adds a site-level assignable role.
@@ -214,6 +215,9 @@ func CreateSiteProjectRoleForAdmin(ctx context.Context, userID int, in CreateSit
 	_ = ctx
 	if !storage.UserHasPermission(userID, "admin") {
 		return nil, ErrForbidden
+	}
+	if err := applyRoleCopy(&in, isSiteRoleDef); err != nil {
+		return nil, err
 	}
 	slug, err := normalizeRoleSlug(in.Slug)
 	if err != nil {
@@ -252,7 +256,7 @@ func UpdateSiteProjectRoleForAdmin(ctx context.Context, userID, roleID int, in U
 		return nil, ErrForbidden
 	}
 	cur, err := storage.GetProjectRoleDef(roleID)
-	if err != nil || cur == nil || cur.ProjectID != nil {
+	if err != nil || cur == nil || cur.ProjectID != nil || cur.OrganizationID != nil {
 		return nil, ErrNotFound
 	}
 	if in.Name != nil {
@@ -290,7 +294,7 @@ func DeleteSiteProjectRoleForAdmin(ctx context.Context, userID, roleID int) erro
 		return ErrForbidden
 	}
 	cur, err := storage.GetProjectRoleDef(roleID)
-	if err != nil || cur == nil || cur.ProjectID != nil {
+	if err != nil || cur == nil || cur.ProjectID != nil || cur.OrganizationID != nil {
 		return ErrNotFound
 	}
 	if cur.IsSystem {
@@ -300,11 +304,15 @@ func DeleteSiteProjectRoleForAdmin(ctx context.Context, userID, roleID int) erro
 	if err != nil {
 		return err
 	}
+	orgMembers, err := storage.CountOrgMembersWithRole(cur.Slug, 0)
+	if err != nil {
+		return err
+	}
 	invites, err := storage.CountInvitesWithRole(cur.Slug, 0)
 	if err != nil {
 		return err
 	}
-	if members > 0 || invites > 0 {
+	if members > 0 || invites > 0 || orgMembers > 0 {
 		return fmt.Errorf("%w: role is still assigned to members or pending invites", ErrConflict)
 	}
 	return storage.DeleteProjectRoleDef(roleID)
@@ -330,6 +338,24 @@ func ListProjectRolesForUser(ctx context.Context, userID, projectID int) ([]stor
 func CreateProjectCustomRoleForUser(ctx context.Context, userID, projectID int, in CreateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
 	_ = ctx
 	if _, err := requireProjectManage(projectID, userID); err != nil {
+		return nil, err
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return nil, err
+	}
+	if err := applyRoleCopy(&in, func(src *storage.ProjectRoleDef) bool {
+		if isSiteRoleDef(src) {
+			return true
+		}
+		if src.ProjectID != nil && *src.ProjectID == projectID {
+			return true
+		}
+		bind, err := storage.GetProjectOrgBinding(projectID)
+		if err != nil || bind == nil || bind.OrganizationID == nil {
+			return false
+		}
+		return src.OrganizationID != nil && *src.OrganizationID == *bind.OrganizationID && src.ProjectID == nil
+	}); err != nil {
 		return nil, err
 	}
 	slug, err := normalizeRoleSlug(in.Slug)
@@ -368,6 +394,9 @@ func UpdateProjectCustomRoleForUser(ctx context.Context, userID, projectID, role
 	if _, err := requireProjectManage(projectID, userID); err != nil {
 		return nil, err
 	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return nil, err
+	}
 	cur, err := storage.GetProjectRoleDef(roleID)
 	if err != nil || cur == nil || cur.ProjectID == nil || *cur.ProjectID != projectID {
 		return nil, ErrNotFound
@@ -400,6 +429,9 @@ func UpdateProjectCustomRoleForUser(ctx context.Context, userID, projectID, role
 func DeleteProjectCustomRoleForUser(ctx context.Context, userID, projectID, roleID int) error {
 	_ = ctx
 	if _, err := requireProjectManage(projectID, userID); err != nil {
+		return err
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
 		return err
 	}
 	cur, err := storage.GetProjectRoleDef(roleID)

@@ -215,8 +215,20 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateProjectWorkflowTables failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateOrganizationTables(); err != nil {
+		fmt.Printf("migration: CreateOrganizationTables failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateProjectsAddOrganization(); err != nil {
+		fmt.Printf("migration: MigrateProjectsAddOrganization failed: %v\n", err)
+		errCount++
+	}
 	if err := CreateProjectRoleTables(); err != nil {
 		fmt.Printf("migration: CreateProjectRoleTables failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateProjectRoleDefsAddOrganizationID(); err != nil {
+		fmt.Printf("migration: MigrateProjectRoleDefsAddOrganizationID failed: %v\n", err)
 		errCount++
 	}
 	if err := SeedDefaultProjectRoles(); err != nil {

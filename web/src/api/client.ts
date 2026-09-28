@@ -39,6 +39,8 @@ import type {
   ProjectRoleDef,
   ProjectRoleWrite,
   ProjectRolePatch,
+  Organization,
+  OrganizationMember,
   StatusGates,
   SavedView,
   SavedViewFilter,
@@ -577,10 +579,14 @@ export const api = {
     return request<Project[]>('/api/v2/projects')
   },
 
-  createProject(name: string, description = '') {
+  createProject(name: string, description = '', organizationId?: number | null) {
     return request<Project>('/api/v2/projects', {
       method: 'POST',
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({
+        name,
+        description,
+        ...(organizationId ? { organization_id: organizationId } : {}),
+      }),
     })
   },
 
@@ -700,6 +706,13 @@ export const api = {
     return request<void>(`/api/v2/projects/${projectId}/roles/${roleId}`, { method: 'DELETE' })
   },
 
+  reorderProjectRoles(projectId: number, roleIds: number[]) {
+    return request<{ ok: boolean }>(`/api/v2/projects/${projectId}/roles/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ role_ids: roleIds }),
+    })
+  },
+
   listAdminProjectRoles() {
     return request<ProjectRolesList>('/api/v2/admin/project-roles')
   },
@@ -720,6 +733,90 @@ export const api = {
 
   deleteAdminProjectRole(roleId: number) {
     return request<void>(`/api/v2/admin/project-roles/${roleId}`, { method: 'DELETE' })
+  },
+
+  reorderAdminProjectRoles(roleIds: number[]) {
+    return request<{ ok: boolean }>('/api/v2/admin/project-roles/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ role_ids: roleIds }),
+    })
+  },
+
+  listOrganizations() {
+    return request<Organization[]>('/api/v2/organizations')
+  },
+
+  createOrganization(name: string, description = '') {
+    return request<Organization>('/api/v2/organizations', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    })
+  },
+
+  getOrganization(id: number) {
+    return request<Organization>(`/api/v2/organizations/${id}`)
+  },
+
+  updateOrganization(id: number, payload: Partial<{ name: string; description: string }>) {
+    return request<Organization>(`/api/v2/organizations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteOrganization(id: number) {
+    return request<void>(`/api/v2/organizations/${id}`, { method: 'DELETE' })
+  },
+
+  listOrganizationMembers(orgId: number) {
+    return request<OrganizationMember[]>(`/api/v2/organizations/${orgId}/members`)
+  },
+
+  addOrganizationMember(orgId: number, username: string, role: string) {
+    return request<OrganizationMember>(`/api/v2/organizations/${orgId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ username, role }),
+    })
+  },
+
+  updateOrganizationMember(orgId: number, userId: number, role: string) {
+    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    })
+  },
+
+  removeOrganizationMember(orgId: number, userId: number) {
+    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, { method: 'DELETE' })
+  },
+
+  listOrganizationRoles(orgId: number) {
+    return request<ProjectRolesList>(`/api/v2/organizations/${orgId}/roles`)
+  },
+
+  createOrganizationRole(orgId: number, payload: ProjectRoleWrite) {
+    return request<ProjectRoleDef>(`/api/v2/organizations/${orgId}/roles`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateOrganizationRole(orgId: number, roleId: number, payload: ProjectRolePatch) {
+    return request<ProjectRoleDef>(`/api/v2/organizations/${orgId}/roles/${roleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteOrganizationRole(orgId: number, roleId: number) {
+    return request<void>(`/api/v2/organizations/${orgId}/roles/${roleId}`, { method: 'DELETE' })
+  },
+
+  reorderOrganizationRoles(orgId: number, roleIds: number[]) {
+    return request<{ ok: boolean }>(`/api/v2/organizations/${orgId}/roles/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ role_ids: roleIds }),
+    })
   },
 
   listProjectSprints(projectId: number) {

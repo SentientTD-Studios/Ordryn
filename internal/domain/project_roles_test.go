@@ -198,3 +198,126 @@ func TestProjectCustomRoleAndDiscussionLabel(t *testing.T) {
 		t.Fatalf("listed role name: %q", listed[0].AuthorRoleName)
 	}
 }
+
+func TestCopyAndReorderSiteRoles(t *testing.T) {
+	ctx := context.Background()
+	listed, err := storage.ListSiteProjectRoles()
+	if err != nil || len(listed) < 2 {
+		t.Fatalf("list site roles: %v n=%d", err, len(listed))
+	}
+	qa := listed[0]
+	for _, d := range listed {
+		if d.Slug == storage.RoleQA {
+			qa = d
+			break
+		}
+	}
+	copied, err := storage.CreateProjectRoleDef(nil, "qa-copy-test", qa.Name+" (copy)", qa.Description, qa.Permissions, false, 50)
+	if err != nil {
+		t.Fatalf("copy role: %v", err)
+	}
+	ids := []int{copied.ID}
+	for _, d := range listed {
+		ids = append(ids, d.ID)
+	}
+	if err := storage.ReorderProjectRoleDefs(ids, true, 0, 0); err != nil {
+		t.Fatalf("reorder: %v", err)
+	}
+	after, err := storage.ListSiteProjectRoles()
+	if err != nil || len(after) == 0 || after[0].ID != copied.ID {
+		t.Fatalf("reorder result first=%v err=%v", after, err)
+	}
+	if err := storage.DeleteProjectRoleDef(copied.ID); err != nil {
+		t.Fatalf("cleanup copy: %v", err)
+	}
+	_ = ctx
+}
+
+func TestOrgManagedProjectInheritsMembersAndLocksEdits(t *testing.T) {
+	ctx := context.Background()
+	setTestUsername(t, 2, "editor_user")
+	org, err := CreateOrganizationForUser(ctx, 1, "Acme Org", "team")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if _, err := AddOrganizationMemberForUser(ctx, 1, org.ID, "editor_user", storage.RoleEditor); err != nil {
+		t.Fatalf("add org member: %v", err)
+	}
+	orgRole, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
+		Slug:        "org-qa",
+		Name:        "Org QA",
+		Permissions: []string{storage.PermTasksStatus, storage.PermTasksComplete},
+	})
+	if err != nil {
+		t.Fatalf("org role: %v", err)
+	}
+	if orgRole.OrganizationID == nil || *orgRole.OrganizationID != org.ID {
+		t.Fatalf("org role scope: %+v", orgRole)
+	}
+
+	copied, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
+		Slug:       "org-qa-copy",
+		CopyFromID: orgRole.ID,
+	})
+	if err != nil {
+		t.Fatalf("copy org role: %v", err)
+	}
+	if len(copied.Permissions) != len(orgRole.Permissions) {
+		t.Fatalf("copied org perms")
+	}
+
+	proj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Org Board",
+		OrganizationID: &org.ID,
+	})
+	if err != nil {
+		t.Fatalf("create org project: %v", err)
+	}
+	if !proj.OrgManaged || proj.OrganizationID == nil || *proj.OrganizationID != org.ID {
+		t.Fatalf("project org: %+v", proj)
+	}
+
+	role, err := storage.GetProjectRole(proj.ID, 2)
+	if err != nil || role != storage.RoleEditor {
+		t.Fatalf("inherited role: %q err=%v", role, err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err != nil {
+		t.Fatalf("editor should access org project: %v", err)
+	}
+	members, err := storage.ListProjectMembers(proj.ID)
+	if err != nil {
+		t.Fatalf("list members: %v", err)
+	}
+	var sawInherited bool
+	for _, m := range members {
+		if m.UserID == 2 && m.Inherited && m.Role == storage.RoleEditor {
+			sawInherited = true
+		}
+	}
+	if !sawInherited {
+		t.Fatalf("expected inherited editor, got %+v", members)
+	}
+
+	if _, err := InviteToProject(ctx, 1, proj.ID, "viewer_user", storage.RoleViewer); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("invite on org project: err=%v", err)
+	}
+	if _, err := CreateProjectCustomRoleForUser(ctx, 1, proj.ID, CreateSiteProjectRoleInput{
+		Slug: "project-only", Name: "Nope", Permissions: []string{storage.PermTasksEdit},
+	}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("custom role on org project: err=%v", err)
+	}
+
+	pid := proj.ID
+	taskID, err := CreateTask(ctx, 2, CreateTaskInput{Title: "From org editor", ProjectID: &pid})
+	if err != nil {
+		t.Fatalf("org editor create: %v", err)
+	}
+
+	if err := storage.UpsertOrganizationMember(org.ID, 2, "org-qa"); err != nil {
+		t.Fatalf("change org role: %v", err)
+	}
+	if _, err := CreateTask(ctx, 2, CreateTaskInput{Title: "Should fail", ProjectID: &pid}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("org-qa create after trickle: err=%v want forbidden", err)
+	}
+	_ = taskID
+}

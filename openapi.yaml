@@ -31,6 +31,7 @@ tags:
   - name: Tasks
   - name: Notifications
   - name: Projects
+  - name: Organizations
   - name: Tags
   - name: Saved Views
   - name: Device Auth
@@ -1591,6 +1592,318 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectRolesList"
+
+  /api/v2/organizations:
+    get:
+      tags: [Organizations]
+      summary: List organizations the caller belongs to
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Organizations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Organization"
+    post:
+      tags: [Organizations]
+      summary: Create an organization
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationWrite"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/organizations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Organizations]
+      summary: Get one organization
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Organizations]
+      summary: Update organization name or description
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationPatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Organizations]
+      summary: Delete an organization (owner). Linked projects become independent.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organizations/{id}/members:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Organizations]
+      summary: List organization members
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrganizationMember"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Organizations]
+      summary: Add a member by username
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, role]
+              properties:
+                username:
+                  type: string
+                role:
+                  type: string
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationMember"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/organizations/{id}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+    patch:
+      tags: [Organizations]
+      summary: Change a member's organization role
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+      responses:
+        "204":
+          description: Updated
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Organizations]
+      summary: Remove a member or leave the organization
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organizations/{id}/roles:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Organizations]
+      summary: List assignable roles for an organization
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Site roles plus organization custom roles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRolesList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Organizations]
+      summary: Create an organization role, optionally copied from another role
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRoleWrite"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRoleDef"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/organizations/{id}/roles/{roleId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: roleId
+        in: path
+        required: true
+        schema:
+          type: integer
+    patch:
+      tags: [Organizations]
+      summary: Update an organization-created role
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRolePatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRoleDef"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Organizations]
+      summary: Delete an unused organization-created role
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/organizations/{id}/roles/reorder:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Organizations]
+      summary: Reorder organization custom roles
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleReorder"
+      responses:
+        "200":
+          description: Reordered
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v2/projects:
     get:
@@ -3244,6 +3557,29 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v2/projects/{id}/roles/reorder:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Projects]
+      summary: Reorder project custom roles
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleReorder"
+      responses:
+        "200":
+          description: Reordered
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/projects/{id}/invites:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -4334,6 +4670,27 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v2/admin/project-roles/reorder:
+    post:
+      tags: [Admin]
+      summary: Reorder site-level project roles
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleReorder"
+      responses:
+        "200":
+          description: Reordered
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/admin/extensions:
     get:
       tags: [Admin]
@@ -4994,6 +5351,15 @@ components:
           type: string
         owner_user_id:
           type: integer
+        organization_id:
+          type: integer
+          nullable: true
+          description: Organization this project inherits members from when org_managed is true
+        organization_name:
+          type: string
+        org_managed:
+          type: boolean
+          description: When true, members and roles are inherited from the organization and cannot be edited on the project
 
     ProjectCreate:
       type: object
@@ -5005,6 +5371,9 @@ components:
         description:
           type: string
           maxLength: 1000
+        organization_id:
+          type: integer
+          description: When set, the project inherits organization members and roles live
 
     ProjectPatch:
       type: object
@@ -5248,6 +5617,9 @@ components:
           type: string
         role_name:
           type: string
+        inherited:
+          type: boolean
+          description: True when membership comes from the parent organization
         created_at:
           type: string
           format: date-time
@@ -5331,6 +5703,9 @@ components:
         project_id:
           type: integer
           nullable: true
+        organization_id:
+          type: integer
+          nullable: true
         slug:
           type: string
         name:
@@ -5365,6 +5740,9 @@ components:
             type: string
         sort_order:
           type: integer
+        copy_from_id:
+          type: integer
+          description: Optional role id to copy permissions and description from
 
     ProjectRolePatch:
       type: object
@@ -5379,6 +5757,85 @@ components:
             type: string
         sort_order:
           type: integer
+
+    RoleReorder:
+      type: object
+      required: [role_ids]
+      properties:
+        role_ids:
+          type: array
+          items:
+            type: integer
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        created_by:
+          type: integer
+        role:
+          type: string
+        role_name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        can_manage:
+          type: boolean
+        member_count:
+          type: integer
+        project_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OrganizationWrite:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 1000
+
+    OrganizationPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 1000
+
+    OrganizationMember:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        email:
+          type: string
+        user_name:
+          type: string
+        role:
+          type: string
+        role_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
 
     StatusGatesBody:
       type: object

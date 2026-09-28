@@ -69,6 +69,7 @@
                         <div class="min-w-0 flex-grow-1">
                           <div class="d-flex align-items-center gap-1 flex-wrap">
                             <span class="project-name-display fw-semibold">{{ p.name }}</span>
+                            <span v-if="p.org_managed" class="badge text-bg-info">{{ p.organization_name || 'org' }}</span>
                             <button
                               class="btn btn-sm btn-link edit-project-btn p-0"
                               type="button"
@@ -295,6 +296,19 @@
                   <small class="text-muted">{{ description.length }}/1000</small>
                 </div>
               </div>
+              <div v-if="manageableOrgs.length" class="mb-3">
+                <label class="form-label" for="project-org">Organization</label>
+                <select id="project-org" v-model="organizationId" class="form-select">
+                  <option :value="0">None — manage members on this project</option>
+                  <option v-for="o in manageableOrgs" :key="o.id" :value="o.id">
+                    Import members from {{ o.name }}
+                  </option>
+                </select>
+                <small class="form-hint">
+                  Org-based projects inherit members and roles. Permission changes on the organization
+                  apply here, and project sharing cannot be edited separately.
+                </small>
+              </div>
               <div class="d-flex gap-2">
                 <button class="btn btn-primary" type="submit">Create</button>
                 <RouterLink class="btn btn-secondary" to="/">Cancel</RouterLink>
@@ -320,7 +334,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Project, ProjectInvite } from '@/api/types'
+import type { Organization, Project, ProjectInvite } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
@@ -334,6 +348,8 @@ const projects = ref<Project[]>([])
 const pendingInvites = ref<ProjectInvite[]>([])
 const name = ref('')
 const description = ref('')
+const organizationId = ref(0)
+const orgs = ref<Organization[]>([])
 const sharePanelId = ref<number | null>(null)
 const boardPanelId = ref<number | null>(null)
 const showEditModal = ref(false)
@@ -351,6 +367,7 @@ const sharedProjects = computed(() =>
   projects.value.filter((p) => !isProjectOwner(p) && !isArchivedProject(p)),
 )
 const archivedProjectList = computed(() => projects.value.filter(isArchivedProject))
+const manageableOrgs = computed(() => orgs.value.filter((o) => o.can_manage))
 
 function destroySortable() {
   sortable?.destroy()
@@ -412,12 +429,14 @@ watch(ownedProjects, async () => {
 
 async function load() {
   try {
-    const [p, invites] = await Promise.all([
+    const [p, invites, organizationList] = await Promise.all([
       api.listProjects(),
       api.listMyProjectInvites(),
+      api.listOrganizations().catch(() => []),
     ])
     projects.value = p
     pendingInvites.value = invites
+    orgs.value = organizationList
     if (editingProject.value) {
       const updated = p.find((x) => x.id === editingProject.value!.id)
       if (updated) editingProject.value = updated
@@ -430,9 +449,14 @@ async function load() {
 async function createProject() {
   if (!name.value.trim()) return
   try {
-    await api.createProject(name.value.trim(), description.value.trim())
+    await api.createProject(
+      name.value.trim(),
+      description.value.trim(),
+      Number(organizationId.value) || null,
+    )
     name.value = ''
     description.value = ''
+    organizationId.value = 0
     toast.push('Project created', 'success')
     await load()
   } catch (err) {

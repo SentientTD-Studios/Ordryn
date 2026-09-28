@@ -1,11 +1,17 @@
 <template>
   <div class="share-panel">
     <h4 class="h6">Members</h4>
+    <p v-if="orgManaged" class="small text-muted">
+      Members are imported from
+      <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
+      and cannot be changed on this project. Organization permission changes apply here automatically.
+    </p>
     <ul class="list-unstyled mb-3">
       <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
         <span>{{ m.user_name || m.email }}</span>
         <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
-        <template v-if="isOwner && m.role !== 'owner'">
+        <span v-if="m.inherited" class="badge text-bg-info">from org</span>
+        <template v-if="canEditMembers && m.role !== 'owner'">
           <select
             class="form-select form-select-sm w-auto"
             :value="m.role"
@@ -20,7 +26,7 @@
       </li>
     </ul>
 
-    <template v-if="isOwner">
+    <template v-if="canEditMembers">
       <h4 class="h6">Invite</h4>
       <form class="row g-2 align-items-end mb-3" @submit.prevent="sendInvite">
         <div class="col-sm-6">
@@ -125,6 +131,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
 import type { Project, ProjectEvent, ProjectInvite, ProjectMember, ProjectRoleDef, ShareLink } from '@/api/types'
 import { APIError } from '@/api/types'
@@ -147,6 +154,8 @@ const activityOpen = ref(false)
 const toast = useToast()
 const { askConfirm } = useConfirm()
 const isOwner = computed(() => canManageProject(props.project))
+const orgManaged = computed(() => !!props.project.org_managed && !!props.project.organization_id)
+const canEditMembers = computed(() => isOwner.value && !orgManaged.value)
 
 const excludeUsernames = computed(() => {
   const names: string[] = []

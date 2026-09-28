@@ -143,6 +143,8 @@ func registerAPIV1Routes() {
 	handleAPI("/notifications/", v1(handlers.APIV1NotificationsRouter))
 	handleAPI("/users/search", v1(utils.RateLimitMiddleware(20, 0.4, 60, utils.KeyByUser)(handlers.APIV1UsersSearch)))
 	handleAPI("/project-roles", v1(handlers.APIV1ProjectRolesCatalog))
+	handleAPI("/organizations", v1(handlers.APIV1OrganizationsRouter))
+	handleAPI("/organizations/", v1(handlers.APIV1OrganizationsRouter))
 	handleAPI("/projects", v1(handlers.APIV1ProjectsRouter))
 	handleAPI("/projects/", v1(handlers.APIV1ProjectsRouter))
 	handleAPI("/project-invites", v1(handlers.APIV1ProjectInvitesRouter))

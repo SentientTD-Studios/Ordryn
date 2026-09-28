@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { Project, ProjectExtension, ProjectSprint, ProjectStatus, SavedView, Tag, Task } from '@/api/types'
+import type { Organization, Project, ProjectExtension, ProjectSprint, ProjectStatus, SavedView, Tag, Task } from '@/api/types'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
@@ -72,6 +72,9 @@ const newViewName = ref('')
 const showAddProjectModal = ref(false)
 const newProjectName = ref('')
 const newProjectDescription = ref('')
+const newProjectOrgId = ref(0)
+const organizations = ref<Organization[]>([])
+const manageableOrgs = computed(() => organizations.value.filter((o) => o.can_manage))
 
 // Edit Project Modal state
 const showEditProjectModal = ref(false)
@@ -717,12 +720,14 @@ const { refresh: refreshSortable } = useTaskSortable(
 
 async function loadMeta() {
   try {
-    const [projs, views] = await Promise.all([
+    const [projs, views, orgs] = await Promise.all([
       api.listProjects(),
       api.listSavedViews(),
+      api.listOrganizations().catch(() => [] as Organization[]),
     ])
     projects.value = projs
     savedViews.value = views
+    organizations.value = orgs
     await loadTags()
     await loadProjectExtensions()
   } catch {
@@ -1197,10 +1202,15 @@ async function saveCurrentView() {
 async function createProject() {
   if (!newProjectName.value.trim()) return
   try {
-    await api.createProject(newProjectName.value.trim(), newProjectDescription.value.trim())
+    await api.createProject(
+      newProjectName.value.trim(),
+      newProjectDescription.value.trim(),
+      Number(newProjectOrgId.value) || null,
+    )
     toast.push('Project created!', 'success')
     newProjectName.value = ''
     newProjectDescription.value = ''
+    newProjectOrgId.value = 0
     showAddProjectModal.value = false
     await loadMeta()
   } catch (err) {
@@ -1988,6 +1998,15 @@ onUnmounted(() => {
                   maxlength="1000"
                   placeholder="Optional details about this project"
                 />
+              </div>
+              <div v-if="manageableOrgs.length" class="mb-3">
+                <label for="new-project-org" class="form-label small fw-bold">Organization</label>
+                <select id="new-project-org" v-model="newProjectOrgId" class="form-select">
+                  <option :value="0">None — manage members on this project</option>
+                  <option v-for="o in manageableOrgs" :key="o.id" :value="o.id">
+                    Import members from {{ o.name }}
+                  </option>
+                </select>
               </div>
             </div>
             <div class="modal-footer border-0 pt-0 justify-content-end gap-2">

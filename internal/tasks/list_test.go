@@ -52,7 +52,24 @@ func TestMain(m *testing.M) {
 			user_id INT,
 			name TEXT,
 			description TEXT NOT NULL DEFAULT '',
-			workflow_mode VARCHAR(16) NOT NULL DEFAULT 'classic'
+			workflow_mode VARCHAR(16) NOT NULL DEFAULT 'classic',
+			organization_id INTEGER,
+			org_managed BOOLEAN NOT NULL DEFAULT FALSE
+		);
+		CREATE TABLE organizations (
+			id SERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			created_by INTEGER NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE organization_members (
+			organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL,
+			role VARCHAR(40) NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (organization_id, user_id)
 		);
 		CREATE TABLE project_statuses (
 			id SERIAL PRIMARY KEY,

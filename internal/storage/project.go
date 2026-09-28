@@ -29,6 +29,8 @@ type Project struct {
 	AutoSprintLockDaysBefore *int
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
+	OrganizationID           *int
+	OrgManaged               bool
 }
 
 // ProjectPatch is a partial update for a project owned by the user.
@@ -50,7 +52,8 @@ func (p ProjectPatch) Empty() bool {
 const projectSelectCols = `id, user_id, name, COALESCE(description, ''), COALESCE(workflow_mode, 'classic'),
 		        COALESCE(position, 0), COALESCE(archived, false), COALESCE(backlog_name, 'Backlog'),
 		        COALESCE(backlog_description, ''), COALESCE(auto_create_next_sprint, false),
-		        auto_sprint_length_days, auto_sprint_lock_days_before, created_at, updated_at`
+		        auto_sprint_length_days, auto_sprint_lock_days_before, created_at, updated_at,
+		        organization_id, COALESCE(org_managed, false)`
 
 func nullIntPtr(n sql.NullInt32) *int {
 	if !n.Valid {
@@ -62,15 +65,23 @@ func nullIntPtr(n sql.NullInt32) *int {
 
 func scanProject(row interface{ Scan(dest ...any) error }, p *Project) error {
 	var length, lock sql.NullInt32
+	var orgID sql.NullInt64
 	if err := row.Scan(
 		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived,
 		&p.BacklogName, &p.BacklogDescription, &p.AutoCreateNextSprint, &length, &lock,
-		&p.CreatedAt, &p.UpdatedAt,
+		&p.CreatedAt, &p.UpdatedAt, &orgID, &p.OrgManaged,
 	); err != nil {
 		return err
 	}
 	p.AutoSprintLengthDays = nullIntPtr(length)
 	p.AutoSprintLockDaysBefore = nullIntPtr(lock)
+	if orgID.Valid {
+		id := int(orgID.Int64)
+		p.OrganizationID = &id
+	}
+	if p.OrganizationID == nil {
+		p.OrgManaged = false
+	}
 	if p.WorkflowMode == "" {
 		p.WorkflowMode = WorkflowClassic
 	}
@@ -80,21 +91,33 @@ func scanProject(row interface{ Scan(dest ...any) error }, p *Project) error {
 // CreateProject inserts a new project for the given user and returns it.
 // New projects are appended at the end of the owner's ordered list.
 func CreateProject(userID int, name, description string) (*Project, error) {
+	return CreateProjectWithOrg(userID, name, description, nil)
+}
+
+// CreateProjectWithOrg inserts a project, optionally inheriting members from an organization.
+func CreateProjectWithOrg(userID int, name, description string, organizationID *int) (*Project, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
 	}
 	defer CloseDatabase(pool)
 
+	orgManaged := organizationID != nil && *organizationID > 0
+	var orgArg any
+	if orgManaged {
+		orgArg = *organizationID
+	}
+
 	var p Project
 	if err := scanProject(pool.QueryRow(context.Background(),
-		`INSERT INTO projects (user_id, name, description, position)
+		`INSERT INTO projects (user_id, name, description, position, organization_id, org_managed)
 		 VALUES (
 		   $1, $2, $3,
-		   COALESCE((SELECT MAX(position) FROM projects WHERE user_id = $1), -1) + 1
+		   COALESCE((SELECT MAX(position) FROM projects WHERE user_id = $1), -1) + 1,
+		   $4, $5
 		 )
 		 RETURNING `+projectSelectCols,
-		userID, name, description), &p); err != nil {
+		userID, name, description, orgArg, orgManaged), &p); err != nil {
 		return nil, fmt.Errorf("failed to create project: %v", err)
 	}
 	if err := EnsureProjectOwnerMember(p.ID, userID); err != nil {

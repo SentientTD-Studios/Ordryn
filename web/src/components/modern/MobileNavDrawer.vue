@@ -171,6 +171,17 @@ watch(isAuthenticated, (ok) => {
             </li>
             <li class="sidebar-nav-item">
               <RouterLink
+                to="/organizations"
+                class="sidebar-nav-link"
+                :class="{ active: route.path === '/organizations' }"
+                @click="close"
+              >
+                <i class="bi bi-diagram-3" />
+                <span>Organizations</span>
+              </RouterLink>
+            </li>
+            <li class="sidebar-nav-item">
+              <RouterLink
                 to="/settings"
                 class="sidebar-nav-link"
                 :class="{ active: route.path === '/settings' }"
