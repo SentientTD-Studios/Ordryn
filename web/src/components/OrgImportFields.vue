@@ -6,7 +6,7 @@ import type { Organization, OrganizationMember, ProjectRoleDef } from '@/api/typ
 export type OrgImportMode = 'copy' | 'lock' | 'select'
 export type OrgImportMemberPayload = { user_id: number; role: string }
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     orgs: Organization[]
     selectId?: string
