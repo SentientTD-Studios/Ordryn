@@ -1914,7 +1914,7 @@ paths:
         - BearerAuth: []
       responses:
         "200":
-          description: Site roles plus organization custom roles
+          description: Site roles plus organization custom roles. An organization override replaces the matching site slug.
           content:
             application/json:
               schema:
@@ -1957,7 +1957,7 @@ paths:
           type: integer
     patch:
       tags: [Organizations]
-      summary: Update an organization-created role
+      summary: Update an organization role or customize a site default
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1969,7 +1969,7 @@ paths:
               $ref: "#/components/schemas/ProjectRolePatch"
       responses:
         "200":
-          description: Updated
+          description: Updated organization role, or a new organization override when roleId is a site default (except owner)
           content:
             application/json:
               schema:
@@ -1982,13 +1982,13 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       tags: [Organizations]
-      summary: Delete an unused organization-created role
+      summary: Delete an unused organization role, or reset a site-role override
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
         "204":
-          description: Deleted
+          description: Deleted, or site-role override reset (members may still use the slug)
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -5905,6 +5905,9 @@ components:
         created_at:
           type: string
           format: date-time
+        overrides_site:
+          type: boolean
+          description: True when an organization role replaces a site template with the same slug
 
     ProjectRoleWrite:
       type: object

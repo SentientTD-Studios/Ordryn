@@ -30,6 +30,7 @@ type apiProjectRoleDefJSON struct {
 	IsSystem       bool     `json:"is_system"`
 	SortOrder      int      `json:"sort_order"`
 	CreatedAt      string   `json:"created_at"`
+	OverridesSite  bool     `json:"overrides_site,omitempty"`
 }
 
 type apiProjectRolesListJSON struct {
@@ -92,6 +93,7 @@ func roleDefToJSON(d storage.ProjectRoleDef) apiProjectRoleDefJSON {
 		IsSystem:       d.IsSystem,
 		SortOrder:      d.SortOrder,
 		CreatedAt:      formatRFC3339(d.CreatedAt),
+		OverridesSite:  d.OverridesSite,
 	}
 }
 

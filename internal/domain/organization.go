@@ -423,9 +423,20 @@ func ListOrganizationRolesForUser(ctx context.Context, userID, orgID int) ([]sto
 	if err != nil {
 		return nil, nil, err
 	}
+	siteSlugs := make(map[string]bool, len(site))
+	for _, d := range site {
+		siteSlugs[d.Slug] = true
+	}
+	overridden := make(map[string]bool, len(custom))
+	for i := range custom {
+		if siteSlugs[custom[i].Slug] {
+			custom[i].OverridesSite = true
+			overridden[custom[i].Slug] = true
+		}
+	}
 	out := make([]storage.ProjectRoleDef, 0, len(site)+len(custom))
 	for _, d := range site {
-		if d.Slug == storage.RoleOwner {
+		if d.Slug == storage.RoleOwner || overridden[d.Slug] {
 			continue
 		}
 		out = append(out, d)
@@ -502,7 +513,10 @@ func CreateOrganizationRoleForUser(ctx context.Context, userID, orgID int, in Cr
 		return nil, err
 	}
 	if taken {
-		return nil, fmt.Errorf("%w: role slug already exists on this site or organization", ErrConflict)
+		return nil, fmt.Errorf("%w: role slug already exists on this organization", ErrConflict)
+	}
+	if slug == storage.RoleOwner {
+		return nil, fmt.Errorf("%w: cannot override the owner role", ErrValidation)
 	}
 	created, err := storage.CreateOrganizationRoleDef(orgID, slug, name, desc, in.Permissions, in.SortOrder)
 	if err != nil {
@@ -511,32 +525,32 @@ func CreateOrganizationRoleForUser(ctx context.Context, userID, orgID int, in Cr
 		}
 		return nil, err
 	}
+	markOrgRoleSiteOverride(created)
 	return created, nil
 }
 
-// UpdateOrganizationRoleForUser patches an org-created role.
+// UpdateOrganizationRoleForUser patches an org-created role, or creates an org
+// override when roleID is a site default (except owner).
 func UpdateOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID int, in UpdateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
 	_ = ctx
 	if _, err := requireOrgManage(orgID, userID); err != nil {
 		return nil, err
 	}
 	cur, err := storage.GetProjectRoleDef(roleID)
-	if err != nil || cur == nil || cur.OrganizationID == nil || *cur.OrganizationID != orgID || cur.ProjectID != nil {
+	if err != nil || cur == nil || cur.ProjectID != nil {
 		return nil, ErrNotFound
 	}
-	if in.Name != nil {
-		name, err := normalizeRoleName(*in.Name)
-		if err != nil {
-			return nil, err
-		}
-		in.Name = &name
+	if cur.Slug == storage.RoleOwner {
+		return nil, fmt.Errorf("%w: cannot change owner role", ErrValidation)
 	}
-	if in.Description != nil {
-		desc, err := normalizeRoleDescription(*in.Description)
-		if err != nil {
-			return nil, err
-		}
-		in.Description = &desc
+	if isSiteRoleDef(cur) {
+		return upsertOrganizationRoleOverride(orgID, cur, in)
+	}
+	if cur.OrganizationID == nil || *cur.OrganizationID != orgID {
+		return nil, ErrNotFound
+	}
+	if err := normalizeRolePatch(&in); err != nil {
+		return nil, err
 	}
 	updated, err := storage.UpdateProjectRoleDef(roleID, in.Name, in.Description, in.Permissions, in.SortOrder)
 	if err != nil {
@@ -545,7 +559,85 @@ func UpdateOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID in
 		}
 		return nil, err
 	}
+	markOrgRoleSiteOverride(updated)
 	return updated, nil
+}
+
+func normalizeRolePatch(in *UpdateSiteProjectRoleInput) error {
+	if in.Name != nil {
+		name, err := normalizeRoleName(*in.Name)
+		if err != nil {
+			return err
+		}
+		in.Name = &name
+	}
+	if in.Description != nil {
+		desc, err := normalizeRoleDescription(*in.Description)
+		if err != nil {
+			return err
+		}
+		in.Description = &desc
+	}
+	return nil
+}
+
+func upsertOrganizationRoleOverride(orgID int, src *storage.ProjectRoleDef, in UpdateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
+	if err := normalizeRolePatch(&in); err != nil {
+		return nil, err
+	}
+	existing, err := storage.GetOrganizationRoleBySlug(orgID, src.Slug)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		updated, err := storage.UpdateProjectRoleDef(existing.ID, in.Name, in.Description, in.Permissions, in.SortOrder)
+		if err != nil {
+			if strings.Contains(err.Error(), "unknown permission") {
+				return nil, fmt.Errorf("%w: %s", ErrValidation, err.Error())
+			}
+			return nil, err
+		}
+		markOrgRoleSiteOverride(updated)
+		return updated, nil
+	}
+	n, err := storage.CountOrganizationCustomRoles(orgID)
+	if err != nil {
+		return nil, err
+	}
+	if n >= storage.MaxOrganizationCustomRoles {
+		return nil, fmt.Errorf("%w: at most %d custom roles per organization", ErrValidation, storage.MaxOrganizationCustomRoles)
+	}
+	name := src.Name
+	if in.Name != nil {
+		name = *in.Name
+	}
+	desc := src.Description
+	if in.Description != nil {
+		desc = *in.Description
+	}
+	perms := src.Permissions
+	if in.Permissions != nil {
+		perms = *in.Permissions
+	}
+	created, err := storage.CreateOrganizationRoleDef(orgID, src.Slug, name, desc, perms, src.SortOrder)
+	if err != nil {
+		if strings.Contains(err.Error(), "unknown permission") {
+			return nil, fmt.Errorf("%w: %s", ErrValidation, err.Error())
+		}
+		return nil, err
+	}
+	markOrgRoleSiteOverride(created)
+	return created, nil
+}
+
+func markOrgRoleSiteOverride(d *storage.ProjectRoleDef) {
+	if d == nil || d.OrganizationID == nil {
+		return
+	}
+	ok, err := storage.SiteRoleSlugExists(d.Slug)
+	if err == nil && ok {
+		d.OverridesSite = true
+	}
 }
 
 // DeleteOrganizationRoleForUser removes an unused org-created role.
@@ -562,15 +654,21 @@ func DeleteOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID in
 	if err != nil {
 		return err
 	}
-	if members > 0 {
-		return fmt.Errorf("%w: role is still assigned to members", ErrConflict)
-	}
-	invites, err := storage.CountOrganizationInvitesWithRole(cur.Slug, orgID)
+	siteSlug, err := storage.SiteRoleSlugExists(cur.Slug)
 	if err != nil {
 		return err
 	}
-	if invites > 0 {
-		return fmt.Errorf("%w: role is still assigned to members or pending invites", ErrConflict)
+	if !siteSlug {
+		if members > 0 {
+			return fmt.Errorf("%w: role is still assigned to members", ErrConflict)
+		}
+		invites, err := storage.CountOrganizationInvitesWithRole(cur.Slug, orgID)
+		if err != nil {
+			return err
+		}
+		if invites > 0 {
+			return fmt.Errorf("%w: role is still assigned to members or pending invites", ErrConflict)
+		}
 	}
 	return storage.DeleteProjectRoleDef(roleID)
 }

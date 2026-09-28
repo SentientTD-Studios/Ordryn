@@ -31,8 +31,11 @@ let sortable: Sortable | null = null
 
 const canManage = computed(() => canManageProject(props.project))
 const orgManaged = computed(() => !!props.project.org_managed && !!props.project.organization_id)
-const siteRoles = computed(() => roles.value.filter((r) => !r.project_id && !r.organization_id))
 const orgRoles = computed(() => roles.value.filter((r) => !!r.organization_id && !r.project_id))
+const overriddenSlugs = computed(() => new Set(orgRoles.value.map((r) => r.slug)))
+const siteRoles = computed(() =>
+  roles.value.filter((r) => !r.project_id && !r.organization_id && !overriddenSlugs.value.has(r.slug)),
+)
 const customRoles = computed(() => roles.value.filter((r) => r.project_id === props.project.id))
 const editing = computed(() => customRoles.value.find((r) => r.id === editingId.value) || null)
 const canEditProjectRoles = computed(() => canManage.value && !orgManaged.value)
@@ -227,6 +230,7 @@ onBeforeUnmount(destroySortable)
         <li v-for="role in orgRoles" :key="role.id" class="mb-2">
           <strong>{{ role.name }}</strong>
           <span class="badge text-bg-info ms-1">organization</span>
+          <span v-if="role.overrides_site" class="badge text-bg-warning ms-1">customized</span>
           <button
             v-if="canEditProjectRoles"
             class="btn btn-sm btn-link py-0"

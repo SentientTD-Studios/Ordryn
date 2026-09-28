@@ -48,10 +48,25 @@ const roleImpactError = ref('')
 const projectRoleOptions = ref<Record<number, ProjectRoleDef[]>>({})
 
 const canManage = computed(() => !!org.value?.can_manage)
-const siteRoles = computed(() => roles.value.filter((r) => !r.organization_id && !r.project_id))
+const siteRoles = computed(() => roles.value.filter((r) => !r.organization_id && !r.project_id && r.slug !== 'owner'))
 const customRoles = computed(() => roles.value.filter((r) => r.organization_id === selectedId.value))
-const editing = computed(() => customRoles.value.find((r) => r.id === editingId.value) || null)
-const assignableRoles = computed(() => roles.value)
+const editing = computed(() => roles.value.find((r) => r.id === editingId.value) || null)
+const customizingSite = computed(() => !!editing.value && !editing.value.organization_id)
+const assignableRoles = computed(() => {
+  const bySlug = new Map<string, ProjectRoleDef>()
+  for (const role of roles.value) {
+    if (role.slug === 'owner') continue
+    const existing = bySlug.get(role.slug)
+    if (!existing || role.organization_id) {
+      bySlug.set(role.slug, role)
+    }
+  }
+  return [...bySlug.values()]
+})
+
+function isSiteOverride(role: ProjectRoleDef) {
+  return !!role.overrides_site
+}
 const excludeUsernames = computed(() => {
   const names = members.value.map((m) => m.user_name).filter(Boolean)
   for (const inv of invites.value) {
@@ -396,6 +411,10 @@ async function saveRole() {
 
 async function deleteRole(role: ProjectRoleDef) {
   if (!selectedId.value) return
+  if (isSiteOverride(role)) {
+    await resetOverride(role)
+    return
+  }
   const ok = await askConfirm({
     title: 'Delete role?',
     message: `Delete “${role.name}”? Members still using it must be reassigned first.`,
@@ -410,6 +429,25 @@ async function deleteRole(role: ProjectRoleDef) {
     await loadDetail()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not delete role', 'error')
+  }
+}
+
+async function resetOverride(role: ProjectRoleDef) {
+  if (!selectedId.value) return
+  const ok = await askConfirm({
+    title: 'Reset to site default?',
+    message: `Reset “${role.name}” to the site template? Members keep this role and use the site name and permissions again.`,
+    confirmLabel: 'Reset',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await api.deleteOrganizationRole(selectedId.value, role.id)
+    toast.push('Role reset to site default', 'info')
+    if (editingId.value === role.id) resetRoleForm()
+    await loadDetail()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not reset role', 'error')
   }
 }
 
@@ -638,8 +676,10 @@ onBeforeUnmount(destroySortable)
           <div class="card-body">
             <h2 class="h6">Roles</h2>
             <p class="small text-muted">
-              Site templates apply here unless you add an organization role with the same slug.
-              Drag organization roles to change their order. Copy an existing role to start from its permissions.
+              Customize a site default to change its name and permissions for this organization only.
+              Owner always has every permission and cannot be changed. Reset a customized role to
+              restore the site template; members keep the same slug. Drag organization roles to
+              change their order. Copy a role to start from its permissions under a new slug.
             </p>
             <h3 class="h6">Site roles</h3>
             <ul class="list-unstyled mb-3">
@@ -647,7 +687,14 @@ onBeforeUnmount(destroySortable)
                 <strong>{{ role.name }}</strong>
                 <span v-if="role.is_system" class="badge text-bg-secondary ms-1">built-in</span>
                 <button v-if="canManage" class="btn btn-sm btn-link py-0" type="button" @click="startCopyRole(role)">Copy</button>
+                <button v-if="canManage" class="btn btn-sm btn-link py-0" type="button" @click="startEditRole(role)">Edit</button>
                 <div class="small text-muted">{{ role.description || role.slug }}</div>
+                <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
+              </li>
+              <li class="mb-2">
+                <strong>Owner</strong>
+                <span class="badge text-bg-secondary ms-1">built-in</span>
+                <div class="small text-muted">All permissions. The owner role cannot be customized for this organization.</div>
               </li>
             </ul>
             <h3 class="h6">Organization roles</h3>
@@ -663,6 +710,7 @@ onBeforeUnmount(destroySortable)
                   <div>
                     <strong>{{ role.name }}</strong>
                     <span class="badge text-bg-info ms-1">this org</span>
+                    <span v-if="isSiteOverride(role)" class="badge text-bg-warning ms-1">customized</span>
                     <div class="small text-muted">{{ role.slug }} · {{ role.description || 'No description' }}</div>
                     <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
                   </div>
@@ -670,13 +718,37 @@ onBeforeUnmount(destroySortable)
                 <div v-if="canManage" class="d-flex gap-1">
                   <button class="btn btn-sm btn-outline-secondary" type="button" @click="startCopyRole(role)">Copy</button>
                   <button class="btn btn-sm btn-outline-secondary" type="button" @click="startEditRole(role)">Edit</button>
-                  <button class="btn btn-sm btn-outline-danger" type="button" @click="deleteRole(role)">Delete</button>
+                  <button
+                    v-if="isSiteOverride(role)"
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    @click="resetOverride(role)"
+                  >Reset</button>
+                  <button
+                    v-else
+                    class="btn btn-sm btn-outline-danger"
+                    type="button"
+                    @click="deleteRole(role)"
+                  >Delete</button>
                 </div>
               </li>
               <li v-if="!customRoles.length" class="small text-muted">No organization-specific roles yet.</li>
             </ul>
             <form v-if="canManage" class="border rounded p-3" @submit.prevent="saveRole">
-              <h3 class="h6">{{ editing ? `Edit ${editing.name}` : formCopyFromId ? 'Create a copy' : 'Create an organization role' }}</h3>
+              <h3 class="h6">
+                {{
+                  editing
+                    ? customizingSite
+                      ? `Customize ${editing.name}`
+                      : `Edit ${editing.name}`
+                    : formCopyFromId
+                      ? 'Create a copy'
+                      : 'Create an organization role'
+                }}
+              </h3>
+              <p v-if="customizingSite" class="small text-muted">
+                Saves this name and permission set for this organization only. Site templates stay unchanged.
+              </p>
               <div class="mb-2">
                 <label class="form-label small mb-0">Name</label>
                 <input v-model="formName" class="form-control form-control-sm" maxlength="80" required @input="onNameInput" />

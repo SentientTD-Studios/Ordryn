@@ -60,6 +60,8 @@ type ProjectRoleDef struct {
 	IsSystem       bool
 	SortOrder      int
 	CreatedAt      time.Time
+	// OverridesSite is true when an organization role replaces a site template with the same slug.
+	OverridesSite bool
 }
 
 // ProjectStatusGate restricts which roles may enter or leave a status.
@@ -496,26 +498,33 @@ func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ProjectRoleDef, 0, len(site)+8)
-	for _, d := range site {
-		if d.Slug == RoleOwner {
-			continue
-		}
-		out = append(out, d)
-	}
 	bind, err := GetProjectOrgBinding(projectID)
 	if err != nil {
 		return nil, err
 	}
+	var orgRoles []ProjectRoleDef
 	if bind != nil && bind.OrganizationID != nil {
-		orgRoles, err := ListOrganizationRoles(*bind.OrganizationID)
+		orgRoles, err = ListOrganizationRoles(*bind.OrganizationID)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, orgRoles...)
-		if bind.OrgManaged {
-			return out, nil
+	}
+	overridden := siteRoleSlugSet(site)
+	for i := range orgRoles {
+		if overridden[orgRoles[i].Slug] {
+			orgRoles[i].OverridesSite = true
 		}
+	}
+	out := make([]ProjectRoleDef, 0, len(site)+len(orgRoles)+8)
+	for _, d := range site {
+		if d.Slug == RoleOwner || orgSlugTaken(orgRoles, d.Slug) {
+			continue
+		}
+		out = append(out, d)
+	}
+	out = append(out, orgRoles...)
+	if bind != nil && bind.OrgManaged {
+		return out, nil
 	}
 	custom, err := ListProjectCustomRoles(projectID)
 	if err != nil {
@@ -640,6 +649,28 @@ func getRoleDefBySlug(projectID int, slug string, siteOnly bool) (*ProjectRoleDe
 	return &d, nil
 }
 
+// GetOrganizationRoleBySlug returns the org-scoped role with slug, if any.
+func GetOrganizationRoleBySlug(orgID int, slug string) (*ProjectRoleDef, error) {
+	return getOrgRoleDefBySlug(orgID, strings.TrimSpace(strings.ToLower(slug)))
+}
+
+func siteRoleSlugSet(site []ProjectRoleDef) map[string]bool {
+	out := make(map[string]bool, len(site))
+	for _, d := range site {
+		out[d.Slug] = true
+	}
+	return out
+}
+
+func orgSlugTaken(roles []ProjectRoleDef, slug string) bool {
+	for _, d := range roles {
+		if d.Slug == slug {
+			return true
+		}
+	}
+	return false
+}
+
 func getOrgRoleDefBySlug(orgID int, slug string) (*ProjectRoleDef, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -742,7 +773,8 @@ func ProjectRoleSlugTaken(projectID int, slug string, exceptID int) (bool, error
 	return n > 0, err
 }
 
-// OrgRoleSlugTaken reports whether slug exists as a site role or this org's custom role.
+// OrgRoleSlugTaken reports whether slug already exists as an organization role.
+// Site templates may be overridden with the same slug.
 func OrgRoleSlugTaken(orgID int, slug string, exceptID int) (bool, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -752,12 +784,18 @@ func OrgRoleSlugTaken(orgID int, slug string, exceptID int) (bool, error) {
 	var n int
 	err = pool.QueryRow(context.Background(), `
 		SELECT COUNT(*) FROM project_role_defs
-		WHERE slug = $1 AND id <> $2 AND (
-			(`+siteRoleWhere()+`)
-			OR (organization_id = $3 AND project_id IS NULL)
-		)`,
+		WHERE slug = $1 AND id <> $2 AND organization_id = $3 AND project_id IS NULL`,
 		slug, exceptID, orgID).Scan(&n)
 	return n > 0, err
+}
+
+// SiteRoleSlugExists reports whether a site-level role uses slug.
+func SiteRoleSlugExists(slug string) (bool, error) {
+	d, err := getRoleDefBySlug(0, slug, true)
+	if err != nil {
+		return false, err
+	}
+	return d != nil, nil
 }
 
 // CountOrganizationCustomRoles returns how many org-defined roles exist.

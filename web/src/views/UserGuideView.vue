@@ -119,7 +119,10 @@ onUnmounted(() => {
           complete, claim, reorder, change status, assign sprints, manage tags, log time, configure
           extensions, moderate comments, and manage the project. Site admins maintain those templates
           under Admin → Roles. Copy a role to start from an existing permission set, and drag to
-          reorder the list. Organizations can define extra roles that can be assigned on imported
+          reorder the list. Organizations can customize the name and permissions of those site
+          defaults for their own members (except Owner, which always has every permission) without
+          changing the site-wide templates. Reset a customized role to restore the site default;
+          members keep the same role slug. Organizations can also define extra roles for imported
           projects. If you import and lock roles, those boards stay tied to the organization and
           cannot add their own roles. Unlocked imports can still add project-only roles.
         </p>
