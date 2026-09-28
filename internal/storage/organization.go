@@ -137,7 +137,7 @@ func scanOrganization(row interface{ Scan(dest ...any) error }, o *Organization)
 const organizationSelect = `SELECT o.id, o.name, COALESCE(o.description, ''), o.created_by, o.created_at, o.updated_at,
 		COALESCE(om.role, ''),
 		(SELECT COUNT(*) FROM organization_members m WHERE m.organization_id = o.id),
-		(SELECT COUNT(*) FROM projects p WHERE p.organization_id = o.id AND COALESCE(p.org_managed, false))
+		(SELECT COUNT(*) FROM projects p WHERE p.organization_id = o.id)
 	 FROM organizations o`
 
 // CreateOrganization inserts an organization and makes createdBy the owner.
@@ -459,6 +459,34 @@ func GetProjectOrgBinding(projectID int) (*ProjectOrgBinding, error) {
 	return out, nil
 }
 
+const (
+	OrgImportCopy   = "copy"
+	OrgImportLock   = "lock"
+	OrgImportSelect = "select"
+)
+
+// OrgImportMember is one person copied onto a project during a selective import.
+type OrgImportMember struct {
+	UserID int
+	Role   string
+}
+
+// OrgImportSpec describes how a project should import an organization roster.
+type OrgImportSpec struct {
+	OrganizationID int
+	Lock           bool
+	AllMembers     bool
+	Members        []OrgImportMember
+}
+
+func normalizeImportRole(role string) string {
+	role = strings.TrimSpace(strings.ToLower(role))
+	if role == RoleOwner {
+		return RoleEditor
+	}
+	return role
+}
+
 const importOrganizationMembersSQL = `
 		INSERT INTO project_members (project_id, user_id, role)
 		SELECT $1, om.user_id,
@@ -468,9 +496,52 @@ const importOrganizationMembersSQL = `
 		  AND om.user_id <> $3
 		ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`
 
+func importOrganizationMembersTx(tx pgx.Tx, projectID, ownerUserID, orgID int) error {
+	_, err := tx.Exec(context.Background(), importOrganizationMembersSQL,
+		projectID, orgID, ownerUserID, RoleOwner, RoleEditor)
+	if err != nil {
+		return fmt.Errorf("failed to import organization members: %v", err)
+	}
+	return nil
+}
+
+func importSelectedOrganizationMembersTx(tx pgx.Tx, projectID, ownerUserID, orgID int, members []OrgImportMember) error {
+	for _, m := range members {
+		if m.UserID <= 0 || m.UserID == ownerUserID {
+			continue
+		}
+		role := normalizeImportRole(m.Role)
+		if role == "" {
+			return fmt.Errorf("role is required for each imported member")
+		}
+		var exists int
+		err := tx.QueryRow(context.Background(),
+			`SELECT 1 FROM organization_members WHERE organization_id = $1 AND user_id = $2`,
+			orgID, m.UserID).Scan(&exists)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("user %d is not a member of the organization", m.UserID)
+			}
+			return err
+		}
+		if _, err := tx.Exec(context.Background(), `
+			INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, $3)
+			ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+			projectID, m.UserID, role); err != nil {
+			return fmt.Errorf("failed to import organization member: %v", err)
+		}
+	}
+	return nil
+}
+
+func applyOrgImportTx(tx pgx.Tx, projectID, ownerUserID int, spec OrgImportSpec) error {
+	if spec.AllMembers {
+		return importOrganizationMembersTx(tx, projectID, ownerUserID, spec.OrganizationID)
+	}
+	return importSelectedOrganizationMembersTx(tx, projectID, ownerUserID, spec.OrganizationID, spec.Members)
+}
+
 // ImportOrganizationMembersToProject copies current org members onto project_members.
-// The project owner is skipped; extra org owners are stored as editor so the board
-// keeps a single owner. Later org membership changes do not rewrite these rows.
 func ImportOrganizationMembersToProject(projectID, ownerUserID, orgID int) error {
 	if projectID <= 0 || ownerUserID <= 0 || orgID <= 0 {
 		return fmt.Errorf("invalid project or organization")
@@ -488,20 +559,95 @@ func ImportOrganizationMembersToProject(projectID, ownerUserID, orgID int) error
 	return nil
 }
 
-func importOrganizationMembersTx(tx pgx.Tx, projectID, ownerUserID, orgID int) error {
-	_, err := tx.Exec(context.Background(), importOrganizationMembersSQL,
-		projectID, orgID, ownerUserID, RoleOwner, RoleEditor)
+// ProjectIsOrgManaged reports whether membership/roles are locked to the organization.
+func ProjectIsOrgManaged(projectID int) bool {
+	b, err := GetProjectOrgBinding(projectID)
+	return err == nil && b != nil && b.OrgManaged && b.OrganizationID != nil
+}
+
+// OrgMemberProjectRef is an org-linked project the member currently belongs to.
+type OrgMemberProjectRef struct {
+	ID     int
+	Name   string
+	Role   string
+	Locked bool
+}
+
+// ListOrgProjectsForMember returns org-linked projects the user is a member of.
+func ListOrgProjectsForMember(orgID, userID int) ([]OrgMemberProjectRef, error) {
+	pool, err := OpenDatabase()
 	if err != nil {
-		return fmt.Errorf("failed to import organization members: %v", err)
+		return nil, err
 	}
-	return nil
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `
+		SELECT p.id, p.name, COALESCE(p.org_managed, false),
+		       COALESCE(pm.role, CASE WHEN p.user_id = $2 THEN 'owner' END)
+		FROM projects p
+		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
+		WHERE p.organization_id = $1
+		  AND (pm.user_id IS NOT NULL OR p.user_id = $2)
+		ORDER BY LOWER(p.name) ASC, p.id ASC`, orgID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OrgMemberProjectRef
+	for rows.Next() {
+		var r OrgMemberProjectRef
+		if err := rows.Scan(&r.ID, &r.Name, &r.Locked, &r.Role); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// UpdateLockedOrgProjectMemberRole overwrites the member's role on imported-and-locked
+// projects for this organization. The project owner row is never changed.
+func UpdateLockedOrgProjectMemberRole(orgID, userID int, role string) ([]int, error) {
+	role = normalizeImportRole(role)
+	if orgID <= 0 || userID <= 0 || role == "" {
+		return nil, fmt.Errorf("invalid organization member role update")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `
+		UPDATE project_members pm
+		SET role = $3
+		FROM projects p
+		WHERE pm.project_id = p.id
+		  AND p.organization_id = $1
+		  AND COALESCE(p.org_managed, false)
+		  AND pm.user_id = $2
+		  AND pm.role <> 'owner'
+		RETURNING p.id`, orgID, userID, role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // AttachProjectOrganization binds a project to an organization, drops non-owner
-// project_members rows, copies current org members onto the project, and cancels
-// pending invites. Returns user IDs that were removed from project_members.
-func AttachProjectOrganization(projectID, ownerUserID, orgID int) ([]int, error) {
-	if projectID <= 0 || ownerUserID <= 0 || orgID <= 0 {
+// project_members rows, imports members according to spec, and cancels pending
+// invites. Returns user IDs that were removed from project_members.
+func AttachProjectOrganization(projectID, ownerUserID int, spec OrgImportSpec) ([]int, error) {
+	if projectID <= 0 || ownerUserID <= 0 || spec.OrganizationID <= 0 {
 		return nil, fmt.Errorf("invalid project or organization")
 	}
 	pool, err := OpenDatabase()
@@ -557,16 +703,16 @@ func AttachProjectOrganization(projectID, ownerUserID, orgID int) ([]int, error)
 	}
 
 	tag, err := tx.Exec(context.Background(),
-		`UPDATE projects SET organization_id = $1, org_managed = TRUE, updated_at = CURRENT_TIMESTAMP
-		 WHERE id = $2 AND user_id = $3`,
-		orgID, projectID, ownerUserID)
+		`UPDATE projects SET organization_id = $1, org_managed = $2, updated_at = CURRENT_TIMESTAMP
+		 WHERE id = $3 AND user_id = $4`,
+		spec.OrganizationID, spec.Lock, projectID, ownerUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to attach organization: %v", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return nil, fmt.Errorf("project not found")
 	}
-	if err := importOrganizationMembersTx(tx, projectID, ownerUserID, orgID); err != nil {
+	if err := applyOrgImportTx(tx, projectID, ownerUserID, spec); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(context.Background()); err != nil {

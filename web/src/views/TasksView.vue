@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { Organization, Project, ProjectExtension, ProjectSprint, ProjectStatus, SavedView, Tag, Task } from '@/api/types'
+import type { Organization, OrgImportMember, OrgImportMode, Project, ProjectExtension, ProjectSprint, ProjectStatus, SavedView, Tag, Task } from '@/api/types'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
@@ -12,6 +12,7 @@ import ExtensionSurfaceFrame from '@/components/ExtensionSurfaceFrame.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import ProjectSettingsModal from '@/components/ProjectSettingsModal.vue'
+import OrgImportFields from '@/components/OrgImportFields.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { useTaskListFilters } from '@/composables/useTaskListFilters'
@@ -73,6 +74,8 @@ const showAddProjectModal = ref(false)
 const newProjectName = ref('')
 const newProjectDescription = ref('')
 const newProjectOrgId = ref(0)
+const newProjectImportMode = ref<OrgImportMode>('copy')
+const newProjectImportMembers = ref<OrgImportMember[]>([])
 const organizations = ref<Organization[]>([])
 const manageableOrgs = computed(() => organizations.value.filter((o) => o.can_manage))
 
@@ -1202,15 +1205,17 @@ async function saveCurrentView() {
 async function createProject() {
   if (!newProjectName.value.trim()) return
   try {
-    await api.createProject(
-      newProjectName.value.trim(),
-      newProjectDescription.value.trim(),
-      Number(newProjectOrgId.value) || null,
-    )
+    await api.createProject(newProjectName.value.trim(), newProjectDescription.value.trim(), {
+      organization_id: Number(newProjectOrgId.value) || null,
+      org_import: newProjectImportMode.value,
+      org_import_members: newProjectImportMembers.value,
+    })
     toast.push('Project created!', 'success')
     newProjectName.value = ''
     newProjectDescription.value = ''
     newProjectOrgId.value = 0
+    newProjectImportMode.value = 'copy'
+    newProjectImportMembers.value = []
     showAddProjectModal.value = false
     await loadMeta()
   } catch (err) {
@@ -2000,18 +2005,18 @@ onUnmounted(() => {
                 />
               </div>
               <div v-if="manageableOrgs.length" class="mb-3">
-                <label for="new-project-org" class="form-label small fw-bold">Organization</label>
-                <select id="new-project-org" v-model="newProjectOrgId" class="form-select">
-                  <option :value="0">None — manage members on this project</option>
-                  <option v-for="o in manageableOrgs" :key="o.id" :value="o.id">
-                    Import members from {{ o.name }}
-                  </option>
-                </select>
+                <OrgImportFields
+                  :orgs="manageableOrgs"
+                  v-model:organization-id="newProjectOrgId"
+                  v-model:import-mode="newProjectImportMode"
+                  v-model:members="newProjectImportMembers"
+                  select-id="new-project-org"
+                />
               </div>
             </div>
             <div class="modal-footer border-0 pt-0 justify-content-end gap-2">
               <button type="button" class="btn btn-sm btn-outline-secondary" @click="showAddProjectModal = false">Cancel</button>
-              <button type="button" class="btn btn-sm btn-success px-3" :disabled="!newProjectName.trim()" @click="createProject">Create Project</button>
+              <button type="button" class="btn btn-sm btn-success px-3" :disabled="!newProjectName.trim() || (newProjectOrgId > 0 && newProjectImportMode === 'select' && !newProjectImportMembers.length)" @click="createProject">Create Project</button>
             </div>
           </div>
         </div>

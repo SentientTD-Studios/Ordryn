@@ -285,8 +285,8 @@ func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org project: %v", err)
 	}
-	if !proj.OrgManaged || proj.OrganizationID == nil || *proj.OrganizationID != org.ID {
-		t.Fatalf("project org: %+v", proj)
+	if proj.OrgManaged || proj.OrganizationID == nil || *proj.OrganizationID != org.ID {
+		t.Fatalf("expected unlocked org import: %+v", proj)
 	}
 
 	role, err := storage.GetProjectRole(proj.ID, 2)
@@ -381,19 +381,19 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 		t.Fatalf("pending invite: %v", err)
 	}
 
-	if _, err := AttachOrganizationToProject(ctx, 2, proj.ID, org.ID); !errors.Is(err, ErrForbidden) {
+	if _, err := AttachOrganizationToProject(ctx, 2, proj.ID, CreateProjectInput{OrganizationID: &org.ID}); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("editor attach: err=%v want forbidden", err)
 	}
 
-	updated, err := AttachOrganizationToProject(ctx, 1, proj.ID, org.ID)
+	updated, err := AttachOrganizationToProject(ctx, 1, proj.ID, CreateProjectInput{OrganizationID: &org.ID})
 	if err != nil {
 		t.Fatalf("attach: %v", err)
 	}
-	if !updated.OrgManaged || updated.OrganizationID == nil || *updated.OrganizationID != org.ID {
-		t.Fatalf("attached project: %+v", updated)
+	if updated.OrgManaged || updated.OrganizationID == nil || *updated.OrganizationID != org.ID {
+		t.Fatalf("attached unlocked project: %+v", updated)
 	}
 
-	again, err := AttachOrganizationToProject(ctx, 1, proj.ID, org.ID)
+	again, err := AttachOrganizationToProject(ctx, 1, proj.ID, CreateProjectInput{OrganizationID: &org.ID})
 	if err != nil {
 		t.Fatalf("idempotent attach: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second org: %v", err)
 	}
-	switched, err := AttachOrganizationToProject(ctx, 1, proj.ID, other.ID)
+	switched, err := AttachOrganizationToProject(ctx, 1, proj.ID, CreateProjectInput{OrganizationID: &other.ID})
 	if err != nil {
 		t.Fatalf("switch org: %v", err)
 	}
@@ -512,5 +512,160 @@ func TestInviteToOrganizationRequiresAccept(t *testing.T) {
 	}
 	if _, err := storage.GetAccessibleProjectByID(proj.ID, 3); err == nil {
 		t.Fatal("declined invitee should not access org project")
+	}
+}
+
+func TestOrgImportLockBlocksEditsAndAppliesOrgRoleChanges(t *testing.T) {
+	ctx := context.Background()
+	setTestUsername(t, 2, "lock_editor")
+	setTestUsername(t, 3, "lock_viewer")
+	org, err := CreateOrganizationForUser(ctx, 1, "Lock Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if _, err := InviteToOrganization(ctx, 1, org.ID, "lock_editor", storage.RoleEditor); err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+	invites, err := storage.ListPendingOrganizationInvitesForEmail("editor@example.com")
+	if err != nil || len(invites) != 1 {
+		t.Fatalf("pending: %+v err=%v", invites, err)
+	}
+	if err := AcceptOrganizationInviteForUser(ctx, 2, "editor@example.com", invites[0].ID); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+
+	locked, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Locked Board",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportLock,
+	})
+	if err != nil {
+		t.Fatalf("create locked: %v", err)
+	}
+	if !locked.OrgManaged {
+		t.Fatalf("expected lock: %+v", locked)
+	}
+	if _, err := InviteToProject(ctx, 1, locked.ID, "lock_viewer", storage.RoleViewer); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("invite on locked project: err=%v", err)
+	}
+	if _, err := CreateProjectCustomRoleForUser(ctx, 1, locked.ID, CreateSiteProjectRoleInput{
+		Slug: "nope", Name: "Nope", Permissions: []string{storage.PermTasksEdit},
+	}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("custom role on locked project: err=%v", err)
+	}
+
+	unlocked, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Unlocked Board",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportCopy,
+	})
+	if err != nil {
+		t.Fatalf("create unlocked: %v", err)
+	}
+	if unlocked.OrgManaged {
+		t.Fatalf("copy should not lock: %+v", unlocked)
+	}
+
+	impact, err := OrganizationMemberRoleImpactForUser(ctx, 1, org.ID, 2)
+	if err != nil {
+		t.Fatalf("impact: %v", err)
+	}
+	if len(impact.Locked) != 1 || impact.Locked[0].ID != locked.ID {
+		t.Fatalf("locked impact: %+v", impact.Locked)
+	}
+	if len(impact.Unlocked) != 1 || impact.Unlocked[0].ID != unlocked.ID {
+		t.Fatalf("unlocked impact: %+v", impact.Unlocked)
+	}
+
+	if err := UpdateOrganizationMemberRoleForUser(ctx, 1, org.ID, 2, storage.RoleViewer); err != nil {
+		t.Fatalf("org role: %v", err)
+	}
+	if role, err := storage.GetProjectRole(locked.ID, 2); err != nil || role != storage.RoleViewer {
+		t.Fatalf("locked project role after org change: %q err=%v", role, err)
+	}
+	if role, err := storage.GetProjectRole(unlocked.ID, 2); err != nil || role != storage.RoleEditor {
+		t.Fatalf("unlocked project role should stay editor: %q err=%v", role, err)
+	}
+}
+
+func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
+	ctx := context.Background()
+	setTestUsername(t, 2, "select_editor")
+	setTestUsername(t, 3, "select_viewer")
+	org, err := CreateOrganizationForUser(ctx, 1, "Select Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if _, err := InviteToOrganization(ctx, 1, org.ID, "select_editor", storage.RoleEditor); err != nil {
+		t.Fatalf("invite editor: %v", err)
+	}
+	if _, err := InviteToOrganization(ctx, 1, org.ID, "select_viewer", storage.RoleViewer); err != nil {
+		t.Fatalf("invite viewer: %v", err)
+	}
+	for _, email := range []string{"editor@example.com", "viewer@example.com"} {
+		invites, err := storage.ListPendingOrganizationInvitesForEmail(email)
+		if err != nil || len(invites) != 1 {
+			t.Fatalf("pending %s: %+v err=%v", email, invites, err)
+		}
+		uid := 2
+		if email == "viewer@example.com" {
+			uid = 3
+		}
+		if err := AcceptOrganizationInviteForUser(ctx, uid, email, invites[0].ID); err != nil {
+			t.Fatalf("accept %s: %v", email, err)
+		}
+	}
+
+	if _, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Need Role",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportSelect,
+		Members:        []storage.OrgImportMember{{UserID: 2}},
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("select without role: err=%v", err)
+	}
+
+	proj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Select Board",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportSelect,
+		Members:        []storage.OrgImportMember{{UserID: 3, Role: storage.RoleEditor}},
+	})
+	if err != nil {
+		t.Fatalf("create select: %v", err)
+	}
+	if proj.OrgManaged {
+		t.Fatalf("select should not lock: %+v", proj)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err == nil {
+		t.Fatal("unselected org member should not be imported")
+	}
+	if role, err := storage.GetProjectRole(proj.ID, 3); err != nil || role != storage.RoleEditor {
+		t.Fatalf("selected member role: %q err=%v", role, err)
+	}
+	if _, err := InviteToProject(ctx, 1, proj.ID, "select_editor", storage.RoleViewer); err != nil {
+		t.Fatalf("invite after select import: %v", err)
+	}
+
+	existing, err := CreateProject(ctx, 1, "Attach Select", "")
+	if err != nil {
+		t.Fatalf("independent: %v", err)
+	}
+	attached, err := AttachOrganizationToProject(ctx, 1, existing.ID, CreateProjectInput{
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportSelect,
+		Members:        []storage.OrgImportMember{{UserID: 2, Role: storage.RoleViewer}},
+	})
+	if err != nil {
+		t.Fatalf("attach select: %v", err)
+	}
+	if attached.OrgManaged {
+		t.Fatalf("attach select should not lock: %+v", attached)
+	}
+	if role, err := storage.GetProjectRole(existing.ID, 2); err != nil || role != storage.RoleViewer {
+		t.Fatalf("attached selected role: %q err=%v", role, err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(existing.ID, 3); err == nil {
+		t.Fatal("unselected member should not be on attached project")
 	}
 }

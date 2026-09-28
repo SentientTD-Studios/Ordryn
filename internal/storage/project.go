@@ -95,17 +95,18 @@ func CreateProject(userID int, name, description string) (*Project, error) {
 }
 
 // CreateProjectWithOrg inserts a project, optionally copying members from an organization.
-func CreateProjectWithOrg(userID int, name, description string, organizationID *int) (*Project, error) {
+func CreateProjectWithOrg(userID int, name, description string, spec *OrgImportSpec) (*Project, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
 	}
 	defer CloseDatabase(pool)
 
-	orgManaged := organizationID != nil && *organizationID > 0
 	var orgArg any
-	if orgManaged {
-		orgArg = *organizationID
+	orgManaged := false
+	if spec != nil && spec.OrganizationID > 0 {
+		orgArg = spec.OrganizationID
+		orgManaged = spec.Lock
 	}
 
 	var p Project
@@ -123,8 +124,16 @@ func CreateProjectWithOrg(userID int, name, description string, organizationID *
 	if err := EnsureProjectOwnerMember(p.ID, userID); err != nil {
 		return nil, fmt.Errorf("failed to create project owner membership: %v", err)
 	}
-	if orgManaged {
-		if err := ImportOrganizationMembersToProject(p.ID, userID, *organizationID); err != nil {
+	if spec != nil && spec.OrganizationID > 0 {
+		tx, err := pool.Begin(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback(context.Background())
+		if err := applyOrgImportTx(tx, p.ID, userID, *spec); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(context.Background()); err != nil {
 			return nil, err
 		}
 	}

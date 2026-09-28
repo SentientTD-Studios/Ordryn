@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
 
 	"github.com/jackc/pgx/v5"
@@ -49,6 +50,13 @@ func requireOrgManage(orgID, userID int) (*storage.Organization, error) {
 		return nil, ErrForbidden
 	}
 	return org, nil
+}
+
+func denyOrgManagedMembershipEdits(projectID int) error {
+	if storage.ProjectIsOrgManaged(projectID) {
+		return fmt.Errorf("%w: membership and roles for this project are locked to the organization", ErrForbidden)
+	}
+	return nil
 }
 
 // ListOrganizationsForUser returns organizations the user belongs to.
@@ -296,7 +304,59 @@ func UpdateOrganizationMemberRoleForUser(ctx context.Context, actorUserID, orgID
 	if current == storage.RoleOwner {
 		return fmt.Errorf("%w: cannot change owner role", ErrValidation)
 	}
-	return storage.UpsertOrganizationMember(orgID, memberUserID, role)
+	if err := storage.UpsertOrganizationMember(orgID, memberUserID, role); err != nil {
+		return err
+	}
+	ids, err := storage.UpdateLockedOrgProjectMemberRole(orgID, memberUserID, role)
+	if err != nil {
+		return err
+	}
+	for _, pid := range ids {
+		live.AfterProjectChangeLive(actorUserID, pid, live.TypeProjectUpdated)
+		live.DispatchProjectHook(actorUserID, pid, live.TypeProjectMemberRoleChanged, &live.TaskHookMeta{
+			MemberID:   memberUserID,
+			MemberName: hookDisplayName(memberUserID),
+		})
+	}
+	return nil
+}
+
+// OrgMemberRoleImpact lists org-linked projects a member is on, split by lock.
+type OrgMemberRoleImpact struct {
+	Locked   []storage.OrgMemberProjectRef
+	Unlocked []storage.OrgMemberProjectRef
+}
+
+// OrganizationMemberRoleImpactForUser returns which projects would change if this
+// member's organization role is updated.
+func OrganizationMemberRoleImpactForUser(ctx context.Context, actorUserID, orgID, memberUserID int) (*OrgMemberRoleImpact, error) {
+	_ = ctx
+	if _, err := requireOrgManage(orgID, actorUserID); err != nil {
+		return nil, err
+	}
+	role, err := storage.GetOrganizationRole(orgID, memberUserID)
+	if err != nil {
+		return nil, err
+	}
+	if role == "" {
+		return nil, ErrNotFound
+	}
+	refs, err := storage.ListOrgProjectsForMember(orgID, memberUserID)
+	if err != nil {
+		return nil, err
+	}
+	out := &OrgMemberRoleImpact{
+		Locked:   []storage.OrgMemberProjectRef{},
+		Unlocked: []storage.OrgMemberProjectRef{},
+	}
+	for _, r := range refs {
+		if r.Locked {
+			out.Locked = append(out.Locked, r)
+		} else {
+			out.Unlocked = append(out.Unlocked, r)
+		}
+	}
+	return out, nil
 }
 
 // RemoveOrganizationMemberForUser removes a non-owner, or allows self-leave.
@@ -520,6 +580,9 @@ func ReorderSiteProjectRolesForAdmin(ctx context.Context, userID int, roleIDs []
 func ReorderProjectCustomRolesForUser(ctx context.Context, userID, projectID int, roleIDs []int) error {
 	_ = ctx
 	if _, err := requireProjectManage(projectID, userID); err != nil {
+		return err
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
 		return err
 	}
 	if err := storage.ReorderProjectRoleDefs(roleIDs, false, projectID, 0); err != nil {

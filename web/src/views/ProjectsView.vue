@@ -96,7 +96,10 @@
                         <div class="min-w-0 flex-grow-1">
                           <div class="d-flex align-items-center gap-1 flex-wrap">
                             <span class="project-name-display fw-semibold">{{ p.name }}</span>
-                            <span v-if="p.org_managed" class="badge text-bg-info">{{ p.organization_name || 'org' }}</span>
+                            <span v-if="p.organization_name" class="badge text-bg-info">
+                              {{ p.organization_name }}
+                              <i v-if="p.org_managed" class="bi bi-lock-fill" title="Roles locked to organization" />
+                            </span>
                             <button
                               class="btn btn-sm btn-link edit-project-btn p-0"
                               type="button"
@@ -324,20 +327,16 @@
                 </div>
               </div>
               <div v-if="manageableOrgs.length" class="mb-3">
-                <label class="form-label" for="project-org">Organization</label>
-                <select id="project-org" v-model="organizationId" class="form-select">
-                  <option :value="0">None — manage members on this project</option>
-                  <option v-for="o in manageableOrgs" :key="o.id" :value="o.id">
-                    Import members from {{ o.name }}
-                  </option>
-                </select>
-                <small class="form-hint">
-                  Copies the organization's current members onto this project. You can change roles here afterward;
-                  later organization changes do not overwrite this board.
-                </small>
+                <OrgImportFields
+                  :orgs="manageableOrgs"
+                  v-model:organization-id="organizationId"
+                  v-model:import-mode="importMode"
+                  v-model:members="importMembers"
+                  select-id="project-org"
+                />
               </div>
               <div class="d-flex gap-2">
-                <button class="btn btn-primary" type="submit">Create</button>
+                <button class="btn btn-primary" type="submit" :disabled="!name.trim() || (organizationId > 0 && importMode === 'select' && !importMembers.length)">Create</button>
                 <RouterLink class="btn btn-secondary" to="/">Cancel</RouterLink>
               </div>
             </form>
@@ -361,7 +360,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Organization, OrganizationInvite, Project, ProjectInvite } from '@/api/types'
+import type { Organization, OrganizationInvite, OrgImportMember, OrgImportMode, Project, ProjectInvite } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
@@ -369,6 +368,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
 import ProjectSettingsModal from '@/components/ProjectSettingsModal.vue'
+import OrgImportFields from '@/components/OrgImportFields.vue'
 import { isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
 
 const projects = ref<Project[]>([])
@@ -377,6 +377,8 @@ const pendingOrgInvites = ref<OrganizationInvite[]>([])
 const name = ref('')
 const description = ref('')
 const organizationId = ref(0)
+const importMode = ref<OrgImportMode>('copy')
+const importMembers = ref<OrgImportMember[]>([])
 const orgs = ref<Organization[]>([])
 const sharePanelId = ref<number | null>(null)
 const boardPanelId = ref<number | null>(null)
@@ -479,14 +481,16 @@ async function load() {
 async function createProject() {
   if (!name.value.trim()) return
   try {
-    await api.createProject(
-      name.value.trim(),
-      description.value.trim(),
-      Number(organizationId.value) || null,
-    )
+    await api.createProject(name.value.trim(), description.value.trim(), {
+      organization_id: Number(organizationId.value) || null,
+      org_import: importMode.value,
+      org_import_members: importMembers.value,
+    })
     name.value = ''
     description.value = ''
     organizationId.value = 0
+    importMode.value = 'copy'
+    importMembers.value = []
     toast.push('Project created', 'success')
     await load()
   } catch (err) {

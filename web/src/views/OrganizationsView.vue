@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Organization, OrganizationInvite, OrganizationMember, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
+import type { Organization, OrganizationInvite, OrganizationMember, OrgMemberProjectImpact, OrgMemberRoleImpact, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
 import RolePermissionFields from '@/components/RolePermissionFields.vue'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
@@ -37,6 +37,12 @@ const formCopyFromId = ref<number | null>(null)
 const slugTouched = ref(false)
 const roleListEl = ref<HTMLElement | null>(null)
 let sortable: Sortable | null = null
+const roleChangeOpen = ref(false)
+const roleChangeSaving = ref(false)
+const roleChangeMember = ref<OrganizationMember | null>(null)
+const roleChangeNext = ref('')
+const roleImpact = ref<OrgMemberRoleImpact | null>(null)
+const roleImpactError = ref('')
 
 const canManage = computed(() => !!org.value?.can_manage)
 const siteRoles = computed(() => roles.value.filter((r) => !r.organization_id && !r.project_id))
@@ -199,15 +205,48 @@ async function declineMyInvite(inv: OrganizationInvite) {
   }
 }
 
-async function onMemberRoleChange(userId: number, role: string) {
-  if (!selectedId.value || role === 'owner') return
+async function beginMemberRoleChange(member: OrganizationMember, event: Event) {
+  const select = event.target as HTMLSelectElement
+  const next = select.value
+  select.value = member.role
+  if (!selectedId.value || !next || next === member.role || next === 'owner') return
+  roleChangeMember.value = member
+  roleChangeNext.value = next
+  roleImpact.value = null
+  roleImpactError.value = ''
+  roleChangeOpen.value = true
   try {
-    await api.updateOrganizationMember(selectedId.value, userId, role)
+    roleImpact.value = await api.organizationMemberRoleImpact(selectedId.value, member.user_id)
+  } catch (err) {
+    roleImpactError.value = err instanceof APIError ? err.message : 'Could not load affected projects'
+  }
+}
+
+function closeRoleChange() {
+  roleChangeOpen.value = false
+  roleChangeMember.value = null
+  roleChangeNext.value = ''
+  roleImpact.value = null
+  roleImpactError.value = ''
+}
+
+function projectLabel(p: OrgMemberProjectImpact) {
+  return `${p.name}${p.role ? ` (${p.role})` : ''}`
+}
+
+async function confirmMemberRoleChange() {
+  if (!selectedId.value || !roleChangeMember.value || !roleChangeNext.value) return
+  roleChangeSaving.value = true
+  try {
+    await api.updateOrganizationMember(selectedId.value, roleChangeMember.value.user_id, roleChangeNext.value)
     toast.push('Role updated', 'success')
+    closeRoleChange()
     await loadDetail()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
     await loadDetail()
+  } finally {
+    roleChangeSaving.value = false
   }
 }
 
@@ -371,8 +410,8 @@ onBeforeUnmount(destroySortable)
     <h1>Organizations</h1>
     <p class="text-muted">
       Groups of people and roles you can reuse when creating or attaching a project.
-      Importing copies the current roster onto that board; you can then change membership and roles
-      per project. New organization members are not added to existing imported projects.
+      Import can copy everyone and stay editable, copy everyone and lock roles, or import only
+      selected members. Organization role changes update imported-and-locked projects only.
     </p>
 
     <div v-if="myInvites.length" class="card mb-4 border-primary">
@@ -469,7 +508,7 @@ onBeforeUnmount(destroySortable)
                   <select
                     class="form-select form-select-sm w-auto"
                     :value="m.role"
-                    @change="onMemberRoleChange(m.user_id, ($event.target as HTMLSelectElement).value)"
+                    @change="beginMemberRoleChange(m, $event)"
                   >
                     <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
                   </select>
@@ -577,6 +616,60 @@ onBeforeUnmount(destroySortable)
           </div>
         </div>
         <p v-else class="text-muted">Select or create an organization.</p>
+      </div>
+    </div>
+
+    <div
+      v-if="roleChangeOpen && roleChangeMember"
+      class="modal fade show d-block"
+      style="background: rgba(0,0,0,0.5);"
+      tabindex="-1"
+      @click.self="closeRoleChange"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow" style="background: var(--ordryn-card-bg); color: var(--ordryn-text)">
+          <div class="modal-header border-0">
+            <h5 class="modal-title">Change organization role?</h5>
+            <button type="button" class="btn-close" aria-label="Close" @click="closeRoleChange" />
+          </div>
+          <div class="modal-body pt-0">
+            <p>
+              Change
+              <strong>{{ roleChangeMember.user_name || roleChangeMember.email }}</strong>
+              from {{ roleChangeMember.role_name || roleChangeMember.role }}
+              to {{ assignableRoles.find((r) => r.slug === roleChangeNext)?.name || roleChangeNext }}.
+            </p>
+            <p class="small">
+              This only updates the organization membership and <strong>imported and locked</strong> projects.
+              Unlocked imported projects keep their current roles.
+            </p>
+            <p v-if="roleImpactError" class="small text-danger">{{ roleImpactError }}</p>
+            <template v-else-if="roleImpact">
+              <h6 class="h6">Projects that will be updated</h6>
+              <ul v-if="roleImpact.locked.length" class="small mb-3">
+                <li v-for="p in roleImpact.locked" :key="p.id">{{ projectLabel(p) }}</li>
+              </ul>
+              <p v-else class="small text-muted">No imported-and-locked projects include this person.</p>
+              <h6 class="h6">Projects that will not be updated</h6>
+              <ul v-if="roleImpact.unlocked.length" class="small mb-0">
+                <li v-for="p in roleImpact.unlocked" :key="p.id">{{ projectLabel(p) }}</li>
+              </ul>
+              <p v-else class="small text-muted mb-0">This person is not on any unlocked organization projects.</p>
+            </template>
+            <p v-else class="small text-muted">Loading affected projects…</p>
+          </div>
+          <div class="modal-footer border-0">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @click="closeRoleChange">Cancel</button>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              :disabled="roleChangeSaving || !roleImpact"
+              @click="confirmMemberRoleChange"
+            >
+              Change role
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

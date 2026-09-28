@@ -87,10 +87,11 @@ onUnmounted(() => {
             <RouterLink to="/organizations">Organizations</RouterLink>
             and import those members when you create a project, or attach an organization later
             from project settings. Inviting someone to an organization works like a project invite:
-            they must accept before they join. Attaching an org copies current members onto the
-            project and removes anyone who is not an org member. After import, you can still change
-            membership and roles on that project; later organization changes do not overwrite them.
-            Archived projects move
+            they must accept before they join. When you attach an organization you choose how to
+            import: copy everyone and keep roles editable, copy everyone and lock roles to the
+            organization, or pick specific members and a role for each. People who are not imported
+            are removed from the project. Organization role changes update imported-and-locked
+            projects only. Archived projects move
             into an Archived section so they do not clutter the main list, are tagged archived
             automatically, and cannot accept new tasks until the owner restores them. Kanban projects can name sprints
             with optional descriptions, date ranges, and a lock date on the Sprints tab
@@ -118,9 +119,9 @@ onUnmounted(() => {
           complete, claim, reorder, change status, assign sprints, manage tags, log time, configure
           extensions, moderate comments, and manage the project. Site admins maintain those templates
           under Admin → Roles. Copy a role to start from an existing permission set, and drag to
-          reorder the list. Organizations can define extra roles that are copied onto a project at
-          import time; that board can still add its own roles afterward, picking from the
-          same catalog.
+          reorder the list. Organizations can define extra roles that can be assigned on imported
+          projects. If you import and lock roles, those boards stay tied to the organization and
+          cannot add their own roles. Unlocked imports can still add project-only roles.
         </p>
         <ul>
           <li>

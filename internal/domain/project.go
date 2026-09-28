@@ -33,6 +33,53 @@ type CreateProjectInput struct {
 	Name           string
 	Description    string
 	OrganizationID *int
+	ImportMode     string
+	Members        []storage.OrgImportMember
+}
+
+func parseOrgImportSpec(orgID int, mode string, members []storage.OrgImportMember) (*storage.OrgImportSpec, error) {
+	if orgID <= 0 {
+		return nil, nil
+	}
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	if mode == "" {
+		mode = storage.OrgImportCopy
+	}
+	spec := &storage.OrgImportSpec{OrganizationID: orgID}
+	switch mode {
+	case storage.OrgImportCopy:
+		spec.AllMembers = true
+	case storage.OrgImportLock:
+		spec.AllMembers = true
+		spec.Lock = true
+	case storage.OrgImportSelect:
+		seen := map[int]bool{}
+		var picked []storage.OrgImportMember
+		for _, m := range members {
+			if m.UserID <= 0 {
+				continue
+			}
+			role := strings.TrimSpace(strings.ToLower(m.Role))
+			if role == "" {
+				return nil, fmt.Errorf("%w: each selected member needs a role", ErrValidation)
+			}
+			if !storage.ValidInviteRoleForOrg(orgID, role) {
+				return nil, fmt.Errorf("%w: role is not assignable on this organization", ErrValidation)
+			}
+			if seen[m.UserID] {
+				continue
+			}
+			seen[m.UserID] = true
+			picked = append(picked, storage.OrgImportMember{UserID: m.UserID, Role: role})
+		}
+		if len(picked) == 0 {
+			return nil, fmt.Errorf("%w: select at least one organization member and a role", ErrValidation)
+		}
+		spec.Members = picked
+	default:
+		return nil, fmt.Errorf("%w: org_import must be copy, lock, or select", ErrValidation)
+	}
+	return spec, nil
 }
 
 // CreateProjectForUser validates and creates a project, optionally importing an organization roster.
@@ -49,16 +96,19 @@ func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput
 	if len(description) > MaxProjectDescriptionLength {
 		return nil, fmt.Errorf("%w: project description must be %d characters or less", ErrValidation, MaxProjectDescriptionLength)
 	}
-	var orgID *int
+	var spec *storage.OrgImportSpec
 	if in.OrganizationID != nil && *in.OrganizationID > 0 {
 		org, err := requireOrgManage(*in.OrganizationID, userID)
 		if err != nil {
 			return nil, err
 		}
-		id := org.ID
-		orgID = &id
+		parsed, err := parseOrgImportSpec(org.ID, in.ImportMode, in.Members)
+		if err != nil {
+			return nil, err
+		}
+		spec = parsed
 	}
-	proj, err := storage.CreateProjectWithOrg(userID, name, description, orgID)
+	proj, err := storage.CreateProjectWithOrg(userID, name, description, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -67,12 +117,10 @@ func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput
 }
 
 // AttachOrganizationToProject binds an existing project to an organization.
-// Non-owner members who are not in the organization lose access. Current org
-// members are copied onto the project as independently editable memberships.
-// Pending invites are cancelled.
-func AttachOrganizationToProject(ctx context.Context, userID, projectID, organizationID int) (*storage.Project, error) {
+// Non-owner members who are not imported lose access. Pending invites are cancelled.
+func AttachOrganizationToProject(ctx context.Context, userID, projectID int, in CreateProjectInput) (*storage.Project, error) {
 	_ = ctx
-	if organizationID <= 0 {
+	if in.OrganizationID == nil || *in.OrganizationID <= 0 {
 		return nil, fmt.Errorf("%w: organization_id is required", ErrValidation)
 	}
 	proj, err := storage.GetAccessibleProjectByID(projectID, userID)
@@ -82,19 +130,29 @@ func AttachOrganizationToProject(ctx context.Context, userID, projectID, organiz
 	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
-	if _, err := requireOrgManage(organizationID, userID); err != nil {
+	org, err := requireOrgManage(*in.OrganizationID, userID)
+	if err != nil {
 		return nil, err
 	}
-	if proj.OrgManaged && proj.OrganizationID != nil && *proj.OrganizationID == organizationID {
+	spec, err := parseOrgImportSpec(org.ID, in.ImportMode, in.Members)
+	if err != nil {
+		return nil, err
+	}
+	if spec == nil {
+		return nil, fmt.Errorf("%w: organization_id is required", ErrValidation)
+	}
+	if proj.OrganizationID != nil && *proj.OrganizationID == spec.OrganizationID {
 		return storage.GetProjectByID(projectID, proj.OwnerUserID)
 	}
 
-	removed, err := storage.AttachProjectOrganization(projectID, proj.OwnerUserID, organizationID)
+	removed, err := storage.AttachProjectOrganization(projectID, proj.OwnerUserID, *spec)
 	if err != nil {
 		return nil, err
 	}
 	_ = storage.LogProjectEvent(projectID, userID, "organization_attached", map[string]interface{}{
-		"organization_id": organizationID,
+		"organization_id": spec.OrganizationID,
+		"org_import":      in.ImportMode,
+		"lock":            spec.Lock,
 	})
 	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectUpdated, removed...)
 	return storage.GetProjectByID(projectID, proj.OwnerUserID)

@@ -2,6 +2,11 @@
   <div class="share-panel">
     <h4 class="h6">Members</h4>
     <p v-if="orgManaged" class="small text-muted">
+      Members and roles are locked to
+      <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>.
+      Change organization roles to update this board.
+    </p>
+    <p v-else-if="project.organization_id" class="small text-muted">
       Members were imported from
       <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
       as a starting point. You can change roles on this project without affecting the organization.
@@ -155,7 +160,7 @@ const toast = useToast()
 const { askConfirm } = useConfirm()
 const isOwner = computed(() => canManageProject(props.project))
 const orgManaged = computed(() => !!props.project.org_managed && !!props.project.organization_id)
-const canEditMembers = computed(() => isOwner.value)
+const canEditMembers = computed(() => isOwner.value && !orgManaged.value)
 
 const excludeUsernames = computed(() => {
   const names: string[] = []

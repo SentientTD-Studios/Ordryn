@@ -1748,6 +1748,7 @@ paths:
     patch:
       tags: [Organizations]
       summary: Change a member's organization role
+      description: Updates the organization role and overwrites this member's role on imported-and-locked projects only. Unlocked imported projects keep their current project roles.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1779,6 +1780,33 @@ paths:
       responses:
         "204":
           description: Removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organizations/{id}/members/{userId}/project-impact:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Organizations]
+      summary: Preview which projects an organization role change would update
+      description: Returns org-linked projects the member currently belongs to, split into imported-and-locked boards that would receive the new role and unlocked boards that would keep their current project role.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Impact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationMemberRoleImpact"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -5467,12 +5495,12 @@ components:
         organization_id:
           type: integer
           nullable: true
-          description: Organization this project imported members from when org_managed is true
+          description: Organization this project imported members from
         organization_name:
           type: string
         org_managed:
           type: boolean
-          description: When true, members were copied from the organization at create or attach time. Project sharing and roles remain independently editable.
+          description: When true, imported members and roles are locked to the organization. Organization role changes update this board, and project sharing/roles cannot be edited here.
 
     ProjectCreate:
       type: object
@@ -5486,7 +5514,15 @@ components:
           maxLength: 1000
         organization_id:
           type: integer
-          description: When set, current organization members are copied onto the project as a starting roster
+          description: When set, import organization members onto the new project. Combine with org_import.
+        org_import:
+          type: string
+          enum: [copy, lock, select]
+          description: copy imports all members and leaves roles editable. lock imports all members and locks roles to the organization. select imports only org_import_members (each requires a role).
+        org_import_members:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrgImportMember"
 
     ProjectPatch:
       type: object
@@ -5524,7 +5560,15 @@ components:
           description: Days before the automatic sprint end to set lock_date. Null clears the lock. Must be less than auto_sprint_length_days.
         organization_id:
           type: integer
-          description: Attach an organization the caller can manage. Current org members are copied onto the project. Non-owner members who are not in the organization are removed, pending invites are cancelled, and project sharing/roles stay independently editable.
+          description: Attach an organization the caller can manage. Non-imported people are removed and pending invites are cancelled. Use org_import to choose copy, lock, or select.
+        org_import:
+          type: string
+          enum: [copy, lock, select]
+          description: copy imports all members and leaves roles editable. lock imports all members and locks roles to the organization. select imports only org_import_members (each requires a role).
+        org_import_members:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrgImportMember"
       description: At least one field required. Disabling kanban fails with 409 if the project has tasks.
 
     ProjectStatus:
@@ -5952,6 +5996,39 @@ components:
         created_at:
           type: string
           format: date-time
+
+    OrgImportMember:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id:
+          type: integer
+        role:
+          type: string
+
+    OrganizationMemberRoleImpact:
+      type: object
+      properties:
+        locked:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrgMemberProjectImpact"
+        unlocked:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrgMemberProjectImpact"
+
+    OrgMemberProjectImpact:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+        locked:
+          type: boolean
 
     OrganizationInvite:
       type: object

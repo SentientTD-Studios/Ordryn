@@ -42,6 +42,9 @@ import type {
   Organization,
   OrganizationMember,
   OrganizationInvite,
+  OrgImportMode,
+  OrgImportMember,
+  OrgMemberRoleImpact,
   StatusGates,
   SavedView,
   SavedViewFilter,
@@ -580,13 +583,28 @@ export const api = {
     return request<Project[]>('/api/v2/projects')
   },
 
-  createProject(name: string, description = '', organizationId?: number | null) {
+  createProject(
+    name: string,
+    description = '',
+    org?: {
+      organization_id?: number | null
+      org_import?: OrgImportMode
+      org_import_members?: OrgImportMember[]
+    } | null,
+  ) {
+    const organizationId = org?.organization_id
     return request<Project>('/api/v2/projects', {
       method: 'POST',
       body: JSON.stringify({
         name,
         description,
-        ...(organizationId ? { organization_id: organizationId } : {}),
+        ...(organizationId
+          ? {
+              organization_id: organizationId,
+              org_import: org?.org_import || 'copy',
+              ...(org?.org_import === 'select' ? { org_import_members: org.org_import_members || [] } : {}),
+            }
+          : {}),
       }),
     })
   },
@@ -603,6 +621,8 @@ export const api = {
       auto_sprint_length_days: number | null
       auto_sprint_lock_days_before: number | null
       organization_id: number
+      org_import?: OrgImportMode
+      org_import_members?: OrgImportMember[]
     }>,
   ) {
     return request<Project>(`/api/v2/projects/${id}`, {
@@ -810,6 +830,10 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     })
+  },
+
+  organizationMemberRoleImpact(orgId: number, userId: number) {
+    return request<OrgMemberRoleImpact>(`/api/v2/organizations/${orgId}/members/${userId}/project-impact`)
   },
 
   removeOrganizationMember(orgId: number, userId: number) {

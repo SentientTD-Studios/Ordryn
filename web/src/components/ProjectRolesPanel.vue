@@ -35,7 +35,7 @@ const siteRoles = computed(() => roles.value.filter((r) => !r.project_id && !r.o
 const orgRoles = computed(() => roles.value.filter((r) => !!r.organization_id && !r.project_id))
 const customRoles = computed(() => roles.value.filter((r) => r.project_id === props.project.id))
 const editing = computed(() => customRoles.value.find((r) => r.id === editingId.value) || null)
-const canEditProjectRoles = computed(() => canManage.value)
+const canEditProjectRoles = computed(() => canManage.value && !orgManaged.value)
 
 async function load() {
   loading.value = true
@@ -189,6 +189,11 @@ onBeforeUnmount(destroySortable)
 <template>
   <div class="project-roles-panel">
     <div v-if="orgManaged" class="alert alert-info py-2 small">
+      Roles for this project are locked to
+      <RouterLink :to="'/organizations'">{{ project.organization_name || 'the organization' }}</RouterLink>.
+      Organization permission changes apply here automatically.
+    </div>
+    <div v-else-if="project.organization_id" class="alert alert-info py-2 small">
       Members were imported from
       <RouterLink :to="'/organizations'">{{ project.organization_name || 'the organization' }}</RouterLink>.
       Organization roles stay available to assign, and you can still create roles just for this project.
@@ -236,7 +241,7 @@ onBeforeUnmount(destroySortable)
       </ul>
     </template>
 
-    <template>
+    <template v-if="!orgManaged">
       <h4 class="h6">Project roles</h4>
       <ul ref="roleListEl" class="list-unstyled mb-3">
         <li

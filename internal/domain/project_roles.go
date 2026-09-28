@@ -340,6 +340,9 @@ func CreateProjectCustomRoleForUser(ctx context.Context, userID, projectID int, 
 	if _, err := requireProjectManage(projectID, userID); err != nil {
 		return nil, err
 	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return nil, err
+	}
 	if err := applyRoleCopy(&in, func(src *storage.ProjectRoleDef) bool {
 		if isSiteRoleDef(src) {
 			return true
@@ -391,6 +394,9 @@ func UpdateProjectCustomRoleForUser(ctx context.Context, userID, projectID, role
 	if _, err := requireProjectManage(projectID, userID); err != nil {
 		return nil, err
 	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return nil, err
+	}
 	cur, err := storage.GetProjectRoleDef(roleID)
 	if err != nil || cur == nil || cur.ProjectID == nil || *cur.ProjectID != projectID {
 		return nil, ErrNotFound
@@ -423,6 +429,9 @@ func UpdateProjectCustomRoleForUser(ctx context.Context, userID, projectID, role
 func DeleteProjectCustomRoleForUser(ctx context.Context, userID, projectID, roleID int) error {
 	_ = ctx
 	if _, err := requireProjectManage(projectID, userID); err != nil {
+		return err
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
 		return err
 	}
 	cur, err := storage.GetProjectRoleDef(roleID)

@@ -213,22 +213,42 @@ type apiTagPatchRequest struct {
 	Color *string `json:"color"`
 }
 
+type apiOrgImportMember struct {
+	UserID int    `json:"user_id"`
+	Role   string `json:"role"`
+}
+
 type apiProjectCreateRequest struct {
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	OrganizationID *int   `json:"organization_id"`
+	Name             string               `json:"name"`
+	Description      string               `json:"description"`
+	OrganizationID   *int                 `json:"organization_id"`
+	OrgImport        string               `json:"org_import"`
+	OrgImportMembers []apiOrgImportMember `json:"org_import_members"`
 }
 
 type apiProjectPatchRequest struct {
-	Name                     *string     `json:"name"`
-	Description              *string     `json:"description"`
-	WorkflowMode             *string     `json:"workflow_mode"`
-	BacklogName              *string     `json:"backlog_name"`
-	BacklogDescription       *string     `json:"backlog_description"`
-	AutoCreateNextSprint     *bool       `json:"auto_create_next_sprint"`
-	AutoSprintLengthDays     optionalInt `json:"auto_sprint_length_days"`
-	AutoSprintLockDaysBefore optionalInt `json:"auto_sprint_lock_days_before"`
-	OrganizationID           *int        `json:"organization_id"`
+	Name                     *string              `json:"name"`
+	Description              *string              `json:"description"`
+	WorkflowMode             *string              `json:"workflow_mode"`
+	BacklogName              *string              `json:"backlog_name"`
+	BacklogDescription       *string              `json:"backlog_description"`
+	AutoCreateNextSprint     *bool                `json:"auto_create_next_sprint"`
+	AutoSprintLengthDays     optionalInt          `json:"auto_sprint_length_days"`
+	AutoSprintLockDaysBefore optionalInt          `json:"auto_sprint_lock_days_before"`
+	OrganizationID           *int                 `json:"organization_id"`
+	OrgImport                string               `json:"org_import"`
+	OrgImportMembers         []apiOrgImportMember `json:"org_import_members"`
+}
+
+func orgImportMembersFromAPI(in []apiOrgImportMember) []storage.OrgImportMember {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]storage.OrgImportMember, 0, len(in))
+	for _, m := range in {
+		out = append(out, storage.OrgImportMember{UserID: m.UserID, Role: m.Role})
+	}
+	return out
 }
 
 type apiProjectReorderRequest struct {
@@ -1126,6 +1146,8 @@ func apiV1CreateProject(w http.ResponseWriter, r *http.Request) {
 		Name:           req.Name,
 		Description:    req.Description,
 		OrganizationID: req.OrganizationID,
+		ImportMode:     req.OrgImport,
+		Members:        orgImportMembersFromAPI(req.OrgImportMembers),
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrValidation) {
@@ -1184,7 +1206,11 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		}
 	}
 	if req.OrganizationID != nil {
-		project, err = domain.AttachOrganizationToProject(r.Context(), userID, projectID, *req.OrganizationID)
+		project, err = domain.AttachOrganizationToProject(r.Context(), userID, projectID, domain.CreateProjectInput{
+			OrganizationID: req.OrganizationID,
+			ImportMode:     req.OrgImport,
+			Members:        orgImportMembersFromAPI(req.OrgImportMembers),
+		})
 		if err != nil {
 			writeProjectPatchError(w, err)
 			return

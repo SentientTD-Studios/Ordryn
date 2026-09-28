@@ -69,6 +69,25 @@ export type Project = {
   org_managed?: boolean
 }
 
+export type OrgImportMode = 'copy' | 'lock' | 'select'
+
+export type OrgImportMember = {
+  user_id: number
+  role: string
+}
+
+export type OrgMemberProjectImpact = {
+  id: number
+  name: string
+  role: string
+  locked: boolean
+}
+
+export type OrgMemberRoleImpact = {
+  locked: OrgMemberProjectImpact[]
+  unlocked: OrgMemberProjectImpact[]
+}
+
 export type ProjectStatus = {
   id: number
   project_id: number

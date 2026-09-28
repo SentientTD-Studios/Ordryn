@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
-import type { Organization, Project } from '@/api/types'
+import type { Organization, OrgImportMember, OrgImportMode, Project } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -13,6 +13,7 @@ import ProjectGitHubPanel from '@/components/ProjectGitHubPanel.vue'
 import ProjectExtensionsPanel from '@/components/ProjectExtensionsPanel.vue'
 import ProjectTagsPanel from '@/components/ProjectTagsPanel.vue'
 import ProjectRolesPanel from '@/components/ProjectRolesPanel.vue'
+import OrgImportFields from '@/components/OrgImportFields.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
 import { canManageProject } from '@/utils/projectPerms'
 
@@ -38,13 +39,21 @@ const saving = ref(false)
 const archiving = ref(false)
 const attachingOrg = ref(false)
 const attachOrgId = ref(0)
+const attachMode = ref<OrgImportMode>('copy')
+const attachMembers = ref<OrgImportMember[]>([])
 const orgs = ref<Organization[]>([])
 const tab = ref<SettingsTab>('details')
 const isOwner = computed(() => (props.project?.role || 'owner') === 'owner')
 const canManage = computed(() => canManageProject(props.project))
 const isKanban = computed(() => (props.project?.workflow_mode || 'classic') === 'kanban')
-const orgManaged = computed(() => !!props.project?.org_managed && !!props.project?.organization_id)
+const orgLinked = computed(() => !!props.project?.organization_id)
+const orgManaged = computed(() => orgLinked.value && !!props.project?.org_managed)
 const manageableOrgs = computed(() => orgs.value.filter((o) => o.can_manage))
+const attachDisabled = computed(() => {
+  if (attachingOrg.value || !attachOrgId.value) return true
+  if (attachMode.value === 'select' && !attachMembers.value.length) return true
+  return false
+})
 
 const tabs = computed(() => {
   const items: { id: SettingsTab; label: string }[] = [
@@ -66,6 +75,8 @@ watch(
     name.value = props.project.name
     description.value = props.project.description || ''
     attachOrgId.value = props.project.organization_id || 0
+    attachMode.value = 'copy'
+    attachMembers.value = []
     tab.value = 'details'
     void loadOrganizations()
   },
@@ -117,19 +128,30 @@ async function saveBasics() {
 }
 
 async function attachOrganization() {
-  if (!props.project || !isOwner.value || !attachOrgId.value || orgManaged.value) return
+  if (!props.project || !isOwner.value || !attachOrgId.value || orgLinked.value) return
+  if (attachMode.value === 'select' && !attachMembers.value.length) return
   const org = manageableOrgs.value.find((o) => o.id === attachOrgId.value)
   const orgName = org?.name || 'this organization'
+  const modeNote =
+    attachMode.value === 'lock'
+      ? ' All members will be imported and roles will stay locked to the organization.'
+      : attachMode.value === 'select'
+        ? ' Only the members you selected will be imported.'
+        : ' All members will be imported, and you can still change roles here afterward.'
   const ok = await askConfirm({
     title: 'Attach organization?',
-    message: `Attach “${orgName}” to this project? People who are not in that organization will be removed. Current org members are copied onto this project, and you can still change roles here afterward.`,
+    message: `Attach “${orgName}” to this project? People who are not imported will be removed from the project.${modeNote}`,
     confirmLabel: 'Attach',
     danger: true,
   })
   if (!ok) return
   attachingOrg.value = true
   try {
-    await api.updateProject(props.project.id, { organization_id: attachOrgId.value })
+    await api.updateProject(props.project.id, {
+      organization_id: attachOrgId.value,
+      org_import: attachMode.value,
+      ...(attachMode.value === 'select' ? { org_import_members: attachMembers.value } : {}),
+    })
     toast.push('Organization attached', 'success')
     emit('saved')
   } catch (err) {
@@ -244,36 +266,35 @@ async function archiveOrRestore() {
               </div>
             </div>
 
-            <div v-if="orgManaged" class="mb-3">
+            <div v-if="orgLinked" class="mb-3">
               <label class="form-label small fw-bold">Organization</label>
               <p class="small mb-0">
                 Members were imported from
                 <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>.
-                You can still change sharing and roles on this project.
+                <template v-if="orgManaged">
+                  Roles on this project are locked; organization role changes update members here.
+                </template>
+                <template v-else>
+                  You can still change sharing and roles on this project.
+                </template>
               </p>
             </div>
             <div v-else-if="isOwner && manageableOrgs.length" class="mb-3">
-              <label for="edit-project-org" class="form-label small fw-bold">Organization</label>
-              <div class="d-flex flex-wrap gap-2 align-items-end">
-                <select id="edit-project-org" v-model="attachOrgId" class="form-select form-select-sm" style="max-width: 20rem">
-                  <option :value="0">None — manage members on this project</option>
-                  <option v-for="o in manageableOrgs" :key="o.id" :value="o.id">
-                    {{ o.name }}
-                  </option>
-                </select>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-primary"
-                  :disabled="attachingOrg || !attachOrgId"
-                  @click="attachOrganization"
-                >
-                  Attach organization
-                </button>
-              </div>
-              <small class="form-hint">
-                Attaching an organization copies its members onto this project and removes anyone who is not in the org.
-                You can still change sharing and custom roles afterward.
-              </small>
+              <OrgImportFields
+                :orgs="manageableOrgs"
+                v-model:organization-id="attachOrgId"
+                v-model:import-mode="attachMode"
+                v-model:members="attachMembers"
+                select-id="edit-project-org"
+              />
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary mt-2"
+                :disabled="attachDisabled"
+                @click="attachOrganization"
+              >
+                Attach organization
+              </button>
             </div>
 
             <div v-if="isOwner" class="d-flex justify-content-between align-items-center gap-2 flex-wrap">

@@ -543,8 +543,15 @@ Content-Type: application/json
                     <p><span class="badge bg-primary">POST</span> <code>/api/v2/projects</code></p>
                     <p>JSON body:</p>
                     <pre class="api-docs-pre"><code>{
-  "name": "Work"    // required, max 50 characters
+  "name": "Work",
+  "organization_id": 12,
+  "org_import": "copy"
 }</code></pre>
+                    <p>
+                        <code>org_import</code> is <code>copy</code> (all members, roles stay editable),
+                        <code>lock</code> (all members, roles stay locked to the organization), or
+                        <code>select</code> (only <code>org_import_members</code>, each with a required role).
+                    </p>
                     <p>Returns <code>201 Created</code> with the project object.</p>
 
                     <h3 class="h5 mt-3">Rename project</h3>
@@ -552,13 +559,14 @@ Content-Type: application/json
                     <p>JSON body (any subset):</p>
                     <pre class="api-docs-pre"><code>{
   "name": "Renamed",
-  "organization_id": 12
+  "organization_id": 12,
+  "org_import": "lock"
 }</code></pre>
                     <p>
                         Returns the updated project object. Missing ids return <code>404 not_found</code>.
-                        Setting <code>organization_id</code> attaches that organization: non-org members
-                        are removed, pending invites are cancelled, and current org members are copied onto
-                        the project. Sharing and roles stay editable afterward.
+                        Setting <code>organization_id</code> attaches that organization: people who are not
+                        imported are removed, pending invites are cancelled, and members are copied according
+                        to <code>org_import</code> (<code>copy</code>, <code>lock</code>, or <code>select</code>).
                     </p>
 
                     <h3 class="h5 mt-3">Delete project</h3>
