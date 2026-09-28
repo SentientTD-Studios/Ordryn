@@ -42,6 +42,7 @@ import type {
   Organization,
   OrganizationMember,
   OrganizationInvite,
+  OrganizationProjectRoster,
   OrgImportMode,
   OrgImportMember,
   OrgMemberRoleImpact,
@@ -792,6 +793,10 @@ export const api = {
 
   listOrganizationMembers(orgId: number) {
     return request<OrganizationMember[]>(`/api/v2/organizations/${orgId}/members`)
+  },
+
+  listOrganizationProjects(orgId: number) {
+    return request<OrganizationProjectRoster[]>(`/api/v2/organizations/${orgId}/projects`)
   },
 
   listOrganizationInvites(orgId: number) {

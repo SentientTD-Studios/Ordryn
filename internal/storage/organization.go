@@ -573,6 +573,82 @@ type OrgMemberProjectRef struct {
 	Locked bool
 }
 
+// OrgProjectRoster is an org-linked project plus its current project_members.
+type OrgProjectRoster struct {
+	ID         int
+	Name       string
+	OrgManaged bool
+	Members    []ProjectMember
+}
+
+// ListOrganizationProjectRosters returns projects attached to the organization
+// and the people currently on each board.
+func ListOrganizationProjectRosters(orgID int) ([]OrgProjectRoster, error) {
+	if orgID <= 0 {
+		return nil, fmt.Errorf("invalid organization")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `
+		SELECT p.id, p.name, COALESCE(p.org_managed, false),
+		       pm.user_id, COALESCE(u.email, ''), COALESCE(u.user_name, ''),
+		       COALESCE(pm.role, ''), pm.created_at
+		FROM projects p
+		LEFT JOIN project_members pm ON pm.project_id = p.id
+		LEFT JOIN users u ON u.id = pm.user_id
+		WHERE p.organization_id = $1
+		ORDER BY LOWER(p.name) ASC, p.id ASC,
+		         CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, u.email`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byID := map[int]*OrgProjectRoster{}
+	var order []int
+	for rows.Next() {
+		var (
+			id         int
+			name       string
+			orgManaged bool
+			userID     *int
+			email      string
+			userName   string
+			role       string
+			createdAt  *time.Time
+		)
+		if err := rows.Scan(&id, &name, &orgManaged, &userID, &email, &userName, &role, &createdAt); err != nil {
+			return nil, err
+		}
+		r, ok := byID[id]
+		if !ok {
+			r = &OrgProjectRoster{ID: id, Name: name, OrgManaged: orgManaged, Members: []ProjectMember{}}
+			byID[id] = r
+			order = append(order, id)
+		}
+		if userID == nil || *userID <= 0 {
+			continue
+		}
+		m := ProjectMember{UserID: *userID, Email: email, UserName: userName, Role: role, Inherited: orgManaged && role != RoleOwner}
+		if createdAt != nil {
+			m.CreatedAt = *createdAt
+		}
+		r.Members = append(r.Members, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]OrgProjectRoster, 0, len(order))
+	for _, id := range order {
+		out = append(out, *byID[id])
+	}
+	return out, nil
+}
+
 // ListOrgProjectsForMember returns org-linked projects the user is a member of.
 func ListOrgProjectsForMember(orgID, userID int) ([]OrgMemberProjectRef, error) {
 	pool, err := OpenDatabase()

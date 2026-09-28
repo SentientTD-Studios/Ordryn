@@ -921,6 +921,13 @@ export type OrganizationMember = {
   created_at?: string
 }
 
+export type OrganizationProjectRoster = {
+  id: number
+  name: string
+  org_managed: boolean
+  members: ProjectMember[]
+}
+
 export type OrganizationInvite = {
   id: number
   organization_id: number

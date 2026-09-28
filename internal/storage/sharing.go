@@ -429,11 +429,15 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	}
 	defer rows.Close()
 
+	locked := ProjectIsOrgManaged(projectID)
 	var out []ProjectMember
 	for rows.Next() {
 		var m ProjectMember
 		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.Inherited, &m.CreatedAt); err != nil {
 			return nil, err
+		}
+		if locked && m.Role != RoleOwner {
+			m.Inherited = true
 		}
 		out = append(out, m)
 	}

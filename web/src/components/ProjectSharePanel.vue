@@ -11,11 +11,11 @@
       <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
       as a starting point. You can change roles on this project without affecting the organization.
     </p>
-    <ul class="list-unstyled mb-3">
+    <ul v-if="members.length" class="list-unstyled mb-3">
       <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
         <span>{{ m.user_name || m.email }}</span>
         <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
-        <span v-if="m.inherited" class="badge text-bg-info">from org</span>
+        <span v-if="m.inherited || (orgManaged && m.role !== 'owner')" class="badge text-bg-info">from org</span>
         <template v-if="canEditMembers && m.role !== 'owner'">
           <select
             class="form-select form-select-sm w-auto"
@@ -30,6 +30,7 @@
         </template>
       </li>
     </ul>
+    <p v-else class="small text-muted mb-3">No members on this project.</p>
 
     <template v-if="canEditMembers">
       <h4 class="h6">Invite</h4>
@@ -175,14 +176,18 @@ const excludeUsernames = computed(() => {
 
 async function loadPanel() {
   try {
-    const [m, inv, ln, ev, roles] = await Promise.all([
-      api.listProjectMembers(props.project.id),
-      api.listProjectInvites(props.project.id),
-      api.listShareLinks('project', props.project.id),
-      api.listProjectEvents(props.project.id),
+    members.value = await api.listProjectMembers(props.project.id)
+  } catch (err) {
+    members.value = []
+    toast.push(err instanceof APIError ? err.message : 'Failed to load members', 'error')
+  }
+  try {
+    const [inv, ln, ev, roles] = await Promise.all([
+      api.listProjectInvites(props.project.id).catch(() => [] as ProjectInvite[]),
+      api.listShareLinks('project', props.project.id).catch(() => [] as ShareLink[]),
+      api.listProjectEvents(props.project.id).catch(() => [] as ProjectEvent[]),
       api.listProjectRoles(props.project.id).catch(() => ({ catalog: [], roles: [] })),
     ])
-    members.value = m
     invites.value = inv
     links.value = ln
     events.value = ev

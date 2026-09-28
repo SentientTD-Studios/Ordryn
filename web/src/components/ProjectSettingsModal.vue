@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
-import type { Organization, OrgImportMember, OrgImportMode, Project } from '@/api/types'
+import type { Organization, OrgImportMember, OrgImportMode, Project, ProjectMember } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -14,6 +14,7 @@ import ProjectExtensionsPanel from '@/components/ProjectExtensionsPanel.vue'
 import ProjectTagsPanel from '@/components/ProjectTagsPanel.vue'
 import ProjectRolesPanel from '@/components/ProjectRolesPanel.vue'
 import OrgImportFields from '@/components/OrgImportFields.vue'
+import ProjectMemberRoster from '@/components/ProjectMemberRoster.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
 import { canManageProject } from '@/utils/projectPerms'
 
@@ -41,6 +42,7 @@ const attachingOrg = ref(false)
 const attachOrgId = ref(0)
 const attachMode = ref<OrgImportMode>('copy')
 const attachMembers = ref<OrgImportMember[]>([])
+const projectMembers = ref<ProjectMember[]>([])
 const orgs = ref<Organization[]>([])
 const tab = ref<SettingsTab>('details')
 const isOwner = computed(() => (props.project?.role || 'owner') === 'owner')
@@ -79,6 +81,7 @@ watch(
     attachMembers.value = []
     tab.value = 'details'
     void loadOrganizations()
+    void loadProjectMembers()
   },
 )
 
@@ -91,6 +94,7 @@ watch(
     attachOrgId.value = props.project.organization_id || 0
     const prevId = Array.isArray(prev) ? prev[0] : undefined
     if (prevId !== undefined && next[0] !== prevId) tab.value = 'details'
+    void loadProjectMembers()
   },
 )
 
@@ -107,6 +111,18 @@ async function loadOrganizations() {
     orgs.value = await api.listOrganizations()
   } catch {
     orgs.value = []
+  }
+}
+
+async function loadProjectMembers() {
+  if (!props.project) {
+    projectMembers.value = []
+    return
+  }
+  try {
+    projectMembers.value = await api.listProjectMembers(props.project.id)
+  } catch {
+    projectMembers.value = []
   }
 }
 
@@ -268,7 +284,7 @@ async function archiveOrRestore() {
 
             <div v-if="orgLinked" class="mb-3">
               <label class="form-label small fw-bold">Organization</label>
-              <p class="small mb-0">
+              <p class="small mb-2">
                 Members were imported from
                 <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>.
                 <template v-if="orgManaged">
@@ -278,6 +294,7 @@ async function archiveOrRestore() {
                   You can still change sharing and roles on this project.
                 </template>
               </p>
+              <ProjectMemberRoster :members="projectMembers" :locked="orgManaged" />
             </div>
             <div v-else-if="isOwner && manageableOrgs.length" class="mb-3">
               <OrgImportFields

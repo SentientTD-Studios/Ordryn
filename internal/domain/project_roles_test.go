@@ -566,6 +566,48 @@ func TestOrgImportLockBlocksEditsAndAppliesOrgRoleChanges(t *testing.T) {
 		t.Fatalf("copy should not lock: %+v", unlocked)
 	}
 
+	lockedMembers, err := storage.ListProjectMembers(locked.ID)
+	if err != nil {
+		t.Fatalf("list locked members: %v", err)
+	}
+	var sawLockedEditor bool
+	for _, m := range lockedMembers {
+		if m.UserID == 2 && m.Inherited && m.Role == storage.RoleEditor {
+			sawLockedEditor = true
+		}
+	}
+	if !sawLockedEditor {
+		t.Fatalf("locked project should still list imported members: %+v", lockedMembers)
+	}
+	rosters, err := ListOrganizationProjectRostersForUser(ctx, 1, org.ID)
+	if err != nil {
+		t.Fatalf("org project rosters: %v", err)
+	}
+	if len(rosters) != 2 {
+		t.Fatalf("expected 2 attached projects, got %+v", rosters)
+	}
+	var sawLockedRoster, sawUnlockedRoster bool
+	for _, r := range rosters {
+		var hasEditor bool
+		for _, m := range r.Members {
+			if m.UserID == 2 {
+				hasEditor = true
+			}
+		}
+		if !hasEditor {
+			t.Fatalf("roster %s missing imported member: %+v", r.Name, r.Members)
+		}
+		if r.ID == locked.ID && r.OrgManaged {
+			sawLockedRoster = true
+		}
+		if r.ID == unlocked.ID && !r.OrgManaged {
+			sawUnlockedRoster = true
+		}
+	}
+	if !sawLockedRoster || !sawUnlockedRoster {
+		t.Fatalf("rosters: %+v", rosters)
+	}
+
 	impact, err := OrganizationMemberRoleImpactForUser(ctx, 1, org.ID, 2)
 	if err != nil {
 		t.Fatalf("impact: %v", err)

@@ -187,6 +187,8 @@ func APIV1OrganizationsRouter(w http.ResponseWriter, r *http.Request) {
 		handleOrganizationInvites(w, r, userID, orgID, parts[2:])
 	case "roles":
 		handleOrganizationRoles(w, r, userID, orgID, parts[2:])
+	case "projects":
+		handleOrganizationProjects(w, r, userID, orgID, parts[2:])
 	default:
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Unknown organization resource.")
 	}
@@ -298,6 +300,60 @@ func handleOrganizationMembers(w http.ResponseWriter, r *http.Request, userID, o
 	default:
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 	}
+}
+
+func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, orgID int, rest []string) {
+	if len(rest) != 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Unknown organization project resource.")
+		return
+	}
+	if r.Method != http.MethodGet {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	rosters, err := domain.ListOrganizationProjectRostersForUser(r.Context(), userID, orgID)
+	if err != nil {
+		writeProjectRoleDomainError(w, err)
+		return
+	}
+	type memberJSON struct {
+		UserID    int    `json:"user_id"`
+		Email     string `json:"email"`
+		UserName  string `json:"user_name"`
+		Role      string `json:"role"`
+		RoleName  string `json:"role_name,omitempty"`
+		Inherited bool   `json:"inherited,omitempty"`
+		CreatedAt string `json:"created_at,omitempty"`
+	}
+	type rosterJSON struct {
+		ID         int          `json:"id"`
+		Name       string       `json:"name"`
+		OrgManaged bool         `json:"org_managed"`
+		Members    []memberJSON `json:"members"`
+	}
+	out := make([]rosterJSON, 0, len(rosters))
+	for _, roster := range rosters {
+		members := make([]memberJSON, 0, len(roster.Members))
+		for _, m := range roster.Members {
+			members = append(members, memberJSON{
+				UserID:    m.UserID,
+				Email:     m.Email,
+				UserName:  m.UserName,
+				Role:      m.Role,
+				RoleName:  storage.RoleDisplayName(roster.ID, m.Role),
+				Inherited: m.Inherited,
+				CreatedAt: formatRFC3339(m.CreatedAt),
+			})
+		}
+		out = append(out, rosterJSON{
+			ID:         roster.ID,
+			Name:       roster.Name,
+			OrgManaged: roster.OrgManaged,
+			Members:    members,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func handleOrganizationInvites(w http.ResponseWriter, r *http.Request, userID, orgID int, rest []string) {

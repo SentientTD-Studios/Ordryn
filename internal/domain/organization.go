@@ -359,6 +359,22 @@ func OrganizationMemberRoleImpactForUser(ctx context.Context, actorUserID, orgID
 	return out, nil
 }
 
+// ListOrganizationProjectRostersForUser returns attached projects and their members.
+func ListOrganizationProjectRostersForUser(ctx context.Context, actorUserID, orgID int) ([]storage.OrgProjectRoster, error) {
+	_ = ctx
+	if _, err := requireOrgAccess(orgID, actorUserID); err != nil {
+		return nil, err
+	}
+	rosters, err := storage.ListOrganizationProjectRosters(orgID)
+	if err != nil {
+		return nil, err
+	}
+	if rosters == nil {
+		rosters = []storage.OrgProjectRoster{}
+	}
+	return rosters, nil
+}
+
 // RemoveOrganizationMemberForUser removes a non-owner, or allows self-leave.
 func RemoveOrganizationMemberForUser(ctx context.Context, actorUserID, orgID, memberUserID int) error {
 	_ = ctx

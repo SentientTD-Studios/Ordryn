@@ -2,9 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Organization, OrganizationInvite, OrganizationMember, OrgMemberProjectImpact, OrgMemberRoleImpact, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
+import type { Organization, OrganizationInvite, OrganizationMember, OrganizationProjectRoster, OrgMemberProjectImpact, OrgMemberRoleImpact, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
 import RolePermissionFields from '@/components/RolePermissionFields.vue'
+import ProjectMemberRoster from '@/components/ProjectMemberRoster.vue'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -17,6 +18,7 @@ const orgs = ref<Organization[]>([])
 const selectedId = ref<number | null>(null)
 const org = computed(() => orgs.value.find((o) => o.id === selectedId.value) || null)
 const members = ref<OrganizationMember[]>([])
+const orgProjects = ref<OrganizationProjectRoster[]>([])
 const invites = ref<OrganizationInvite[]>([])
 const myInvites = ref<OrganizationInvite[]>([])
 const catalog = ref<ProjectPermInfo[]>([])
@@ -78,18 +80,21 @@ async function loadOrgs() {
 async function loadDetail() {
   if (!selectedId.value) {
     members.value = []
+    orgProjects.value = []
     invites.value = []
     roles.value = []
     return
   }
   try {
-    const [m, inv, roleData, fresh] = await Promise.all([
+    const [m, inv, roleData, fresh, projects] = await Promise.all([
       api.listOrganizationMembers(selectedId.value),
       api.listOrganizationInvites(selectedId.value).catch(() => [] as OrganizationInvite[]),
       api.listOrganizationRoles(selectedId.value),
       api.getOrganization(selectedId.value),
+      api.listOrganizationProjects(selectedId.value).catch(() => [] as OrganizationProjectRoster[]),
     ])
     members.value = m
+    orgProjects.value = projects
     invites.value = inv
     catalog.value = roleData.catalog || []
     roles.value = roleData.roles || []
@@ -545,6 +550,27 @@ onBeforeUnmount(destroySortable)
                 </li>
               </ul>
             </div>
+          </div>
+        </div>
+
+        <div v-if="org" class="card mb-3">
+          <div class="card-body">
+            <h2 class="h6">Attached projects</h2>
+            <p class="small text-muted">
+              People currently on each imported project. Locked boards keep these roles in sync with the organization;
+              unlocked boards keep their own roles.
+            </p>
+            <div v-if="orgProjects.length">
+              <div v-for="p in orgProjects" :key="p.id" class="mb-3">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                  <strong>{{ p.name }}</strong>
+                  <span v-if="p.org_managed" class="badge text-bg-info">roles locked</span>
+                  <span v-else class="badge text-bg-secondary">roles editable</span>
+                </div>
+                <ProjectMemberRoster :members="p.members" :locked="p.org_managed" />
+              </div>
+            </div>
+            <p v-else class="small text-muted mb-0">No projects are attached to this organization yet.</p>
           </div>
         </div>
 

@@ -1812,6 +1812,28 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/organizations/{id}/projects:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Organizations]
+      summary: List attached projects and their members
+      description: Returns organization-linked projects and the people currently on each board. Members are listed even when roles are locked.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Attached projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrganizationProjectRoster"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/organizations/{id}/invites:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -6029,6 +6051,20 @@ components:
           type: string
         locked:
           type: boolean
+
+    OrganizationProjectRoster:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        org_managed:
+          type: boolean
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
 
     OrganizationInvite:
       type: object
