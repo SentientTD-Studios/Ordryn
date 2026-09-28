@@ -602,6 +602,9 @@ func TestOrgImportLockBlocksEditsAndAppliesOrgRoleChanges(t *testing.T) {
 		}
 		if r.ID == unlocked.ID && !r.OrgManaged {
 			sawUnlockedRoster = true
+			if !r.CanManage {
+				t.Fatal("owner should be able to edit unlocked project roles")
+			}
 		}
 	}
 	if !sawLockedRoster || !sawUnlockedRoster {

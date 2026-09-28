@@ -6061,6 +6061,8 @@ components:
           type: string
         org_managed:
           type: boolean
+        can_manage:
+          type: boolean
         members:
           type: array
           items:

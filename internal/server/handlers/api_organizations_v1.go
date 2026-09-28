@@ -329,6 +329,7 @@ func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, 
 		ID         int          `json:"id"`
 		Name       string       `json:"name"`
 		OrgManaged bool         `json:"org_managed"`
+		CanManage  bool         `json:"can_manage"`
 		Members    []memberJSON `json:"members"`
 	}
 	out := make([]rosterJSON, 0, len(rosters))
@@ -349,6 +350,7 @@ func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, 
 			ID:         roster.ID,
 			Name:       roster.Name,
 			OrgManaged: roster.OrgManaged,
+			CanManage:  roster.CanManage,
 			Members:    members,
 		})
 	}

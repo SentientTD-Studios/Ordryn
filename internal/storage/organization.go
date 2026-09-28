@@ -578,6 +578,7 @@ type OrgProjectRoster struct {
 	ID         int
 	Name       string
 	OrgManaged bool
+	CanManage  bool
 	Members    []ProjectMember
 }
 

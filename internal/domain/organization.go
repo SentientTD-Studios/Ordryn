@@ -372,6 +372,13 @@ func ListOrganizationProjectRostersForUser(ctx context.Context, actorUserID, org
 	if rosters == nil {
 		rosters = []storage.OrgProjectRoster{}
 	}
+	for i := range rosters {
+		proj, err := storage.GetAccessibleProjectByID(rosters[i].ID, actorUserID)
+		if err != nil {
+			continue
+		}
+		rosters[i].CanManage = storage.RoleCanManageProject(proj.ID, proj.Role)
+	}
 	return rosters, nil
 }
 

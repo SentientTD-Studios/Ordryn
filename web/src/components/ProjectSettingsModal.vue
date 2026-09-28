@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
-import type { Organization, OrgImportMember, OrgImportMode, Project, ProjectMember } from '@/api/types'
+import type { Organization, OrgImportMember, OrgImportMode, Project, ProjectMember, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -43,6 +43,7 @@ const attachOrgId = ref(0)
 const attachMode = ref<OrgImportMode>('copy')
 const attachMembers = ref<OrgImportMember[]>([])
 const projectMembers = ref<ProjectMember[]>([])
+const assignableRoles = ref<ProjectRoleDef[]>([])
 const orgs = ref<Organization[]>([])
 const tab = ref<SettingsTab>('details')
 const isOwner = computed(() => (props.project?.role || 'owner') === 'owner')
@@ -117,12 +118,50 @@ async function loadOrganizations() {
 async function loadProjectMembers() {
   if (!props.project) {
     projectMembers.value = []
+    assignableRoles.value = []
     return
   }
   try {
-    projectMembers.value = await api.listProjectMembers(props.project.id)
+    const [members, roles] = await Promise.all([
+      api.listProjectMembers(props.project.id),
+      api.listProjectRoles(props.project.id).catch(() => ({ catalog: [], roles: [] })),
+    ])
+    projectMembers.value = members
+    assignableRoles.value = (roles.roles || []).filter((r) => r.slug !== 'owner')
   } catch {
     projectMembers.value = []
+  }
+}
+
+async function onProjectMemberRoleChange(userId: number, role: string) {
+  if (!props.project || !role || role === 'owner' || orgManaged.value) return
+  try {
+    await api.updateProjectMember(props.project.id, userId, role)
+    toast.push('Role updated', 'success')
+    await loadProjectMembers()
+    emit('changed')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
+    await loadProjectMembers()
+  }
+}
+
+async function onProjectMemberRemove(userId: number) {
+  if (!props.project || orgManaged.value) return
+  const ok = await askConfirm({
+    title: 'Remove member?',
+    message: 'Remove this member from the project?',
+    confirmLabel: 'Remove',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await api.removeProjectMember(props.project.id, userId)
+    toast.push('Member removed', 'info')
+    await loadProjectMembers()
+    emit('changed')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Remove failed', 'error')
   }
 }
 
@@ -291,10 +330,17 @@ async function archiveOrRestore() {
                   Roles on this project are locked; organization role changes update members here.
                 </template>
                 <template v-else>
-                  You can still change sharing and roles on this project.
+                  Change a member's role here, or on the Sharing tab. Organization role changes do not overwrite this board.
                 </template>
               </p>
-              <ProjectMemberRoster :members="projectMembers" :locked="orgManaged" />
+              <ProjectMemberRoster
+                :members="projectMembers"
+                :locked="orgManaged"
+                :editable="canManage && !orgManaged"
+                :roles="assignableRoles"
+                @role-change="onProjectMemberRoleChange"
+                @remove="onProjectMemberRemove"
+              />
             </div>
             <div v-else-if="isOwner && manageableOrgs.length" class="mb-3">
               <OrgImportFields

@@ -925,6 +925,7 @@ export type OrganizationProjectRoster = {
   id: number
   name: string
   org_managed: boolean
+  can_manage?: boolean
   members: ProjectMember[]
 }
 
