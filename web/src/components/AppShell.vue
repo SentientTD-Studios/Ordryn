@@ -53,8 +53,11 @@ async function loadPendingInvites() {
     return
   }
   try {
-    const invites = await api.listMyProjectInvites()
-    pendingInviteCount.value = invites.length
+    const [projectInvites, orgInvites] = await Promise.all([
+      api.listMyProjectInvites(),
+      api.listMyOrganizationInvites().catch(() => []),
+    ])
+    pendingInviteCount.value = projectInvites.length + orgInvites.length
   } catch {
     pendingInviteCount.value = 0
   }

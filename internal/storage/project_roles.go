@@ -826,6 +826,15 @@ func CountInvitesWithRole(slug string, projectID int) (int, error) {
 	} else {
 		err = pool.QueryRow(context.Background(),
 			`SELECT COUNT(*) FROM project_invites WHERE role = $1 AND accepted_at IS NULL`, slug).Scan(&n)
+		if err != nil {
+			return 0, err
+		}
+		var orgInvites int
+		if err = pool.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM organization_invites WHERE role = $1 AND accepted_at IS NULL`, slug).Scan(&orgInvites); err != nil {
+			return 0, err
+		}
+		return n + orgInvites, nil
 	}
 	return n, err
 }

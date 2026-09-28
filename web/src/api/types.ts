@@ -781,6 +781,7 @@ export type EmailAuditTrigger =
   | 'site_invite'
   | 'join_request'
   | 'project_invite'
+  | 'organization_invite'
 
 export type EmailAuditEntry = {
   id: number
@@ -899,6 +900,19 @@ export type OrganizationMember = {
   role: string
   role_name?: string
   created_at?: string
+}
+
+export type OrganizationInvite = {
+  id: number
+  organization_id: number
+  email: string
+  user_name?: string
+  role: string
+  expires_at: string
+  created_at: string
+  organization_name?: string
+  inviter_email?: string
+  inviter_user_name?: string
 }
 
 export type StatusGates = {

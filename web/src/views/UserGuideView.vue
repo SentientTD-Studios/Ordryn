@@ -86,7 +86,9 @@ onUnmounted(() => {
             — create, rename, share, invite collaborators, and archive. Group people in
             <RouterLink to="/organizations">Organizations</RouterLink>
             and import those members when you create a project, or attach an organization later
-            from project settings. Attaching an org removes anyone who is not an org member.
+            from project settings. Inviting someone to an organization works like a project invite:
+            they must accept before they join or inherit org-based boards. Attaching an org removes
+            anyone who is not an org member.
             Org permission changes apply to every org-based board, and those projects cannot
             edit membership themselves. Archived projects move
             into an Archived section so they do not clutter the main list, are tagged archived

@@ -41,6 +41,7 @@ import type {
   ProjectRolePatch,
   Organization,
   OrganizationMember,
+  OrganizationInvite,
   StatusGates,
   SavedView,
   SavedViewFilter,
@@ -773,11 +774,35 @@ export const api = {
     return request<OrganizationMember[]>(`/api/v2/organizations/${orgId}/members`)
   },
 
-  addOrganizationMember(orgId: number, username: string, role: string) {
-    return request<OrganizationMember>(`/api/v2/organizations/${orgId}/members`, {
+  listOrganizationInvites(orgId: number) {
+    return request<OrganizationInvite[]>(`/api/v2/organizations/${orgId}/invites`)
+  },
+
+  createOrganizationInvite(orgId: number, username: string, role: string) {
+    return request<OrganizationInvite>(`/api/v2/organizations/${orgId}/invites`, {
       method: 'POST',
       body: JSON.stringify({ username, role }),
     })
+  },
+
+  revokeOrganizationInvite(orgId: number, inviteId: number) {
+    return request<void>(`/api/v2/organizations/${orgId}/invites/${inviteId}`, { method: 'DELETE' })
+  },
+
+  listMyOrganizationInvites() {
+    return request<OrganizationInvite[]>('/api/v2/organization-invites')
+  },
+
+  acceptOrganizationInvite(id: number) {
+    return request<void>(`/api/v2/organization-invites/${id}/accept`, { method: 'POST' })
+  },
+
+  declineOrganizationInvite(id: number) {
+    return request<void>(`/api/v2/organization-invites/${id}/decline`, { method: 'POST' })
+  },
+
+  addOrganizationMember(orgId: number, username: string, role: string) {
+    return this.createOrganizationInvite(orgId, username, role)
   },
 
   updateOrganizationMember(orgId: number, userId: number, role: string) {

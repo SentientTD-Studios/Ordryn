@@ -145,6 +145,8 @@ func registerAPIV1Routes() {
 	handleAPI("/project-roles", v1(handlers.APIV1ProjectRolesCatalog))
 	handleAPI("/organizations", v1(handlers.APIV1OrganizationsRouter))
 	handleAPI("/organizations/", v1(handlers.APIV1OrganizationsRouter))
+	handleAPI("/organization-invites", v1(handlers.APIV1OrganizationInvitesRouter))
+	handleAPI("/organization-invites/", v1(handlers.APIV1OrganizationInvitesRouter))
 	handleAPI("/projects", v1(handlers.APIV1ProjectsRouter))
 	handleAPI("/projects/", v1(handlers.APIV1ProjectsRouter))
 	handleAPI("/project-invites", v1(handlers.APIV1ProjectInvitesRouter))

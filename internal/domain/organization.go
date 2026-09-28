@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
 
 	"github.com/jackc/pgx/v5"
@@ -158,8 +160,9 @@ func ListOrganizationMembersForUser(ctx context.Context, userID, orgID int) ([]s
 	return members, nil
 }
 
-// AddOrganizationMemberForUser adds a user by username.
-func AddOrganizationMemberForUser(ctx context.Context, actorUserID, orgID int, rawUsername, role string) (*storage.OrganizationMember, error) {
+// InviteToOrganization creates a pending invite. The user must accept before
+// they become a member or inherit org-based project access.
+func InviteToOrganization(ctx context.Context, actorUserID, orgID int, rawUsername, role string) (*storage.OrganizationInvite, error) {
 	_ = ctx
 	org, err := requireOrgManage(orgID, actorUserID)
 	if err != nil {
@@ -185,7 +188,7 @@ func AddOrganizationMemberForUser(ctx context.Context, actorUserID, orgID int, r
 		return nil, fmt.Errorf("%w: username not found", ErrNotFound)
 	}
 	if user.ID == org.CreatedBy {
-		return nil, fmt.Errorf("%w: cannot change the organization owner", ErrValidation)
+		return nil, fmt.Errorf("%w: cannot invite the organization owner", ErrValidation)
 	}
 	existing, err := storage.GetOrganizationRole(orgID, user.ID)
 	if err != nil {
@@ -194,22 +197,102 @@ func AddOrganizationMemberForUser(ctx context.Context, actorUserID, orgID int, r
 	if existing != "" {
 		return nil, fmt.Errorf("%w: user is already a member", ErrValidation)
 	}
+	pending, err := storage.PendingOrganizationInviteExists(orgID, user.Email)
+	if err != nil {
+		return nil, err
+	}
+	if pending {
+		return nil, fmt.Errorf("%w: user already has a pending invite", ErrValidation)
+	}
 	allow, err := storage.UserAllowsProjectInvites(user.ID)
 	if err != nil {
 		return nil, err
 	}
 	if !allow {
-		return nil, fmt.Errorf("%w: user does not allow project invites", ErrValidation)
+		return nil, fmt.Errorf("%w: user does not allow invites", ErrValidation)
 	}
-	if err := storage.UpsertOrganizationMember(orgID, user.ID, role); err != nil {
+	inv, err := storage.CreateOrganizationInvite(orgID, user.Email, role, actorUserID, time.Now().Add(defaultInviteTTL))
+	if err != nil {
 		return nil, err
 	}
-	return &storage.OrganizationMember{
-		UserID:   user.ID,
-		Email:    user.Email,
-		UserName: user.UserName,
-		Role:     role,
-	}, nil
+	inv.UserName = user.UserName
+	return inv, nil
+}
+
+// ListOrganizationInvitesForUser lists pending invites for an organization.
+func ListOrganizationInvitesForUser(ctx context.Context, userID, orgID int) ([]storage.OrganizationInvite, error) {
+	_ = ctx
+	if _, err := requireOrgAccess(orgID, userID); err != nil {
+		return nil, err
+	}
+	invites, err := storage.ListOrganizationInvites(orgID)
+	if err != nil {
+		return nil, err
+	}
+	if invites == nil {
+		invites = []storage.OrganizationInvite{}
+	}
+	return invites, nil
+}
+
+// RevokeOrganizationInviteForUser deletes a pending invite.
+func RevokeOrganizationInviteForUser(ctx context.Context, userID, orgID, inviteID int) error {
+	_ = ctx
+	if _, err := requireOrgManage(orgID, userID); err != nil {
+		return err
+	}
+	if err := storage.DeleteOrganizationInvite(inviteID, orgID); err != nil {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// AcceptOrganizationInviteForUser accepts a pending invite for the current user.
+func AcceptOrganizationInviteForUser(ctx context.Context, userID int, userEmail string, inviteID int) error {
+	_ = ctx
+	inv, err := storage.GetOrganizationInviteByID(inviteID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if err := storage.AcceptOrganizationInvite(inviteID, userID, userEmail); err != nil {
+		if strings.Contains(err.Error(), "mismatch") || strings.Contains(err.Error(), "expired") || strings.Contains(err.Error(), "accepted") {
+			return fmt.Errorf("%w: %s", ErrValidation, err.Error())
+		}
+		return err
+	}
+	ids, err := storage.ListOrgManagedProjectIDs(inv.OrganizationID)
+	if err == nil {
+		for _, pid := range ids {
+			live.AfterProjectChangeLive(userID, pid, live.TypeProjectUpdated)
+			live.DispatchProjectHook(userID, pid, live.TypeProjectMemberJoined, &live.TaskHookMeta{
+				MemberID:   userID,
+				MemberName: hookDisplayName(userID),
+			})
+		}
+	}
+	return nil
+}
+
+// DeclineOrganizationInviteForUser declines a pending invite.
+func DeclineOrganizationInviteForUser(ctx context.Context, userEmail string, inviteID int) error {
+	_ = ctx
+	if err := storage.DeclineOrganizationInvite(inviteID, userEmail); err != nil {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListMyOrganizationInvitesForUser returns pending org invites for the user's email.
+func ListMyOrganizationInvitesForUser(ctx context.Context, userEmail string) ([]storage.OrganizationInvite, error) {
+	_ = ctx
+	invites, err := storage.ListPendingOrganizationInvitesForEmail(userEmail)
+	if err != nil {
+		return nil, err
+	}
+	if invites == nil {
+		invites = []storage.OrganizationInvite{}
+	}
+	return invites, nil
 }
 
 // UpdateOrganizationMemberRoleForUser changes a non-owner member's role.
@@ -417,6 +500,13 @@ func DeleteOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID in
 	}
 	if members > 0 {
 		return fmt.Errorf("%w: role is still assigned to members", ErrConflict)
+	}
+	invites, err := storage.CountOrganizationInvitesWithRole(cur.Slug, orgID)
+	if err != nil {
+		return err
+	}
+	if invites > 0 {
+		return fmt.Errorf("%w: role is still assigned to members or pending invites", ErrConflict)
 	}
 	return storage.DeleteProjectRoleDef(roleID)
 }

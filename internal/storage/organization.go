@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"GoTodo/internal/mailer"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -40,6 +42,23 @@ type OrganizationMember struct {
 	CreatedAt time.Time
 }
 
+// OrganizationInvite is a pending invite to join an organization.
+type OrganizationInvite struct {
+	ID               int
+	OrganizationID   int
+	Email            string
+	Role             string
+	Token            string
+	InvitedBy        int
+	ExpiresAt        time.Time
+	AcceptedAt       *time.Time
+	CreatedAt        time.Time
+	UserName         string
+	OrganizationName string
+	InviterEmail     string
+	InviterUserName  string
+}
+
 // CreateOrganizationTables creates organizations and membership tables.
 func CreateOrganizationTables() error {
 	pool, err := OpenDatabase()
@@ -66,6 +85,20 @@ func CreateOrganizationTables() error {
 			PRIMARY KEY (organization_id, user_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_organization_members_user_id ON organization_members (user_id)`,
+		`CREATE TABLE IF NOT EXISTS organization_invites (
+			id SERIAL PRIMARY KEY,
+			organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+			email VARCHAR(255) NOT NULL,
+			role VARCHAR(40) NOT NULL,
+			token VARCHAR(64) NOT NULL UNIQUE,
+			invited_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			expires_at TIMESTAMPTZ NOT NULL,
+			accepted_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_organization_invites_email ON organization_invites(email) WHERE accepted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_invites_pending
+			ON organization_invites (organization_id, LOWER(email)) WHERE accepted_at IS NULL`,
 	}
 	for _, s := range stmts {
 		if _, err := pool.Exec(context.Background(), s); err != nil {
@@ -505,4 +538,293 @@ func AttachProjectOrganization(projectID, ownerUserID, orgID int) ([]int, error)
 		return nil, err
 	}
 	return removed, nil
+}
+
+const organizationInviteCols = `id, organization_id, email, role, token, invited_by, expires_at, accepted_at, created_at`
+const organizationInviteSelect = `i.id, i.organization_id, i.email, i.role, i.token, i.invited_by, i.expires_at, i.accepted_at, i.created_at`
+
+func scanOrganizationInvite(row interface{ Scan(dest ...any) error }, inv *OrganizationInvite, extra ...any) error {
+	dest := []any{
+		&inv.ID, &inv.OrganizationID, &inv.Email, &inv.Role, &inv.Token, &inv.InvitedBy,
+		&inv.ExpiresAt, &inv.AcceptedAt, &inv.CreatedAt,
+	}
+	dest = append(dest, extra...)
+	return row.Scan(dest...)
+}
+
+// PendingOrganizationInviteExists reports whether email already has a pending invite.
+func PendingOrganizationInviteExists(orgID int, email string) (bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	pool, err := OpenDatabase()
+	if err != nil {
+		return false, err
+	}
+	defer CloseDatabase(pool)
+	var n int
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM organization_invites
+		 WHERE organization_id = $1 AND LOWER(email) = $2 AND accepted_at IS NULL AND expires_at > NOW()`,
+		orgID, email).Scan(&n)
+	return n > 0, err
+}
+
+// CreateOrganizationInvite creates a pending invite.
+func CreateOrganizationInvite(orgID int, email, role string, invitedBy int, expiresAt time.Time) (*OrganizationInvite, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	token, err := newShareToken()
+	if err != nil {
+		return nil, err
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	var inv OrganizationInvite
+	err = pool.QueryRow(context.Background(), `
+		WITH ins AS (
+			INSERT INTO organization_invites (organization_id, email, role, token, invited_by, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			RETURNING `+organizationInviteCols+`
+		)
+		SELECT ins.id, ins.organization_id, ins.email, ins.role, ins.token, ins.invited_by,
+		       ins.expires_at, ins.accepted_at, ins.created_at,
+		       COALESCE(o.name, ''), COALESCE(u.user_name, '')
+		FROM ins
+		LEFT JOIN organizations o ON o.id = ins.organization_id
+		LEFT JOIN users u ON u.id = ins.invited_by`,
+		orgID, email, role, token, invitedBy, expiresAt).Scan(
+		&inv.ID, &inv.OrganizationID, &inv.Email, &inv.Role, &inv.Token, &inv.InvitedBy,
+		&inv.ExpiresAt, &inv.AcceptedAt, &inv.CreatedAt, &inv.OrganizationName, &inv.InviterUserName)
+	if err != nil {
+		return nil, err
+	}
+	if settings, err := GetSiteSettings(); err == nil && settings != nil {
+		subject := "Organization Invite"
+		body := fmt.Sprintf("You have been invited to join organization %s by %s.", inv.OrganizationName, inv.InviterUserName)
+		if err := mailer.SendEmail(settings.Email, mailer.TriggerOrganizationInvite, subject, body, inv.Email); err != nil {
+			fmt.Printf("Warning: Failed to send organization invite email to %s: %v\n", inv.Email, err)
+		}
+	}
+	return &inv, nil
+}
+
+// ListOrganizationInvites returns pending invites for an organization.
+func ListOrganizationInvites(orgID int) ([]OrganizationInvite, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `
+		SELECT `+organizationInviteSelect+`, COALESCE(u.user_name, '')
+		FROM organization_invites i
+		LEFT JOIN users u ON LOWER(u.email) = LOWER(i.email)
+		WHERE i.organization_id = $1 AND i.accepted_at IS NULL
+		ORDER BY i.created_at DESC`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OrganizationInvite
+	for rows.Next() {
+		var inv OrganizationInvite
+		if err := scanOrganizationInvite(rows, &inv, &inv.UserName); err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, nil
+}
+
+// DeleteOrganizationInvite removes a pending invite.
+func DeleteOrganizationInvite(inviteID, orgID int) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	tag, err := pool.Exec(context.Background(),
+		`DELETE FROM organization_invites WHERE id = $1 AND organization_id = $2 AND accepted_at IS NULL`,
+		inviteID, orgID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("invite not found")
+	}
+	return nil
+}
+
+// ListPendingOrganizationInvitesForEmail returns pending org invites for an email.
+func ListPendingOrganizationInvitesForEmail(email string) ([]OrganizationInvite, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `
+		SELECT `+organizationInviteSelect+`,
+		       COALESCE(invitee.user_name, ''), o.name, COALESCE(u.email, ''), COALESCE(u.user_name, '')
+		FROM organization_invites i
+		JOIN organizations o ON o.id = i.organization_id
+		LEFT JOIN users u ON u.id = i.invited_by
+		LEFT JOIN users invitee ON LOWER(invitee.email) = LOWER(i.email)
+		WHERE i.email = $1 AND i.accepted_at IS NULL AND i.expires_at > NOW()
+		ORDER BY i.created_at DESC`, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OrganizationInvite
+	for rows.Next() {
+		var inv OrganizationInvite
+		if err := scanOrganizationInvite(rows, &inv, &inv.UserName, &inv.OrganizationName, &inv.InviterEmail, &inv.InviterUserName); err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, nil
+}
+
+// GetOrganizationInviteByID loads an invite by id.
+func GetOrganizationInviteByID(inviteID int) (*OrganizationInvite, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	var inv OrganizationInvite
+	err = scanOrganizationInvite(pool.QueryRow(context.Background(), `
+		SELECT `+organizationInviteSelect+`,
+		       COALESCE(o.name, ''), COALESCE(u.email, ''), COALESCE(u.user_name, '')
+		FROM organization_invites i
+		LEFT JOIN organizations o ON o.id = i.organization_id
+		LEFT JOIN users u ON u.id = i.invited_by
+		WHERE i.id = $1`, inviteID), &inv, &inv.OrganizationName, &inv.InviterEmail, &inv.InviterUserName)
+	if err != nil {
+		return nil, err
+	}
+	return &inv, nil
+}
+
+// AcceptOrganizationInvite marks invite accepted and adds membership.
+func AcceptOrganizationInvite(inviteID, userID int, userEmail string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	tx, err := pool.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+
+	var inv OrganizationInvite
+	err = tx.QueryRow(context.Background(), `
+		SELECT id, organization_id, email, role, expires_at, accepted_at
+		FROM organization_invites WHERE id = $1 FOR UPDATE`, inviteID).Scan(
+		&inv.ID, &inv.OrganizationID, &inv.Email, &inv.Role, &inv.ExpiresAt, &inv.AcceptedAt)
+	if err != nil {
+		return err
+	}
+	if inv.AcceptedAt != nil {
+		return fmt.Errorf("invite already accepted")
+	}
+	if time.Now().After(inv.ExpiresAt) {
+		return fmt.Errorf("invite expired")
+	}
+	if !strings.EqualFold(inv.Email, strings.TrimSpace(userEmail)) {
+		return fmt.Errorf("invite email mismatch")
+	}
+
+	_, err = tx.Exec(context.Background(), `
+		INSERT INTO organization_members (organization_id, user_id, role) VALUES ($1, $2, $3)
+		ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role
+		WHERE organization_members.role <> 'owner'`,
+		inv.OrganizationID, userID, inv.Role)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(context.Background(),
+		`UPDATE organization_invites SET accepted_at = NOW() WHERE id = $1`, inviteID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(context.Background())
+}
+
+// DeclineOrganizationInvite deletes a pending invite for the user's email.
+func DeclineOrganizationInvite(inviteID int, userEmail string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	tag, err := pool.Exec(context.Background(), `
+		DELETE FROM organization_invites
+		WHERE id = $1 AND accepted_at IS NULL AND LOWER(email) = LOWER($2)`,
+		inviteID, strings.TrimSpace(userEmail))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("invite not found")
+	}
+	return nil
+}
+
+// ListOrgManagedProjectIDs returns org-based project ids for live membership updates.
+func ListOrgManagedProjectIDs(orgID int) ([]int, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT id FROM projects WHERE organization_id = $1 AND COALESCE(org_managed, false)`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// CountOrganizationInvitesWithRole counts pending org invites using slug.
+func CountOrganizationInvitesWithRole(slug string, orgID int) (int, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return 0, err
+	}
+	defer CloseDatabase(pool)
+	var n int
+	if orgID > 0 {
+		err = pool.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM organization_invites WHERE role = $1 AND organization_id = $2 AND accepted_at IS NULL`,
+			slug, orgID).Scan(&n)
+	} else {
+		err = pool.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM organization_invites WHERE role = $1 AND accepted_at IS NULL`, slug).Scan(&n)
+	}
+	return n, err
 }

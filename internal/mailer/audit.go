@@ -8,11 +8,12 @@ import (
 )
 
 const (
-	TriggerPasswordReset   = "password_reset"
-	TriggerPasswordChanged = "password_changed"
-	TriggerSiteInvite      = "site_invite"
-	TriggerJoinRequest     = "join_request"
-	TriggerProjectInvite   = "project_invite"
+	TriggerPasswordReset      = "password_reset"
+	TriggerPasswordChanged    = "password_changed"
+	TriggerSiteInvite         = "site_invite"
+	TriggerJoinRequest        = "join_request"
+	TriggerProjectInvite      = "project_invite"
+	TriggerOrganizationInvite = "organization_invite"
 
 	StatusSent          = "sent"
 	StatusFailed        = "failed"
@@ -50,7 +51,7 @@ func SetAuditor(a Auditor) {
 func KnownTrigger(t string) bool {
 	switch strings.TrimSpace(t) {
 	case TriggerPasswordReset, TriggerPasswordChanged, TriggerSiteInvite,
-		TriggerJoinRequest, TriggerProjectInvite:
+		TriggerJoinRequest, TriggerProjectInvite, TriggerOrganizationInvite:
 		return true
 	default:
 		return false

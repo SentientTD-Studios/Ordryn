@@ -25,6 +25,7 @@ const triggerOptions = [
   { value: 'site_invite', label: 'Site invite' },
   { value: 'join_request', label: 'Join request' },
   { value: 'project_invite', label: 'Project invite' },
+  { value: 'organization_invite', label: 'Organization invite' },
 ] as const
 
 const totalPages = computed(() => Math.max(1, Math.ceil(result.value.total / pageSize)))

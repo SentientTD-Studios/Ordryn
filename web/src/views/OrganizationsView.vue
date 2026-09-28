@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Organization, OrganizationMember, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
+import type { Organization, OrganizationInvite, OrganizationMember, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
 import RolePermissionFields from '@/components/RolePermissionFields.vue'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
@@ -17,6 +17,8 @@ const orgs = ref<Organization[]>([])
 const selectedId = ref<number | null>(null)
 const org = computed(() => orgs.value.find((o) => o.id === selectedId.value) || null)
 const members = ref<OrganizationMember[]>([])
+const invites = ref<OrganizationInvite[]>([])
+const myInvites = ref<OrganizationInvite[]>([])
 const catalog = ref<ProjectPermInfo[]>([])
 const roles = ref<ProjectRoleDef[]>([])
 const saving = ref(false)
@@ -41,11 +43,22 @@ const siteRoles = computed(() => roles.value.filter((r) => !r.organization_id &&
 const customRoles = computed(() => roles.value.filter((r) => r.organization_id === selectedId.value))
 const editing = computed(() => customRoles.value.find((r) => r.id === editingId.value) || null)
 const assignableRoles = computed(() => roles.value)
-const excludeUsernames = computed(() => members.value.map((m) => m.user_name).filter(Boolean))
+const excludeUsernames = computed(() => {
+  const names = members.value.map((m) => m.user_name).filter(Boolean)
+  for (const inv of invites.value) {
+    if (inv.user_name) names.push(inv.user_name)
+  }
+  return names
+})
 
 async function loadOrgs() {
   try {
-    orgs.value = await api.listOrganizations()
+    const [organizationList, pending] = await Promise.all([
+      api.listOrganizations(),
+      api.listMyOrganizationInvites().catch(() => [] as OrganizationInvite[]),
+    ])
+    orgs.value = organizationList
+    myInvites.value = pending
     if (selectedId.value && !orgs.value.some((o) => o.id === selectedId.value)) {
       selectedId.value = orgs.value[0]?.id ?? null
     } else if (!selectedId.value && orgs.value.length) {
@@ -59,16 +72,19 @@ async function loadOrgs() {
 async function loadDetail() {
   if (!selectedId.value) {
     members.value = []
+    invites.value = []
     roles.value = []
     return
   }
   try {
-    const [m, roleData, fresh] = await Promise.all([
+    const [m, inv, roleData, fresh] = await Promise.all([
       api.listOrganizationMembers(selectedId.value),
+      api.listOrganizationInvites(selectedId.value).catch(() => [] as OrganizationInvite[]),
       api.listOrganizationRoles(selectedId.value),
       api.getOrganization(selectedId.value),
     ])
     members.value = m
+    invites.value = inv
     catalog.value = roleData.catalog || []
     roles.value = roleData.roles || []
     const idx = orgs.value.findIndex((o) => o.id === fresh.id)
@@ -137,16 +153,49 @@ async function deleteOrg() {
   }
 }
 
-async function addMember() {
+async function inviteMember() {
   if (!selectedId.value || !inviteUsername.value.trim()) return
   try {
-    await api.addOrganizationMember(selectedId.value, inviteUsername.value.trim(), inviteRole.value)
+    await api.createOrganizationInvite(selectedId.value, inviteUsername.value.trim(), inviteRole.value)
     inviteUsername.value = ''
-    toast.push('Member added', 'success')
+    toast.push('Invite sent', 'success')
     await loadDetail()
     await loadOrgs()
   } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not add member', 'error')
+    toast.push(err instanceof APIError ? err.message : 'Could not send invite', 'error')
+  }
+}
+
+async function revokeInvite(inviteId: number) {
+  if (!selectedId.value) return
+  try {
+    await api.revokeOrganizationInvite(selectedId.value, inviteId)
+    toast.push('Invite revoked', 'info')
+    await loadDetail()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not revoke invite', 'error')
+  }
+}
+
+async function acceptMyInvite(inv: OrganizationInvite) {
+  try {
+    await api.acceptOrganizationInvite(inv.id)
+    toast.push('Joined organization', 'success')
+    await loadOrgs()
+    selectedId.value = inv.organization_id
+    await loadDetail()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Accept failed', 'error')
+  }
+}
+
+async function declineMyInvite(inv: OrganizationInvite) {
+  try {
+    await api.declineOrganizationInvite(inv.id)
+    toast.push('Invite declined', 'info')
+    await loadOrgs()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Decline failed', 'error')
   }
 }
 
@@ -326,6 +375,33 @@ onBeforeUnmount(destroySortable)
       projects cannot edit membership at the board level.
     </p>
 
+    <div v-if="myInvites.length" class="card mb-4 border-primary">
+      <div class="card-header">
+        <h2 class="mb-0 h5">Pending organization invites</h2>
+      </div>
+      <div class="card-body">
+        <div
+          v-for="inv in myInvites"
+          :key="inv.id"
+          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+        >
+          <div>
+            <strong>{{ inv.organization_name || 'Organization' }}</strong>
+            <span class="text-muted"> as {{ inv.role }}</span>
+            <div v-if="inv.inviter_user_name || inv.inviter_email" class="small text-muted">
+              From {{ inv.inviter_user_name || inv.inviter_email }}
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-primary" type="button" @click="acceptMyInvite(inv)">Accept</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" @click="declineMyInvite(inv)">
+              Decline
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="row">
       <div class="col-md-4">
         <div class="card mb-3">
@@ -384,7 +460,7 @@ onBeforeUnmount(destroySortable)
         <div v-if="org" class="card mb-3">
           <div class="card-body">
             <h2 class="h6">Members</h2>
-            <p class="small text-muted">These people are imported into every org-based project.</p>
+            <p class="small text-muted">These people are imported into every org-based project. Invites must be accepted before access starts.</p>
             <ul class="list-unstyled mb-3">
               <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-2">
                 <span>{{ m.user_name || m.email }}</span>
@@ -401,7 +477,7 @@ onBeforeUnmount(destroySortable)
                 </template>
               </li>
             </ul>
-            <form v-if="canManage" class="row g-2 align-items-end" @submit.prevent="addMember">
+            <form v-if="canManage" class="row g-2 align-items-end mb-3" @submit.prevent="inviteMember">
               <div class="col-sm-6">
                 <label class="form-label small mb-0">Username</label>
                 <UserSearchCombobox v-model="inviteUsername" :exclude-usernames="excludeUsernames" />
@@ -413,9 +489,23 @@ onBeforeUnmount(destroySortable)
                 </select>
               </div>
               <div class="col-sm-3">
-                <button class="btn btn-sm btn-primary w-100" type="submit">Add</button>
+                <button class="btn btn-sm btn-primary w-100" type="submit">Invite</button>
               </div>
             </form>
+            <div v-if="invites.length">
+              <h3 class="h6">Pending invites</h3>
+              <ul class="list-unstyled mb-0">
+                <li v-for="inv in invites" :key="inv.id" class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="small">{{ inv.user_name || inv.email }} ({{ assignableRoles.find((r) => r.slug === inv.role)?.name || inv.role }})</span>
+                  <button
+                    v-if="canManage"
+                    class="btn btn-sm btn-link text-danger"
+                    type="button"
+                    @click="revokeInvite(inv.id)"
+                  >Revoke</button>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
 

@@ -29,6 +29,33 @@
           </div>
         </div>
 
+        <div v-if="pendingOrgInvites.length" class="card mb-4 border-primary">
+          <div class="card-header">
+            <h3 class="mb-0 h5">Pending organization invites</h3>
+          </div>
+          <div class="card-body">
+            <div
+              v-for="inv in pendingOrgInvites"
+              :key="inv.id"
+              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+            >
+              <div>
+                <strong>{{ inv.organization_name || 'Organization' }}</strong>
+                <span class="text-muted"> as {{ inv.role }}</span>
+                <div v-if="inv.inviter_user_name || inv.inviter_email" class="small text-muted">
+                  From {{ inv.inviter_user_name || inv.inviter_email }}
+                </div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-primary" type="button" @click="acceptOrgInvite(inv)">Accept</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" @click="declineOrgInvite(inv)">
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">
             <h3 class="mb-0">Your Projects</h3>
@@ -334,7 +361,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Organization, Project, ProjectInvite } from '@/api/types'
+import type { Organization, OrganizationInvite, Project, ProjectInvite } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
@@ -346,6 +373,7 @@ import { isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
 
 const projects = ref<Project[]>([])
 const pendingInvites = ref<ProjectInvite[]>([])
+const pendingOrgInvites = ref<OrganizationInvite[]>([])
 const name = ref('')
 const description = ref('')
 const organizationId = ref(0)
@@ -429,13 +457,15 @@ watch(ownedProjects, async () => {
 
 async function load() {
   try {
-    const [p, invites, organizationList] = await Promise.all([
+    const [p, invites, orgInvites, organizationList] = await Promise.all([
       api.listProjects(),
       api.listMyProjectInvites(),
+      api.listMyOrganizationInvites().catch(() => [] as OrganizationInvite[]),
       api.listOrganizations().catch(() => []),
     ])
     projects.value = p
     pendingInvites.value = invites
+    pendingOrgInvites.value = orgInvites
     orgs.value = organizationList
     if (editingProject.value) {
       const updated = p.find((x) => x.id === editingProject.value!.id)
@@ -568,6 +598,26 @@ async function acceptInvite(inv: ProjectInvite) {
 async function declineInvite(inv: ProjectInvite) {
   try {
     await api.declineProjectInvite(inv.id)
+    toast.push('Invite declined', 'info')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Decline failed', 'error')
+  }
+}
+
+async function acceptOrgInvite(inv: OrganizationInvite) {
+  try {
+    await api.acceptOrganizationInvite(inv.id)
+    toast.push('Joined organization', 'success')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Accept failed', 'error')
+  }
+}
+
+async function declineOrgInvite(inv: OrganizationInvite) {
+  try {
+    await api.declineOrganizationInvite(inv.id)
     toast.push('Invite declined', 'info')
     await load()
   } catch (err) {

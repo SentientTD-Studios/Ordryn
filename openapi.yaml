@@ -1710,7 +1710,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       tags: [Organizations]
-      summary: Add a member by username
+      summary: Invite a user by username
+      description: Creates a pending invite. The user must accept before they become a member or inherit org-based project access.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1719,20 +1720,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [username, role]
-              properties:
-                username:
-                  type: string
-                role:
-                  type: string
+              $ref: "#/components/schemas/ProjectInviteCreate"
       responses:
         "201":
-          description: Added
+          description: Invite created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OrganizationMember"
+                $ref: "#/components/schemas/OrganizationInvite"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -1784,6 +1779,75 @@ paths:
       responses:
         "204":
           description: Removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organizations/{id}/invites:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Organizations]
+      summary: List pending organization invites
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrganizationInvite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Organizations]
+      summary: Invite a user by username
+      description: The invited user must accept before they join or inherit org-based projects.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInviteCreate"
+      responses:
+        "201":
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationInvite"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organizations/{id}/invites/{inviteId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: inviteId
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      tags: [Organizations]
+      summary: Revoke a pending organization invite
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Revoked
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -3717,6 +3781,55 @@ paths:
     post:
       tags: [Projects]
       summary: Decline a project invite
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Declined
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organization-invites:
+    get:
+      tags: [Organizations]
+      summary: List pending organization invites for the current user
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Pending invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrganizationInvite"
+
+  /api/v2/organization-invites/{id}/accept:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Organizations]
+      summary: Accept an organization invite
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Accepted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organization-invites/{id}/decline:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Organizations]
+      summary: Decline an organization invite
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -5839,6 +5952,32 @@ components:
         created_at:
           type: string
           format: date-time
+
+    OrganizationInvite:
+      type: object
+      properties:
+        id:
+          type: integer
+        organization_id:
+          type: integer
+        email:
+          type: string
+        user_name:
+          type: string
+        role:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        organization_name:
+          type: string
+        inviter_email:
+          type: string
+        inviter_user_name:
+          type: string
 
     StatusGatesBody:
       type: object

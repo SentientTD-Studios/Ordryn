@@ -241,8 +241,18 @@ func TestOrgManagedProjectInheritsMembersAndLocksEdits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	if _, err := AddOrganizationMemberForUser(ctx, 1, org.ID, "editor_user", storage.RoleEditor); err != nil {
-		t.Fatalf("add org member: %v", err)
+	if _, err := InviteToOrganization(ctx, 1, org.ID, "editor_user", storage.RoleEditor); err != nil {
+		t.Fatalf("invite org member: %v", err)
+	}
+	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != "" {
+		t.Fatalf("pending invite should not add membership yet: %q err=%v", role, err)
+	}
+	invites, err := storage.ListPendingOrganizationInvitesForEmail("editor@example.com")
+	if err != nil || len(invites) != 1 {
+		t.Fatalf("pending invites: %+v err=%v", invites, err)
+	}
+	if err := AcceptOrganizationInviteForUser(ctx, 2, "editor@example.com", invites[0].ID); err != nil {
+		t.Fatalf("accept org invite: %v", err)
 	}
 	orgRole, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
 		Slug:        "org-qa",
@@ -332,8 +342,15 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	if _, err := AddOrganizationMemberForUser(ctx, 1, org.ID, "attach_editor", storage.RoleEditor); err != nil {
-		t.Fatalf("add org member: %v", err)
+	if _, err := InviteToOrganization(ctx, 1, org.ID, "attach_editor", storage.RoleEditor); err != nil {
+		t.Fatalf("invite org member: %v", err)
+	}
+	invites, err := storage.ListPendingOrganizationInvitesForEmail("editor@example.com")
+	if err != nil || len(invites) != 1 {
+		t.Fatalf("pending invites: %+v err=%v", invites, err)
+	}
+	if err := AcceptOrganizationInviteForUser(ctx, 2, "editor@example.com", invites[0].ID); err != nil {
+		t.Fatalf("accept org invite: %v", err)
 	}
 
 	proj, err := CreateProject(ctx, 1, "Independent Board", "")
@@ -401,12 +418,12 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 		t.Fatalf("expected inherited editor, got %+v", members)
 	}
 
-	invites, err := storage.ListProjectInvites(proj.ID)
+	pendingProjectInvites, err := storage.ListProjectInvites(proj.ID)
 	if err != nil {
 		t.Fatalf("list invites: %v", err)
 	}
-	if len(invites) != 0 {
-		t.Fatalf("pending invites should be cancelled, got %+v", invites)
+	if len(pendingProjectInvites) != 0 {
+		t.Fatalf("pending invites should be cancelled, got %+v", pendingProjectInvites)
 	}
 	if _, err := InviteToProject(ctx, 1, proj.ID, "attach_outsider", storage.RoleViewer); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("invite after attach: err=%v", err)
@@ -425,5 +442,61 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	}
 	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err == nil {
 		t.Fatal("editor from previous org should lose access after switch")
+	}
+}
+
+func TestInviteToOrganizationRequiresAccept(t *testing.T) {
+	ctx := context.Background()
+	setTestUsername(t, 2, "org_invite_editor")
+	setTestUsername(t, 3, "org_invite_viewer")
+
+	org, err := CreateOrganizationForUser(ctx, 1, "Invite Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	inv, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_editor", storage.RoleEditor)
+	if err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+	if _, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_editor", storage.RoleViewer); !errors.Is(err, ErrValidation) {
+		t.Fatalf("duplicate invite: err=%v", err)
+	}
+	if _, err := InviteToOrganization(ctx, 2, org.ID, "org_invite_viewer", storage.RoleViewer); !errors.Is(err, ErrForbidden) && !errors.Is(err, ErrNotFound) {
+		t.Fatalf("non-member invite: err=%v", err)
+	}
+
+	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != "" {
+		t.Fatalf("no membership before accept: %q err=%v", role, err)
+	}
+	proj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{Name: "Invite Board", OrganizationID: &org.ID})
+	if err != nil {
+		t.Fatalf("create org project: %v", err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err == nil {
+		t.Fatal("pending invitee should not access org project")
+	}
+
+	if err := AcceptOrganizationInviteForUser(ctx, 2, "editor@example.com", inv.ID); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != storage.RoleEditor {
+		t.Fatalf("membership after accept: %q err=%v", role, err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err != nil {
+		t.Fatalf("accepted member should access org project: %v", err)
+	}
+
+	declined, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_viewer", storage.RoleViewer)
+	if err != nil {
+		t.Fatalf("invite viewer: %v", err)
+	}
+	if err := DeclineOrganizationInviteForUser(ctx, "viewer@example.com", declined.ID); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	if role, err := storage.GetOrganizationRole(org.ID, 3); err != nil || role != "" {
+		t.Fatalf("declined user should not be a member: %q err=%v", role, err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 3); err == nil {
+		t.Fatal("declined invitee should not access org project")
 	}
 }
