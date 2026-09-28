@@ -15,14 +15,16 @@ import (
 )
 
 type apiProjectStatusJSON struct {
-	ID          int    `json:"id"`
-	ProjectID   int    `json:"project_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Position    int    `json:"position"`
-	IsDone      bool   `json:"is_done"`
-	IsDefault   bool   `json:"is_default"`
-	CreatedAt   string `json:"created_at"`
+	ID             int      `json:"id"`
+	ProjectID      int      `json:"project_id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	Position       int      `json:"position"`
+	IsDone         bool     `json:"is_done"`
+	IsDefault      bool     `json:"is_default"`
+	CreatedAt      string   `json:"created_at"`
+	EnterRoleSlugs []string `json:"enter_role_slugs,omitempty"`
+	LeaveRoleSlugs []string `json:"leave_role_slugs,omitempty"`
 }
 
 type apiStatusCreateRequest struct {
@@ -64,15 +66,25 @@ type apiTimeEntryCreateRequest struct {
 }
 
 func statusToAPIJSON(s storage.ProjectStatus) apiProjectStatusJSON {
+	enter := s.EnterRoleSlugs
+	leave := s.LeaveRoleSlugs
+	if enter == nil {
+		enter = []string{}
+	}
+	if leave == nil {
+		leave = []string{}
+	}
 	return apiProjectStatusJSON{
-		ID:          s.ID,
-		ProjectID:   s.ProjectID,
-		Name:        s.Name,
-		Description: s.Description,
-		Position:    s.Position,
-		IsDone:      s.IsDone,
-		IsDefault:   s.IsDefault,
-		CreatedAt:   s.CreatedAt.UTC().Format(time.RFC3339),
+		ID:             s.ID,
+		ProjectID:      s.ProjectID,
+		Name:           s.Name,
+		Description:    s.Description,
+		Position:       s.Position,
+		IsDone:         s.IsDone,
+		IsDefault:      s.IsDefault,
+		CreatedAt:      s.CreatedAt.UTC().Format(time.RFC3339),
+		EnterRoleSlugs: enter,
+		LeaveRoleSlugs: leave,
 	}
 }
 
@@ -125,9 +137,14 @@ func projectToAPIJSON(p *storage.ProjectWithAccess) apiProjectJSON {
 		AutoSprintLengthDays:     p.AutoSprintLengthDays,
 		AutoSprintLockDaysBefore: p.AutoSprintLockDaysBefore,
 		Role:                     p.Role,
+		RoleName:                 storage.RoleDisplayName(p.ID, p.Role),
+		Permissions:              storage.RolePermissionList(p.ID, p.Role),
 		OwnerEmail:               p.OwnerEmail,
 		OwnerUserName:            p.OwnerUserName,
 		OwnerUserID:              p.OwnerUserID,
+		OrganizationID:           p.OrganizationID,
+		OrganizationName:         p.OrganizationName,
+		OrgManaged:               p.OrgManaged,
 	}
 }
 
@@ -152,7 +169,12 @@ func projectStorageToAPIJSON(p *storage.Project, role string) apiProjectJSON {
 		AutoSprintLengthDays:     p.AutoSprintLengthDays,
 		AutoSprintLockDaysBefore: p.AutoSprintLockDaysBefore,
 		Role:                     role,
+		RoleName:                 storage.RoleDisplayName(p.ID, role),
+		Permissions:              storage.RolePermissionList(p.ID, role),
 		OwnerUserID:              p.UserID,
+		OrganizationID:           p.OrganizationID,
+		OrganizationName:         "",
+		OrgManaged:               p.OrgManaged,
 	}
 }
 
@@ -223,7 +245,15 @@ func handleProjectStatusesResource(w http.ResponseWriter, r *http.Request, proje
 	}
 
 	statusID, err := strconv.Atoi(rest[0])
-	if err != nil || statusID <= 0 || len(rest) != 1 {
+	if err != nil || statusID <= 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid status id.")
+		return
+	}
+	if len(rest) == 2 && rest[1] == "gates" {
+		handleStatusGatesResource(w, r, projectID, statusID)
+		return
+	}
+	if len(rest) != 1 {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid status id.")
 		return
 	}

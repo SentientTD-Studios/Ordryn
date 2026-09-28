@@ -41,6 +41,9 @@ type ProjectWithAccess struct {
 	OwnerEmail               string
 	OwnerUserName            string
 	OwnerUserID              int
+	OrganizationID           *int
+	OrgManaged               bool
+	OrganizationName         string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }
@@ -51,6 +54,7 @@ type ProjectMember struct {
 	Email     string
 	UserName  string
 	Role      string
+	Inherited bool
 	CreatedAt time.Time
 }
 
@@ -108,23 +112,21 @@ func CreateProjectSharingTables() error {
 		`CREATE TABLE IF NOT EXISTS project_members (
 			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			role VARCHAR(16) NOT NULL,
+			role VARCHAR(40) NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (project_id, user_id),
-			CHECK (role IN ('owner', 'editor', 'viewer'))
+			PRIMARY KEY (project_id, user_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id)`,
 		`CREATE TABLE IF NOT EXISTS project_invites (
 			id SERIAL PRIMARY KEY,
 			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			email VARCHAR(255) NOT NULL,
-			role VARCHAR(16) NOT NULL,
+			role VARCHAR(40) NOT NULL,
 			token VARCHAR(64) NOT NULL UNIQUE,
 			invited_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			expires_at TIMESTAMPTZ NOT NULL,
 			accepted_at TIMESTAMPTZ,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CHECK (role IN ('editor', 'viewer'))
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_project_invites_email ON project_invites(email) WHERE accepted_at IS NULL`,
 		`CREATE TABLE IF NOT EXISTS share_links (
@@ -261,27 +263,6 @@ func newShareToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func ValidMemberRole(role string) bool {
-	switch role {
-	case RoleOwner, RoleEditor, RoleViewer:
-		return true
-	default:
-		return false
-	}
-}
-
-func ValidInviteRole(role string) bool {
-	return role == RoleEditor || role == RoleViewer
-}
-
-func RoleCanWrite(role string) bool {
-	return role == RoleOwner || role == RoleEditor
-}
-
-func RoleCanManage(role string) bool {
-	return role == RoleOwner
-}
-
 // EnsureProjectOwnerMember inserts the owner membership row (idempotent).
 func EnsureProjectOwnerMember(projectID, ownerUserID int) error {
 	pool, err := OpenDatabase()
@@ -305,49 +286,59 @@ func GetProjectRole(projectID, userID int) (string, error) {
 	}
 	defer CloseDatabase(pool)
 
-	var role string
-	err = pool.QueryRow(context.Background(),
-		`SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
-		projectID, userID).Scan(&role)
+	var role sql.NullString
+	err = pool.QueryRow(context.Background(), `
+		SELECT COALESCE(
+			(SELECT pm.role FROM project_members pm WHERE pm.project_id = $1 AND pm.user_id = $2),
+			CASE WHEN (SELECT user_id FROM projects WHERE id = $1) = $2 THEN 'owner' END
+		)`, projectID, userID).Scan(&role)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-			// Fallback: project owner column (pre-migration or missing member row).
-			var ownerID int
-			err2 := pool.QueryRow(context.Background(),
-				`SELECT user_id FROM projects WHERE id = $1`, projectID).Scan(&ownerID)
-			if err2 != nil {
-				if errors.Is(err2, pgx.ErrNoRows) || errors.Is(err2, sql.ErrNoRows) {
-					return "", nil
-				}
-				return "", err2
-			}
-			if ownerID == userID {
-				_ = EnsureProjectOwnerMember(projectID, userID)
-				return RoleOwner, nil
-			}
 			return "", nil
 		}
 		return "", err
 	}
-	return role, nil
+	if !role.Valid || role.String == "" {
+		return "", nil
+	}
+	if role.String == RoleOwner {
+		var ownerID int
+		err = pool.QueryRow(context.Background(),
+			`SELECT user_id FROM projects WHERE id = $1`, projectID).Scan(&ownerID)
+		if err == nil && ownerID == userID {
+			_ = EnsureProjectOwnerMember(projectID, userID)
+		}
+	}
+	return role.String, nil
 }
 
 const projectAccessSelectCols = `p.id, p.user_id, p.name, COALESCE(p.description, ''), COALESCE(p.workflow_mode, 'classic'),
 		       COALESCE(p.position, 0), COALESCE(p.archived, false), COALESCE(p.backlog_name, 'Backlog'),
 		       COALESCE(p.backlog_description, ''), COALESCE(p.auto_create_next_sprint, false),
-		       p.auto_sprint_length_days, p.auto_sprint_lock_days_before, p.created_at, p.updated_at`
+		       p.auto_sprint_length_days, p.auto_sprint_lock_days_before, p.created_at, p.updated_at,
+		       p.organization_id, COALESCE(p.org_managed, false), COALESCE(o.name, '')`
 
 func scanProjectWithAccess(row interface{ Scan(dest ...any) error }, p *ProjectWithAccess) error {
 	var length, lock sql.NullInt32
+	var orgID sql.NullInt64
 	if err := row.Scan(
 		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position,
 		&p.Archived, &p.BacklogName, &p.BacklogDescription, &p.AutoCreateNextSprint, &length, &lock,
-		&p.CreatedAt, &p.UpdatedAt, &p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID,
+		&p.CreatedAt, &p.UpdatedAt, &orgID, &p.OrgManaged, &p.OrganizationName,
+		&p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID,
 	); err != nil {
 		return err
 	}
 	p.AutoSprintLengthDays = nullIntPtr(length)
 	p.AutoSprintLockDaysBefore = nullIntPtr(lock)
+	if orgID.Valid {
+		id := int(orgID.Int64)
+		p.OrganizationID = &id
+	}
+	if p.OrganizationID == nil {
+		p.OrgManaged = false
+		p.OrganizationName = ""
+	}
 	return nil
 }
 
@@ -365,6 +356,7 @@ func GetAccessibleProjects(userID int) ([]ProjectWithAccess, error) {
 		       u.email, COALESCE(u.user_name, ''), p.user_id
 		FROM projects p
 		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
+		LEFT JOIN organizations o ON o.id = p.organization_id
 		JOIN users u ON u.id = p.user_id
 		WHERE p.user_id = $1 OR pm.user_id = $1
 		ORDER BY
@@ -404,6 +396,7 @@ func GetAccessibleProjectByID(projectID, userID int) (*ProjectWithAccess, error)
 		       u.email, COALESCE(u.user_name, ''), p.user_id
 		FROM projects p
 		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
+		LEFT JOIN organizations o ON o.id = p.organization_id
 		JOIN users u ON u.id = p.user_id
 		WHERE p.id = $1 AND (p.user_id = $2 OR pm.user_id = $2)`,
 		projectID, userID), &p)
@@ -425,22 +418,26 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, pm.created_at
+		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, FALSE, pm.created_at
 		FROM project_members pm
 		JOIN users u ON u.id = pm.user_id
 		WHERE pm.project_id = $1
-		ORDER BY CASE pm.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END, u.email`,
+		ORDER BY CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, u.email`,
 		projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	locked := ProjectIsOrgManaged(projectID)
 	var out []ProjectMember
 	for rows.Next() {
 		var m ProjectMember
-		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.Inherited, &m.CreatedAt); err != nil {
 			return nil, err
+		}
+		if locked && m.Role != RoleOwner {
+			m.Inherited = true
 		}
 		out = append(out, m)
 	}
@@ -972,7 +969,7 @@ func taskVisibleCondition(alias, userParam string, writeRolesOnly bool) string {
 	}
 	memberRoleFilter := ""
 	if writeRolesOnly {
-		memberRoleFilter = " AND pm.role IN ('owner', 'editor')"
+		memberRoleFilter = " AND pm.role <> 'viewer'"
 	}
 	return fmt.Sprintf(`(%suser_id = %s OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM project_members pm WHERE pm.project_id = %sproject_id AND pm.user_id = %s%s
@@ -1014,10 +1011,7 @@ func CanUserAccessTask(taskID, userID int) (canRead bool, writeRole string, proj
 	if role == "" {
 		return false, "", pid, nil
 	}
-	if RoleCanWrite(role) {
-		return true, role, pid, nil
-	}
-	return true, RoleViewer, pid, nil
+	return true, role, pid, nil
 }
 
 // ListTasksForShareLink returns a slim task list for a share scope.

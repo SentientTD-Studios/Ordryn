@@ -27,14 +27,16 @@ const (
 
 // ProjectStatus is a kanban column within a project.
 type ProjectStatus struct {
-	ID          int
-	ProjectID   int
-	Name        string
-	Description string
-	Position    int
-	IsDone      bool
-	IsDefault   bool
-	CreatedAt   time.Time
+	ID             int
+	ProjectID      int
+	Name           string
+	Description    string
+	Position       int
+	IsDone         bool
+	IsDefault      bool
+	CreatedAt      time.Time
+	EnterRoleSlugs []string
+	LeaveRoleSlugs []string
 }
 
 type projectStatusScanner interface {

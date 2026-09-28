@@ -32,6 +32,8 @@ type apiTaskCommentJSON struct {
 	EditedAt         *string                  `json:"edited_at,omitempty"`
 	EditedByUserID   int                      `json:"edited_by_user_id,omitempty"`
 	EditedByUserName string                   `json:"edited_by_user_name,omitempty"`
+	AuthorRole       string                   `json:"author_role,omitempty"`
+	AuthorRoleName   string                   `json:"author_role_name,omitempty"`
 	Links            []apiTaskCommentLinkJSON `json:"links,omitempty"`
 }
 
@@ -72,6 +74,8 @@ func commentToAPIJSON(c storage.TaskComment) apiTaskCommentJSON {
 		CreatedAt:        c.CreatedAt.UTC().Format(time.RFC3339),
 		EditedByUserID:   c.EditedByUserID,
 		EditedByUserName: c.EditedByUserName,
+		AuthorRole:       c.AuthorRole,
+		AuthorRoleName:   c.AuthorRoleName,
 	}
 	if c.EditedAt != nil {
 		s := c.EditedAt.UTC().Format(time.RFC3339)

@@ -58,10 +58,34 @@ export type Project = {
   auto_create_next_sprint?: boolean
   auto_sprint_length_days?: number | null
   auto_sprint_lock_days_before?: number | null
-  role?: 'owner' | 'editor' | 'viewer'
+  role?: string
+  role_name?: string
+  permissions?: string[]
   owner_email?: string
   owner_user_name?: string
   owner_user_id?: number
+  organization_id?: number | null
+  organization_name?: string
+  org_managed?: boolean
+}
+
+export type OrgImportMode = 'copy' | 'lock' | 'select'
+
+export type OrgImportMember = {
+  user_id: number
+  role: string
+}
+
+export type OrgMemberProjectImpact = {
+  id: number
+  name: string
+  role: string
+  locked: boolean
+}
+
+export type OrgMemberRoleImpact = {
+  locked: OrgMemberProjectImpact[]
+  unlocked: OrgMemberProjectImpact[]
 }
 
 export type ProjectStatus = {
@@ -73,6 +97,8 @@ export type ProjectStatus = {
   is_done: boolean
   is_default: boolean
   created_at: string
+  enter_role_slugs?: string[]
+  leave_role_slugs?: string[]
 }
 
 export type ProjectSprint = {
@@ -116,6 +142,8 @@ export type TaskComment = {
   edited_at?: string | null
   edited_by_user_id?: number
   edited_by_user_name?: string
+  author_role?: string
+  author_role_name?: string
   deleted: boolean
   deleted_at?: string | null
   deleted_by_user_id?: number
@@ -159,7 +187,9 @@ export type ProjectMember = {
   user_id: number
   email: string
   user_name: string
-  role: 'owner' | 'editor' | 'viewer'
+  role: string
+  role_name?: string
+  inherited?: boolean
   created_at: string
 }
 
@@ -168,7 +198,7 @@ export type ProjectInvite = {
   project_id: number
   email: string
   user_name?: string
-  role: 'editor' | 'viewer'
+  role: string
   expires_at: string
   created_at: string
   project_name?: string
@@ -770,6 +800,7 @@ export type EmailAuditTrigger =
   | 'site_invite'
   | 'join_request'
   | 'project_invite'
+  | 'organization_invite'
 
 export type EmailAuditEntry = {
   id: number
@@ -823,6 +854,98 @@ export type APIErrorBody = {
   error: string
   message: string
   current?: unknown
+}
+
+export type ProjectPermInfo = {
+  id: string
+  label: string
+  description: string
+  group: string
+}
+
+export type ProjectRoleDef = {
+  id: number
+  project_id?: number | null
+  organization_id?: number | null
+  slug: string
+  name: string
+  description?: string
+  permissions: string[]
+  is_system: boolean
+  sort_order: number
+  created_at: string
+}
+
+export type ProjectRolesList = {
+  catalog: ProjectPermInfo[]
+  roles: ProjectRoleDef[]
+}
+
+export type ProjectRoleWrite = {
+  slug: string
+  name: string
+  description?: string
+  permissions: string[]
+  sort_order?: number
+  copy_from_id?: number
+}
+
+export type ProjectRolePatch = {
+  name?: string
+  description?: string
+  permissions?: string[]
+  sort_order?: number
+}
+
+export type Organization = {
+  id: number
+  name: string
+  description?: string
+  created_by: number
+  role?: string
+  role_name?: string
+  permissions?: string[]
+  can_manage?: boolean
+  member_count: number
+  project_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type OrganizationMember = {
+  user_id: number
+  email: string
+  user_name: string
+  role: string
+  role_name?: string
+  created_at?: string
+}
+
+export type OrganizationProjectRoster = {
+  id: number
+  name: string
+  org_managed: boolean
+  can_manage?: boolean
+  members: ProjectMember[]
+}
+
+export type OrganizationInvite = {
+  id: number
+  organization_id: number
+  email: string
+  user_name?: string
+  role: string
+  expires_at: string
+  created_at: string
+  organization_name?: string
+  inviter_email?: string
+  inviter_user_name?: string
+}
+
+export type StatusGates = {
+  status_id?: number
+  enter_role_slugs: string[]
+  leave_role_slugs: string[]
 }
 
 export class APIError extends Error {

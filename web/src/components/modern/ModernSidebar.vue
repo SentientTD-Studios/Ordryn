@@ -154,6 +154,19 @@ onBeforeUnmount(() => {
           <span class="sidebar-text">Calendar</span>
         </RouterLink>
       </li>
+      <li class="sidebar-nav-item">
+        <RouterLink
+          to="/organizations"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/organizations' }"
+          data-tooltip="Organizations"
+          title="Organizations"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-diagram-3" />
+          <span class="sidebar-text">Organizations</span>
+        </RouterLink>
+      </li>
     </ul>
 
     <!-- Section: Projects Header -->
@@ -170,7 +183,7 @@ onBeforeUnmount(() => {
           v-if="pendingInviteCount > 0"
           class="badge bg-danger ms-2 sidebar-text px-2 py-1"
           style="font-size: 0.7rem; font-weight: 600;"
-          :title="`${pendingInviteCount} pending project invite${pendingInviteCount === 1 ? '' : 's'}`"
+          :title="`${pendingInviteCount} pending invite${pendingInviteCount === 1 ? '' : 's'}`"
         >{{ pendingInviteCount }}</span>
         <i class="bi bi-box-arrow-up-right ms-1 opacity-75" style="font-size: 0.75rem;" />
       </RouterLink>

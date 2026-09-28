@@ -27,15 +27,18 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 		return nil, err
 	}
 	role = strings.TrimSpace(strings.ToLower(role))
-	if !storage.ValidInviteRole(role) {
-		return nil, fmt.Errorf("%w: role must be editor or viewer", ErrValidation)
+	if !storage.ValidInviteRoleForProject(projectID, role) {
+		return nil, fmt.Errorf("%w: role is not assignable on this project", ErrValidation)
 	}
 	proj, err := storage.GetAccessibleProjectByID(projectID, actorUserID)
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return nil, err
 	}
 
 	user, err := storage.GetUserByUsername(name)
@@ -86,15 +89,18 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, memberUserID int, role string) error {
 	_ = ctx
 	role = strings.TrimSpace(strings.ToLower(role))
-	if role != storage.RoleEditor && role != storage.RoleViewer {
-		return fmt.Errorf("%w: role must be editor or viewer", ErrValidation)
+	if !storage.ValidInviteRoleForProject(projectID, role) {
+		return fmt.Errorf("%w: role is not assignable on this project", ErrValidation)
 	}
 	proj, err := storage.GetAccessibleProjectByID(projectID, actorUserID)
 	if err != nil {
 		return ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		return err
 	}
 	current, err := storage.GetProjectRole(projectID, memberUserID)
 	if err != nil {
@@ -128,8 +134,14 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 		return ErrNotFound
 	}
 	selfLeave := actorUserID == memberUserID
-	if !selfLeave && !storage.RoleCanManage(proj.Role) {
+	if !selfLeave && !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
+	}
+	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
+		if selfLeave {
+			return fmt.Errorf("%w: membership for this project is locked to the organization", ErrForbidden)
+		}
+		return err
 	}
 	targetRole, err := storage.GetProjectRole(projectID, memberUserID)
 	if err != nil {
@@ -166,6 +178,9 @@ func AcceptProjectInvite(ctx context.Context, userID int, userEmail string, invi
 	inv, err := storage.GetProjectInviteByID(inviteID)
 	if err != nil {
 		return ErrNotFound
+	}
+	if storage.ProjectIsOrgManaged(inv.ProjectID) {
+		return fmt.Errorf("%w: membership for this project is locked to the organization", ErrForbidden)
 	}
 	if err := storage.AcceptProjectInvite(inviteID, userID, userEmail); err != nil {
 		if strings.Contains(err.Error(), "mismatch") || strings.Contains(err.Error(), "expired") || strings.Contains(err.Error(), "accepted") {
@@ -232,7 +247,7 @@ func CreateShareLinkForScope(ctx context.Context, userID int, scopeType string, 
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 	link, err := storage.CreateShareLink(userID, scopeType, scopeID, expiresAt)

@@ -30,6 +30,7 @@ onUnmounted(() => {
             <li class="list-inline-item"><a href="#getting-started">Getting started</a></li>
             <li class="list-inline-item"><a href="#tasks">Tasks</a></li>
             <li class="list-inline-item"><a href="#projects-views">Projects &amp; views</a></li>
+            <li class="list-inline-item"><a href="#roles-permissions">Roles</a></li>
             <li class="list-inline-item"><a href="#calendar-dashboard">Calendar &amp; dashboard</a></li>
             <li class="list-inline-item"><a href="#collaboration">Collaboration</a></li>
             <li class="list-inline-item"><a href="#shortcuts">Shortcuts</a></li>
@@ -82,7 +83,15 @@ onUnmounted(() => {
           <li>
             Manage projects from
             <RouterLink to="/projects">Projects</RouterLink>
-            — create, rename, share, invite collaborators, and archive. Archived projects move
+            — create, rename, share, invite collaborators, and archive. Group people in
+            <RouterLink to="/organizations">Organizations</RouterLink>
+            and import those members when you create a project, or attach an organization later
+            from project settings. Inviting someone to an organization works like a project invite:
+            they must accept before they join. When you attach an organization you choose how to
+            import: copy everyone and keep roles editable, copy everyone and lock roles to the
+            organization, or pick specific members and a role for each. People who are not imported
+            are removed from the project. Organization role changes update imported-and-locked
+            projects only. Archived projects move
             into an Archived section so they do not clutter the main list, are tagged archived
             automatically, and cannot accept new tasks until the owner restores them. Kanban projects can name sprints
             with optional descriptions, date ranges, and a lock date on the Sprints tab
@@ -91,7 +100,8 @@ onUnmounted(() => {
             sprint or backlog.
           </li>
           <li>
-            Create and edit tags in project settings. Owners and editors can rename a tag and pick
+            Create and edit tags in project settings. Members with the manage-tags permission
+            (owners, editors, and custom roles that include it) can rename a tag and pick
             its color; chips on lists, boards, and the task sidebar use that color. Personal (inbox)
             tags are managed on your profile. System tags such as <strong>removed</strong> and
             <strong>archived</strong> cannot be edited.
@@ -99,6 +109,34 @@ onUnmounted(() => {
           <li>
             Save the current filter set as a view so you can reopen it later from the sidebar or
             <RouterLink to="/views">Views</RouterLink>.
+          </li>
+        </ul>
+
+        <h2 id="roles-permissions" class="h4 mt-4">Roles and status gates</h2>
+        <p>
+          Project membership uses site-wide roles (Owner, Editor, Viewer, plus extras such as
+          Developer and QA) with a catalog of permissions: create, edit, delete, archive, restore,
+          complete, claim, reorder, change status, assign sprints, manage tags, log time, configure
+          extensions, moderate comments, and manage the project. Site admins maintain those templates
+          under Admin → Roles. Copy a role to start from an existing permission set, and drag to
+          reorder the list. Organizations can define extra roles that can be assigned on imported
+          projects. If you import and lock roles, those boards stay tied to the organization and
+          cannot add their own roles. Unlocked imports can still add project-only roles.
+        </p>
+        <ul>
+          <li>
+            Assign roles from project settings → Sharing. Discussion posts show the author’s project
+            role next to their name (for example <em>Ryan - Owner</em> or <em>Dev - Developer II</em>).
+          </li>
+          <li>
+            QA typically cannot create or delete tasks, but can claim cards and move them across
+            statuses while testing.
+          </li>
+          <li>
+            On a kanban board, each status can restrict which roles may move tasks in or out.
+            Empty lists mean any role with “change status” may move that direction. Owners and
+            site admins always bypass gates. A common setup is Ready for QA (open) and In QA
+            (QA plus owner only).
           </li>
         </ul>
 
@@ -129,7 +167,8 @@ onUnmounted(() => {
             Owners, editors, and viewers can discuss a project task in the sidebar.
             You do not have to hit Post before Save: saving the task posts any comment still in the box.
             Closing the sidebar with unposted comment text (or unsaved task edits) asks Save / Discard / Stay.
-            You can edit your own comments; project owners can also edit anyone else’s.
+            You can edit your own comments; members with moderate-comments (project owners by default)
+            can also edit anyone else’s.
             Each comment shows when it was posted and, if changed, when it was last edited.
             Hover the edited date to see who originally posted it (and who edited it, if that was someone else).
             Deleting a comment leaves a tombstone (“Message deleted by user” or “Message deleted by project owner”).

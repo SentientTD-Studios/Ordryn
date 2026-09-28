@@ -21,7 +21,7 @@ func SetProjectWorkflowMode(ctx context.Context, userID, projectID int, mode str
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 
@@ -109,7 +109,17 @@ func ListProjectStatusesForUser(ctx context.Context, userID, projectID int) ([]s
 	if proj.WorkflowMode != storage.WorkflowKanban {
 		return []storage.ProjectStatus{}, nil
 	}
-	return storage.ListProjectStatuses(projectID)
+	statuses, err := storage.ListProjectStatuses(projectID)
+	if err != nil {
+		return nil, err
+	}
+	if statuses == nil {
+		statuses = []storage.ProjectStatus{}
+	}
+	if err := attachStatusGates(projectID, statuses); err != nil {
+		return nil, err
+	}
+	return statuses, nil
 }
 
 // CreateProjectStatusInput is the create payload for a status column.
@@ -342,7 +352,7 @@ func requireKanbanOwner(projectID, userID int) (*storage.ProjectWithAccess, erro
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 	if proj.WorkflowMode != storage.WorkflowKanban {
@@ -473,8 +483,11 @@ func AddTimeEntryForUser(ctx context.Context, userID, taskID, minutes int, note 
 	if err != nil {
 		return nil, err
 	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
+	if !canRead {
 		return nil, ErrNotFound
+	}
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTimeWrite); err != nil {
+		return nil, err
 	}
 	if projectID == 0 {
 		return nil, fmt.Errorf("%w: time tracking is only available on kanban project tasks", ErrValidation)
@@ -518,13 +531,13 @@ func DeleteTimeEntryForUser(ctx context.Context, userID, taskID, entryID int) er
 	isOwner := false
 	if projectID > 0 {
 		role, _ := storage.GetProjectRole(projectID, userID)
-		isOwner = storage.RoleCanManage(role)
+		isOwner = storage.RoleCanManageProject(projectID, role)
 	}
 	if entry.UserID != userID && !isOwner {
 		return ErrForbidden
 	}
-	if !storage.RoleCanWrite(writeRole) && !isOwner {
-		return ErrForbidden
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTimeWrite); err != nil && !isOwner {
+		return err
 	}
 	if err := storage.DeleteTaskTimeEntry(entryID); err != nil {
 		return err

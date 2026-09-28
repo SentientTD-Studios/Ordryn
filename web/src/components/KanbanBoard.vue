@@ -47,13 +47,14 @@
               </span>
             </div>
             <span class="kanban-column-count">{{ tasksForStatus(col.id).length }}</span>
-          </div>
+            </div>
           <p
-            v-if="col.description"
+            v-if="col.description || statusHasGates(col)"
             class="kanban-column-description mb-0"
             :title="col.description"
           >
             {{ col.description }}
+            <span v-if="statusHasGates(col)" class="text-muted"> · gated</span>
           </p>
         </div>
 
@@ -193,7 +194,7 @@
                   <TaskFieldBadges :task="task" surface="kanban" />
                 </div>
 
-                <div v-if="canDrag" class="kanban-claim-row mt-2">
+                <div v-if="canClaim" class="kanban-claim-row mt-2">
                   <button
                     v-if="!task.claimed_by || task.claimed_by !== user?.id"
                     type="button"
@@ -229,19 +230,21 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { ProjectStatus, Task } from '@/api/types'
+import type { Project, ProjectStatus, Task } from '@/api/types'
 import TaskFieldBadges from '@/components/TaskFieldBadges.vue'
 import { APIError } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { pauseLiveReload, resumeLiveReload, useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
 import type { ViewDensity } from '@/composables/useViewDensity'
+import { canMoveTaskStatus, hasProjectPerm, PROJECT_PERMS, statusHasGates } from '@/utils/projectPerms'
 
 const props = withDefaults(
   defineProps<{
     projectId: number
     tasks: Task[]
-    role?: 'owner' | 'editor' | 'viewer'
+    project?: Project | null
+    role?: string
     density?: ViewDensity
     /** Bump to reload column definitions (rename/add/delete status). */
     columnsRev?: number
@@ -289,7 +292,18 @@ function endBoardDrag() {
   dragPaused = false
 }
 
-const canDrag = computed(() => props.role !== 'viewer')
+const boardProject = computed<Project | null>(() => {
+  if (props.project) return props.project
+  if (!props.role) return null
+  return { id: props.projectId, name: '', role: props.role }
+})
+const canDrag = computed(
+  () =>
+    hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_STATUS) ||
+    hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_REORDER),
+)
+const canClaim = computed(() => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_CLAIM))
+const canReorder = computed(() => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_REORDER))
 
 const parentTitleById = computed(() => {
   const titles = new Map<number, string>()
@@ -467,6 +481,13 @@ function collectIds(container: HTMLElement): number[] {
     .filter((id) => !Number.isNaN(id))
 }
 
+function canDropOnColumn(fromStatusId: number, toStatusId: number): boolean {
+  if (fromStatusId === toStatusId) return canReorder.value
+  const from = statuses.value.find((s) => s.id === fromStatusId)
+  const to = statuses.value.find((s) => s.id === toStatusId)
+  return canMoveTaskStatus(boardProject.value, from, to, user.value)
+}
+
 async function onCardDrop(evt: Sortable.SortableEvent) {
   const to = evt.to as HTMLElement
   const from = evt.from as HTMLElement
@@ -534,6 +555,12 @@ function initSortables() {
         ghostClass: 'kanban-sortable-ghost',
         chosenClass: 'kanban-sortable-chosen',
         dragClass: 'kanban-sortable-drag',
+        onMove(evt) {
+          const fromId = parseInt((evt.from as HTMLElement).dataset.statusId || '', 10)
+          const toId = parseInt((evt.to as HTMLElement).dataset.statusId || '', 10)
+          if (Number.isNaN(fromId) || Number.isNaN(toId)) return false
+          return canDropOnColumn(fromId, toId)
+        },
         onStart() {
           beginBoardDrag()
         },

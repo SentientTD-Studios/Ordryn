@@ -182,20 +182,25 @@ type apiReorderOKResponse struct {
 }
 
 type apiProjectJSON struct {
-	ID                       int    `json:"id"`
-	Name                     string `json:"name"`
-	Description              string `json:"description,omitempty"`
-	WorkflowMode             string `json:"workflow_mode,omitempty"`
-	Archived                 bool   `json:"archived"`
-	BacklogName              string `json:"backlog_name,omitempty"`
-	BacklogDescription       string `json:"backlog_description,omitempty"`
-	AutoCreateNextSprint     bool   `json:"auto_create_next_sprint"`
-	AutoSprintLengthDays     *int   `json:"auto_sprint_length_days"`
-	AutoSprintLockDaysBefore *int   `json:"auto_sprint_lock_days_before"`
-	Role                     string `json:"role,omitempty"`
-	OwnerEmail               string `json:"owner_email,omitempty"`
-	OwnerUserName            string `json:"owner_user_name,omitempty"`
-	OwnerUserID              int    `json:"owner_user_id,omitempty"`
+	ID                       int      `json:"id"`
+	Name                     string   `json:"name"`
+	Description              string   `json:"description,omitempty"`
+	WorkflowMode             string   `json:"workflow_mode,omitempty"`
+	Archived                 bool     `json:"archived"`
+	BacklogName              string   `json:"backlog_name,omitempty"`
+	BacklogDescription       string   `json:"backlog_description,omitempty"`
+	AutoCreateNextSprint     bool     `json:"auto_create_next_sprint"`
+	AutoSprintLengthDays     *int     `json:"auto_sprint_length_days"`
+	AutoSprintLockDaysBefore *int     `json:"auto_sprint_lock_days_before"`
+	Role                     string   `json:"role,omitempty"`
+	RoleName                 string   `json:"role_name,omitempty"`
+	Permissions              []string `json:"permissions,omitempty"`
+	OwnerEmail               string   `json:"owner_email,omitempty"`
+	OwnerUserName            string   `json:"owner_user_name,omitempty"`
+	OwnerUserID              int      `json:"owner_user_id,omitempty"`
+	OrganizationID           *int     `json:"organization_id,omitempty"`
+	OrganizationName         string   `json:"organization_name,omitempty"`
+	OrgManaged               bool     `json:"org_managed"`
 }
 
 type apiTagCreateRequest struct {
@@ -208,20 +213,42 @@ type apiTagPatchRequest struct {
 	Color *string `json:"color"`
 }
 
+type apiOrgImportMember struct {
+	UserID int    `json:"user_id"`
+	Role   string `json:"role"`
+}
+
 type apiProjectCreateRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name             string               `json:"name"`
+	Description      string               `json:"description"`
+	OrganizationID   *int                 `json:"organization_id"`
+	OrgImport        string               `json:"org_import"`
+	OrgImportMembers []apiOrgImportMember `json:"org_import_members"`
 }
 
 type apiProjectPatchRequest struct {
-	Name                     *string     `json:"name"`
-	Description              *string     `json:"description"`
-	WorkflowMode             *string     `json:"workflow_mode"`
-	BacklogName              *string     `json:"backlog_name"`
-	BacklogDescription       *string     `json:"backlog_description"`
-	AutoCreateNextSprint     *bool       `json:"auto_create_next_sprint"`
-	AutoSprintLengthDays     optionalInt `json:"auto_sprint_length_days"`
-	AutoSprintLockDaysBefore optionalInt `json:"auto_sprint_lock_days_before"`
+	Name                     *string              `json:"name"`
+	Description              *string              `json:"description"`
+	WorkflowMode             *string              `json:"workflow_mode"`
+	BacklogName              *string              `json:"backlog_name"`
+	BacklogDescription       *string              `json:"backlog_description"`
+	AutoCreateNextSprint     *bool                `json:"auto_create_next_sprint"`
+	AutoSprintLengthDays     optionalInt          `json:"auto_sprint_length_days"`
+	AutoSprintLockDaysBefore optionalInt          `json:"auto_sprint_lock_days_before"`
+	OrganizationID           *int                 `json:"organization_id"`
+	OrgImport                string               `json:"org_import"`
+	OrgImportMembers         []apiOrgImportMember `json:"org_import_members"`
+}
+
+func orgImportMembersFromAPI(in []apiOrgImportMember) []storage.OrgImportMember {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]storage.OrgImportMember, 0, len(in))
+	for _, m := range in {
+		out = append(out, storage.OrgImportMember{UserID: m.UserID, Role: m.Role})
+	}
+	return out
 }
 
 type apiProjectReorderRequest struct {
@@ -812,7 +839,20 @@ func apiV1BulkTasks(w http.ResponseWriter, r *http.Request) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := verifyTasksOwnedByUser(ctx, db, req.TaskIDs, userID); err != nil {
+	perm := storage.PermTasksEdit
+	switch action {
+	case "complete", "incomplete":
+		perm = storage.PermTasksComplete
+	case "delete":
+		perm = storage.PermTasksDelete
+	case "set_status":
+		perm = storage.PermTasksStatus
+	case "set_sprint":
+		perm = storage.PermTasksSprint
+	case "move_project":
+		perm = storage.PermProjectManage
+	}
+	if err := verifyTasksHavePerm(ctx, db, req.TaskIDs, userID, perm); err != nil {
 		utils.APIJSONError(w, http.StatusForbidden, "forbidden", err.Error())
 		return
 	}
@@ -1102,10 +1142,24 @@ func apiV1CreateProject(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	project, err := domain.CreateProject(r.Context(), userID, req.Name, req.Description)
+	project, err := domain.CreateProjectForUser(r.Context(), userID, domain.CreateProjectInput{
+		Name:           req.Name,
+		Description:    req.Description,
+		OrganizationID: req.OrganizationID,
+		ImportMode:     req.OrgImport,
+		Members:        orgImportMembersFromAPI(req.OrgImportMembers),
+	})
 	if err != nil {
 		if errors.Is(err, domain.ErrValidation) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrForbidden) {
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "You cannot create a project in that organization.")
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Organization not found.")
 			return
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to create project.")
@@ -1127,8 +1181,13 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil && req.BacklogName == nil && req.BacklogDescription == nil &&
-		req.AutoCreateNextSprint == nil && !req.AutoSprintLengthDays.Set && !req.AutoSprintLockDaysBefore.Set {
+	if req.OrganizationID != nil && *req.OrganizationID <= 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "organization_id must be a positive id.")
+		return
+	}
+	hasOther := req.Name != nil || req.Description != nil || req.WorkflowMode != nil || req.BacklogName != nil || req.BacklogDescription != nil ||
+		req.AutoCreateNextSprint != nil || req.AutoSprintLengthDays.Set || req.AutoSprintLockDaysBefore.Set
+	if req.OrganizationID == nil && !hasOther {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 		return
 	}
@@ -1137,29 +1196,53 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		LengthDays:     req.AutoSprintLengthDays.toPatchInt(false),
 		LockDaysBefore: req.AutoSprintLockDaysBefore.toPatchInt(false),
 	}
-	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription, auto)
-	if err != nil {
-		if errors.Is(err, domain.ErrValidation) {
-			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	var project *storage.Project
+	var err error
+	if hasOther {
+		project, err = domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription, auto)
+		if err != nil {
+			writeProjectPatchError(w, err)
 			return
 		}
-		if errors.Is(err, domain.ErrForbidden) {
-			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only the owner can update this project.")
+	}
+	if req.OrganizationID != nil {
+		project, err = domain.AttachOrganizationToProject(r.Context(), userID, projectID, domain.CreateProjectInput{
+			OrganizationID: req.OrganizationID,
+			ImportMode:     req.OrgImport,
+			Members:        orgImportMembersFromAPI(req.OrgImportMembers),
+		})
+		if err != nil {
+			writeProjectPatchError(w, err)
 			return
 		}
-		if errors.Is(err, domain.ErrNotFound) {
-			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
-			return
-		}
-		if errors.Is(err, domain.ErrConflict) {
-			utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
-			return
-		}
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update project.")
+	}
+	if accessed, accErr := storage.GetAccessibleProjectByID(projectID, userID); accErr == nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(projectToAPIJSON(accessed))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(projectStorageToAPIJSON(project, storage.RoleOwner))
+}
+
+func writeProjectPatchError(w http.ResponseWriter, err error) {
+	if errors.Is(err, domain.ErrValidation) {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if errors.Is(err, domain.ErrForbidden) {
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden", err.Error())
+		return
+	}
+	if errors.Is(err, domain.ErrNotFound) {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	if errors.Is(err, domain.ErrConflict) {
+		utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
+	utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update project.")
 }
 
 func apiV1ReorderProjects(w http.ResponseWriter, r *http.Request) {

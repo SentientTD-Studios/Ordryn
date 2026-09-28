@@ -17,7 +17,8 @@ import { useAuth } from '@/composables/useAuth'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
-import { projectOptionLabel, isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
+import { canMoveTaskStatus, hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
+import { isArchivedProject, isProjectOwner, projectOptionLabel } from '@/utils/projectLabel'
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
 import { useLiveUpdates, isOwnFocusedLiveEvent, type LiveEvent } from '@/composables/useLiveUpdates'
 import { assignableTags, archiveConfirmMessage, isArchivedTask, isProtectedTag } from '@/utils/tags'
@@ -111,18 +112,59 @@ const selectedProject = computed(() => {
 const assignableProjects = computed(() =>
   projects.value.filter((p) => !isArchivedProject(p) || p.id === Number(projectId.value)),
 )
-/** Viewers may open via edit entry points; treat their project role as read-only. */
-const readOnly = computed(() => {
-  if (mode.value === 'view') return true
-  if (mode.value === 'edit' && selectedProject.value?.role === 'viewer') return true
+const canEditDetails = computed(() => {
+  if (mode.value === 'view') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_EDIT)
+})
+const canChangeStatus = computed(() => {
+  if (mode.value === 'view') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_STATUS)
+})
+const canChangeSprint = computed(() => {
+  if (mode.value === 'view') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_SPRINT)
+})
+const canClaimTask = computed(() => {
+  if (mode.value !== 'edit') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_CLAIM)
+})
+const canArchiveTask = computed(() => {
+  if (mode.value !== 'edit') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_ARCHIVE)
+})
+const canRestoreTask = computed(() => {
+  if (mode.value !== 'edit') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_RESTORE)
+})
+const canDeleteTask = computed(() => {
+  if (mode.value !== 'edit') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_DELETE)
+})
+const canLogTime = computed(() => {
+  if (mode.value === 'view') return false
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.TIME_WRITE)
+})
+const canCreateTask = computed(() => hasProjectPerm(selectedProject.value, PROJECT_PERMS.TASKS_CREATE))
+const canSaveTask = computed(() => {
+  if (mode.value === 'add') return canCreateTask.value && canEditDetails.value
+  if (mode.value === 'edit') return canEditDetails.value || canChangeStatus.value || canChangeSprint.value
   return false
 })
+/** Members without tasks:edit may open via edit entry points; treat details as read-only. */
+const readOnly = computed(() => !canEditDetails.value)
 const canManageTags = computed(() => {
   if (readOnly.value) return false
-  const role = selectedProject.value?.role
-  if (!role) return true
-  return role === 'owner' || role === 'editor'
+  return hasProjectPerm(selectedProject.value, PROJECT_PERMS.PROJECT_TAGS)
 })
+const currentStatus = computed(() => {
+  const id = Number(statusId.value || currentTask.value?.status_id || 0)
+  return statuses.value.find((s) => s.id === id) ?? null
+})
+function statusOptionDisabled(s: ProjectStatus): boolean {
+  if (!canChangeStatus.value) return true
+  if (statusId.value === s.id || currentTask.value?.status_id === s.id) return false
+  return !canMoveTaskStatus(selectedProject.value, currentStatus.value, s, user.value)
+}
 /** Editors on a shared board cannot move the task; lock from the loaded project, not the v-model. */
 const projectLockedToOwner = computed(() => {
   if (mode.value !== 'edit') return false
@@ -152,7 +194,8 @@ const isKanbanTask = computed(() => {
   return (selectedProject.value?.workflow_mode || 'classic') === 'kanban'
 })
 const sidebarTitle = computed(() => {
-  if (readOnly.value) return 'View Task'
+  if (mode.value === 'view') return 'View Task'
+  if (mode.value === 'edit' && !canEditDetails.value) return 'Task'
   if (mode.value === 'edit') return 'Edit Task'
   return 'Add Task'
 })
@@ -170,7 +213,9 @@ const timeSpentLabel = computed(() => formatMinutes(timeSpentMinutes.value))
 const showDiscussion = computed(
   () => (mode.value === 'edit' || mode.value === 'view') && !!currentTask.value?.project_id,
 )
-const discussionIsOwner = computed(() => selectedProject.value?.role === 'owner')
+const discussionCanModerate = computed(() =>
+  hasProjectPerm(selectedProject.value, PROJECT_PERMS.COMMENTS_MODERATE),
+)
 type TaskDiscussionExpose = {
   reload: () => Promise<void>
   isDirty: () => boolean
@@ -628,7 +673,7 @@ function isDiscussionDirty() {
 
 function isLeaveDirty() {
   if (mode.value === 'add') return isAddFormDirty()
-  if (mode.value === 'view' || readOnly.value) return isDiscussionDirty()
+  if (mode.value === 'view') return isDiscussionDirty()
   return isFormDirty() || isDiscussionDirty()
 }
 
@@ -713,7 +758,54 @@ function validateDescription() {
   return true
 }
 
+async function saveStatusOnly(): Promise<boolean> {
+  if (!taskId.value || !currentTask.value) return false
+  const payload: Parameters<typeof api.patchTask>[1] = {}
+  const t = currentTask.value
+  if (isKanbanTask.value && canChangeStatus.value && statusId.value !== '') {
+    const next = Number(statusId.value)
+    if (next !== (t.status_id ?? 0)) payload.status_id = next
+  }
+  if (isKanbanTask.value && canChangeSprint.value) {
+    const nextSprint = sprintPayloadId(sprintId.value)
+    const currentSprint = t.sprint_id && t.sprint_id > 0 ? t.sprint_id : 0
+    if (nextSprint !== currentSprint) payload.sprint_id = nextSprint
+  }
+  if (!Object.keys(payload).length) {
+    const flushed = await flushDiscussion()
+    if (!flushed) return false
+    close()
+    return true
+  }
+  saving.value = true
+  try {
+    const updated = await api.patchTask(taskId.value, payload)
+    currentTask.value = updated
+    notifySaved(updated, false)
+    toast.push('Task saved', 'success')
+    if (eventsLoaded.value) await loadEvents(true)
+    const flushed = await flushDiscussion()
+    if (!flushed) return false
+    close()
+    return true
+  } catch (err) {
+    const msg = err instanceof APIError ? err.message : err instanceof Error ? err.message : 'Save failed'
+    toast.push(msg, 'error')
+    return false
+  } finally {
+    saving.value = false
+  }
+}
+
 async function save(keepOpen = false): Promise<boolean> {
+  if (mode.value === 'view') return false
+  if (mode.value === 'edit' && !canEditDetails.value) {
+    return saveStatusOnly()
+  }
+  if (mode.value === 'add' && !canCreateTask.value) {
+    toast.push('Your role cannot create tasks', 'error')
+    return false
+  }
   if (readOnly.value) return false
   if (!title.value.trim()) return false
   if (!validateDescription()) return false
@@ -819,7 +911,7 @@ async function guardClose(): Promise<boolean> {
     })
     if (choice === 'stay') return false
     if (choice === 'discard') return true
-    if (readOnly.value) {
+    if (mode.value === 'view') {
       return flushDiscussion()
     }
     return save(false)
@@ -1005,7 +1097,7 @@ function openRelated(id: number) {
 }
 
 async function claimCurrentTask() {
-  if (!taskId.value || readOnly.value) return
+  if (!taskId.value || !canClaimTask.value) return
   claiming.value = true
   try {
     const task = await api.claimTask(taskId.value)
@@ -1021,7 +1113,7 @@ async function claimCurrentTask() {
 }
 
 async function unclaimCurrentTask() {
-  if (!taskId.value || readOnly.value) return
+  if (!taskId.value || !canClaimTask.value) return
   claiming.value = true
   try {
     const task = await api.unclaimTask(taskId.value)
@@ -1085,7 +1177,7 @@ async function unlinkGitHubIssue() {
 }
 
 async function archiveCurrentTask() {
-  if (!taskId.value || readOnly.value || !currentTask.value) return
+  if (!taskId.value || !canArchiveTask.value || !currentTask.value) return
   const ok = await askConfirm({
     title: 'Archive task?',
     message: archiveConfirmMessage(currentTask.value),
@@ -1103,7 +1195,7 @@ async function archiveCurrentTask() {
 }
 
 async function restoreCurrentTask() {
-  if (!taskId.value || readOnly.value) return
+  if (!taskId.value || !canRestoreTask.value) return
   try {
     const updated = await api.restoreTask(taskId.value)
     toast.push('Task restored', 'success')
@@ -1114,7 +1206,7 @@ async function restoreCurrentTask() {
 }
 
 async function deleteCurrentTask() {
-  if (!taskId.value || readOnly.value || !currentTask.value) return
+  if (!taskId.value || !canDeleteTask.value || !currentTask.value) return
   const childCount = currentTask.value.child_count ?? currentTask.value.children?.length ?? 0
   if (childCount > 0) {
     deleteDialogOpen.value = true
@@ -1144,7 +1236,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
 }
 
 async function addTimeEntry() {
-  if (!taskId.value || readOnly.value) return
+  if (!taskId.value || !canLogTime.value) return
   const minutes = Number(newEntryMinutes.value)
   if (!Number.isFinite(minutes) || minutes <= 0) {
     toast.push('Enter minutes greater than 0', 'error')
@@ -1165,7 +1257,7 @@ async function addTimeEntry() {
 }
 
 async function removeTimeEntry(entryId: number) {
-  if (!taskId.value || readOnly.value) return
+  if (!taskId.value || !canLogTime.value) return
   const ok = await askConfirm({
     title: 'Delete time entry?',
     message: 'Remove this time entry?',
@@ -1231,7 +1323,7 @@ async function removeTimeEntry(entryId: number) {
             </div>
             <div class="task-header-actions">
               <button
-                v-if="!readOnly && !loading && mode === 'edit' && (!claimedBy || claimedBy !== user?.id)"
+                v-if="canClaimTask && !loading && (!claimedBy || claimedBy !== user?.id)"
                 type="button"
                 class="btn btn-sm btn-outline-primary task-header-btn"
                 :disabled="claiming"
@@ -1240,7 +1332,7 @@ async function removeTimeEntry(entryId: number) {
                 {{ claimedBy ? 'Take over' : 'Claim' }}
               </button>
               <button
-                v-else-if="!readOnly && !loading && mode === 'edit'"
+                v-else-if="canClaimTask && !loading"
                 type="button"
                 class="btn btn-sm btn-outline-secondary task-header-btn"
                 :disabled="claiming"
@@ -1249,7 +1341,7 @@ async function removeTimeEntry(entryId: number) {
                 Release
               </button>
               <button
-                v-if="!readOnly && !loading && mode === 'edit'"
+                v-if="!loading && mode === 'edit' && ((taskIsArchived && canRestoreTask) || (!taskIsArchived && canArchiveTask))"
                 type="button"
                 class="btn btn-sm task-header-btn"
                 :class="taskIsArchived ? 'btn-success' : 'btn-warning'"
@@ -1259,7 +1351,7 @@ async function removeTimeEntry(entryId: number) {
                 {{ taskIsArchived ? 'Restore' : 'Archive' }}
               </button>
               <button
-                v-if="!readOnly && !loading && mode === 'edit'"
+                v-if="canDeleteTask && !loading"
                 type="button"
                 class="btn btn-sm btn-danger task-header-btn"
                 :disabled="saving"
@@ -1268,7 +1360,7 @@ async function removeTimeEntry(entryId: number) {
                 Delete
               </button>
               <button
-                v-if="!readOnly && !loading"
+                v-if="canSaveTask && !loading"
                 type="button"
                 class="btn btn-sm btn-primary task-header-btn"
                 :disabled="saving"
@@ -1277,7 +1369,7 @@ async function removeTimeEntry(entryId: number) {
                 {{ saving ? 'Saving…' : submitText }}
               </button>
               <button
-                v-if="!readOnly && !loading && mode === 'add'"
+                v-if="canSaveTask && !loading && mode === 'add'"
                 type="button"
                 class="btn btn-sm btn-outline-primary task-header-btn"
                 :disabled="saving || !title.trim()"
@@ -1476,9 +1568,9 @@ async function removeTimeEntry(entryId: number) {
         </div>
         <div v-if="isKanbanTask" class="form-group mt-2 kanban-order-status">
           <label for="status_id">Status:</label>
-          <select id="status_id" v-model="statusId" class="form-select" :disabled="readOnly">
+          <select id="status_id" v-model="statusId" class="form-select" :disabled="!canChangeStatus">
             <option v-if="!statuses.length" value="">No statuses</option>
-            <option v-for="s in statuses" :key="s.id" :value="s.id">
+            <option v-for="s in statuses" :key="s.id" :value="s.id" :disabled="statusOptionDisabled(s)">
               {{ s.name }}{{ s.is_done ? ' (done)' : '' }}{{ s.is_default ? ' (default)' : '' }}
             </option>
           </select>
@@ -1488,7 +1580,7 @@ async function removeTimeEntry(entryId: number) {
           <select
             id="sprint_id"
             class="form-select"
-            :disabled="readOnly"
+            :disabled="!canChangeSprint"
             :value="sprintId === '' ? '' : String(sprintId)"
             @change="onSprintChange"
           >
@@ -1691,7 +1783,7 @@ async function removeTimeEntry(entryId: number) {
             Total logged: <strong>{{ timeSpentLabel }}</strong>
             <span v-if="timeSpentMinutes">({{ timeSpentMinutes }} min)</span>
           </p>
-          <form v-if="!readOnly" class="row g-2 align-items-end mb-2" @submit.prevent="addTimeEntry">
+          <form v-if="canLogTime" class="row g-2 align-items-end mb-2" @submit.prevent="addTimeEntry">
             <div class="col-4">
               <label class="form-label small mb-0" for="time_minutes">Minutes</label>
               <input
@@ -1733,7 +1825,7 @@ async function removeTimeEntry(entryId: number) {
                 <span class="text-muted"> · {{ entry.user_name || entry.user_email || 'user' }}</span>
               </span>
               <button
-                v-if="!readOnly"
+                v-if="canLogTime"
                 class="btn btn-sm btn-link text-danger p-0"
                 type="button"
                 @click="removeTimeEntry(entry.id)"
@@ -1753,11 +1845,11 @@ async function removeTimeEntry(entryId: number) {
           :task-id="taskId"
           :project-id="currentTask?.project_id ?? null"
           :current-user-id="user?.id ?? null"
-          :is-owner="discussionIsOwner"
+          :is-owner="discussionCanModerate"
           :fill-height="isKanbanTask"
         />
 
-        <div v-if="!readOnly && !isKanbanTask" class="task-header-actions mt-3">
+        <div v-if="canSaveTask && !isKanbanTask" class="task-header-actions mt-3">
           <button type="submit" class="btn btn-sm btn-primary task-header-btn" :disabled="saving">
             {{ saving ? 'Saving…' : submitText }}
           </button>
@@ -1771,7 +1863,7 @@ async function removeTimeEntry(entryId: number) {
             Save &amp; Add Another
           </button>
           <button
-            v-if="mode === 'edit'"
+            v-if="mode === 'edit' && ((taskIsArchived && canRestoreTask) || (!taskIsArchived && canArchiveTask))"
             type="button"
             class="btn btn-sm task-header-btn"
             :class="taskIsArchived ? 'btn-success' : 'btn-warning'"
@@ -1781,7 +1873,7 @@ async function removeTimeEntry(entryId: number) {
             {{ taskIsArchived ? 'Restore' : 'Archive' }}
           </button>
           <button
-            v-if="mode === 'edit'"
+            v-if="canDeleteTask"
             type="button"
             class="btn btn-sm btn-danger task-header-btn"
             :disabled="saving"

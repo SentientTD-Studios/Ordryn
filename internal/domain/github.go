@@ -167,7 +167,7 @@ func GetProjectGitHubRepoForUser(ctx context.Context, userID, projectID int) (*P
 	if err != nil {
 		return nil, err
 	}
-	return projectGitHubPublic(repo, storage.RoleCanManage(proj.Role)), nil
+	return projectGitHubPublic(repo, storage.RoleCanManageProject(proj.ID, proj.Role)), nil
 }
 
 // LinkProjectGitHubRepo verifies admin access and links the repository (owner only).
@@ -176,7 +176,7 @@ func LinkProjectGitHubRepo(ctx context.Context, userID, projectID int, repoRef s
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 	owner, name, err := githubclient.ParseRepoFullName(repoRef)
@@ -226,7 +226,7 @@ func UnlinkProjectGitHubRepo(ctx context.Context, userID, projectID int) error {
 	if err != nil {
 		return ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
 	}
 	if err := storage.DeleteProjectGitHubRepo(projectID); err != nil {
@@ -267,7 +267,10 @@ func GetTaskGitHubIssuePublic(ctx context.Context, userID, taskID int) (*TaskGit
 
 func requireWritableTaskInLinkedProject(userID, taskID int) (projectID int, repo *storage.ProjectGitHubRepo, err error) {
 	canRead, role, projectID, err := storage.CanUserAccessTask(taskID, userID)
-	if err != nil || !canRead || !storage.RoleCanWrite(role) {
+	if err != nil || !canRead {
+		return 0, nil, ErrNotFound
+	}
+	if err := denyMissingTaskPerm(projectID, role, storage.PermTasksEdit); err != nil {
 		return 0, nil, ErrNotFound
 	}
 	if projectID <= 0 {
@@ -399,8 +402,11 @@ func LinkExistingGitHubIssue(ctx context.Context, userID, taskID int, issueRef s
 // UnlinkGitHubIssue removes the Ordryn↔issue link without deleting the GitHub issue.
 func UnlinkGitHubIssue(ctx context.Context, userID, taskID int) error {
 	_ = ctx
-	canRead, role, _, err := storage.CanUserAccessTask(taskID, userID)
-	if err != nil || !canRead || !storage.RoleCanWrite(role) {
+	canRead, role, projectID, err := storage.CanUserAccessTask(taskID, userID)
+	if err != nil || !canRead {
+		return ErrNotFound
+	}
+	if err := denyMissingTaskPerm(projectID, role, storage.PermTasksEdit); err != nil {
 		return ErrNotFound
 	}
 	existing, err := storage.GetTaskGitHubIssue(taskID)

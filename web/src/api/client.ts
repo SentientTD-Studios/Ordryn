@@ -35,6 +35,18 @@ import type {
   ProjectMember,
   ProjectStatus,
   ProjectSprint,
+  ProjectRolesList,
+  ProjectRoleDef,
+  ProjectRoleWrite,
+  ProjectRolePatch,
+  Organization,
+  OrganizationMember,
+  OrganizationInvite,
+  OrganizationProjectRoster,
+  OrgImportMode,
+  OrgImportMember,
+  OrgMemberRoleImpact,
+  StatusGates,
   SavedView,
   SavedViewFilter,
   ShareLink,
@@ -572,10 +584,29 @@ export const api = {
     return request<Project[]>('/api/v2/projects')
   },
 
-  createProject(name: string, description = '') {
+  createProject(
+    name: string,
+    description = '',
+    org?: {
+      organization_id?: number | null
+      org_import?: OrgImportMode
+      org_import_members?: OrgImportMember[]
+    } | null,
+  ) {
+    const organizationId = org?.organization_id
     return request<Project>('/api/v2/projects', {
       method: 'POST',
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({
+        name,
+        description,
+        ...(organizationId
+          ? {
+              organization_id: organizationId,
+              org_import: org?.org_import || 'copy',
+              ...(org?.org_import === 'select' ? { org_import_members: org.org_import_members || [] } : {}),
+            }
+          : {}),
+      }),
     })
   },
 
@@ -590,6 +621,9 @@ export const api = {
       auto_create_next_sprint: boolean
       auto_sprint_length_days: number | null
       auto_sprint_lock_days_before: number | null
+      organization_id: number
+      org_import?: OrgImportMode
+      org_import_members?: OrgImportMember[]
     }>,
   ) {
     return request<Project>(`/api/v2/projects/${id}`, {
@@ -659,6 +693,184 @@ export const api = {
     return request<{ ok: boolean }>(`/api/v2/projects/${projectId}/statuses/reorder`, {
       method: 'POST',
       body: JSON.stringify({ status_ids: statusIds }),
+    })
+  },
+
+  updateStatusGates(projectId: number, statusId: number, payload: StatusGates) {
+    return request<StatusGates>(`/api/v2/projects/${projectId}/statuses/${statusId}/gates`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listProjectRolesCatalog() {
+    return request<ProjectRolesList>('/api/v2/project-roles')
+  },
+
+  listProjectRoles(projectId: number) {
+    return request<ProjectRolesList>(`/api/v2/projects/${projectId}/roles`)
+  },
+
+  createProjectRole(projectId: number, payload: ProjectRoleWrite) {
+    return request<ProjectRoleDef>(`/api/v2/projects/${projectId}/roles`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateProjectRole(projectId: number, roleId: number, payload: ProjectRolePatch) {
+    return request<ProjectRoleDef>(`/api/v2/projects/${projectId}/roles/${roleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteProjectRole(projectId: number, roleId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/roles/${roleId}`, { method: 'DELETE' })
+  },
+
+  reorderProjectRoles(projectId: number, roleIds: number[]) {
+    return request<{ ok: boolean }>(`/api/v2/projects/${projectId}/roles/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ role_ids: roleIds }),
+    })
+  },
+
+  listAdminProjectRoles() {
+    return request<ProjectRolesList>('/api/v2/admin/project-roles')
+  },
+
+  createAdminProjectRole(payload: ProjectRoleWrite) {
+    return request<ProjectRoleDef>('/api/v2/admin/project-roles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateAdminProjectRole(roleId: number, payload: ProjectRolePatch) {
+    return request<ProjectRoleDef>(`/api/v2/admin/project-roles/${roleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteAdminProjectRole(roleId: number) {
+    return request<void>(`/api/v2/admin/project-roles/${roleId}`, { method: 'DELETE' })
+  },
+
+  reorderAdminProjectRoles(roleIds: number[]) {
+    return request<{ ok: boolean }>('/api/v2/admin/project-roles/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ role_ids: roleIds }),
+    })
+  },
+
+  listOrganizations() {
+    return request<Organization[]>('/api/v2/organizations')
+  },
+
+  createOrganization(name: string, description = '') {
+    return request<Organization>('/api/v2/organizations', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    })
+  },
+
+  getOrganization(id: number) {
+    return request<Organization>(`/api/v2/organizations/${id}`)
+  },
+
+  updateOrganization(id: number, payload: Partial<{ name: string; description: string }>) {
+    return request<Organization>(`/api/v2/organizations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteOrganization(id: number) {
+    return request<void>(`/api/v2/organizations/${id}`, { method: 'DELETE' })
+  },
+
+  listOrganizationMembers(orgId: number) {
+    return request<OrganizationMember[]>(`/api/v2/organizations/${orgId}/members`)
+  },
+
+  listOrganizationProjects(orgId: number) {
+    return request<OrganizationProjectRoster[]>(`/api/v2/organizations/${orgId}/projects`)
+  },
+
+  listOrganizationInvites(orgId: number) {
+    return request<OrganizationInvite[]>(`/api/v2/organizations/${orgId}/invites`)
+  },
+
+  createOrganizationInvite(orgId: number, username: string, role: string) {
+    return request<OrganizationInvite>(`/api/v2/organizations/${orgId}/invites`, {
+      method: 'POST',
+      body: JSON.stringify({ username, role }),
+    })
+  },
+
+  revokeOrganizationInvite(orgId: number, inviteId: number) {
+    return request<void>(`/api/v2/organizations/${orgId}/invites/${inviteId}`, { method: 'DELETE' })
+  },
+
+  listMyOrganizationInvites() {
+    return request<OrganizationInvite[]>('/api/v2/organization-invites')
+  },
+
+  acceptOrganizationInvite(id: number) {
+    return request<void>(`/api/v2/organization-invites/${id}/accept`, { method: 'POST' })
+  },
+
+  declineOrganizationInvite(id: number) {
+    return request<void>(`/api/v2/organization-invites/${id}/decline`, { method: 'POST' })
+  },
+
+  addOrganizationMember(orgId: number, username: string, role: string) {
+    return this.createOrganizationInvite(orgId, username, role)
+  },
+
+  updateOrganizationMember(orgId: number, userId: number, role: string) {
+    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    })
+  },
+
+  organizationMemberRoleImpact(orgId: number, userId: number) {
+    return request<OrgMemberRoleImpact>(`/api/v2/organizations/${orgId}/members/${userId}/project-impact`)
+  },
+
+  removeOrganizationMember(orgId: number, userId: number) {
+    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, { method: 'DELETE' })
+  },
+
+  listOrganizationRoles(orgId: number) {
+    return request<ProjectRolesList>(`/api/v2/organizations/${orgId}/roles`)
+  },
+
+  createOrganizationRole(orgId: number, payload: ProjectRoleWrite) {
+    return request<ProjectRoleDef>(`/api/v2/organizations/${orgId}/roles`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateOrganizationRole(orgId: number, roleId: number, payload: ProjectRolePatch) {
+    return request<ProjectRoleDef>(`/api/v2/organizations/${orgId}/roles/${roleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteOrganizationRole(orgId: number, roleId: number) {
+    return request<void>(`/api/v2/organizations/${orgId}/roles/${roleId}`, { method: 'DELETE' })
+  },
+
+  reorderOrganizationRoles(orgId: number, roleIds: number[]) {
+    return request<{ ok: boolean }>(`/api/v2/organizations/${orgId}/roles/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ role_ids: roleIds }),
     })
   },
 
@@ -808,7 +1020,7 @@ export const api = {
     return request<ProjectMember[]>(`/api/v2/projects/${projectId}/members`)
   },
 
-  updateProjectMember(projectId: number, userId: number, role: 'editor' | 'viewer') {
+  updateProjectMember(projectId: number, userId: number, role: string) {
     return request<void>(`/api/v2/projects/${projectId}/members/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify({ role }),
@@ -830,7 +1042,7 @@ export const api = {
     return request<UserSearchHit[]>(`/api/v2/users/search?${qs}`, rest)
   },
 
-  createProjectInvite(projectId: number, username: string, role: 'editor' | 'viewer') {
+  createProjectInvite(projectId: number, username: string, role: string) {
     return request<ProjectInvite>(`/api/v2/projects/${projectId}/invites`, {
       method: 'POST',
       body: JSON.stringify({ username, role }),

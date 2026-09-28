@@ -21,6 +21,7 @@ import {
   type MentionToken,
 } from '@/utils/taskCommentBody'
 import { dropHasFiles, imageFileFromClipboard, imageFileFromDrop } from '@/utils/imageUpload'
+import { discussionAuthorLabel } from '@/utils/projectPerms'
 
 const props = defineProps<{
   taskId: number
@@ -112,8 +113,8 @@ async function reload(scroll = false) {
 }
 
 function authorLabel(c: TaskComment) {
-  if (props.currentUserId && c.user_id === props.currentUserId) return 'You'
-  return c.user_name || `User #${c.user_id}`
+  const name = c.user_name || `User #${c.user_id}`
+  return discussionAuthorLabel(name, c.author_role_name, !!(props.currentUserId && c.user_id === props.currentUserId))
 }
 
 function postedByName(c: TaskComment) {

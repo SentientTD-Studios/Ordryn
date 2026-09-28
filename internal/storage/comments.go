@@ -40,6 +40,8 @@ type TaskComment struct {
 	EditedAt         *time.Time
 	EditedByUserID   int
 	EditedByUserName string
+	AuthorRole       string
+	AuthorRoleName   string
 	Links            []TaskCommentLink
 }
 

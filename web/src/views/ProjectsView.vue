@@ -29,6 +29,33 @@
           </div>
         </div>
 
+        <div v-if="pendingOrgInvites.length" class="card mb-4 border-primary">
+          <div class="card-header">
+            <h3 class="mb-0 h5">Pending organization invites</h3>
+          </div>
+          <div class="card-body">
+            <div
+              v-for="inv in pendingOrgInvites"
+              :key="inv.id"
+              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+            >
+              <div>
+                <strong>{{ inv.organization_name || 'Organization' }}</strong>
+                <span class="text-muted"> as {{ inv.role }}</span>
+                <div v-if="inv.inviter_user_name || inv.inviter_email" class="small text-muted">
+                  From {{ inv.inviter_user_name || inv.inviter_email }}
+                </div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-primary" type="button" @click="acceptOrgInvite(inv)">Accept</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" @click="declineOrgInvite(inv)">
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">
             <h3 class="mb-0">Your Projects</h3>
@@ -69,6 +96,10 @@
                         <div class="min-w-0 flex-grow-1">
                           <div class="d-flex align-items-center gap-1 flex-wrap">
                             <span class="project-name-display fw-semibold">{{ p.name }}</span>
+                            <span v-if="p.organization_name" class="badge text-bg-info">
+                              {{ p.organization_name }}
+                              <i v-if="p.org_managed" class="bi bi-lock-fill" title="Roles locked to organization" />
+                            </span>
                             <button
                               class="btn btn-sm btn-link edit-project-btn p-0"
                               type="button"
@@ -295,8 +326,17 @@
                   <small class="text-muted">{{ description.length }}/1000</small>
                 </div>
               </div>
+              <div v-if="manageableOrgs.length" class="mb-3">
+                <OrgImportFields
+                  :orgs="manageableOrgs"
+                  v-model:organization-id="organizationId"
+                  v-model:import-mode="importMode"
+                  v-model:members="importMembers"
+                  select-id="project-org"
+                />
+              </div>
               <div class="d-flex gap-2">
-                <button class="btn btn-primary" type="submit">Create</button>
+                <button class="btn btn-primary" type="submit" :disabled="!name.trim() || (organizationId > 0 && importMode === 'select' && !importMembers.length)">Create</button>
                 <RouterLink class="btn btn-secondary" to="/">Cancel</RouterLink>
               </div>
             </form>
@@ -320,7 +360,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Project, ProjectInvite } from '@/api/types'
+import type { Organization, OrganizationInvite, OrgImportMember, OrgImportMode, Project, ProjectInvite } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
@@ -328,12 +368,18 @@ import { useConfirm } from '@/composables/useConfirm'
 import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
 import ProjectSettingsModal from '@/components/ProjectSettingsModal.vue'
+import OrgImportFields from '@/components/OrgImportFields.vue'
 import { isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
 
 const projects = ref<Project[]>([])
 const pendingInvites = ref<ProjectInvite[]>([])
+const pendingOrgInvites = ref<OrganizationInvite[]>([])
 const name = ref('')
 const description = ref('')
+const organizationId = ref(0)
+const importMode = ref<OrgImportMode>('copy')
+const importMembers = ref<OrgImportMember[]>([])
+const orgs = ref<Organization[]>([])
 const sharePanelId = ref<number | null>(null)
 const boardPanelId = ref<number | null>(null)
 const showEditModal = ref(false)
@@ -351,6 +397,7 @@ const sharedProjects = computed(() =>
   projects.value.filter((p) => !isProjectOwner(p) && !isArchivedProject(p)),
 )
 const archivedProjectList = computed(() => projects.value.filter(isArchivedProject))
+const manageableOrgs = computed(() => orgs.value.filter((o) => o.can_manage))
 
 function destroySortable() {
   sortable?.destroy()
@@ -412,12 +459,16 @@ watch(ownedProjects, async () => {
 
 async function load() {
   try {
-    const [p, invites] = await Promise.all([
+    const [p, invites, orgInvites, organizationList] = await Promise.all([
       api.listProjects(),
       api.listMyProjectInvites(),
+      api.listMyOrganizationInvites().catch(() => [] as OrganizationInvite[]),
+      api.listOrganizations().catch(() => []),
     ])
     projects.value = p
     pendingInvites.value = invites
+    pendingOrgInvites.value = orgInvites
+    orgs.value = organizationList
     if (editingProject.value) {
       const updated = p.find((x) => x.id === editingProject.value!.id)
       if (updated) editingProject.value = updated
@@ -430,9 +481,16 @@ async function load() {
 async function createProject() {
   if (!name.value.trim()) return
   try {
-    await api.createProject(name.value.trim(), description.value.trim())
+    await api.createProject(name.value.trim(), description.value.trim(), {
+      organization_id: Number(organizationId.value) || null,
+      org_import: importMode.value,
+      org_import_members: importMembers.value,
+    })
     name.value = ''
     description.value = ''
+    organizationId.value = 0
+    importMode.value = 'copy'
+    importMembers.value = []
     toast.push('Project created', 'success')
     await load()
   } catch (err) {
@@ -544,6 +602,26 @@ async function acceptInvite(inv: ProjectInvite) {
 async function declineInvite(inv: ProjectInvite) {
   try {
     await api.declineProjectInvite(inv.id)
+    toast.push('Invite declined', 'info')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Decline failed', 'error')
+  }
+}
+
+async function acceptOrgInvite(inv: OrganizationInvite) {
+  try {
+    await api.acceptOrganizationInvite(inv.id)
+    toast.push('Joined organization', 'success')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Accept failed', 'error')
+  }
+}
+
+async function declineOrgInvite(inv: OrganizationInvite) {
+  try {
+    await api.declineOrganizationInvite(inv.id)
     toast.push('Invite declined', 'info')
     await load()
   } catch (err) {

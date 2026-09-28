@@ -31,8 +31,11 @@ func TestTaskVisibleCondition(t *testing.T) {
 	if strings.Contains(cond, "pm.role IN ('owner', 'editor')") {
 		t.Fatalf("full visible condition should not restrict membership roles: %s", cond)
 	}
-	if !strings.Contains(cond, "pm.project_id = t.project_id") {
-		t.Fatalf("aliased condition should correlate to outer alias: %s", cond)
+	if !strings.Contains(cond, "project_members") {
+		t.Fatalf("visible condition should include project membership: %s", cond)
+	}
+	if strings.Contains(cond, "organization_members") {
+		t.Fatalf("visible condition should not live-join organization membership: %s", cond)
 	}
 
 	unaliased := TaskVisibleCondition("", "$1")
@@ -43,8 +46,8 @@ func TestTaskVisibleCondition(t *testing.T) {
 
 func TestTaskHomeVisibleCondition(t *testing.T) {
 	cond := TaskHomeVisibleCondition("t", "$1")
-	if !strings.Contains(cond, "pm.role IN ('owner', 'editor')") {
-		t.Fatalf("home visible condition should restrict membership to owner/editor: %s", cond)
+	if !strings.Contains(cond, "pm.role <> 'viewer'") {
+		t.Fatalf("home visible condition should exclude viewers: %s", cond)
 	}
 }
 
@@ -53,11 +56,11 @@ func TestTaskListVisibleCondition(t *testing.T) {
 	projectZero := 0
 
 	home := TaskListVisibleCondition("t", "$1", nil)
-	if !strings.Contains(home, "pm.role IN ('owner', 'editor')") {
+	if !strings.Contains(home, "pm.role <> 'viewer'") {
 		t.Fatalf("unscoped list should use home visibility: %s", home)
 	}
 	inbox := TaskListVisibleCondition("t", "$1", &projectZero)
-	if !strings.Contains(inbox, "pm.role IN ('owner', 'editor')") {
+	if !strings.Contains(inbox, "pm.role <> 'viewer'") {
 		t.Fatalf("no-project list should use home visibility: %s", inbox)
 	}
 	scoped := TaskListVisibleCondition("t", "$1", &project)

@@ -90,6 +90,10 @@
                 <strong class="me-1">{{ s.name }}</strong>
                 <span v-if="s.is_default" class="badge text-bg-info">default</span>
                 <span v-if="s.is_done" class="badge text-bg-success">done</span>
+                <span
+                  v-if="(s.enter_role_slugs && s.enter_role_slugs.length) || (s.leave_role_slugs && s.leave_role_slugs.length)"
+                  class="badge text-bg-warning"
+                >gated</span>
                 <button
                   v-if="isOwner"
                   class="btn btn-sm btn-link p-0"
@@ -149,6 +153,14 @@
               <label class="form-check-label small" :for="`done-${s.id}`">Done</label>
             </div>
             <button
+              class="btn btn-sm btn-outline-secondary"
+              type="button"
+              title="Who can move tasks into or out of this status"
+              @click="beginGates(s)"
+            >
+              <i class="bi bi-shield-lock" />
+            </button>
+            <button
               class="btn btn-sm btn-outline-danger"
               type="button"
               :disabled="statuses.length <= 1 || s.is_default"
@@ -206,6 +218,48 @@
       </form>
       <p v-else-if="isOwner" class="small text-muted mb-3">Maximum of {{ maxStatuses }} statuses reached.</p>
 
+      <div v-if="gateStatusId" class="border rounded p-2 bg-body mb-3">
+        <p class="small mb-2">
+          Restrict who can move tasks into or out of
+          <strong>{{ statuses.find((s) => s.id === gateStatusId)?.name }}</strong>.
+          Leave a list empty to allow any role that can change status. Owners and site admins always bypass these gates.
+        </p>
+        <div class="row g-2">
+          <div class="col-sm-6">
+            <div class="small fw-semibold mb-1">Can move in</div>
+            <div v-for="role in assignableRoles" :key="`enter-${role.slug}`" class="form-check">
+              <input
+                :id="`enter-${role.slug}`"
+                class="form-check-input"
+                type="checkbox"
+                :checked="enterRoleSlugs.includes(role.slug)"
+                @change="toggleGateSlug('enter', role.slug, ($event.target as HTMLInputElement).checked)"
+              />
+              <label class="form-check-label small" :for="`enter-${role.slug}`">{{ role.name }}</label>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="small fw-semibold mb-1">Can move out</div>
+            <div v-for="role in assignableRoles" :key="`leave-${role.slug}`" class="form-check">
+              <input
+                :id="`leave-${role.slug}`"
+                class="form-check-input"
+                type="checkbox"
+                :checked="leaveRoleSlugs.includes(role.slug)"
+                @change="toggleGateSlug('leave', role.slug, ($event.target as HTMLInputElement).checked)"
+              />
+              <label class="form-check-label small" :for="`leave-${role.slug}`">{{ role.name }}</label>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" type="button" :disabled="savingGates" @click="saveGates">
+            Save rules
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" @click="gateStatusId = null">Cancel</button>
+        </div>
+      </div>
+
       <div v-if="deleteTarget" class="border rounded p-2 bg-body mb-2">
         <p class="small mb-2">
           Delete <strong>{{ deleteTarget.name }}</strong>?
@@ -235,7 +289,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { api } from '@/api/client'
-import type { Project, ProjectStatus } from '@/api/types'
+import { canManageProject } from '@/utils/projectPerms'
+import type { Project, ProjectRoleDef, ProjectStatus } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
@@ -254,6 +309,11 @@ const reordering = ref(false)
 const newStatusName = ref('')
 const newStatusDescription = ref('')
 const newStatusDone = ref(false)
+const gateStatusId = ref<number | null>(null)
+const enterRoleSlugs = ref<string[]>([])
+const leaveRoleSlugs = ref<string[]>([])
+const savingGates = ref(false)
+const assignableRoles = ref<ProjectRoleDef[]>([])
 const renameId = ref<number | null>(null)
 const renameValue = ref('')
 const renameDescription = ref('')
@@ -265,7 +325,7 @@ const { user } = useAuth()
 let sortable: Sortable | null = null
 
 const isKanban = computed(() => (props.project.workflow_mode || 'classic') === 'kanban')
-const isOwner = computed(() => (props.project.role || 'owner') === 'owner')
+const isOwner = computed(() => canManageProject(props.project))
 const moveOptions = computed(() =>
   statuses.value.filter((s) => s.id !== deleteTarget.value?.id),
 )
@@ -339,11 +399,56 @@ async function loadStatuses() {
     return
   }
   try {
-    statuses.value = await api.listProjectStatuses(props.project.id)
+    const [list, roles] = await Promise.all([
+      api.listProjectStatuses(props.project.id),
+      isOwner.value
+        ? api.listProjectRoles(props.project.id).catch(() => ({ catalog: [], roles: [] }))
+        : Promise.resolve({ catalog: [], roles: [] }),
+    ])
+    statuses.value = list
+    assignableRoles.value = roles.roles || []
     await nextTick()
     initSortable()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load statuses', 'error')
+  }
+}
+
+function beginGates(s: ProjectStatus) {
+  gateStatusId.value = s.id
+  enterRoleSlugs.value = [...(s.enter_role_slugs || [])]
+  leaveRoleSlugs.value = [...(s.leave_role_slugs || [])]
+  renameId.value = null
+  deleteTarget.value = null
+}
+
+function toggleGateSlug(list: 'enter' | 'leave', slug: string, checked: boolean) {
+  const target = list === 'enter' ? enterRoleSlugs : leaveRoleSlugs
+  const next = new Set(target.value)
+  if (checked) next.add(slug)
+  else next.delete(slug)
+  target.value = [...next]
+}
+
+async function saveGates() {
+  if (gateStatusId.value == null) return
+  savingGates.value = true
+  try {
+    const updated = await api.updateStatusGates(props.project.id, gateStatusId.value, {
+      enter_role_slugs: enterRoleSlugs.value,
+      leave_role_slugs: leaveRoleSlugs.value,
+    })
+    statuses.value = statuses.value.map((row) =>
+      row.id === updated.status_id
+        ? { ...row, enter_role_slugs: updated.enter_role_slugs, leave_role_slugs: updated.leave_role_slugs }
+        : row,
+    )
+    toast.push('Status move rules saved', 'success')
+    gateStatusId.value = null
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not save status rules', 'error')
+  } finally {
+    savingGates.value = false
   }
 }
 

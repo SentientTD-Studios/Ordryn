@@ -575,7 +575,7 @@ func UserCanManageTag(userID int, tag Tag) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	return RoleCanWrite(proj.Role), nil
+	return HasProjectPerm(proj.ID, proj.Role, PermProjectTags), nil
 }
 
 // UserCanManageTagNamespace reports whether the user can add/delete tags in a namespace.
@@ -588,7 +588,7 @@ func UserCanManageTagNamespace(userID int, projectID *int) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("project not found")
 	}
-	return RoleCanWrite(proj.Role), nil
+	return HasProjectPerm(proj.ID, proj.Role, PermProjectTags), nil
 }
 
 // GetAccessibleTags returns personal tags plus tags on projects the user can access.
@@ -892,11 +892,17 @@ func SetTaskTags(taskID, userID int, tagIDs []int) error {
 	}
 	defer CloseDatabase(pool)
 
-	canRead, writeRole, _, accessErr := CanUserAccessTask(taskID, userID)
+	canRead, writeRole, projectID, accessErr := CanUserAccessTask(taskID, userID)
 	if accessErr != nil {
 		return accessErr
 	}
-	if !canRead || !RoleCanWrite(writeRole) {
+	if !canRead {
+		return fmt.Errorf("not authorized")
+	}
+	if !HasProjectPerm(projectID, writeRole, PermTasksEdit) && projectID > 0 {
+		return fmt.Errorf("not authorized")
+	}
+	if projectID <= 0 && !RoleCanWrite(writeRole) {
 		return fmt.Errorf("not authorized")
 	}
 

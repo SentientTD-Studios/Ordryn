@@ -262,11 +262,14 @@ func applyCreateWorkflow(taskID int, projectArg interface{}, userID int, in Crea
 func requireWritableRootParent(ctx context.Context, pool interface {
 	QueryRow(context.Context, string, ...interface{}) pgx.Row
 }, userID, parentID int) (sql.NullInt64, error) {
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(parentID, userID)
+	canRead, writeRole, parentProjectID, accessErr := storage.CanUserAccessTask(parentID, userID)
 	if accessErr != nil {
 		return sql.NullInt64{}, accessErr
 	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
+	if !canRead {
+		return sql.NullInt64{}, fmt.Errorf("%w: parent task not found", ErrValidation)
+	}
+	if err := denyMissingTaskPerm(parentProjectID, writeRole, storage.PermTasksCreate); err != nil {
 		return sql.NullInt64{}, fmt.Errorf("%w: parent task not found", ErrValidation)
 	}
 	var parentParent sql.NullInt64
@@ -315,14 +318,56 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		}
 		return nil, err
 	}
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(taskID, userID)
+	canRead, writeRole, accessProjectID, accessErr := storage.CanUserAccessTask(taskID, userID)
 	if accessErr != nil {
 		return nil, accessErr
 	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
+	if !canRead {
 		return nil, ErrNotFound
 	}
 	_ = ownerID
+
+	needed := map[string]bool{}
+	if in.Title != nil || in.Description != nil || in.DueDate != nil || in.ClearDue || in.Priority != nil ||
+		in.ParentID != nil || in.TagIDs != nil || in.EstimatePoints != nil || len(in.Fields) > 0 {
+		needed[storage.PermTasksEdit] = true
+	}
+	if in.Completed != nil {
+		needed[storage.PermTasksComplete] = true
+	}
+	if in.StatusID != nil {
+		needed[storage.PermTasksStatus] = true
+	}
+	if in.SprintID != nil {
+		needed[storage.PermTasksSprint] = true
+	}
+	if in.ProjectID != nil {
+		needed[storage.PermProjectManage] = true
+	}
+	if len(needed) == 0 {
+		if !storage.RoleCanWriteTask(accessProjectID, writeRole) {
+			return nil, ErrNotFound
+		}
+	} else if !storage.RoleCanWriteTask(accessProjectID, writeRole) {
+		allMissing := true
+		for perm := range needed {
+			if storage.HasProjectPerm(accessProjectID, writeRole, perm) {
+				allMissing = false
+				break
+			}
+		}
+		if allMissing {
+			return nil, ErrNotFound
+		}
+	}
+	for perm := range needed {
+		if perm == storage.PermProjectManage {
+			continue
+		}
+		if err := denyMissingTaskPerm(accessProjectID, writeRole, perm); err != nil {
+			return nil, err
+		}
+	}
 
 	var title, description, dueDate string
 	var completed, favorite bool
@@ -428,7 +473,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		}
 	}
 
-	if !sameNullInt64(originalProjectID, newProjectID) && !storage.RoleCanManage(writeRole) {
+	if !sameNullInt64(originalProjectID, newProjectID) && !storage.RoleCanManageProject(accessProjectID, writeRole) {
 		return nil, fmt.Errorf("%w: only the project owner can move a task to another project", ErrForbidden)
 	}
 
@@ -515,6 +560,9 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		if mode != storage.WorkflowKanban {
 			return nil, fmt.Errorf("%w: status requires a kanban project", ErrValidation)
 		}
+		if err := CanMoveTaskStatus(effectiveProjectID, userID, writeRole, oldStatusID, **in.StatusID); err != nil {
+			return nil, err
+		}
 		if err := ApplyStatusChange(taskID, effectiveProjectID, **in.StatusID); err != nil {
 			return nil, err
 		}
@@ -530,6 +578,17 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 			return nil, err
 		}
 		if mode == storage.WorkflowKanban {
+			targetStatus := oldStatusID
+			if completed {
+				if done, err := storage.GetDoneProjectStatus(effectiveProjectID); err == nil && done != nil {
+					targetStatus = done.ID
+				}
+			} else if def, err := storage.GetDefaultProjectStatus(effectiveProjectID); err == nil && def != nil {
+				targetStatus = def.ID
+			}
+			if err := CanMoveTaskStatus(effectiveProjectID, userID, writeRole, oldStatusID, targetStatus); err != nil {
+				return nil, err
+			}
 			if err := ApplyCompletedStatusSync(taskID, effectiveProjectID, completed); err != nil {
 				return nil, err
 			}
@@ -962,12 +1021,15 @@ func DeleteTask(ctx context.Context, userID, taskID int) error {
 	}
 	defer storage.CloseDatabase(pool)
 
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(taskID, userID)
+	canRead, writeRole, projectID, accessErr := storage.CanUserAccessTask(taskID, userID)
 	if accessErr != nil {
 		return accessErr
 	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
+	if !canRead {
 		return ErrNotFound
+	}
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTasksDelete); err != nil {
+		return err
 	}
 
 	_ = storage.LogTaskEvent(taskID, userID, "deleted", nil)
@@ -1000,22 +1062,33 @@ func descendantTaskIDs(ctx context.Context, rootID int) ([]int, error) {
 }
 
 func requireTaskWrite(taskID, userID int) error {
-	canRead, writeRole, _, err := storage.CanUserAccessTask(taskID, userID)
+	canRead, writeRole, projectID, err := storage.CanUserAccessTask(taskID, userID)
 	if err != nil {
 		return err
 	}
 	if !canRead {
 		return ErrNotFound
 	}
-	if !storage.RoleCanWrite(writeRole) {
+	if !storage.RoleCanWriteTask(projectID, writeRole) {
 		return ErrForbidden
 	}
 	return nil
 }
 
+func requireTaskPermOnTask(taskID, userID int, perm string) error {
+	canRead, writeRole, projectID, err := storage.CanUserAccessTask(taskID, userID)
+	if err != nil {
+		return err
+	}
+	if !canRead {
+		return ErrNotFound
+	}
+	return denyMissingTaskPerm(projectID, writeRole, perm)
+}
+
 // ArchiveTask applies the protected archived tag to a task and its descendants.
 func ArchiveTask(ctx context.Context, userID, taskID int) error {
-	if err := requireTaskWrite(taskID, userID); err != nil {
+	if err := requireTaskPermOnTask(taskID, userID, storage.PermTasksArchive); err != nil {
 		return err
 	}
 	ids, err := descendantTaskIDs(ctx, taskID)
@@ -1035,7 +1108,7 @@ func ArchiveTask(ctx context.Context, userID, taskID int) error {
 
 // RestoreTask removes the protected archived tag from a task and its descendants.
 func RestoreTask(ctx context.Context, userID, taskID int) error {
-	if err := requireTaskWrite(taskID, userID); err != nil {
+	if err := requireTaskPermOnTask(taskID, userID, storage.PermTasksRestore); err != nil {
 		return err
 	}
 	ids, err := descendantTaskIDs(ctx, taskID)
@@ -1065,8 +1138,11 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 	if accessErr != nil {
 		return accessErr
 	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
+	if !canRead {
 		return ErrNotFound
+	}
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTasksComplete); err != nil {
+		return err
 	}
 
 	var oldCompleted bool
@@ -1083,6 +1159,19 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 			return err
 		}
 		if mode == storage.WorkflowKanban {
+			var oldStatusID int
+			_ = pool.QueryRow(ctx, `SELECT COALESCE(status_id, 0) FROM tasks WHERE id = $1`, taskID).Scan(&oldStatusID)
+			targetStatus := oldStatusID
+			if completed {
+				if done, err := storage.GetDoneProjectStatus(projectID); err == nil && done != nil {
+					targetStatus = done.ID
+				}
+			} else if def, err := storage.GetDefaultProjectStatus(projectID); err == nil && def != nil {
+				targetStatus = def.ID
+			}
+			if err := CanMoveTaskStatus(projectID, userID, writeRole, oldStatusID, targetStatus); err != nil {
+				return err
+			}
 			if err := ApplyCompletedStatusSync(taskID, projectID, completed); err != nil {
 				return err
 			}
@@ -1155,12 +1244,15 @@ func ToggleTaskCompleted(ctx context.Context, userID, taskID int) (bool, error) 
 	}
 	defer storage.CloseDatabase(pool)
 
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(taskID, userID)
+	canRead, writeRole, projectID, accessErr := storage.CanUserAccessTask(taskID, userID)
 	if accessErr != nil {
 		return false, accessErr
 	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
+	if !canRead {
 		return false, ErrNotFound
+	}
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTasksComplete); err != nil {
+		return false, err
 	}
 
 	var completed bool
@@ -1226,12 +1318,15 @@ func ReparentChildren(ctx context.Context, userID, fromParent int, toParent *int
 	}
 	defer storage.CloseDatabase(pool)
 
-	canRead, writeRole, _, accessErr := storage.CanUserAccessTask(fromParent, userID)
+	canRead, writeRole, projectID, accessErr := storage.CanUserAccessTask(fromParent, userID)
 	if accessErr != nil {
 		return accessErr
 	}
-	if !canRead || !storage.RoleCanWrite(writeRole) {
+	if !canRead {
 		return ErrNotFound
+	}
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTasksEdit); err != nil {
+		return err
 	}
 
 	if toParent != nil && *toParent > 0 {

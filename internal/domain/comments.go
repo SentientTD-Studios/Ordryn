@@ -170,6 +170,7 @@ func ListCommentsForUser(ctx context.Context, userID, taskID int) ([]storage.Tas
 		comments = []storage.TaskComment{}
 	}
 	attachCommentLinks(taskID, projectID, userID, comments)
+	attachCommentRoles(projectID, comments)
 	return comments, nil
 }
 
@@ -189,6 +190,7 @@ func AddCommentForUser(ctx context.Context, userID, taskID int, body string) (*s
 		return nil, err
 	}
 	comment.Links = ResolveCommentTaskLinks(taskID, projectID, userID, comment.Body)
+	attachCommentRole(projectID, comment)
 	NotifyProjectMembersTaskCommented(taskID, userID, projectID, body)
 	live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskCommented, &live.TaskHookMeta{Comment: body})
 	if meta := mentionHookMeta(projectID, userID, body); meta != nil {
@@ -283,7 +285,7 @@ func DeleteCommentForUser(ctx context.Context, userID, taskID, commentID int) er
 
 	isAuthor := comment.UserID == userID
 	role, _ := storage.GetProjectRole(projectID, userID)
-	isOwner := storage.RoleCanManage(role)
+	isOwner := storage.HasProjectPerm(projectID, role, storage.PermCommentsModerate)
 
 	if !isAuthor && !isOwner {
 		return ErrForbidden
@@ -304,7 +306,7 @@ func DeleteCommentForUser(ctx context.Context, userID, taskID, commentID int) er
 func commentActorRole(projectID, userID int, comment *storage.TaskComment) (isAuthor, isOwner, isAdmin bool) {
 	isAuthor = comment.UserID == userID
 	role, _ := storage.GetProjectRole(projectID, userID)
-	isOwner = storage.RoleCanManage(role)
+	isOwner = storage.HasProjectPerm(projectID, role, storage.PermCommentsModerate)
 	isAdmin = storage.UserHasPermission(userID, "admin")
 	return isAuthor, isOwner, isAdmin
 }
@@ -356,6 +358,7 @@ func EditCommentForUser(ctx context.Context, userID, taskID, commentID int, body
 		return nil, err
 	}
 	updated.Links = ResolveCommentTaskLinks(taskID, projectID, userID, updated.Body)
+	attachCommentRole(projectID, updated)
 	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskCommented)
 	live.DispatchHook(userID, taskID, live.TypeTaskCommentEdited, &live.TaskHookMeta{Comment: body})
 	if meta := mentionHookMetaDiff(projectID, userID, comment.Body, body); meta != nil {
@@ -366,7 +369,7 @@ func EditCommentForUser(ctx context.Context, userID, taskID, commentID int, body
 
 func canViewCommentHistory(projectID, userID int) bool {
 	role, _ := storage.GetProjectRole(projectID, userID)
-	return storage.RoleCanManage(role) || storage.UserHasPermission(userID, "admin")
+	return storage.HasProjectPerm(projectID, role, storage.PermCommentsModerate) || storage.UserHasPermission(userID, "admin")
 }
 
 // ListCommentRevisionsForUser returns prior versions for a project owner or site admin.

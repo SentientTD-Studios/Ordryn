@@ -50,6 +50,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "avatar_url: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateUsersAddAllowProjectInvites(); err != nil {
+		fmt.Fprintf(os.Stderr, "allow_project_invites: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateProjectsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "projects: %v\n", err)
 		os.Exit(1)
@@ -68,6 +72,14 @@ func TestMain(m *testing.M) {
 	}
 	if err := storage.CreateProjectSharingTables(); err != nil {
 		fmt.Fprintf(os.Stderr, "sharing: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateOrganizationTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "organizations: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateProjectsAddOrganization(); err != nil {
+		fmt.Fprintf(os.Stderr, "project organization: %v\n", err)
 		os.Exit(1)
 	}
 	if err := storage.CreateTasksTable(); err != nil {
@@ -104,6 +116,18 @@ func TestMain(m *testing.M) {
 	}
 	if err := storage.CreateProjectWorkflowTables(); err != nil {
 		fmt.Fprintf(os.Stderr, "workflow tables: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateProjectRoleTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "project roles: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateProjectRoleDefsAddOrganizationID(); err != nil {
+		fmt.Fprintf(os.Stderr, "project role organization_id: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.SeedDefaultProjectRoles(); err != nil {
+		fmt.Fprintf(os.Stderr, "seed project roles: %v\n", err)
 		os.Exit(1)
 	}
 	if err := storage.MigrateProjectStatusesAddDescription(); err != nil {
