@@ -66,6 +66,39 @@ func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput
 	return proj, nil
 }
 
+// AttachOrganizationToProject binds an existing project to an organization.
+// Non-owner members who are not in the organization lose access. Org members
+// inherit organization roles live. Pending invites are cancelled.
+func AttachOrganizationToProject(ctx context.Context, userID, projectID, organizationID int) (*storage.Project, error) {
+	_ = ctx
+	if organizationID <= 0 {
+		return nil, fmt.Errorf("%w: organization_id is required", ErrValidation)
+	}
+	proj, err := storage.GetAccessibleProjectByID(projectID, userID)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
+		return nil, ErrForbidden
+	}
+	if _, err := requireOrgManage(organizationID, userID); err != nil {
+		return nil, err
+	}
+	if proj.OrgManaged && proj.OrganizationID != nil && *proj.OrganizationID == organizationID {
+		return storage.GetProjectByID(projectID, proj.OwnerUserID)
+	}
+
+	removed, err := storage.AttachProjectOrganization(projectID, proj.OwnerUserID, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	_ = storage.LogProjectEvent(projectID, userID, "organization_attached", map[string]interface{}{
+		"organization_id": organizationID,
+	})
+	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectUpdated, removed...)
+	return storage.GetProjectByID(projectID, proj.OwnerUserID)
+}
+
 // RenameProject updates a project name (owner only) and returns the updated project.
 func RenameProject(ctx context.Context, userID, projectID int, name string) (*storage.Project, error) {
 	return UpdateProject(ctx, userID, projectID, &name, nil, nil, nil, nil, nil)

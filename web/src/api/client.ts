@@ -601,6 +601,7 @@ export const api = {
       auto_create_next_sprint: boolean
       auto_sprint_length_days: number | null
       auto_sprint_lock_days_before: number | null
+      organization_id: number
     }>,
   ) {
     return request<Project>(`/api/v2/projects/${id}`, {

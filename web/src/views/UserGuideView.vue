@@ -85,8 +85,10 @@ onUnmounted(() => {
             <RouterLink to="/projects">Projects</RouterLink>
             — create, rename, share, invite collaborators, and archive. Group people in
             <RouterLink to="/organizations">Organizations</RouterLink>
-            and import those members when you create a project; org permission changes apply to every
-            org-based board, and those projects cannot edit membership themselves. Archived projects move
+            and import those members when you create a project, or attach an organization later
+            from project settings. Attaching an org removes anyone who is not an org member.
+            Org permission changes apply to every org-based board, and those projects cannot
+            edit membership themselves. Archived projects move
             into an Archived section so they do not clutter the main list, are tagged archived
             automatically, and cannot accept new tasks until the owner restores them. Kanban projects can name sprints
             with optional descriptions, date ranges, and a lock date on the Sprints tab

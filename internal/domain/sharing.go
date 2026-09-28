@@ -179,6 +179,9 @@ func AcceptProjectInvite(ctx context.Context, userID int, userEmail string, invi
 	if err != nil {
 		return ErrNotFound
 	}
+	if storage.ProjectIsOrgManaged(inv.ProjectID) {
+		return fmt.Errorf("%w: membership for this project is managed by the organization", ErrForbidden)
+	}
 	if err := storage.AcceptProjectInvite(inviteID, userID, userEmail); err != nil {
 		if strings.Contains(err.Error(), "mismatch") || strings.Contains(err.Error(), "expired") || strings.Contains(err.Error(), "accepted") {
 			return fmt.Errorf("%w: %s", ErrValidation, err.Error())

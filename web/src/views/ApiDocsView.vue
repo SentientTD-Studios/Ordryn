@@ -548,11 +548,16 @@ Content-Type: application/json
 
                     <h3 class="h5 mt-3">Rename project</h3>
                     <p><span class="badge bg-warning text-dark">PATCH</span> <code>/api/v2/projects/{id}</code></p>
-                    <p>JSON body:</p>
+                    <p>JSON body (any subset):</p>
                     <pre class="api-docs-pre"><code>{
-  "name": "Renamed"
+  "name": "Renamed",
+  "organization_id": 12
 }</code></pre>
-                    <p>Returns the updated project object. Missing ids return <code>404 not_found</code>.</p>
+                    <p>
+                        Returns the updated project object. Missing ids return <code>404 not_found</code>.
+                        Setting <code>organization_id</code> attaches that organization: non-org members
+                        are removed, pending invites are cancelled, and membership is inherited live.
+                    </p>
 
                     <h3 class="h5 mt-3">Delete project</h3>
                     <p><span class="badge bg-danger">DELETE</span> <code>/api/v2/projects/{id}</code></p>

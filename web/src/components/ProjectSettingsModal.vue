@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
-import type { Project } from '@/api/types'
+import type { Organization, Project } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -35,10 +36,15 @@ const name = ref('')
 const description = ref('')
 const saving = ref(false)
 const archiving = ref(false)
+const attachingOrg = ref(false)
+const attachOrgId = ref(0)
+const orgs = ref<Organization[]>([])
 const tab = ref<SettingsTab>('details')
 const isOwner = computed(() => (props.project?.role || 'owner') === 'owner')
 const canManage = computed(() => canManageProject(props.project))
 const isKanban = computed(() => (props.project?.workflow_mode || 'classic') === 'kanban')
+const orgManaged = computed(() => !!props.project?.org_managed && !!props.project?.organization_id)
+const manageableOrgs = computed(() => orgs.value.filter((o) => o.can_manage))
 
 const tabs = computed(() => {
   const items: { id: SettingsTab; label: string }[] = [
@@ -59,17 +65,21 @@ watch(
     if (!open || !props.project) return
     name.value = props.project.name
     description.value = props.project.description || ''
+    attachOrgId.value = props.project.organization_id || 0
     tab.value = 'details'
+    void loadOrganizations()
   },
 )
 
 watch(
-  () => props.project?.id,
-  (id, prevId) => {
+  () => [props.project?.id, props.project?.organization_id, props.project?.org_managed, props.project?.name],
+  (next, prev) => {
     if (!props.open || !props.project) return
     name.value = props.project.name
     description.value = props.project.description || ''
-    if (prevId !== undefined && id !== prevId) tab.value = 'details'
+    attachOrgId.value = props.project.organization_id || 0
+    const prevId = Array.isArray(prev) ? prev[0] : undefined
+    if (prevId !== undefined && next[0] !== prevId) tab.value = 'details'
   },
 )
 
@@ -79,6 +89,14 @@ watch(isKanban, (kanban) => {
 
 function close() {
   emit('close')
+}
+
+async function loadOrganizations() {
+  try {
+    orgs.value = await api.listOrganizations()
+  } catch {
+    orgs.value = []
+  }
 }
 
 async function saveBasics() {
@@ -95,6 +113,29 @@ async function saveBasics() {
     toast.push(err instanceof APIError ? err.message : 'Failed to update project', 'error')
   } finally {
     saving.value = false
+  }
+}
+
+async function attachOrganization() {
+  if (!props.project || !isOwner.value || !attachOrgId.value || orgManaged.value) return
+  const org = manageableOrgs.value.find((o) => o.id === attachOrgId.value)
+  const orgName = org?.name || 'this organization'
+  const ok = await askConfirm({
+    title: 'Attach organization?',
+    message: `Attach “${orgName}” to this project? People who are not in that organization will be removed from the project. Members and roles will then be inherited from the organization.`,
+    confirmLabel: 'Attach',
+    danger: true,
+  })
+  if (!ok) return
+  attachingOrg.value = true
+  try {
+    await api.updateProject(props.project.id, { organization_id: attachOrgId.value })
+    toast.push('Organization attached', 'success')
+    emit('saved')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Failed to attach organization', 'error')
+  } finally {
+    attachingOrg.value = false
   }
 }
 
@@ -201,6 +242,38 @@ async function archiveOrRestore() {
               <div class="d-flex justify-content-end">
                 <small class="text-muted">{{ description.length }}/1000</small>
               </div>
+            </div>
+
+            <div v-if="orgManaged" class="mb-3">
+              <label class="form-label small fw-bold">Organization</label>
+              <p class="small mb-0">
+                Members and roles are inherited from
+                <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
+                and cannot be edited on this project.
+              </p>
+            </div>
+            <div v-else-if="isOwner && manageableOrgs.length" class="mb-3">
+              <label for="edit-project-org" class="form-label small fw-bold">Organization</label>
+              <div class="d-flex flex-wrap gap-2 align-items-end">
+                <select id="edit-project-org" v-model="attachOrgId" class="form-select form-select-sm" style="max-width: 20rem">
+                  <option :value="0">None — manage members on this project</option>
+                  <option v-for="o in manageableOrgs" :key="o.id" :value="o.id">
+                    {{ o.name }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  :disabled="attachingOrg || !attachOrgId"
+                  @click="attachOrganization"
+                >
+                  Attach organization
+                </button>
+              </div>
+              <small class="form-hint">
+                Attaching an organization imports its members and removes anyone who is not in the org.
+                Sharing and custom roles on this project become read-only.
+              </small>
             </div>
 
             <div v-if="isOwner" class="d-flex justify-content-between align-items-center gap-2 flex-wrap">

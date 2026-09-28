@@ -431,3 +431,78 @@ func ProjectIsOrgManaged(projectID int) bool {
 	b, err := GetProjectOrgBinding(projectID)
 	return err == nil && b != nil && b.OrgManaged && b.OrganizationID != nil
 }
+
+// AttachProjectOrganization binds a project to an organization, drops non-owner
+// project_members rows (so org members inherit live and non-org members lose access),
+// and cancels pending invites. Returns user IDs that were removed from project_members.
+func AttachProjectOrganization(projectID, ownerUserID, orgID int) ([]int, error) {
+	if projectID <= 0 || ownerUserID <= 0 || orgID <= 0 {
+		return nil, fmt.Errorf("invalid project or organization")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	tx, err := pool.Begin(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(context.Background())
+
+	var owner int
+	err = tx.QueryRow(context.Background(),
+		`SELECT user_id FROM projects WHERE id = $1`, projectID).Scan(&owner)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("project not found")
+		}
+		return nil, err
+	}
+	if owner != ownerUserID {
+		return nil, fmt.Errorf("project not found")
+	}
+
+	rows, err := tx.Query(context.Background(),
+		`DELETE FROM project_members
+		 WHERE project_id = $1 AND role <> 'owner'
+		 RETURNING user_id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove project members: %v", err)
+	}
+	var removed []int
+	for rows.Next() {
+		var uid int
+		if err := rows.Scan(&uid); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		removed = append(removed, uid)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(context.Background(),
+		`DELETE FROM project_invites WHERE project_id = $1 AND accepted_at IS NULL`, projectID); err != nil {
+		return nil, fmt.Errorf("failed to cancel project invites: %v", err)
+	}
+
+	tag, err := tx.Exec(context.Background(),
+		`UPDATE projects SET organization_id = $1, org_managed = TRUE, updated_at = CURRENT_TIMESTAMP
+		 WHERE id = $2 AND user_id = $3`,
+		orgID, projectID, ownerUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to attach organization: %v", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("project not found")
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		return nil, err
+	}
+	return removed, nil
+}

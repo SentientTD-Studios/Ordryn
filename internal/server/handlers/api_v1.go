@@ -228,6 +228,7 @@ type apiProjectPatchRequest struct {
 	AutoCreateNextSprint     *bool       `json:"auto_create_next_sprint"`
 	AutoSprintLengthDays     optionalInt `json:"auto_sprint_length_days"`
 	AutoSprintLockDaysBefore optionalInt `json:"auto_sprint_lock_days_before"`
+	OrganizationID           *int        `json:"organization_id"`
 }
 
 type apiProjectReorderRequest struct {
@@ -1158,8 +1159,13 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	if req.Name == nil && req.Description == nil && req.WorkflowMode == nil && req.BacklogName == nil && req.BacklogDescription == nil &&
-		req.AutoCreateNextSprint == nil && !req.AutoSprintLengthDays.Set && !req.AutoSprintLockDaysBefore.Set {
+	if req.OrganizationID != nil && *req.OrganizationID <= 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "organization_id must be a positive id.")
+		return
+	}
+	hasOther := req.Name != nil || req.Description != nil || req.WorkflowMode != nil || req.BacklogName != nil || req.BacklogDescription != nil ||
+		req.AutoCreateNextSprint != nil || req.AutoSprintLengthDays.Set || req.AutoSprintLockDaysBefore.Set
+	if req.OrganizationID == nil && !hasOther {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 		return
 	}
@@ -1168,29 +1174,49 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 		LengthDays:     req.AutoSprintLengthDays.toPatchInt(false),
 		LockDaysBefore: req.AutoSprintLockDaysBefore.toPatchInt(false),
 	}
-	project, err := domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription, auto)
-	if err != nil {
-		if errors.Is(err, domain.ErrValidation) {
-			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	var project *storage.Project
+	var err error
+	if hasOther {
+		project, err = domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription, auto)
+		if err != nil {
+			writeProjectPatchError(w, err)
 			return
 		}
-		if errors.Is(err, domain.ErrForbidden) {
-			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only the owner can update this project.")
+	}
+	if req.OrganizationID != nil {
+		project, err = domain.AttachOrganizationToProject(r.Context(), userID, projectID, *req.OrganizationID)
+		if err != nil {
+			writeProjectPatchError(w, err)
 			return
 		}
-		if errors.Is(err, domain.ErrNotFound) {
-			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
-			return
-		}
-		if errors.Is(err, domain.ErrConflict) {
-			utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
-			return
-		}
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update project.")
+	}
+	if accessed, accErr := storage.GetAccessibleProjectByID(projectID, userID); accErr == nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(projectToAPIJSON(accessed))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(projectStorageToAPIJSON(project, storage.RoleOwner))
+}
+
+func writeProjectPatchError(w http.ResponseWriter, err error) {
+	if errors.Is(err, domain.ErrValidation) {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if errors.Is(err, domain.ErrForbidden) {
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden", err.Error())
+		return
+	}
+	if errors.Is(err, domain.ErrNotFound) {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	if errors.Is(err, domain.ErrConflict) {
+		utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
+	utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update project.")
 }
 
 func apiV1ReorderProjects(w http.ResponseWriter, r *http.Request) {

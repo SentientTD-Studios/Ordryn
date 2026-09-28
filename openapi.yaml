@@ -1993,7 +1993,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     patch:
       tags: [Projects]
-      summary: Update project name, description, and/or workflow mode (owner only)
+      summary: Update project name, description, workflow mode, and/or attach an organization (owner only)
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -5409,6 +5409,9 @@ components:
           nullable: true
           minimum: 0
           description: Days before the automatic sprint end to set lock_date. Null clears the lock. Must be less than auto_sprint_length_days.
+        organization_id:
+          type: integer
+          description: Attach an organization the caller can manage. The project then inherits org members and roles live. Non-owner members who are not in the organization are removed, pending invites are cancelled, and project sharing/roles become read-only.
       description: At least one field required. Disabling kanban fails with 409 if the project has tasks.
 
     ProjectStatus:

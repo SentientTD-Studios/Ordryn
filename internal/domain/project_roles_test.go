@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"GoTodo/internal/storage"
 )
@@ -320,4 +321,109 @@ func TestOrgManagedProjectInheritsMembersAndLocksEdits(t *testing.T) {
 		t.Fatalf("org-qa create after trickle: err=%v want forbidden", err)
 	}
 	_ = taskID
+}
+
+func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
+	ctx := context.Background()
+	setTestUsername(t, 2, "attach_editor")
+	setTestUsername(t, 3, "attach_outsider")
+
+	org, err := CreateOrganizationForUser(ctx, 1, "Attach Later Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if _, err := AddOrganizationMemberForUser(ctx, 1, org.ID, "attach_editor", storage.RoleEditor); err != nil {
+		t.Fatalf("add org member: %v", err)
+	}
+
+	proj, err := CreateProject(ctx, 1, "Independent Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+		t.Fatalf("add editor: %v", err)
+	}
+	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+		t.Fatalf("add outsider: %v", err)
+	}
+	if _, err := storage.CreateProjectInvite(proj.ID, "pending@example.com", storage.RoleViewer, 1, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("pending invite: %v", err)
+	}
+
+	if _, err := AttachOrganizationToProject(ctx, 2, proj.ID, org.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("editor attach: err=%v want forbidden", err)
+	}
+
+	updated, err := AttachOrganizationToProject(ctx, 1, proj.ID, org.ID)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if !updated.OrgManaged || updated.OrganizationID == nil || *updated.OrganizationID != org.ID {
+		t.Fatalf("attached project: %+v", updated)
+	}
+
+	again, err := AttachOrganizationToProject(ctx, 1, proj.ID, org.ID)
+	if err != nil {
+		t.Fatalf("idempotent attach: %v", err)
+	}
+	if again.OrganizationID == nil || *again.OrganizationID != org.ID {
+		t.Fatalf("idempotent org: %+v", again)
+	}
+
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 3); err == nil {
+		t.Fatal("non-org member should lose access")
+	}
+	role, err := storage.GetProjectRole(proj.ID, 2)
+	if err != nil || role != storage.RoleEditor {
+		t.Fatalf("org editor role: %q err=%v", role, err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err != nil {
+		t.Fatalf("org editor should keep access: %v", err)
+	}
+
+	members, err := storage.ListProjectMembers(proj.ID)
+	if err != nil {
+		t.Fatalf("list members: %v", err)
+	}
+	var sawOutsider, sawInheritedEditor bool
+	for _, m := range members {
+		if m.UserID == 3 {
+			sawOutsider = true
+		}
+		if m.UserID == 2 && m.Inherited && m.Role == storage.RoleEditor {
+			sawInheritedEditor = true
+		}
+	}
+	if sawOutsider {
+		t.Fatalf("outsider still listed: %+v", members)
+	}
+	if !sawInheritedEditor {
+		t.Fatalf("expected inherited editor, got %+v", members)
+	}
+
+	invites, err := storage.ListProjectInvites(proj.ID)
+	if err != nil {
+		t.Fatalf("list invites: %v", err)
+	}
+	if len(invites) != 0 {
+		t.Fatalf("pending invites should be cancelled, got %+v", invites)
+	}
+	if _, err := InviteToProject(ctx, 1, proj.ID, "attach_outsider", storage.RoleViewer); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("invite after attach: err=%v", err)
+	}
+
+	other, err := CreateOrganizationForUser(ctx, 1, "Second Attach Org", "")
+	if err != nil {
+		t.Fatalf("second org: %v", err)
+	}
+	switched, err := AttachOrganizationToProject(ctx, 1, proj.ID, other.ID)
+	if err != nil {
+		t.Fatalf("switch org: %v", err)
+	}
+	if switched.OrganizationID == nil || *switched.OrganizationID != other.ID {
+		t.Fatalf("switched org: %+v", switched)
+	}
+	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err == nil {
+		t.Fatal("editor from previous org should lose access after switch")
+	}
 }
