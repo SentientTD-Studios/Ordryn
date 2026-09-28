@@ -106,6 +106,14 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "workflow tables: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateProjectRoleTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "project roles: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.SeedDefaultProjectRoles(); err != nil {
+		fmt.Fprintf(os.Stderr, "seed project roles: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.MigrateProjectStatusesAddDescription(); err != nil {
 		fmt.Fprintf(os.Stderr, "status description: %v\n", err)
 		os.Exit(1)

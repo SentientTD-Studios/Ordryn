@@ -108,23 +108,21 @@ func CreateProjectSharingTables() error {
 		`CREATE TABLE IF NOT EXISTS project_members (
 			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			role VARCHAR(16) NOT NULL,
+			role VARCHAR(40) NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (project_id, user_id),
-			CHECK (role IN ('owner', 'editor', 'viewer'))
+			PRIMARY KEY (project_id, user_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id)`,
 		`CREATE TABLE IF NOT EXISTS project_invites (
 			id SERIAL PRIMARY KEY,
 			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			email VARCHAR(255) NOT NULL,
-			role VARCHAR(16) NOT NULL,
+			role VARCHAR(40) NOT NULL,
 			token VARCHAR(64) NOT NULL UNIQUE,
 			invited_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			expires_at TIMESTAMPTZ NOT NULL,
 			accepted_at TIMESTAMPTZ,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CHECK (role IN ('editor', 'viewer'))
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_project_invites_email ON project_invites(email) WHERE accepted_at IS NULL`,
 		`CREATE TABLE IF NOT EXISTS share_links (
@@ -259,27 +257,6 @@ func newShareToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
-}
-
-func ValidMemberRole(role string) bool {
-	switch role {
-	case RoleOwner, RoleEditor, RoleViewer:
-		return true
-	default:
-		return false
-	}
-}
-
-func ValidInviteRole(role string) bool {
-	return role == RoleEditor || role == RoleViewer
-}
-
-func RoleCanWrite(role string) bool {
-	return role == RoleOwner || role == RoleEditor
-}
-
-func RoleCanManage(role string) bool {
-	return role == RoleOwner
 }
 
 // EnsureProjectOwnerMember inserts the owner membership row (idempotent).
@@ -429,7 +406,7 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 		FROM project_members pm
 		JOIN users u ON u.id = pm.user_id
 		WHERE pm.project_id = $1
-		ORDER BY CASE pm.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END, u.email`,
+		ORDER BY CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, u.email`,
 		projectID)
 	if err != nil {
 		return nil, err
@@ -972,7 +949,7 @@ func taskVisibleCondition(alias, userParam string, writeRolesOnly bool) string {
 	}
 	memberRoleFilter := ""
 	if writeRolesOnly {
-		memberRoleFilter = " AND pm.role IN ('owner', 'editor')"
+		memberRoleFilter = " AND pm.role <> 'viewer'"
 	}
 	return fmt.Sprintf(`(%suser_id = %s OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM project_members pm WHERE pm.project_id = %sproject_id AND pm.user_id = %s%s
@@ -1014,10 +991,7 @@ func CanUserAccessTask(taskID, userID int) (canRead bool, writeRole string, proj
 	if role == "" {
 		return false, "", pid, nil
 	}
-	if RoleCanWrite(role) {
-		return true, role, pid, nil
-	}
-	return true, RoleViewer, pid, nil
+	return true, role, pid, nil
 }
 
 // ListTasksForShareLink returns a slim task list for a share scope.

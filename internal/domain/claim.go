@@ -18,8 +18,8 @@ func ClaimTaskForUser(ctx context.Context, userID, taskID int) error {
 	if !canRead {
 		return ErrNotFound
 	}
-	if !storage.RoleCanWrite(writeRole) {
-		return ErrForbidden
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTasksClaim); err != nil {
+		return err
 	}
 	if projectID <= 0 {
 		return fmt.Errorf("%w: only kanban project tasks can be claimed", ErrValidation)
@@ -60,8 +60,8 @@ func UnclaimTaskForUser(ctx context.Context, userID, taskID int) error {
 	if !canRead {
 		return ErrNotFound
 	}
-	if !storage.RoleCanWrite(writeRole) {
-		return ErrForbidden
+	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTasksClaim); err != nil {
+		return err
 	}
 	if projectID <= 0 {
 		return fmt.Errorf("%w: only kanban project tasks can be unclaimed", ErrValidation)

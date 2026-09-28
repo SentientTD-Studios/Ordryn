@@ -27,14 +27,14 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 		return nil, err
 	}
 	role = strings.TrimSpace(strings.ToLower(role))
-	if !storage.ValidInviteRole(role) {
-		return nil, fmt.Errorf("%w: role must be editor or viewer", ErrValidation)
+	if !storage.ValidInviteRoleForProject(projectID, role) {
+		return nil, fmt.Errorf("%w: role is not assignable on this project", ErrValidation)
 	}
 	proj, err := storage.GetAccessibleProjectByID(projectID, actorUserID)
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 
@@ -86,14 +86,14 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, memberUserID int, role string) error {
 	_ = ctx
 	role = strings.TrimSpace(strings.ToLower(role))
-	if role != storage.RoleEditor && role != storage.RoleViewer {
-		return fmt.Errorf("%w: role must be editor or viewer", ErrValidation)
+	if !storage.ValidInviteRoleForProject(projectID, role) {
+		return fmt.Errorf("%w: role is not assignable on this project", ErrValidation)
 	}
 	proj, err := storage.GetAccessibleProjectByID(projectID, actorUserID)
 	if err != nil {
 		return ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
 	}
 	current, err := storage.GetProjectRole(projectID, memberUserID)
@@ -128,7 +128,7 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 		return ErrNotFound
 	}
 	selfLeave := actorUserID == memberUserID
-	if !selfLeave && !storage.RoleCanManage(proj.Role) {
+	if !selfLeave && !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
 	}
 	targetRole, err := storage.GetProjectRole(projectID, memberUserID)
@@ -232,7 +232,7 @@ func CreateShareLinkForScope(ctx context.Context, userID int, scopeType string, 
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 	link, err := storage.CreateShareLink(userID, scopeType, scopeID, expiresAt)

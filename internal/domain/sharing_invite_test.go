@@ -34,7 +34,7 @@ func TestInviteToProject_InvalidRole(t *testing.T) {
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("owner role: got %v", err)
 	}
-	if !strings.Contains(err.Error(), "editor or viewer") {
+	if !strings.Contains(err.Error(), "not assignable") {
 		t.Fatalf("expected role message, got %v", err)
 	}
 

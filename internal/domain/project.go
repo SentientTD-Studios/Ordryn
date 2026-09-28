@@ -115,7 +115,7 @@ func UpdateProject(ctx context.Context, userID, projectID int, name, description
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 
@@ -204,7 +204,7 @@ func DeleteProject(ctx context.Context, userID, projectID int) error {
 	if err != nil {
 		return ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
 	}
 	live.DispatchProjectHook(userID, projectID, live.TypeProjectDeleted, nil)
@@ -219,7 +219,7 @@ func ArchiveProject(ctx context.Context, userID, projectID int) (*storage.Projec
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 	if proj.Archived {
@@ -244,7 +244,7 @@ func RestoreProject(ctx context.Context, userID, projectID int) (*storage.Projec
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, ErrForbidden
 	}
 	if !proj.Archived {
@@ -271,7 +271,7 @@ func RequireProjectWriteAccess(projectID, userID int) error {
 	if err != nil {
 		return fmt.Errorf("%w: invalid project_id", ErrValidation)
 	}
-	if !storage.RoleCanWrite(proj.Role) {
+	if !storage.HasProjectPerm(proj.ID, proj.Role, storage.PermTasksCreate) {
 		return ErrForbidden
 	}
 	return nil

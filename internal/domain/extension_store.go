@@ -107,7 +107,7 @@ func PutExtensionStoreDoc(userID, projectID int, extensionID, key string, revisi
 	if err != nil {
 		return nil, err
 	}
-	if !storage.RoleCanWrite(proj.Role) {
+	if !storage.HasProjectPerm(proj.ID, proj.Role, storage.PermExtensionsWrite) {
 		return nil, fmt.Errorf("%w: viewers cannot write extension store documents", ErrForbidden)
 	}
 	if _, err := requireEnabledStoreExtension(extensionID, projectID, extensions.PermStoreWrite); err != nil {

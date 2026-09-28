@@ -62,11 +62,14 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, projectFilter *int
 	nesting := parentID != nil && *parentID > 0
 	columnMoves := 0
 	for _, id := range ids {
-		canRead, writeRole, _, accessErr := storage.CanUserAccessTask(id, userID)
+		canRead, writeRole, taskProjectID, accessErr := storage.CanUserAccessTask(id, userID)
 		if accessErr != nil {
 			return accessErr
 		}
-		if !canRead || !storage.RoleCanWrite(writeRole) {
+		if !canRead {
+			return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
+		}
+		if err := denyMissingTaskPerm(taskProjectID, writeRole, storage.PermTasksReorder); err != nil {
 			return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
 		}
 		var completed bool
@@ -105,6 +108,9 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, projectFilter *int
 						projectID = *projectFilter
 					} else if proj.Valid {
 						projectID = int(proj.Int64)
+					}
+					if err := CanMoveTaskStatus(projectID, userID, writeRole, oldStatusID, *statusFilter); err != nil {
+						return err
 					}
 					if err := applyKanbanColumnMove(userID, id, projectID, *statusFilter, oldStatusID, completed); err != nil {
 						return err

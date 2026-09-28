@@ -21,7 +21,7 @@ func RequireProjectExtensionOwner(userID, projectID int) (*storage.ProjectWithAc
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil, fmt.Errorf("%w: only the project owner can manage extensions", ErrForbidden)
 	}
 	return proj, nil

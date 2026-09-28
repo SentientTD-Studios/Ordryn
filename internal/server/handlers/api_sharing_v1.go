@@ -18,6 +18,7 @@ type apiProjectMemberJSON struct {
 	Email     string `json:"email"`
 	UserName  string `json:"user_name"`
 	Role      string `json:"role"`
+	RoleName  string `json:"role_name,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -139,6 +140,9 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 			apiV1ProjectEvents(w, r, projectID)
 			return true
 		}
+	case "roles":
+		handleProjectRolesResource(w, r, projectID, parts[2:])
+		return true
 	case "statuses":
 		handleProjectStatusesResource(w, r, projectID, parts[2:])
 		return true
@@ -217,6 +221,7 @@ func apiV1ProjectMembers(w http.ResponseWriter, r *http.Request, projectID int, 
 				Email:     m.Email,
 				UserName:  m.UserName,
 				Role:      m.Role,
+				RoleName:  storage.RoleDisplayName(projectID, m.Role),
 				CreatedAt: formatRFC3339(m.CreatedAt),
 			})
 		}
@@ -310,7 +315,7 @@ func apiV1ProjectInvites(w http.ResponseWriter, r *http.Request, projectID int, 
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
 	}
-	if !storage.RoleCanManage(proj.Role) {
+	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only the owner can revoke invites.")
 		return
 	}

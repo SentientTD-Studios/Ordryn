@@ -182,20 +182,22 @@ type apiReorderOKResponse struct {
 }
 
 type apiProjectJSON struct {
-	ID                       int    `json:"id"`
-	Name                     string `json:"name"`
-	Description              string `json:"description,omitempty"`
-	WorkflowMode             string `json:"workflow_mode,omitempty"`
-	Archived                 bool   `json:"archived"`
-	BacklogName              string `json:"backlog_name,omitempty"`
-	BacklogDescription       string `json:"backlog_description,omitempty"`
-	AutoCreateNextSprint     bool   `json:"auto_create_next_sprint"`
-	AutoSprintLengthDays     *int   `json:"auto_sprint_length_days"`
-	AutoSprintLockDaysBefore *int   `json:"auto_sprint_lock_days_before"`
-	Role                     string `json:"role,omitempty"`
-	OwnerEmail               string `json:"owner_email,omitempty"`
-	OwnerUserName            string `json:"owner_user_name,omitempty"`
-	OwnerUserID              int    `json:"owner_user_id,omitempty"`
+	ID                       int      `json:"id"`
+	Name                     string   `json:"name"`
+	Description              string   `json:"description,omitempty"`
+	WorkflowMode             string   `json:"workflow_mode,omitempty"`
+	Archived                 bool     `json:"archived"`
+	BacklogName              string   `json:"backlog_name,omitempty"`
+	BacklogDescription       string   `json:"backlog_description,omitempty"`
+	AutoCreateNextSprint     bool     `json:"auto_create_next_sprint"`
+	AutoSprintLengthDays     *int     `json:"auto_sprint_length_days"`
+	AutoSprintLockDaysBefore *int     `json:"auto_sprint_lock_days_before"`
+	Role                     string   `json:"role,omitempty"`
+	RoleName                 string   `json:"role_name,omitempty"`
+	Permissions              []string `json:"permissions,omitempty"`
+	OwnerEmail               string   `json:"owner_email,omitempty"`
+	OwnerUserName            string   `json:"owner_user_name,omitempty"`
+	OwnerUserID              int      `json:"owner_user_id,omitempty"`
 }
 
 type apiTagCreateRequest struct {
@@ -812,7 +814,20 @@ func apiV1BulkTasks(w http.ResponseWriter, r *http.Request) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := verifyTasksOwnedByUser(ctx, db, req.TaskIDs, userID); err != nil {
+	perm := storage.PermTasksEdit
+	switch action {
+	case "complete", "incomplete":
+		perm = storage.PermTasksComplete
+	case "delete":
+		perm = storage.PermTasksDelete
+	case "set_status":
+		perm = storage.PermTasksStatus
+	case "set_sprint":
+		perm = storage.PermTasksSprint
+	case "move_project":
+		perm = storage.PermProjectManage
+	}
+	if err := verifyTasksHavePerm(ctx, db, req.TaskIDs, userID, perm); err != nil {
 		utils.APIJSONError(w, http.StatusForbidden, "forbidden", err.Error())
 		return
 	}

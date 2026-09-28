@@ -174,6 +174,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateProjectSharingTables failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateProjectMemberRoleConstraints(); err != nil {
+		fmt.Printf("migration: MigrateProjectMemberRoleConstraints failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateProjectOwnersToMembers(); err != nil {
 		fmt.Printf("migration: MigrateProjectOwnersToMembers failed: %v\n", err)
 		errCount++
@@ -209,6 +213,14 @@ func RunMigrations() error {
 	}
 	if err := CreateProjectWorkflowTables(); err != nil {
 		fmt.Printf("migration: CreateProjectWorkflowTables failed: %v\n", err)
+		errCount++
+	}
+	if err := CreateProjectRoleTables(); err != nil {
+		fmt.Printf("migration: CreateProjectRoleTables failed: %v\n", err)
+		errCount++
+	}
+	if err := SeedDefaultProjectRoles(); err != nil {
+		fmt.Printf("migration: SeedDefaultProjectRoles failed: %v\n", err)
 		errCount++
 	}
 	if err := MigrateProjectStatusesAddDescription(); err != nil {

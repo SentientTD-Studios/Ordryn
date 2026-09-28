@@ -46,12 +46,25 @@ func parseBulkTaskIDs(raw string) ([]int, error) {
 }
 
 func verifyTasksOwnedByUser(ctx context.Context, db *pgxpool.Pool, ids []int, userID int) error {
+	return verifyTasksHavePerm(ctx, db, ids, userID, storage.PermTasksEdit)
+}
+
+func verifyTasksHavePerm(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, perm string) error {
 	for _, id := range ids {
-		canRead, writeRole, _, err := storage.CanUserAccessTask(id, userID)
+		canRead, writeRole, projectID, err := storage.CanUserAccessTask(id, userID)
 		if err != nil {
 			return err
 		}
-		if !canRead || !storage.RoleCanWrite(writeRole) {
+		if !canRead {
+			return fmt.Errorf("not authorized")
+		}
+		if projectID <= 0 {
+			if !storage.RoleCanWrite(writeRole) {
+				return fmt.Errorf("not authorized")
+			}
+			continue
+		}
+		if !storage.HasProjectPerm(projectID, writeRole, perm) {
 			return fmt.Errorf("not authorized")
 		}
 	}

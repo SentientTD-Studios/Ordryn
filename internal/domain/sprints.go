@@ -331,7 +331,7 @@ func rejectLockedSprintAssignment(userID, projectID int, sprint *storage.Project
 	if err != nil {
 		return ErrNotFound
 	}
-	if storage.RoleCanManage(proj.Role) {
+	if storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return nil
 	}
 	return fmt.Errorf("%w: sprint is locked; only the project owner can add items", ErrForbidden)

@@ -92,7 +92,7 @@ func apiV1ProjectExtensions(w http.ResponseWriter, r *http.Request, projectID in
 		writeProjectExtensionError(w, err)
 		return
 	}
-	isOwner := storage.RoleCanManage(proj.Role)
+	isOwner := storage.RoleCanManageProject(proj.ID, proj.Role)
 
 	if len(rest) == 0 {
 		if r.Method != http.MethodGet {
