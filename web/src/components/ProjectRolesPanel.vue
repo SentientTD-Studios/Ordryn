@@ -51,10 +51,6 @@ function resetForm() {
   slugTouched.value = false
 }
 
-function startCreate() {
-  resetForm()
-}
-
 function startEdit(role: ProjectRoleDef) {
   editingId.value = role.id
   formName.value = role.name
