@@ -223,6 +223,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateProjectsAddOrganization failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateProjectsAddOrgImport(); err != nil {
+		fmt.Printf("migration: MigrateProjectsAddOrgImport failed: %v\n", err)
+		errCount++
+	}
 	if err := CreateProjectRoleTables(); err != nil {
 		fmt.Printf("migration: CreateProjectRoleTables failed: %v\n", err)
 		errCount++

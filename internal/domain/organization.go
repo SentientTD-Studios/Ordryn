@@ -253,11 +253,19 @@ func AcceptOrganizationInviteForUser(ctx context.Context, userID int, userEmail 
 	if _, err := storage.GetOrganizationInviteByID(inviteID); err != nil {
 		return ErrNotFound
 	}
-	if err := storage.AcceptOrganizationInvite(inviteID, userID, userEmail); err != nil {
+	projectIDs, err := storage.AcceptOrganizationInvite(inviteID, userID, userEmail)
+	if err != nil {
 		if strings.Contains(err.Error(), "mismatch") || strings.Contains(err.Error(), "expired") || strings.Contains(err.Error(), "accepted") {
 			return fmt.Errorf("%w: %s", ErrValidation, err.Error())
 		}
 		return err
+	}
+	for _, pid := range projectIDs {
+		live.AfterProjectChangeLive(userID, pid, live.TypeProjectUpdated)
+		live.DispatchProjectHook(userID, pid, live.TypeProjectMemberJoined, &live.TaskHookMeta{
+			MemberID:   userID,
+			MemberName: hookDisplayName(userID),
+		})
 	}
 	return nil
 }
@@ -380,6 +388,22 @@ func ListOrganizationProjectRostersForUser(ctx context.Context, actorUserID, org
 		rosters[i].CanManage = storage.RoleCanManageProject(proj.ID, proj.Role)
 	}
 	return rosters, nil
+}
+
+// SyncOrganizationProjectsForUser copies current org members onto copy/lock projects.
+func SyncOrganizationProjectsForUser(ctx context.Context, userID, orgID int) (*storage.OrgProjectSyncResult, error) {
+	_ = ctx
+	if _, err := requireOrgManage(orgID, userID); err != nil {
+		return nil, err
+	}
+	result, err := storage.SyncOrganizationMembersToAutoImportProjects(orgID)
+	if err != nil {
+		return nil, err
+	}
+	for _, pid := range result.ProjectIDs {
+		live.AfterProjectChangeLive(userID, pid, live.TypeProjectUpdated)
+	}
+	return result, nil
 }
 
 // RemoveOrganizationMemberForUser removes a non-owner, or allows self-leave.

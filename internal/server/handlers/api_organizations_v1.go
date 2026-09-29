@@ -303,6 +303,24 @@ func handleOrganizationMembers(w http.ResponseWriter, r *http.Request, userID, o
 }
 
 func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, orgID int, rest []string) {
+	if len(rest) == 1 && rest[0] == "sync" {
+		if r.Method != http.MethodPost {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		result, err := domain.SyncOrganizationProjectsForUser(r.Context(), userID, orgID)
+		if err != nil {
+			writeProjectRoleDomainError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":          true,
+			"added":       result.Added,
+			"project_ids": result.ProjectIDs,
+		})
+		return
+	}
 	if len(rest) != 0 {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Unknown organization project resource.")
 		return
@@ -329,6 +347,7 @@ func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, 
 		ID         int          `json:"id"`
 		Name       string       `json:"name"`
 		OrgManaged bool         `json:"org_managed"`
+		OrgImport  string       `json:"org_import,omitempty"`
 		CanManage  bool         `json:"can_manage"`
 		Members    []memberJSON `json:"members"`
 	}
@@ -350,6 +369,7 @@ func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, 
 			ID:         roster.ID,
 			Name:       roster.Name,
 			OrgManaged: roster.OrgManaged,
+			OrgImport:  roster.OrgImport,
 			CanManage:  roster.CanManage,
 			Members:    members,
 		})

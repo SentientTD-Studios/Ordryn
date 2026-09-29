@@ -551,6 +551,9 @@ Content-Type: application/json
                         <code>org_import</code> is <code>copy</code> (all members, roles stay editable),
                         <code>lock</code> (all members, roles stay locked to the organization), or
                         <code>select</code> (only <code>org_import_members</code>, each with a required role).
+                        Later organization invites that are accepted are copied onto <code>copy</code> and
+                        <code>lock</code> projects. <code>POST /api/v2/organizations/{id}/projects/sync</code>
+                        adds current members to those same boards; <code>select</code> projects are skipped.
                     </p>
                     <p>Returns <code>201 Created</code> with the project object.</p>
 

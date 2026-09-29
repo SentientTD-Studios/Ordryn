@@ -847,3 +847,113 @@ func TestOrgCustomizeDefaultRoles(t *testing.T) {
 		t.Fatalf("member should keep editor slug after reset: %q err=%v", role, err)
 	}
 }
+
+func TestOrgAcceptAndSyncAddsMembersToCopyAndLockNotSelect(t *testing.T) {
+	ctx := context.Background()
+	setTestUsername(t, 2, "sync_copy_editor")
+	setTestUsername(t, 3, "sync_copy_viewer")
+
+	org, err := CreateOrganizationForUser(ctx, 1, "Sync Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	inv2, err := InviteToOrganization(ctx, 1, org.ID, "sync_copy_editor", storage.RoleEditor)
+	if err != nil {
+		t.Fatalf("invite editor: %v", err)
+	}
+	if err := AcceptOrganizationInviteForUser(ctx, 2, "editor@example.com", inv2.ID); err != nil {
+		t.Fatalf("accept editor: %v", err)
+	}
+
+	copyProj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Copy Board",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportCopy,
+	})
+	if err != nil {
+		t.Fatalf("copy project: %v", err)
+	}
+	lockProj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Lock Board",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportLock,
+	})
+	if err != nil {
+		t.Fatalf("lock project: %v", err)
+	}
+	selectProj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Select Board",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportSelect,
+		Members:        []storage.OrgImportMember{{UserID: 2, Role: storage.RoleEditor}},
+	})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+
+	inv3, err := InviteToOrganization(ctx, 1, org.ID, "sync_copy_viewer", storage.RoleViewer)
+	if err != nil {
+		t.Fatalf("invite viewer: %v", err)
+	}
+	if err := AcceptOrganizationInviteForUser(ctx, 3, "viewer@example.com", inv3.ID); err != nil {
+		t.Fatalf("accept viewer: %v", err)
+	}
+	if role, err := storage.GetProjectRole(copyProj.ID, 3); err != nil || role != storage.RoleViewer {
+		t.Fatalf("copy after accept: %q err=%v", role, err)
+	}
+	if role, err := storage.GetProjectRole(lockProj.ID, 3); err != nil || role != storage.RoleViewer {
+		t.Fatalf("lock after accept: %q err=%v", role, err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(selectProj.ID, 3); err == nil {
+		t.Fatal("select project should ignore accepted org members")
+	}
+
+	if err := RemoveProjectMember(ctx, 1, copyProj.ID, 3); err != nil {
+		t.Fatalf("remove from copy: %v", err)
+	}
+	if err := storage.UpsertProjectMember(lockProj.ID, 2, storage.RoleViewer); err != nil {
+		t.Fatalf("stale lock role: %v", err)
+	}
+	if err := UpdateProjectMemberRole(ctx, 1, copyProj.ID, 2, storage.RoleViewer); err != nil {
+		t.Fatalf("custom copy role: %v", err)
+	}
+
+	result, err := SyncOrganizationProjectsForUser(ctx, 1, org.ID)
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if result.Added < 1 {
+		t.Fatalf("sync should add missing copy membership: %+v", result)
+	}
+	if role, err := storage.GetProjectRole(copyProj.ID, 3); err != nil || role != storage.RoleViewer {
+		t.Fatalf("copy after sync: %q err=%v", role, err)
+	}
+	if role, err := storage.GetProjectRole(copyProj.ID, 2); err != nil || role != storage.RoleViewer {
+		t.Fatalf("copy should keep custom role: %q err=%v", role, err)
+	}
+	if role, err := storage.GetProjectRole(lockProj.ID, 2); err != nil || role != storage.RoleEditor {
+		t.Fatalf("lock should realign org role: %q err=%v", role, err)
+	}
+	if _, err := storage.GetAccessibleProjectByID(selectProj.ID, 3); err == nil {
+		t.Fatal("sync should skip select project")
+	}
+
+	rosters, err := ListOrganizationProjectRostersForUser(ctx, 1, org.ID)
+	if err != nil {
+		t.Fatalf("rosters: %v", err)
+	}
+	var sawCopy, sawLock, sawSelect bool
+	for _, r := range rosters {
+		switch r.ID {
+		case copyProj.ID:
+			sawCopy = r.OrgImport == storage.OrgImportCopy
+		case lockProj.ID:
+			sawLock = r.OrgImport == storage.OrgImportLock
+		case selectProj.ID:
+			sawSelect = r.OrgImport == storage.OrgImportSelect
+		}
+	}
+	if !sawCopy || !sawLock || !sawSelect {
+		t.Fatalf("roster import modes: %+v", rosters)
+	}
+}
