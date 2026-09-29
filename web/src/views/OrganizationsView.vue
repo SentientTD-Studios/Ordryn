@@ -46,6 +46,7 @@ const roleChangeNext = ref('')
 const roleImpact = ref<OrgMemberRoleImpact | null>(null)
 const roleImpactError = ref('')
 const projectRoleOptions = ref<Record<number, ProjectRoleDef[]>>({})
+const syncing = ref(false)
 
 const canManage = computed(() => !!org.value?.can_manage)
 const siteRoles = computed(() => roles.value.filter((r) => !r.organization_id && !r.project_id && r.slug !== 'owner'))
@@ -175,6 +176,44 @@ async function onProjectRosterRemove(projectId: number, userId: number) {
     await loadDetail()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not remove from project', 'error')
+  }
+}
+
+function importLabel(mode?: string) {
+  if (mode === 'lock') return 'imports members, roles locked'
+  if (mode === 'select') return 'manual members'
+  return 'imports members'
+}
+
+const canSyncProjects = computed(() =>
+  canManage.value && orgProjects.value.some((p) => p.org_import !== 'select'),
+)
+
+async function syncProjects() {
+  if (!selectedId.value || !canManage.value) return
+  const ok = await askConfirm({
+    title: 'Sync organization members?',
+    message:
+      'Add current organization members to projects that imported everyone (copy or lock). Projects where members were chosen manually are left unchanged. Unlocked boards keep existing project roles.',
+    confirmLabel: 'Sync',
+  })
+  if (!ok) return
+  syncing.value = true
+  try {
+    const result = await api.syncOrganizationProjects(selectedId.value)
+    const added = result.added || 0
+    const boards = (result.project_ids || []).length
+    toast.push(
+      added
+        ? `Added ${added} membership${added === 1 ? '' : 's'} across ${boards} project${boards === 1 ? '' : 's'}`
+        : 'Organization members are already on copy and lock projects',
+      'success',
+    )
+    await loadDetail()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not sync members', 'error')
+  } finally {
+    syncing.value = false
   }
 }
 
@@ -507,7 +546,9 @@ onBeforeUnmount(destroySortable)
     <p class="text-muted">
       Groups of people and roles you can reuse when creating or attaching a project.
       Import can copy everyone and stay editable, copy everyone and lock roles, or import only
-      selected members. Organization role changes update imported-and-locked projects only.
+      selected members. People who accept an organization invite are added to copy and lock
+      projects automatically. Use Sync members to catch up those boards. Organization role
+      changes update imported-and-locked projects only.
     </p>
 
     <div v-if="myInvites.length" class="card mb-4 border-primary">
@@ -595,7 +636,7 @@ onBeforeUnmount(destroySortable)
         <div v-if="org" class="card mb-3">
           <div class="card-body">
             <h2 class="h6">Members</h2>
-            <p class="small text-muted">These people are copied onto a project when you import this organization. Invites must be accepted before they are included in a later import.</p>
+            <p class="small text-muted">These people are copied onto a project when you import this organization. Invites must be accepted before they join. After they accept they are added to copy and lock projects automatically.</p>
             <ul class="list-unstyled mb-3">
               <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-2">
                 <span>{{ m.user_name || m.email }}</span>
@@ -646,17 +687,32 @@ onBeforeUnmount(destroySortable)
 
         <div v-if="org" class="card mb-3">
           <div class="card-body">
-            <h2 class="h6">Attached projects</h2>
-            <p class="small text-muted">
-              People currently on each imported project. On unlocked boards you can change a member's project role here.
-              Locked boards stay in sync with the organization role.
-            </p>
+            <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-2">
+              <div>
+                <h2 class="h6 mb-1">Attached projects</h2>
+                <p class="small text-muted mb-0">
+                  People currently on each imported project. New organization members are added automatically
+                  after they accept, except on boards where members were chosen manually. On unlocked boards
+                  you can change a member's project role here. Locked boards stay in sync with the organization role.
+                </p>
+              </div>
+              <button
+                v-if="canSyncProjects"
+                class="btn btn-sm btn-outline-primary"
+                type="button"
+                :disabled="syncing"
+                @click="syncProjects"
+              >
+                {{ syncing ? 'Syncing…' : 'Sync members' }}
+              </button>
+            </div>
             <div v-if="orgProjects.length">
               <div v-for="p in orgProjects" :key="p.id" class="mb-3">
                 <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
                   <strong>{{ p.name }}</strong>
                   <span v-if="p.org_managed" class="badge text-bg-info">roles locked</span>
                   <span v-else class="badge text-bg-secondary">roles editable</span>
+                  <span class="badge text-bg-light text-muted">{{ importLabel(p.org_import) }}</span>
                 </div>
                 <ProjectMemberRoster
                   :members="p.members"

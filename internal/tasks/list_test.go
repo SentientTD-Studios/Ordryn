@@ -54,7 +54,8 @@ func TestMain(m *testing.M) {
 			description TEXT NOT NULL DEFAULT '',
 			workflow_mode VARCHAR(16) NOT NULL DEFAULT 'classic',
 			organization_id INTEGER,
-			org_managed BOOLEAN NOT NULL DEFAULT FALSE
+			org_managed BOOLEAN NOT NULL DEFAULT FALSE,
+			org_import VARCHAR(16)
 		);
 		CREATE TABLE organizations (
 			id SERIAL PRIMARY KEY,

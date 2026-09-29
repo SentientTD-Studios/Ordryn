@@ -799,6 +799,13 @@ export const api = {
     return request<OrganizationProjectRoster[]>(`/api/v2/organizations/${orgId}/projects`)
   },
 
+  syncOrganizationProjects(orgId: number) {
+    return request<{ ok: boolean; added: number; project_ids: number[] }>(
+      `/api/v2/organizations/${orgId}/projects/sync`,
+      { method: 'POST' },
+    )
+  },
+
   listOrganizationInvites(orgId: number) {
     return request<OrganizationInvite[]>(`/api/v2/organizations/${orgId}/invites`)
   },

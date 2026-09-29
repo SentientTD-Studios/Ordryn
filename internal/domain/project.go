@@ -49,10 +49,13 @@ func parseOrgImportSpec(orgID int, mode string, members []storage.OrgImportMembe
 	switch mode {
 	case storage.OrgImportCopy:
 		spec.AllMembers = true
+		spec.Mode = storage.OrgImportCopy
 	case storage.OrgImportLock:
 		spec.AllMembers = true
 		spec.Lock = true
+		spec.Mode = storage.OrgImportLock
 	case storage.OrgImportSelect:
+		spec.Mode = storage.OrgImportSelect
 		seen := map[int]bool{}
 		var picked []storage.OrgImportMember
 		for _, m := range members {

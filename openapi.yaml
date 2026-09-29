@@ -1834,6 +1834,37 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/organizations/{id}/projects/sync:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Organizations]
+      summary: Sync organization members onto copy and lock projects
+      description: Adds current organization members to attached projects that imported everyone (copy or lock). Projects attached with select (manually chosen members) are left unchanged. Unlocked copy projects keep existing roles; locked projects realign roles to the organization.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  added:
+                    type: integer
+                  project_ids:
+                    type: array
+                    items:
+                      type: integer
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/organizations/{id}/invites:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -6064,6 +6095,9 @@ components:
           type: string
         org_managed:
           type: boolean
+        org_import:
+          type: string
+          description: copy, lock, or select. select projects are excluded from member auto-import and sync.
         can_manage:
           type: boolean
         members:

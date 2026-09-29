@@ -104,21 +104,23 @@ func CreateProjectWithOrg(userID int, name, description string, spec *OrgImportS
 
 	var orgArg any
 	orgManaged := false
+	var orgImport any
 	if spec != nil && spec.OrganizationID > 0 {
 		orgArg = spec.OrganizationID
 		orgManaged = spec.Lock
+		orgImport = spec.storedImportMode()
 	}
 
 	var p Project
 	if err := scanProject(pool.QueryRow(context.Background(),
-		`INSERT INTO projects (user_id, name, description, position, organization_id, org_managed)
+		`INSERT INTO projects (user_id, name, description, position, organization_id, org_managed, org_import)
 		 VALUES (
 		   $1, $2, $3,
 		   COALESCE((SELECT MAX(position) FROM projects WHERE user_id = $1), -1) + 1,
-		   $4, $5
+		   $4, $5, $6
 		 )
 		 RETURNING `+projectSelectCols,
-		userID, name, description, orgArg, orgManaged), &p); err != nil {
+		userID, name, description, orgArg, orgManaged, orgImport), &p); err != nil {
 		return nil, fmt.Errorf("failed to create project: %v", err)
 	}
 	if err := EnsureProjectOwnerMember(p.ID, userID); err != nil {

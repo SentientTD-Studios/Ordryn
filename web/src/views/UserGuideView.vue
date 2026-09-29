@@ -87,7 +87,10 @@ onUnmounted(() => {
             <RouterLink to="/organizations">Organizations</RouterLink>
             and import those members when you create a project, or attach an organization later
             from project settings. Inviting someone to an organization works like a project invite:
-            they must accept before they join. When you attach an organization you choose how to
+            they must accept before they join. After they accept they are added to attached projects
+            that imported everyone (copy or lock). Boards where members were chosen manually are
+            skipped. Use Sync members on the organization page to catch up existing copy and lock
+            projects. When you attach an organization you choose how to
             import: copy everyone and keep roles editable, copy everyone and lock roles to the
             organization, or pick specific members and a role for each. People who are not imported
             are removed from the project. Organization role changes update imported-and-locked

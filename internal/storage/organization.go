@@ -130,6 +130,30 @@ func MigrateProjectsAddOrganization() error {
 	return nil
 }
 
+// MigrateProjectsAddOrgImport stores how a project imported its organization roster.
+func MigrateProjectsAddOrgImport() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	stmts := []string{
+		`ALTER TABLE projects ADD COLUMN IF NOT EXISTS org_import VARCHAR(16)`,
+		`UPDATE projects SET org_import = 'lock'
+		  WHERE organization_id IS NOT NULL AND COALESCE(org_managed, false) AND COALESCE(org_import, '') = ''`,
+		`UPDATE projects SET org_import = 'copy'
+		  WHERE organization_id IS NOT NULL AND NOT COALESCE(org_managed, false) AND COALESCE(org_import, '') = ''`,
+		`UPDATE projects SET org_import = NULL WHERE organization_id IS NULL AND org_import IS NOT NULL`,
+	}
+	for _, s := range stmts {
+		if _, err := pool.Exec(context.Background(), s); err != nil {
+			return fmt.Errorf("failed to add projects.org_import: %v", err)
+		}
+	}
+	return nil
+}
+
 func scanOrganization(row interface{ Scan(dest ...any) error }, o *Organization) error {
 	return row.Scan(&o.ID, &o.Name, &o.Description, &o.CreatedBy, &o.CreatedAt, &o.UpdatedAt, &o.Role, &o.MemberCount, &o.ProjectCount)
 }
@@ -303,7 +327,7 @@ func DeleteOrganization(orgID int) error {
 	defer tx.Rollback(context.Background())
 
 	if _, err := tx.Exec(context.Background(),
-		`UPDATE projects SET organization_id = NULL, org_managed = FALSE, updated_at = CURRENT_TIMESTAMP
+		`UPDATE projects SET organization_id = NULL, org_managed = FALSE, org_import = NULL, updated_at = CURRENT_TIMESTAMP
 		 WHERE organization_id = $1`, orgID); err != nil {
 		return err
 	}
@@ -476,7 +500,27 @@ type OrgImportSpec struct {
 	OrganizationID int
 	Lock           bool
 	AllMembers     bool
+	Mode           string
 	Members        []OrgImportMember
+}
+
+func (s OrgImportSpec) storedImportMode() string {
+	mode := strings.TrimSpace(strings.ToLower(s.Mode))
+	switch mode {
+	case OrgImportCopy, OrgImportLock, OrgImportSelect:
+		return mode
+	}
+	if s.Lock {
+		return OrgImportLock
+	}
+	if s.AllMembers {
+		return OrgImportCopy
+	}
+	return OrgImportSelect
+}
+
+func orgAutoImportSQL() string {
+	return `COALESCE(NULLIF(p.org_import, ''), CASE WHEN COALESCE(p.org_managed, false) THEN 'lock' ELSE 'copy' END) IN ('copy', 'lock')`
 }
 
 func normalizeImportRole(role string) string {
@@ -578,6 +622,7 @@ type OrgProjectRoster struct {
 	ID         int
 	Name       string
 	OrgManaged bool
+	OrgImport  string
 	CanManage  bool
 	Members    []ProjectMember
 }
@@ -596,6 +641,7 @@ func ListOrganizationProjectRosters(orgID int) ([]OrgProjectRoster, error) {
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT p.id, p.name, COALESCE(p.org_managed, false),
+		       COALESCE(NULLIF(p.org_import, ''), CASE WHEN COALESCE(p.org_managed, false) THEN 'lock' ELSE 'copy' END),
 		       pm.user_id, COALESCE(u.email, ''), COALESCE(u.user_name, ''),
 		       COALESCE(pm.role, ''), pm.created_at
 		FROM projects p
@@ -616,18 +662,19 @@ func ListOrganizationProjectRosters(orgID int) ([]OrgProjectRoster, error) {
 			id         int
 			name       string
 			orgManaged bool
+			orgImport  string
 			userID     *int
 			email      string
 			userName   string
 			role       string
 			createdAt  *time.Time
 		)
-		if err := rows.Scan(&id, &name, &orgManaged, &userID, &email, &userName, &role, &createdAt); err != nil {
+		if err := rows.Scan(&id, &name, &orgManaged, &orgImport, &userID, &email, &userName, &role, &createdAt); err != nil {
 			return nil, err
 		}
 		r, ok := byID[id]
 		if !ok {
-			r = &OrgProjectRoster{ID: id, Name: name, OrgManaged: orgManaged, Members: []ProjectMember{}}
+			r = &OrgProjectRoster{ID: id, Name: name, OrgManaged: orgManaged, OrgImport: orgImport, Members: []ProjectMember{}}
 			byID[id] = r
 			order = append(order, id)
 		}
@@ -780,9 +827,9 @@ func AttachProjectOrganization(projectID, ownerUserID int, spec OrgImportSpec) (
 	}
 
 	tag, err := tx.Exec(context.Background(),
-		`UPDATE projects SET organization_id = $1, org_managed = $2, updated_at = CURRENT_TIMESTAMP
-		 WHERE id = $3 AND user_id = $4`,
-		spec.OrganizationID, spec.Lock, projectID, ownerUserID)
+		`UPDATE projects SET organization_id = $1, org_managed = $2, org_import = $3, updated_at = CURRENT_TIMESTAMP
+		 WHERE id = $4 AND user_id = $5`,
+		spec.OrganizationID, spec.Lock, spec.storedImportMode(), projectID, ownerUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to attach organization: %v", err)
 	}
@@ -974,17 +1021,18 @@ func GetOrganizationInviteByID(inviteID int) (*OrganizationInvite, error) {
 	return &inv, nil
 }
 
-// AcceptOrganizationInvite marks invite accepted and adds membership.
-func AcceptOrganizationInvite(inviteID, userID int, userEmail string) error {
+// AcceptOrganizationInvite marks invite accepted, adds membership, and copies the
+// new member onto organization projects that imported everyone (copy/lock).
+func AcceptOrganizationInvite(inviteID, userID int, userEmail string) ([]int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer CloseDatabase(pool)
 
 	tx, err := pool.Begin(context.Background())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback(context.Background())
 
@@ -994,16 +1042,16 @@ func AcceptOrganizationInvite(inviteID, userID int, userEmail string) error {
 		FROM organization_invites WHERE id = $1 FOR UPDATE`, inviteID).Scan(
 		&inv.ID, &inv.OrganizationID, &inv.Email, &inv.Role, &inv.ExpiresAt, &inv.AcceptedAt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if inv.AcceptedAt != nil {
-		return fmt.Errorf("invite already accepted")
+		return nil, fmt.Errorf("invite already accepted")
 	}
 	if time.Now().After(inv.ExpiresAt) {
-		return fmt.Errorf("invite expired")
+		return nil, fmt.Errorf("invite expired")
 	}
 	if !strings.EqualFold(inv.Email, strings.TrimSpace(userEmail)) {
-		return fmt.Errorf("invite email mismatch")
+		return nil, fmt.Errorf("invite email mismatch")
 	}
 
 	_, err = tx.Exec(context.Background(), `
@@ -1012,14 +1060,150 @@ func AcceptOrganizationInvite(inviteID, userID int, userEmail string) error {
 		WHERE organization_members.role <> 'owner'`,
 		inv.OrganizationID, userID, inv.Role)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = tx.Exec(context.Background(),
 		`UPDATE organization_invites SET accepted_at = NOW() WHERE id = $1`, inviteID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit(context.Background())
+	projectIDs, err := addUserToAutoImportOrgProjectsTx(tx, inv.OrganizationID, userID, inv.Role)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		return nil, err
+	}
+	return projectIDs, nil
+}
+
+func addUserToAutoImportOrgProjectsTx(tx pgx.Tx, orgID, userID int, role string) ([]int, error) {
+	role = normalizeImportRole(role)
+	if orgID <= 0 || userID <= 0 || role == "" {
+		return nil, nil
+	}
+	rows, err := tx.Query(context.Background(), `
+		INSERT INTO project_members (project_id, user_id, role)
+		SELECT p.id, $2, $3
+		FROM projects p
+		WHERE p.organization_id = $1
+		  AND p.user_id <> $2
+		  AND `+orgAutoImportSQL()+`
+		ON CONFLICT (project_id, user_id) DO NOTHING
+		RETURNING project_id`, orgID, userID, role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add member to organization projects: %v", err)
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// OrgProjectSyncResult reports which auto-import projects received missing members.
+type OrgProjectSyncResult struct {
+	ProjectIDs []int
+	Added      int
+}
+
+// SyncOrganizationMembersToAutoImportProjects adds current org members to copy/lock
+// projects. Select-mode projects are left unchanged. Existing copy-project roles are
+// kept; locked project roles are aligned with the organization.
+func SyncOrganizationMembersToAutoImportProjects(orgID int) (*OrgProjectSyncResult, error) {
+	if orgID <= 0 {
+		return nil, fmt.Errorf("invalid organization")
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	tx, err := pool.Begin(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(context.Background())
+
+	rows, err := tx.Query(context.Background(), `
+		INSERT INTO project_members (project_id, user_id, role)
+		SELECT p.id, om.user_id,
+			CASE WHEN om.role = $2 THEN $3 ELSE om.role END
+		FROM projects p
+		JOIN organization_members om ON om.organization_id = p.organization_id
+		WHERE p.organization_id = $1
+		  AND om.user_id <> p.user_id
+		  AND `+orgAutoImportSQL()+`
+		ON CONFLICT (project_id, user_id) DO NOTHING
+		RETURNING project_id`, orgID, RoleOwner, RoleEditor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sync organization members: %v", err)
+	}
+	seen := map[int]bool{}
+	var ids []int
+	added := 0
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		added++
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	lockRows, err := tx.Query(context.Background(), `
+		UPDATE project_members pm
+		SET role = CASE WHEN om.role = $2 THEN $3 ELSE om.role END
+		FROM projects p, organization_members om
+		WHERE pm.project_id = p.id
+		  AND om.organization_id = p.organization_id
+		  AND om.user_id = pm.user_id
+		  AND p.organization_id = $1
+		  AND COALESCE(p.org_import, CASE WHEN COALESCE(p.org_managed, false) THEN 'lock' ELSE 'copy' END) = 'lock'
+		  AND pm.role <> 'owner'
+		  AND pm.role <> CASE WHEN om.role = $2 THEN $3 ELSE om.role END
+		RETURNING p.id`, orgID, RoleOwner, RoleEditor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sync locked project roles: %v", err)
+	}
+	for lockRows.Next() {
+		var id int
+		if err := lockRows.Scan(&id); err != nil {
+			lockRows.Close()
+			return nil, err
+		}
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	err = lockRows.Err()
+	lockRows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		return nil, err
+	}
+	if ids == nil {
+		ids = []int{}
+	}
+	return &OrgProjectSyncResult{ProjectIDs: ids, Added: added}, nil
 }
 
 // DeclineOrganizationInvite deletes a pending invite for the user's email.
