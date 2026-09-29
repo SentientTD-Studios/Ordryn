@@ -1169,9 +1169,10 @@ func SyncOrganizationMembersToAutoImportProjects(orgID int) (*OrgProjectSyncResu
 	lockRows, err := tx.Query(context.Background(), `
 		UPDATE project_members pm
 		SET role = CASE WHEN om.role = $2 THEN $3 ELSE om.role END
-		FROM projects p
-		JOIN organization_members om ON om.organization_id = p.organization_id AND om.user_id = pm.user_id
+		FROM projects p, organization_members om
 		WHERE pm.project_id = p.id
+		  AND om.organization_id = p.organization_id
+		  AND om.user_id = pm.user_id
 		  AND p.organization_id = $1
 		  AND COALESCE(p.org_import, CASE WHEN COALESCE(p.org_managed, false) THEN 'lock' ELSE 'copy' END) = 'lock'
 		  AND pm.role <> 'owner'

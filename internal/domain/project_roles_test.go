@@ -496,8 +496,8 @@ func TestInviteToOrganizationRequiresAccept(t *testing.T) {
 	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != storage.RoleEditor {
 		t.Fatalf("membership after accept: %q err=%v", role, err)
 	}
-	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err == nil {
-		t.Fatal("accepting an org invite should not add the user to existing imported projects")
+	if role, err := storage.GetProjectRole(proj.ID, 2); err != nil || role != storage.RoleEditor {
+		t.Fatalf("accepting an org invite should add the user to copy/lock projects: %q err=%v", role, err)
 	}
 
 	declined, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_viewer", storage.RoleViewer)
