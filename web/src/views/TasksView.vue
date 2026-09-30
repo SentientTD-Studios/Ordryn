@@ -24,6 +24,7 @@ import { useViewDensity } from '@/composables/useViewDensity'
 import { useSidebarState } from '@/composables/useSidebarState'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 import { projectOptionLabel, activeProjects, isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
 import { hasAnyProjectWrite, hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
@@ -1376,6 +1377,12 @@ useLiveUpdates((event) => {
   if (event.type === 'task.commented') return
   if (event.type === 'extension.store') return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
+  if (event.type === 'extensions.reloaded') {
+    clearCustomFieldDefsCache()
+    void loadProjectExtensions()
+    void reloadInitial()
+    return
+  }
   if (event.type === 'project.updated' || event.type === 'project.created' || event.type === 'project.deleted') {
     void loadMeta()
     kanbanColumnsRev.value++

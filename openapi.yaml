@@ -4900,6 +4900,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminExtensionsList"
 
+  /api/v2/admin/extensions/reload:
+    post:
+      tags: [Admin]
+      summary: Hot reload extensions
+      description: Rescans extensions directory on disk, updates in-memory registry, syncs custom field definitions in PostgreSQL, and notifies connected clients via SSE.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Extensions successfully reloaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminExtensionsReloadResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/admin/extensions/{id}:
     parameters:
       - name: id
@@ -7075,6 +7095,18 @@ components:
     AdminExtensionsList:
       type: object
       properties:
+        extensions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminExtension"
+
+    AdminExtensionsReloadResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
         extensions:
           type: array
           items:

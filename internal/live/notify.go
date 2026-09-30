@@ -414,3 +414,15 @@ func audience(ownerID, projectID int, extraProjectIDs ...int) []int {
 	}
 	return users
 }
+
+// AfterExtensionsReload notifies all connected clients that extensions have been reloaded.
+func AfterExtensionsReload(actorID int) {
+	h := currentHub()
+	if h == nil {
+		return
+	}
+	h.BroadcastAll(Event{
+		Type:    TypeExtensionsReloaded,
+		ActorID: actorID,
+	})
+}

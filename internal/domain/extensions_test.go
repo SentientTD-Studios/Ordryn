@@ -67,3 +67,12 @@ func TestExtensionSecretProjectIsolation(t *testing.T) {
 		t.Fatalf("site secret should be unused, got %q", site)
 	}
 }
+
+func TestReloadExtensions(t *testing.T) {
+	temp := t.TempDir()
+	t.Setenv("EXTENSIONS_DIR", temp)
+	entries, _ := ReloadExtensions(1)
+	if len(entries) != 0 {
+		t.Fatalf("expected 0 entries in empty temp dir, got %d", len(entries))
+	}
+}
