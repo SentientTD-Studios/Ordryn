@@ -186,6 +186,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "custom fields: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateTaskRecurrenceTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "task recurrence: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Reproduce production DBs that still have UNIQUE(user_id, name) while a
 	// personal tag is used on both inbox and project tasks. The migration must

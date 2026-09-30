@@ -289,6 +289,7 @@ function formatMinutes(total: number) {
           <i v-if="density !== 'dense'" class="bi bi-calendar-event opacity-75" />
           <span>{{ formatDueDate(task.due_date) }}</span>
         </div>
+        <span v-if="task.recurrence" class="text-muted small text-nowrap" :title="task.recurrence.summary" :aria-label="`Repeats: ${task.recurrence.summary}`"><i class="bi bi-arrow-repeat" /></span>
 
         <!-- Kanban estimate / time logged -->
         <span
@@ -353,6 +354,7 @@ function formatMinutes(total: number) {
           <div v-if="task.due_date" class="text-muted small text-nowrap">
             <i v-if="density !== 'dense'" class="bi bi-calendar-event me-1" />{{ formatDueDate(task.due_date) }}
           </div>
+          <span v-if="task.recurrence" class="text-muted small text-nowrap" :title="task.recurrence.summary" :aria-label="`Repeats: ${task.recurrence.summary}`"><i class="bi bi-arrow-repeat" /></span>
           <span
             v-if="isKanbanTask() && task.estimate_points != null"
             class="badge text-bg-light text-muted border"

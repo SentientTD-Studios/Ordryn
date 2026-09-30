@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"fmt"
+
+	"GoTodo/internal/storage"
 )
 
 // Tag is a label attached to tasks.
@@ -50,6 +52,8 @@ type Task struct {
 	GitHubIssueTitle    string
 	GitHubLastSyncError string
 	Fields              []AttachedField
+	// Recurrence is the repeat rule when this task is the active occurrence of a series.
+	Recurrence *storage.TaskRecurrence
 }
 
 // AttachedField is a custom field value loaded for API serialization.

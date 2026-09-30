@@ -51,6 +51,7 @@ type apiTaskJSON struct {
 	ParentTitle       string             `json:"parent_title,omitempty"`
 	GitHub            *apiTaskGitHubJSON `json:"github,omitempty"`
 	Fields            map[string]any     `json:"fields,omitempty"`
+	Recurrence        *apiRecurrenceJSON `json:"recurrence"`
 }
 
 type apiTaskListResponse struct {
@@ -76,6 +77,7 @@ type apiTaskCreateRequest struct {
 	EstimatePoints *int                       `json:"estimate_points"`
 	SprintID       *int                       `json:"sprint_id"`
 	Fields         map[string]json.RawMessage `json:"fields"`
+	Recurrence     *apiRecurrenceInput        `json:"recurrence"`
 }
 
 type apiTaskPatchRequest struct {
@@ -91,7 +93,8 @@ type apiTaskPatchRequest struct {
 	StatusID       **int           `json:"status_id"`
 	EstimatePoints optionalInt     `json:"estimate_points"`
 	SprintID       optionalInt     `json:"sprint_id"`
-	Fields         optionalJSONMap `json:"fields"`
+	Fields         optionalJSONMap    `json:"fields"`
+	Recurrence     optionalRecurrence `json:"recurrence"`
 }
 
 // optionalJSONMap distinguishes omitted vs present object for JSON merge patches.
@@ -361,6 +364,9 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 			out.Fields = fields
 		}
 	}
+	if t.Recurrence != nil {
+		out.Recurrence = recurrenceToAPIJSON(*t.Recurrence)
+	}
 	if len(t.Children) > 0 {
 		out.Children = make([]apiTaskJSON, 0, len(t.Children))
 		for _, c := range t.Children {
@@ -485,6 +491,13 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 		case "comments":
 			handleTaskComments(w, r, id, parts[2:])
 			return
+		case "recurrence":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskRecurrence(w, r, id)
+			return
 		}
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
 		return
@@ -590,6 +603,16 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Completed != nil {
 		completed = *req.Completed
 	}
+	if req.Recurrence != nil {
+		if req.ParentID != nil && *req.ParentID > 0 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Subtasks cannot repeat; set recurrence on the parent task.")
+			return
+		}
+		if err := validateRecurrenceInputForAPI(*req.Recurrence); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+	}
 	in := domain.CreateTaskInput{
 		Title:          req.Title,
 		Description:    req.Description,
@@ -620,6 +643,14 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to create task.")
 		return
+	}
+	if req.Recurrence != nil {
+		rin := req.Recurrence.toDomain()
+		if _, err := domain.SetTaskRecurrence(r.Context(), userID, newID, &rin); err != nil {
+			// The task exists; report the rule failure without hiding the new id.
+			writeRecurrenceDomainError(w, err, "Task created but failed to save recurrence.")
+			return
+		}
 	}
 
 	tz := GetUserTimezoneByID(userID)
@@ -664,8 +695,16 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 	if req.Fields.Set {
 		in.Fields = req.Fields.Values
 	}
+	if req.Recurrence.Set && !req.Recurrence.Null {
+		if err := validateRecurrenceInputForAPI(req.Recurrence.Value); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+	}
 
-	if _, err := domain.UpdateTask(r.Context(), userID, taskID, in); err != nil {
+	if isEmptyTaskUpdate(in) && req.Recurrence.Set {
+		// Recurrence-only PATCH: skip the no-op task update.
+	} else if _, err := domain.UpdateTask(r.Context(), userID, taskID, in); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Task not found.")
 			return
@@ -684,6 +723,17 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update task.")
 		return
+	}
+	if req.Recurrence.Set {
+		var rin *domain.RecurrenceInput
+		if !req.Recurrence.Null {
+			v := req.Recurrence.Value.toDomain()
+			rin = &v
+		}
+		if _, err := domain.SetTaskRecurrence(r.Context(), userID, taskID, rin); err != nil {
+			writeRecurrenceDomainError(w, err, "Failed to save recurrence.")
+			return
+		}
 	}
 
 	tz := GetUserTimezoneByID(userID)

@@ -2,12 +2,14 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskEvent, TaskGitHubIssue, TaskTimeEntry } from '@/api/types'
+import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskEvent, TaskGitHubIssue, TaskRecurrenceDetail, TaskTimeEntry } from '@/api/types'
 import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import TaskDiscussion from '@/components/TaskDiscussion.vue'
 import TaskSidebarFields from '@/components/TaskSidebarFields.vue'
+import TaskRecurrenceEditor from '@/components/TaskRecurrenceEditor.vue'
+import { draftFromRecurrence, emptyRecurrenceDraft, recurrencePayload, sameRecurrenceDraft, type RecurrenceDraft } from '@/utils/recurrence'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
 import { useImageUpload } from '@/composables/useImageUpload'
@@ -104,6 +106,8 @@ const projectHasGitHub = ref(false)
 const githubIssueRef = ref('')
 const githubBusy = ref(false)
 const customFieldValues = ref<Record<string, unknown>>({})
+const recurrenceDraft = ref<RecurrenceDraft>(emptyRecurrenceDraft())
+const recurrenceDetail = ref<TaskRecurrenceDetail | null>(null)
 const isSubtask = computed(() => parentId.value !== '' && Number(parentId.value) > 0)
 const selectedProject = computed(() => {
   if (projectId.value === '') return null
@@ -361,6 +365,8 @@ function resetForm() {
   currentTask.value = null
   priority.value = 0
   dueDate.value = ''
+  recurrenceDraft.value = emptyRecurrenceDraft()
+  recurrenceDetail.value = null
   selectedTagIds.value = []
   taskTags.value = []
   newTags.value = ''
@@ -549,6 +555,9 @@ async function loadTask(id: number) {
   githubIssue.value = task.github ?? null
   githubIssueRef.value = ''
   customFieldValues.value = { ...(task.fields || {}) }
+  recurrenceDraft.value = draftFromRecurrence(task.recurrence)
+  recurrenceDetail.value = null
+  if (!task.parent_id) void loadRecurrenceDetail(id)
   await loadStatusesForProject(projectId.value)
   await loadSprintsForProject(projectId.value)
   await loadTagsForProject(projectId.value)
@@ -558,6 +567,19 @@ async function loadTask(id: number) {
   } else {
     timeEntries.value = []
   }
+}
+
+async function loadRecurrenceDetail(id: number) {
+  try {
+    const detail = await api.getTaskRecurrence(id)
+    if (taskId.value === id) recurrenceDetail.value = detail
+  } catch {
+    recurrenceDetail.value = null
+  }
+}
+
+function recurrenceChanged(): boolean {
+  return !sameRecurrenceDraft(recurrenceDraft.value, draftFromRecurrence(currentTask.value?.recurrence))
 }
 
 function sameIdSet(a: number[], b: number[]) {
@@ -600,6 +622,7 @@ type FormSnapshot = {
   sprintId: number | ''
   estimatePoints: number | ''
   customFields: Record<string, unknown>
+  recurrence: RecurrenceDraft
 }
 
 const addFormBaseline = ref<FormSnapshot | null>(null)
@@ -618,6 +641,7 @@ function captureFormSnapshot(): FormSnapshot {
     sprintId: formSprintId(sprintId.value),
     estimatePoints: estimatePoints.value,
     customFields: { ...customFieldValues.value },
+    recurrence: { ...recurrenceDraft.value },
   }
 }
 
@@ -644,7 +668,8 @@ function isFormDirty(): boolean {
     estimatePoints.value !== estimate ||
     newTags.value.trim() !== '' ||
     !sameIdSet(selectedTagIds.value, tagIds) ||
-    !sameFields(customFieldValues.value, t.fields || {})
+    !sameFields(customFieldValues.value, t.fields || {}) ||
+    (!isSubtask.value && recurrenceChanged())
   )
 }
 
@@ -663,7 +688,8 @@ function isAddFormDirty(): boolean {
     statusId.value !== b.statusId ||
     formSprintId(sprintId.value) !== b.sprintId ||
     estimatePoints.value !== b.estimatePoints ||
-    !sameFields(customFieldValues.value, b.customFields)
+    !sameFields(customFieldValues.value, b.customFields) ||
+    !sameRecurrenceDraft(recurrenceDraft.value, b.recurrence)
   )
 }
 
@@ -837,6 +863,9 @@ async function save(keepOpen = false): Promise<boolean> {
           ? { estimate_points: Number(estimatePoints.value) }
           : {}),
         ...(Object.keys(fieldsPayload()).length ? { fields: fieldsPayload() } : {}),
+        ...(!isSubtask.value && recurrenceDraft.value.enabled
+          ? { recurrence: recurrencePayload(recurrenceDraft.value) ?? undefined }
+          : {}),
       })
       notifySaved(created, !keepOpen)
       toast.push(isSubtask.value ? 'Subtask created' : 'Task created', 'success')
@@ -879,6 +908,9 @@ async function save(keepOpen = false): Promise<boolean> {
         estimatePoints.value === '' ? null : Number(estimatePoints.value)
     }
     payload.fields = fieldsPayload()
+    if (!isSubtask.value && recurrenceChanged()) {
+      payload.recurrence = recurrencePayload(recurrenceDraft.value)
+    }
     const updated = await api.patchTask(taskId.value, payload)
     currentTask.value = updated
     notifySaved(updated, false)
@@ -1710,6 +1742,40 @@ async function removeTimeEntry(entryId: number) {
             <button type="button" class="btn btn-outline-secondary" @click="applyDuePreset('tomorrow')">Tomorrow</button>
             <button type="button" class="btn btn-outline-secondary" @click="applyDuePreset('week')">+1 week</button>
             <button type="button" class="btn btn-outline-secondary" @click="applyDuePreset('clear')">Clear</button>
+          </div>
+        </div>
+        <div v-if="!isSubtask && (!readOnly || recurrenceDraft.enabled)" class="form-group mt-2 kanban-order-due">
+          <TaskRecurrenceEditor
+            v-model="recurrenceDraft"
+            :read-only="readOnly"
+            :due-date="dueDate"
+            :next-due="recurrenceChanged() ? '' : recurrenceDetail?.recurrence?.next_due"
+          />
+          <div v-if="recurrenceDetail && recurrenceDetail.series_id" class="small text-muted mt-1">
+            <span v-if="recurrenceDetail.recurrence">Occurrence {{ recurrenceDetail.recurrence.occurrence }}</span>
+            <span v-else>Part of a recurring series</span>
+            <button
+              v-if="recurrenceDetail.prev_task_id"
+              type="button"
+              class="btn btn-link btn-sm p-0 ms-2 align-baseline"
+              @click="openRelated(recurrenceDetail.prev_task_id)"
+            >Previous #{{ recurrenceDetail.prev_task_id }}</button>
+            <button
+              v-if="recurrenceDetail.next_task_id"
+              type="button"
+              class="btn btn-link btn-sm p-0 ms-2 align-baseline"
+              @click="openRelated(recurrenceDetail.next_task_id)"
+            >Next #{{ recurrenceDetail.next_task_id }}</button>
+            <details v-if="recurrenceDetail.history.length > 1" class="mt-1">
+              <summary>Series history ({{ recurrenceDetail.history.length }})</summary>
+              <ul class="list-unstyled mb-0 mt-1">
+                <li v-for="h in recurrenceDetail.history" :key="h.task_id">
+                  <i class="bi me-1" :class="h.completed ? 'bi-check-circle text-success' : 'bi-circle'" />
+                  <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="openRelated(h.task_id)">#{{ h.task_id }}</button>
+                  <span v-if="h.due_date"> · due {{ h.due_date }}</span>
+                </li>
+              </ul>
+            </details>
           </div>
         </div>
         <div v-if="readOnly" class="form-group mt-2 kanban-order-tags">

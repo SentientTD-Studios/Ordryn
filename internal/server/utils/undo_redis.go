@@ -28,6 +28,26 @@ type UndoTaskSnapshot struct {
 	ProjectID   *int   `json:"project_id,omitempty"`
 	ParentID    *int   `json:"parent_id,omitempty"`
 	TagIDs      []int  `json:"tag_ids,omitempty"`
+	// Recurrence carries a recurring task's rule and series links so undo
+	// does not silently end the series.
+	Recurrence *UndoRecurrence `json:"recurrence,omitempty"`
+}
+
+// UndoRecurrence is the serializable repeat rule and series links of a deleted task.
+type UndoRecurrence struct {
+	Frequency    string `json:"frequency,omitempty"`
+	Interval     int    `json:"interval,omitempty"`
+	WeekdaysMask int    `json:"weekdays_mask,omitempty"`
+	MonthDay     int    `json:"month_day,omitempty"`
+	Basis        string `json:"basis,omitempty"`
+	EndsOn       string `json:"ends_on,omitempty"`
+	EndAfter     int    `json:"end_after,omitempty"`
+	Occurrence   int    `json:"occurrence,omitempty"`
+	SeriesID     int    `json:"series_id,omitempty"`
+	CreatedBy    int    `json:"created_by,omitempty"`
+	// HasRule is false when only the series links (history) need restoring.
+	HasRule bool `json:"has_rule,omitempty"`
+	PrevID  int  `json:"prev_id,omitempty"`
 }
 
 type undoPayload struct {

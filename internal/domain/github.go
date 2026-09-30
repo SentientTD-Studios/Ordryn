@@ -521,7 +521,7 @@ func ApplyGitHubIssueWebhookState(ctx context.Context, owner, repoName string, i
 		if err := ApplyCompletedStatusSync(issue.TaskID, projectID, completed); err != nil {
 			log.Printf("github webhook status sync task=%d: %v", issue.TaskID, err)
 		} else if lookupErr == nil && oldCompleted != completed {
-			dispatchCompletedHook(0, issue.TaskID, completed)
+			afterCompletionChanged(0, issue.TaskID, completed)
 			hookedCompleted = true
 		}
 	}

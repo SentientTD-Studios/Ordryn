@@ -56,6 +56,8 @@ import type {
   Tag,
   NotificationList,
   Task,
+  TaskRecurrenceDetail,
+  TaskRecurrenceInput,
   TaskEvent,
   TaskList,
   TaskTimeEntry,
@@ -314,6 +316,10 @@ export const api = {
     return request<TaskEvent[]>(`/api/v2/tasks/${id}/events`)
   },
 
+  getTaskRecurrence(id: number) {
+    return request<TaskRecurrenceDetail>(`/api/v2/tasks/${id}/recurrence`)
+  },
+
   createTask(payload: {
     title: string
     description?: string
@@ -326,6 +332,7 @@ export const api = {
     estimate_points?: number | null
     sprint_id?: number | null
     fields?: Record<string, unknown>
+    recurrence?: TaskRecurrenceInput
   }) {
     return request<Task>('/api/v2/tasks', {
       method: 'POST',
@@ -349,6 +356,7 @@ export const api = {
       estimate_points: number | null
       sprint_id: number | null
       fields: Record<string, unknown>
+      recurrence: TaskRecurrenceInput | null
     }>,
   ) {
     return request<Task>(`/api/v2/tasks/${id}`, {

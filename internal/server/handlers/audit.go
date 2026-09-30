@@ -117,6 +117,32 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 			return "Parent · " + to
 		}
 		return "Parent cleared"
+	case "recurrence_set":
+		if summary, ok := meta["summary"].(string); ok && summary != "" {
+			return "Repeats · " + summary
+		}
+		return "Repeat set"
+	case "recurrence_cleared":
+		if reason, ok := meta["reason"].(string); ok && reason == "nested" {
+			return "Repeat removed · became a subtask"
+		}
+		return "Repeat removed"
+	case "recurrence_next":
+		if due, ok := meta["due_date"].(string); ok && due != "" {
+			return "Next occurrence created · due " + due
+		}
+		return "Next occurrence created"
+	case "recurrence_created":
+		if from, ok := meta["from_id"]; ok && from != nil {
+			return fmt.Sprintf("Repeated from #%v", from)
+		}
+		return "Repeated from a recurring task"
+	case "recurrence_ended":
+		return "Repeat series ended"
+	case "recurrence_failed":
+		return "Could not create next occurrence"
+	case "recurrence_undone":
+		return "Next occurrence removed · reopened"
 	case "claimed":
 		return "Claimed"
 	case "unclaimed":

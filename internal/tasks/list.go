@@ -439,6 +439,29 @@ func attachGitHubFieldsToTasks(taskList []Task) error {
 			applyGitHub(&taskList[i].Children[j])
 		}
 	}
+	return attachRecurrenceToTasks(taskList)
+}
+
+func attachRecurrenceToTasks(taskList []Task) error {
+	if len(taskList) == 0 {
+		return attachCustomFieldsToTasks(taskList)
+	}
+	ids := make([]int, 0, len(taskList))
+	for _, t := range taskList {
+		if t.ParentID == 0 {
+			ids = append(ids, t.ID)
+		}
+	}
+	rules, err := storage.GetTaskRecurrencesForTasks(ids)
+	if err != nil {
+		return err
+	}
+	for i := range taskList {
+		if r, ok := rules[taskList[i].ID]; ok {
+			rule := r
+			taskList[i].Recurrence = &rule
+		}
+	}
 	return attachCustomFieldsToTasks(taskList)
 }
 

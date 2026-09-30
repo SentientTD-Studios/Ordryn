@@ -159,6 +159,15 @@
                   </span>
 
                   <span
+                    v-if="task.recurrence"
+                    class="kanban-meta text-nowrap"
+                    :title="task.recurrence.summary"
+                    :aria-label="`Repeats: ${task.recurrence.summary}`"
+                  >
+                    <i class="bi bi-arrow-repeat opacity-75" />
+                  </span>
+
+                  <span
                     v-if="task.sprint_name"
                     class="ordryn-badge text-nowrap"
                     style="background: var(--ordryn-muted-bg); color: var(--ordryn-muted);"
