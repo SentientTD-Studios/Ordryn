@@ -286,6 +286,58 @@ export type Task = {
   parent_title?: string
   github?: TaskGitHubIssue | null
   fields?: Record<string, unknown>
+  /** Repeat rule when this task is the active occurrence of a recurring series. */
+  recurrence?: TaskRecurrence | null
+}
+
+export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'
+export type RecurrenceBasis = 'due' | 'completion'
+
+/** Rule payload for create / PATCH / PUT /tasks/{id}/recurrence. */
+export type TaskRecurrenceInput = {
+  frequency: RecurrenceFrequency
+  interval?: number
+  /** Weekly only: 0=Sunday … 6=Saturday. */
+  weekdays?: number[]
+  /** Monthly only: 1-31 (31 = last day). */
+  month_day?: number | null
+  basis?: RecurrenceBasis
+  ends_on?: string
+  end_after?: number | null
+}
+
+export type TaskRecurrence = {
+  frequency: RecurrenceFrequency
+  interval: number
+  weekdays: number[]
+  month_day: number | null
+  basis: RecurrenceBasis
+  ends_on: string | null
+  end_after: number | null
+  occurrence: number
+  series_id: number
+  summary: string
+  next_due?: string
+}
+
+export type TaskRecurrenceHistoryItem = {
+  task_id: number
+  title: string
+  due_date: string
+  completed: boolean
+  completed_at: string | null
+  created_at: string
+}
+
+export type TaskRecurrenceDetail = {
+  task_id: number
+  recurrence: TaskRecurrence | null
+  series_id: number | null
+  prev_task_id: number | null
+  next_task_id: number | null
+  can_edit: boolean
+  is_subtask: boolean
+  history: TaskRecurrenceHistoryItem[]
 }
 
 export type GitHubConnection = {

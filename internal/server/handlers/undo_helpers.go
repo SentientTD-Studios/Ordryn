@@ -31,6 +31,7 @@ func toRedisUndoSnapshots(tasks []DeletedTaskSnapshot) []utils.UndoTaskSnapshot 
 			ProjectID:   t.ProjectID,
 			ParentID:    t.ParentID,
 			TagIDs:      t.TagIDs,
+			Recurrence:  t.Recurrence,
 		})
 	}
 	return out
@@ -51,6 +52,7 @@ func fromRedisUndoSnapshots(tasks []utils.UndoTaskSnapshot) []DeletedTaskSnapsho
 			ProjectID:   t.ProjectID,
 			ParentID:    t.ParentID,
 			TagIDs:      t.TagIDs,
+			Recurrence:  t.Recurrence,
 		})
 	}
 	return out
@@ -71,6 +73,7 @@ type DeletedTaskSnapshot struct {
 	ProjectID   *int
 	ParentID    *int
 	TagIDs      []int
+	Recurrence  *utils.UndoRecurrence
 }
 
 type pendingUndo struct {
@@ -116,6 +119,7 @@ func snapshotTasksForUndo(ctx context.Context, db *pgxpool.Pool, ids []int, user
 		for _, t := range tags {
 			snap.TagIDs = append(snap.TagIDs, t.ID)
 		}
+		snap.Recurrence = snapshotRecurrenceForUndo(id)
 		out = append(out, snap)
 	}
 	return out, nil
@@ -213,6 +217,7 @@ func restoreDeletedTasks(ctx context.Context, db *pgxpool.Pool, userID int, task
 				return err
 			}
 		}
+		restoreRecurrenceFromUndo(newID, snap.Recurrence)
 		logTaskEvent(newID, userID, "created", map[string]interface{}{"restored": true, "original_id": snap.ID})
 		restoredIDs = append(restoredIDs, newID)
 	}
@@ -262,4 +267,70 @@ func insertTaskWithID(ctx context.Context, db *pgxpool.Pool, explicitID, userID 
 		`INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id, due_date, is_favorite, parent_id)
 		 VALUES ($1,$2,$3,$4,NOW() AT TIME ZONE 'UTC',$5,$6,$7,$8,$9,$10) RETURNING id`,
 		snap.Title, snap.Description, snap.Completed, userID, position, snap.Priority, projectArg, dueArg, snap.IsFavorite, parentArg).Scan(outID)
+}
+
+// snapshotRecurrenceForUndo captures a task's repeat rule and series links (nil when neither exists).
+func snapshotRecurrenceForUndo(taskID int) *utils.UndoRecurrence {
+	seriesID, prevID, err := storage.GetTaskRecurrenceLinks(taskID)
+	if err != nil {
+		return nil
+	}
+	rec, err := storage.GetTaskRecurrence(taskID)
+	if err != nil {
+		return nil
+	}
+	if rec == nil && seriesID == 0 {
+		return nil
+	}
+	out := &utils.UndoRecurrence{SeriesID: seriesID, PrevID: prevID}
+	if rec != nil {
+		out.HasRule = true
+		out.Frequency = rec.Frequency
+		out.Interval = rec.Interval
+		out.WeekdaysMask = rec.WeekdaysMask
+		out.MonthDay = rec.MonthDay
+		out.Basis = rec.Basis
+		out.EndsOn = rec.EndsOn
+		out.EndAfter = rec.EndAfter
+		out.Occurrence = rec.Occurrence
+		out.SeriesID = rec.SeriesID
+		out.CreatedBy = rec.CreatedBy
+	}
+	return out
+}
+
+// restoreRecurrenceFromUndo re-attaches a snapshotted rule and series links to a restored task.
+func restoreRecurrenceFromUndo(taskID int, snap *utils.UndoRecurrence) {
+	if snap == nil {
+		return
+	}
+	prevID := snap.PrevID
+	if prevID > 0 {
+		if _, _, err := storage.GetTaskRecurrenceLinks(prevID); err != nil {
+			prevID = 0 // previous occurrence no longer exists
+		}
+	}
+	if snap.SeriesID > 0 {
+		if err := storage.LinkRecurrenceTask(taskID, snap.SeriesID, prevID); err != nil {
+			fmt.Printf("undo: restore recurrence links for task %d: %v\n", taskID, err)
+		}
+	}
+	if !snap.HasRule {
+		return
+	}
+	if err := storage.SaveTaskRecurrence(storage.TaskRecurrence{
+		TaskID:       taskID,
+		Frequency:    snap.Frequency,
+		Interval:     snap.Interval,
+		WeekdaysMask: snap.WeekdaysMask,
+		MonthDay:     snap.MonthDay,
+		Basis:        snap.Basis,
+		EndsOn:       snap.EndsOn,
+		EndAfter:     snap.EndAfter,
+		Occurrence:   snap.Occurrence,
+		SeriesID:     snap.SeriesID,
+		CreatedBy:    snap.CreatedBy,
+	}); err != nil {
+		fmt.Printf("undo: restore recurrence for task %d: %v\n", taskID, err)
+	}
 }

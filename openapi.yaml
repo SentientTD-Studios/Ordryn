@@ -1556,6 +1556,74 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/tasks/{id}/recurrence:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Tasks]
+      summary: Get a task's repeat rule and series history
+      description: |
+        Returns the active repeat rule (null when the task is not the current
+        occurrence of a series), a preview of the next due date, links to the
+        previous/next occurrence, and recent tasks in the same series.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Recurrence detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskRecurrenceDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Tasks]
+      summary: Set or replace a task's repeat rule
+      description: |
+        Root tasks only. Completing the task creates the next occurrence (copying
+        title, description, priority, project, tags, custom fields, estimate,
+        claim, and subtasks as incomplete) and moves the rule to it. Reopening
+        within 15 minutes removes an untouched next occurrence. Requires the
+        tasks:edit project permission.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskRecurrenceInput"
+      responses:
+        "200":
+          description: Updated recurrence detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskRecurrenceDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Stop a task from repeating
+      description: Removes the rule; past occurrences keep their series history.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Recurrence detail with recurrence null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskRecurrenceDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/tasks/{id}/events:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -6353,6 +6421,11 @@ components:
             Custom field values. List and board responses include only fields
             marked show_on kanban or list. GET /tasks/{id} includes all values
             that apply to the task's project.
+        recurrence:
+          allOf:
+            - $ref: "#/components/schemas/TaskRecurrence"
+          nullable: true
+          description: Repeat rule when this task is the active occurrence of a recurring series; null otherwise.
 
     GitHubConnection:
       type: object
@@ -6392,6 +6465,135 @@ components:
         linked_at:
           type: string
           format: date-time
+
+    TaskRecurrenceInput:
+      type: object
+      required: [frequency]
+      properties:
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, yearly]
+        interval:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 1
+          description: Repeat every N days/weeks/months/years
+        weekdays:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          description: Weekly only. 0=Sunday … 6=Saturday. Defaults to the due date's weekday.
+        month_day:
+          type: integer
+          minimum: 1
+          maximum: 31
+          nullable: true
+          description: Monthly only. Days past the end of a month clamp to its last day (31 = last day). Defaults to the due date's day.
+        basis:
+          type: string
+          enum: [due, completion]
+          default: due
+          description: |
+            due schedules from the previous due date and skips missed occurrences so the
+            next task is never overdue; completion schedules from the day the task was completed.
+        ends_on:
+          type: string
+          format: date
+          description: Stop creating occurrences after this date. Omit or empty for never.
+        end_after:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          nullable: true
+          description: Total occurrences in the series including the first; 0/null = unlimited.
+
+    TaskRecurrence:
+      type: object
+      properties:
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, yearly]
+        interval:
+          type: integer
+        weekdays:
+          type: array
+          items:
+            type: integer
+        month_day:
+          type: integer
+          nullable: true
+        basis:
+          type: string
+          enum: [due, completion]
+        ends_on:
+          type: string
+          format: date
+          nullable: true
+        end_after:
+          type: integer
+          nullable: true
+        occurrence:
+          type: integer
+          description: 1-based position of this task in its series
+        series_id:
+          type: integer
+          description: Id of the first task in the series
+        summary:
+          type: string
+          example: Every 2 weeks on Mon, Thu
+        next_due:
+          type: string
+          format: date
+          description: Only on GET /tasks/{id}/recurrence — due date the next occurrence would get if completed today
+
+    TaskRecurrenceHistoryItem:
+      type: object
+      properties:
+        task_id:
+          type: integer
+        title:
+          type: string
+        due_date:
+          type: string
+        completed:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    TaskRecurrenceDetail:
+      type: object
+      properties:
+        task_id:
+          type: integer
+        recurrence:
+          allOf:
+            - $ref: "#/components/schemas/TaskRecurrence"
+          nullable: true
+        series_id:
+          type: integer
+          nullable: true
+        prev_task_id:
+          type: integer
+          nullable: true
+        next_task_id:
+          type: integer
+          nullable: true
+        can_edit:
+          type: boolean
+        is_subtask:
+          type: boolean
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskRecurrenceHistoryItem"
 
     TaskGitHubIssue:
       type: object
@@ -6512,6 +6714,10 @@ components:
           type: object
           additionalProperties: true
           description: Custom field values to set on create (merge). JSON null or empty string clears a key.
+        recurrence:
+          allOf:
+            - $ref: "#/components/schemas/TaskRecurrenceInput"
+          description: Make the new task repeat (root tasks only).
 
     TaskPatch:
       type: object
@@ -6557,6 +6763,11 @@ components:
           type: object
           additionalProperties: true
           description: Merge custom field values. Omitted keys are unchanged; JSON null clears a key.
+        recurrence:
+          allOf:
+            - $ref: "#/components/schemas/TaskRecurrenceInput"
+          nullable: true
+          description: Set the repeat rule, or null to stop repeating. Omit to leave unchanged.
 
     CustomFieldDef:
       type: object

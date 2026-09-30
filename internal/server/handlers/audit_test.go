@@ -47,3 +47,26 @@ func TestFormatEventLabelSprintChanged(t *testing.T) {
 		t.Fatalf("label=%q", got)
 	}
 }
+
+func TestFormatEventLabelRecurrence(t *testing.T) {
+	cases := []struct {
+		eventType string
+		meta      map[string]interface{}
+		want      string
+	}{
+		{eventType: "recurrence_set", want: "Repeat set"},
+		{eventType: "recurrence_set", meta: map[string]interface{}{"summary": "Weekly on Mon"}, want: "Repeats · Weekly on Mon"},
+		{eventType: "recurrence_cleared", want: "Repeat removed"},
+		{eventType: "recurrence_cleared", meta: map[string]interface{}{"reason": "nested"}, want: "Repeat removed · became a subtask"},
+		{eventType: "recurrence_next", meta: map[string]interface{}{"due_date": "2026-10-05"}, want: "Next occurrence created · due 2026-10-05"},
+		{eventType: "recurrence_created", meta: map[string]interface{}{"from_id": float64(12)}, want: "Repeated from #12"},
+		{eventType: "recurrence_ended", want: "Repeat series ended"},
+		{eventType: "recurrence_failed", want: "Could not create next occurrence"},
+		{eventType: "recurrence_undone", want: "Next occurrence removed · reopened"},
+	}
+	for _, tc := range cases {
+		if got := formatEventLabel(tc.eventType, tc.meta); got != tc.want {
+			t.Errorf("%s %v: got %q want %q", tc.eventType, tc.meta, got, tc.want)
+		}
+	}
+}

@@ -333,6 +333,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateCustomFieldTables failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateTaskRecurrenceTables(); err != nil {
+		fmt.Printf("migration: CreateTaskRecurrenceTables failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {

@@ -179,6 +179,21 @@ func TestMain(m *testing.M) {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (task_id, field_key)
 		);
+		CREATE TABLE task_recurrence (
+			task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+			frequency VARCHAR(16) NOT NULL,
+			interval_count INTEGER NOT NULL DEFAULT 1,
+			weekdays_mask INTEGER NOT NULL DEFAULT 0,
+			month_day INTEGER NOT NULL DEFAULT 0,
+			basis VARCHAR(16) NOT NULL DEFAULT 'due',
+			ends_on DATE,
+			end_after INTEGER NOT NULL DEFAULT 0,
+			occurrence INTEGER NOT NULL DEFAULT 1,
+			series_id INTEGER NOT NULL,
+			created_by INTEGER,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
 		CREATE TABLE extension_settings (
 			extension_id VARCHAR(64) PRIMARY KEY,
 			data JSONB NOT NULL DEFAULT '{}',

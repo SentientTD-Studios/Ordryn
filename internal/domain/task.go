@@ -500,6 +500,10 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 
 	logTaskFieldChanges(ctx, pool, taskID, userID, oldTitle, title, result.OldPriority, priority, oldDueDate, dueDate, oldParentID, newParentID)
+	if newParentID.Valid && !oldParentID.Valid {
+		// Only root tasks repeat; nesting a recurring task ends its series.
+		dropRecurrenceForSubtask(userID, taskID)
+	}
 
 	projectChanged := result.OldProjectID != nullInt(newProjectID)
 
@@ -698,7 +702,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 			_ = storage.LogTaskEvent(taskID, userID, "reopened", nil)
 		}
 		go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
-		dispatchCompletedHook(userID, taskID, completed)
+		afterCompletionChanged(userID, taskID, completed)
 	}
 	if statusTouched && newStatusID != oldStatusID {
 		_ = storage.LogTaskEvent(taskID, userID, "status_changed", statusChangeMetadata(effectiveProjectID, oldStatusID, newStatusID))
@@ -1183,7 +1187,7 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 			go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
 			live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
 			if oldCompleted != completed {
-				dispatchCompletedHook(userID, taskID, completed)
+				afterCompletionChanged(userID, taskID, completed)
 			}
 			return nil
 		}
@@ -1206,7 +1210,7 @@ func SetTaskCompleted(ctx context.Context, userID, taskID int, completed bool) e
 	go SyncGitHubIssueFromOrdrynState(context.Background(), userID, taskID, completed)
 	live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)
 	if oldCompleted != completed {
-		dispatchCompletedHook(userID, taskID, completed)
+		afterCompletionChanged(userID, taskID, completed)
 	}
 	return nil
 }
