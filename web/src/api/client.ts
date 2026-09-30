@@ -57,6 +57,9 @@ import type {
   NotificationList,
   Task,
   TaskRecurrenceDetail,
+  TaskLink,
+  TaskLinkType,
+  TaskWatch,
   TaskRecurrenceInput,
   TaskEvent,
   TaskList,
@@ -314,6 +317,41 @@ export const api = {
 
   listTaskEvents(id: number) {
     return request<TaskEvent[]>(`/api/v2/tasks/${id}/events`)
+  },
+
+  getTaskWatch(id: number) {
+    return request<TaskWatch>(`/api/v2/tasks/${id}/watch`)
+  },
+
+  watchTask(id: number) {
+    return request<TaskWatch>(`/api/v2/tasks/${id}/watch`, { method: 'POST' })
+  },
+
+  unwatchTask(id: number) {
+    return request<TaskWatch>(`/api/v2/tasks/${id}/watch`, { method: 'DELETE' })
+  },
+
+  getProjectWatch(id: number) {
+    return request<{ watching: boolean }>(`/api/v2/projects/${id}/watch`)
+  },
+
+  setProjectWatch(id: number, watching: boolean) {
+    return request<{ watching: boolean }>(`/api/v2/projects/${id}/watch`, { method: watching ? 'POST' : 'DELETE' })
+  },
+
+  listTaskLinks(id: number) {
+    return request<TaskLink[]>(`/api/v2/tasks/${id}/links`)
+  },
+
+  addTaskLink(id: number, otherTaskId: number, type: TaskLinkType) {
+    return request<TaskLink>(`/api/v2/tasks/${id}/links`, {
+      method: 'POST',
+      body: JSON.stringify({ task_id: otherTaskId, type }),
+    })
+  },
+
+  removeTaskLink(id: number, linkId: number) {
+    return request<{ ok: boolean }>(`/api/v2/tasks/${id}/links/${linkId}`, { method: 'DELETE' })
   },
 
   getTaskRecurrence(id: number) {

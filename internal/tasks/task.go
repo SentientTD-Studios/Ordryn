@@ -54,6 +54,8 @@ type Task struct {
 	Fields              []AttachedField
 	// Recurrence is the repeat rule when this task is the active occurrence of a series.
 	Recurrence *storage.TaskRecurrence
+	// BlockedByOpen counts incomplete tasks that block this one.
+	BlockedByOpen int
 }
 
 // AttachedField is a custom field value loaded for API serialization.

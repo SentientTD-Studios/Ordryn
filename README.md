@@ -14,6 +14,8 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Priority levels (None / Low / Medium / High) with optional sort-by-priority view
 - Due dates with smart filters (today, overdue, this week, no date) and relative labels
 - Recurring tasks: daily / weekly (chosen weekdays) / monthly / yearly or every N units, scheduled from the due date or from completion, with optional end date or occurrence count. Completing a task creates the next occurrence (title, description, priority, tags, custom fields, estimate, claim, and subtasks carry over) and keeps a linked series history; reopening within 15 minutes undoes an untouched next occurrence
+- Watchers: watch a task or a whole project to get in-app notifications when tasks are completed or reopened, change status or due date, are claimed, or become blocked or unblocked; creating, commenting on, or claiming a project task watches it automatically
+- Task links: blocks / blocked by, relates to, and duplicates, with cycle prevention, a blocked badge on list and board cards, and an unblocked notification when the last open blocker is completed
 - Search with status, tag, due-date, and priority filters; clearing those filters keeps you in the current project
 - Markdown task descriptions with truncated list view and expand-in-place
 - Task discussion comments with @-mentions of project members (notifies them) and #task links; authors and project owners can edit comments, with posted/edited timestamps and an admin restore log

@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { Notification } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
+import { useLiveUpdates } from '@/composables/useLiveUpdates'
 import { useSite } from '@/composables/useSite'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
@@ -116,6 +117,10 @@ usePageActivity(() => {
 
 onMounted(() => {
   if (isAuthenticated.value) void refreshUnreadCount()
+})
+
+useLiveUpdates((event) => {
+  if (event.type === 'notification.created' && isAuthenticated.value) void refreshUnreadCount()
 })
 
 async function onLogout() {

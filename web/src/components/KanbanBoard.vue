@@ -159,6 +159,15 @@
                   </span>
 
                   <span
+                    v-if="task.blocked_by_open"
+                    class="kanban-meta text-nowrap text-warning"
+                    :title="`Blocked by ${task.blocked_by_open} open task(s)`"
+                    :aria-label="`Blocked by ${task.blocked_by_open} open task(s)`"
+                  >
+                    <i class="bi bi-lock-fill" />
+                  </span>
+
+                  <span
                     v-if="task.recurrence"
                     class="kanban-meta text-nowrap"
                     :title="task.recurrence.summary"

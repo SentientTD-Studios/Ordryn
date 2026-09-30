@@ -117,6 +117,21 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 			return "Parent · " + to
 		}
 		return "Parent cleared"
+	case "link_added", "link_removed":
+		verb := "Link added"
+		if eventType == "link_removed" {
+			verb = "Link removed"
+		}
+		kind, _ := meta["kind"].(string)
+		label := map[string]string{
+			"blocks": "blocks", "blocked_by": "blocked by", "relates": "relates to",
+			"duplicates": "duplicates", "duplicated_by": "duplicated by",
+		}[kind]
+		title, _ := meta["title"].(string)
+		if label != "" && title != "" {
+			return verb + " · " + label + " " + title
+		}
+		return verb
 	case "recurrence_set":
 		if summary, ok := meta["summary"].(string); ok && summary != "" {
 			return "Repeats · " + summary

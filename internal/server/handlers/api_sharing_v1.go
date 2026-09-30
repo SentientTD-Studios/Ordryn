@@ -136,6 +136,11 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 	case "invites":
 		apiV1ProjectInvites(w, r, projectID, parts[2:])
 		return true
+	case "watch":
+		if len(parts) == 2 {
+			apiV1ProjectWatch(w, r, projectID)
+			return true
+		}
 	case "events":
 		if len(parts) == 2 && r.Method == http.MethodGet {
 			apiV1ProjectEvents(w, r, projectID)

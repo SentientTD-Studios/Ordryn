@@ -259,6 +259,7 @@ func GetTaskRecurrenceDetail(ctx context.Context, userID, taskID int) (*TaskRecu
 // accidental spawn on reopen). Every completion path funnels through here.
 func afterCompletionChanged(userID, taskID int, completed bool) {
 	dispatchCompletedHook(userID, taskID, completed)
+	notifyWatchersCompletion(userID, taskID, completed)
 	if completed {
 		if _, err := SpawnNextOccurrence(context.Background(), userID, taskID); err != nil {
 			log.Printf("recurrence: spawn after completing task %d: %v", taskID, err)
@@ -351,6 +352,9 @@ func SpawnNextOccurrence(ctx context.Context, actorID, taskID int) (int, error) 
 		log.Printf("recurrence: attach rule to task %d: %v", newID, err)
 	}
 	copySubtasksForOccurrence(ctx, creator, taskID, newID)
+	if err := storage.CopyTaskWatchers(taskID, newID); err != nil {
+		log.Printf("recurrence: copy watchers %d -> %d: %v", taskID, newID, err)
+	}
 	if src.ClaimedBy > 0 && src.ProjectID > 0 {
 		claimer := src.ClaimedBy
 		if canRead, _, _, err := storage.CanUserAccessTask(newID, claimer); err == nil && canRead {

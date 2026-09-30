@@ -65,6 +65,7 @@ const (
 	TypeSprintEnded              = "sprint.ended"
 	TypeImportCompleted          = "import.completed"
 	TypeJoinRequest              = "join.request"
+	TypeNotificationCreated      = "notification.created"
 	TypeJoinApproved             = "join.approved"
 	TypeJoinDenied               = "join.denied"
 	TypeExtensionStore           = "extension.store"

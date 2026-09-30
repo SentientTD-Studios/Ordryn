@@ -288,6 +288,25 @@ export type Task = {
   fields?: Record<string, unknown>
   /** Repeat rule when this task is the active occurrence of a recurring series. */
   recurrence?: TaskRecurrence | null
+  /** Incomplete tasks blocking this one (omitted when 0). */
+  blocked_by_open?: number
+}
+
+export type TaskWatch = {
+  watching: boolean
+  via_project: boolean
+  watchers: { user_id: number; name: string }[]
+}
+
+export type TaskLinkType = 'blocks' | 'blocked_by' | 'relates' | 'duplicates' | 'duplicated_by'
+
+export type TaskLink = {
+  link_id: number
+  type: TaskLinkType
+  task_id: number
+  title: string
+  completed: boolean
+  project_id: number | null
 }
 
 export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'

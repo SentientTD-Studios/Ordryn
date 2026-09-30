@@ -1556,6 +1556,174 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/tasks/{id}/watch:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Tasks]
+      summary: Caller's watch state and the task's watchers
+      description: |
+        Watchers get in-app notifications when the task is completed or reopened,
+        changes status or due date, is claimed, becomes blocked, or becomes unblocked
+        (its last open blocker is completed). Creating, commenting on, or claiming a
+        project task watches it automatically. Watching a project (see
+        /projects/{id}/watch) covers all of its tasks.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskWatch"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Tasks]
+      summary: Watch a task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskWatch"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Stop watching a task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Watch state (watching stays true when the project is watched)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskWatch"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/tasks/{id}/links:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Tasks]
+      summary: Linked tasks (blocks / blocked by / relates / duplicates)
+      description: Links to tasks the caller cannot see are omitted.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Links from this task's point of view
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskLink"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Tasks]
+      summary: Link this task to another
+      description: |
+        Requires tasks:edit on this task and read access to the other task.
+        Blocking links that would form a cycle return 409.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskLinkCreate"
+      responses:
+        "201":
+          description: Created link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskLink"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Duplicate link or blocking cycle
+
+  /api/v2/tasks/{id}/links/{linkId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: linkId
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      tags: [Tasks]
+      summary: Remove a link
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Removed
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/watch:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Whether the caller watches every task in the project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectWatch"
+    post:
+      tags: [Projects]
+      summary: Watch every task in the project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectWatch"
+    delete:
+      tags: [Projects]
+      summary: Stop watching the project
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectWatch"
+
   /api/v2/tasks/{id}/recurrence:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -6426,6 +6594,9 @@ components:
             - $ref: "#/components/schemas/TaskRecurrence"
           nullable: true
           description: Repeat rule when this task is the active occurrence of a recurring series; null otherwise.
+        blocked_by_open:
+          type: integer
+          description: Number of incomplete tasks blocking this one (omitted when 0)
 
     GitHubConnection:
       type: object
@@ -6465,6 +6636,60 @@ components:
         linked_at:
           type: string
           format: date-time
+
+    TaskWatch:
+      type: object
+      properties:
+        watching:
+          type: boolean
+        via_project:
+          type: boolean
+          description: True when the caller only watches through the project
+        watchers:
+          type: array
+          description: Users watching this task directly
+          items:
+            type: object
+            properties:
+              user_id:
+                type: integer
+              name:
+                type: string
+
+    ProjectWatch:
+      type: object
+      properties:
+        watching:
+          type: boolean
+
+    TaskLink:
+      type: object
+      properties:
+        link_id:
+          type: integer
+        type:
+          type: string
+          enum: [blocks, blocked_by, relates, duplicates, duplicated_by]
+          description: Relationship from the requested task's point of view
+        task_id:
+          type: integer
+        title:
+          type: string
+        completed:
+          type: boolean
+        project_id:
+          type: integer
+          nullable: true
+
+    TaskLinkCreate:
+      type: object
+      required: [task_id, type]
+      properties:
+        task_id:
+          type: integer
+        type:
+          type: string
+          enum: [blocks, blocked_by, relates, duplicates, duplicated_by]
 
     TaskRecurrenceInput:
       type: object

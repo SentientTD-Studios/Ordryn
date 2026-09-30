@@ -462,6 +462,27 @@ func attachRecurrenceToTasks(taskList []Task) error {
 			taskList[i].Recurrence = &rule
 		}
 	}
+	return attachBlockersToTasks(taskList)
+}
+
+func attachBlockersToTasks(taskList []Task) error {
+	ids := make([]int, 0, len(taskList))
+	for _, t := range taskList {
+		ids = append(ids, t.ID)
+		for _, c := range t.Children {
+			ids = append(ids, c.ID)
+		}
+	}
+	counts, err := storage.OpenBlockerCounts(ids)
+	if err != nil {
+		return err
+	}
+	for i := range taskList {
+		taskList[i].BlockedByOpen = counts[taskList[i].ID]
+		for j := range taskList[i].Children {
+			taskList[i].Children[j].BlockedByOpen = counts[taskList[i].Children[j].ID]
+		}
+	}
 	return attachCustomFieldsToTasks(taskList)
 }
 

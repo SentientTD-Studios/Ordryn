@@ -9,6 +9,8 @@ import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import TaskDiscussion from '@/components/TaskDiscussion.vue'
 import TaskSidebarFields from '@/components/TaskSidebarFields.vue'
 import TaskRecurrenceEditor from '@/components/TaskRecurrenceEditor.vue'
+import TaskWatchButton from '@/components/TaskWatchButton.vue'
+import TaskLinksPanel from '@/components/TaskLinksPanel.vue'
 import { draftFromRecurrence, emptyRecurrenceDraft, recurrencePayload, sameRecurrenceDraft, type RecurrenceDraft } from '@/utils/recurrence'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
@@ -108,6 +110,7 @@ const githubBusy = ref(false)
 const customFieldValues = ref<Record<string, unknown>>({})
 const recurrenceDraft = ref<RecurrenceDraft>(emptyRecurrenceDraft())
 const recurrenceDetail = ref<TaskRecurrenceDetail | null>(null)
+const linksPanel = ref<InstanceType<typeof TaskLinksPanel> | null>(null)
 const isSubtask = computed(() => parentId.value !== '' && Number(parentId.value) > 0)
 const selectedProject = computed(() => {
   if (projectId.value === '') return null
@@ -710,6 +713,7 @@ async function flushDiscussion(): Promise<boolean> {
 
 useLiveUpdates(async (event: LiveEvent) => {
   if (!open.value || !taskId.value) return
+  if (event.type === 'notification.created') return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
   if (event.type === 'task.commented') {
     if (!event.task_id || event.task_id === taskId.value) {
@@ -739,6 +743,7 @@ useLiveUpdates(async (event: LiveEvent) => {
   }
   try {
     await loadTask(taskId.value)
+    await linksPanel.value?.reload()
     if (eventsLoaded.value) await loadEvents(true)
   } catch {
     toast.push('This task is no longer available', 'info')
@@ -1352,6 +1357,7 @@ async function removeTimeEntry(entryId: number) {
               >
                 <i class="bi bi-link-45deg" /> Copy link
               </button>
+              <TaskWatchButton v-if="showTaskNumber && taskId" :task-id="taskId" />
             </div>
             <div class="task-header-actions">
               <button
@@ -1434,6 +1440,7 @@ async function removeTimeEntry(entryId: number) {
               >
                 <i class="bi bi-link-45deg" /> Copy link
               </button>
+              <TaskWatchButton v-if="showTaskNumber && taskId" :task-id="taskId" />
             </h5>
             <button type="button" class="btn-close" id="closeSidebar" aria-label="Close" @click="requestClose" />
           </template>
@@ -1578,6 +1585,9 @@ async function removeTimeEntry(entryId: number) {
               </li>
             </ul>
           </div>
+        </div>
+        <div v-if="(mode === 'edit' || mode === 'view') && taskId" class="form-group mt-2 kanban-order-related">
+          <TaskLinksPanel ref="linksPanel" :task-id="taskId" :can-edit="canEditDetails" @open="openRelated" />
         </div>
         <div class="form-group mt-2 kanban-order-project">
           <label for="project_id">Project (optional):</label>
