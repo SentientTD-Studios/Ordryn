@@ -6,12 +6,14 @@ import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import AdminSubnav from '@/components/AdminSubnav.vue'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
+import { useLiveUpdates } from '@/composables/useLiveUpdates'
 import { withBase } from '@/base'
 import { rateLimitNotice } from '@/utils/extensionDeliveries'
 import { settingHasScope } from '@/utils/extensionScope'
 
 const toast = useToast()
 const loading = ref(false)
+const reloading = ref(false)
 const extensions = ref<AdminExtension[]>([])
 const busyId = ref<string | null>(null)
 const testBusyId = ref<string | null>(null)
@@ -99,6 +101,31 @@ async function load() {
   }
 }
 
+async function reload() {
+  reloading.value = true
+  try {
+    const res = await api.reloadAdminExtensions()
+    extensions.value = res.extensions
+    for (const ext of extensions.value) {
+      if (!ext.settings.templates) ext.settings.templates = {}
+      if (!ext.settings.triggers) ext.settings.triggers = []
+    }
+    clearCustomFieldDefsCache()
+    toast.push(res.message || 'Extensions reloaded successfully', 'success')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Failed to reload extensions', 'error')
+  } finally {
+    reloading.value = false
+  }
+}
+
+useLiveUpdates((event) => {
+  if (event.type === 'extensions.reloaded') {
+    load()
+    clearCustomFieldDefsCache()
+  }
+})
+
 function replaceExtension(updated: AdminExtension) {
   if (!updated.settings.templates) updated.settings.templates = {}
   if (!updated.settings.triggers) updated.settings.triggers = []
@@ -160,11 +187,48 @@ onMounted(load)
 <template>
   <div class="container mt-3">
     <AdminSubnav />
-    <h1>Extensions</h1>
+
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+      <div>
+        <h1 class="mb-0">Extensions</h1>
+        <p class="text-muted small mb-0">Manage drop-in extensions, webhook integrations, and sandboxed panels.</p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-outline-primary d-inline-flex align-items-center gap-2"
+        :disabled="reloading || loading"
+        @click="reload"
+      >
+        <span v-if="reloading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+        <i v-else class="bi bi-arrow-clockwise" aria-hidden="true" />
+        <span>{{ reloading ? 'Reloading…' : 'Reload Extensions' }}</span>
+      </button>
+    </div>
+
+    <div class="card mb-4 extension-reload-info shadow-xs">
+      <div class="card-body">
+        <h5 class="card-title h6 d-flex align-items-center gap-2 mb-2">
+          <i class="bi bi-info-circle text-accent" aria-hidden="true" />
+          Hot Reloading Extensions
+        </h5>
+        <p class="card-text small mb-2">
+          Extensions reside in <code>data/extensions/&lt;id&gt;/</code>. Whenever you add a new extension folder, remove an existing extension, or modify an extension's <code>manifest.json</code>, custom fields, or assets, you can hot-reload without restarting the application:
+        </p>
+        <ol class="small mb-2 ps-3">
+          <li><strong>Add, update, or remove</strong> extension directories under <code>data/extensions/</code> (or edit <code>manifest.json</code>).</li>
+          <li>Click the <strong>Reload Extensions</strong> button above.</li>
+          <li>Ordryn will rescan manifests, update custom fields in the database, refresh hook bindings, and update all active user sessions in real time.</li>
+        </ol>
+        <p class="card-text small note-text mb-0">
+          <em>Note:</em> Uploading or changing files on disk does not automatically reload them into the running server until you click <strong>Reload Extensions</strong>.
+        </p>
+      </div>
+    </div>
+
     <p v-if="loading" class="text-muted">Loading…</p>
     <div v-else-if="emptyHint" class="alert alert-secondary">
-      No extensions loaded. Copy a folder from <code>examples/extensions/</code> into
-      <code>data/extensions/</code> and restart the server.
+      No extensions loaded. Copy an extension folder from <code>examples/extensions/</code> into
+      <code>data/extensions/</code> and click <strong>Reload Extensions</strong> above.
     </div>
 
     <div v-for="ext in extensions" :key="ext.id" class="card mb-3">
@@ -332,3 +396,97 @@ onMounted(load)
     </div>
   </div>
 </template>
+
+<style scoped>
+.extension-reload-info {
+  background-color: var(--ordryn-muted-bg, #f8f9fa);
+  border: 1px solid var(--ordryn-card-border, #dee2e6);
+  color: var(--ordryn-text, #1e293b);
+  border-radius: 0.5rem;
+}
+
+.extension-reload-info .card-title {
+  color: var(--ordryn-text, inherit);
+  font-weight: 600;
+}
+
+.extension-reload-info .text-accent {
+  color: var(--ordryn-accent, #0d6efd);
+}
+
+.extension-reload-info .card-text,
+.extension-reload-info ol {
+  color: var(--ordryn-text, inherit);
+  line-height: 1.5;
+}
+
+.extension-reload-info ol li {
+  margin-bottom: 0.25rem;
+}
+
+.extension-reload-info strong {
+  color: var(--ordryn-text, inherit);
+}
+
+.extension-reload-info .note-text {
+  color: var(--ordryn-muted, #64748b);
+}
+
+.extension-reload-info code {
+  background-color: var(--ordryn-card-bg, #ffffff);
+  color: var(--ordryn-accent, #2563eb);
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--ordryn-card-border, #cbd5e1);
+  font-size: 0.85em;
+}
+
+:global([data-theme="dark"]) .extension-reload-info {
+  background-color: var(--ordryn-card-bg, #1e293b);
+  border-color: var(--ordryn-card-border, #334155);
+  color: var(--ordryn-text, #f8fafc);
+}
+
+:global([data-theme="dark"]) .extension-reload-info .card-title {
+  color: var(--ordryn-text, #f8fafc);
+}
+
+:global([data-theme="dark"]) .extension-reload-info .text-accent {
+  color: var(--ordryn-accent, #38bdf8);
+}
+
+:global([data-theme="dark"]) .extension-reload-info .card-text,
+:global([data-theme="dark"]) .extension-reload-info ol {
+  color: #cbd5e1;
+}
+
+:global([data-theme="dark"]) .extension-reload-info strong {
+  color: var(--ordryn-text, #f8fafc);
+}
+
+:global([data-theme="dark"]) .extension-reload-info .note-text {
+  color: var(--ordryn-muted, #94a3b8);
+}
+
+:global([data-theme="dark"]) .extension-reload-info code {
+  background-color: var(--ordryn-muted-bg, #0f172a);
+  color: var(--ordryn-accent, #38bdf8);
+  border-color: var(--ordryn-card-border, #334155);
+}
+
+:global([data-theme="warm"]) .extension-reload-info {
+  background-color: var(--ordryn-muted-bg, #f8f6ee);
+  border-color: var(--ordryn-card-border, #eee9d5);
+  color: var(--ordryn-text, #1e293b);
+}
+
+:global([data-theme="warm"]) .extension-reload-info .text-accent {
+  color: var(--ordryn-accent, #f59e0b);
+}
+
+:global([data-theme="warm"]) .extension-reload-info code {
+  background-color: var(--ordryn-card-bg, #ffffff);
+  color: #b45309;
+  border-color: var(--ordryn-card-border, #eee9d5);
+}
+</style>

@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"GoTodo/internal/domain"
 	"GoTodo/internal/extensions"
 	"GoTodo/internal/hooks"
 	"GoTodo/internal/server/utils"
@@ -25,6 +27,12 @@ type adminExtensionJSON struct {
 }
 
 type adminExtensionsListJSON struct {
+	Extensions []adminExtensionJSON `json:"extensions"`
+}
+
+type adminExtensionsReloadJSON struct {
+	OK         bool                 `json:"ok"`
+	Message    string               `json:"message"`
 	Extensions []adminExtensionJSON `json:"extensions"`
 }
 
@@ -53,6 +61,14 @@ func APIV1AdminExtensionsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 1 {
+		if id == "reload" {
+			if r.Method != http.MethodPost {
+				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+				return
+			}
+			adminExtensionsReload(w, r)
+			return
+		}
 		switch r.Method {
 		case http.MethodGet:
 			adminExtensionGet(w, r, id)
@@ -88,6 +104,41 @@ func adminExtensionsList(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(adminExtensionsListJSON{Extensions: out})
+}
+
+func adminExtensionsReload(w http.ResponseWriter, r *http.Request) {
+	userID, _ := apiUserFromRequest(r)
+	entries, err := domain.ReloadExtensions(userID)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to sync custom fields: "+err.Error())
+		return
+	}
+	out := make([]adminExtensionJSON, 0, len(entries))
+	loadedCount := 0
+	failedCount := 0
+	for _, e := range entries {
+		if e.Loaded {
+			loadedCount++
+		} else if e.Error != "" {
+			failedCount++
+		}
+		item, err := adminExtensionFromEntry(e)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
+			return
+		}
+		out = append(out, item)
+	}
+	msg := fmt.Sprintf("Reloaded %d extensions (%d loaded, %d failed).", len(entries), loadedCount, failedCount)
+	if failedCount == 0 {
+		msg = fmt.Sprintf("Successfully reloaded %d extensions.", loadedCount)
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(adminExtensionsReloadJSON{
+		OK:         true,
+		Message:    msg,
+		Extensions: out,
+	})
 }
 
 func adminExtensionGet(w http.ResponseWriter, r *http.Request, id string) {

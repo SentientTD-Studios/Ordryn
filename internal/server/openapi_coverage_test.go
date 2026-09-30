@@ -121,6 +121,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/admin/comment-audit",
 	"/api/v2/admin/comment-audit/{id}/restore",
 	"/api/v2/admin/extensions",
+	"/api/v2/admin/extensions/reload",
 	"/api/v2/admin/extensions/{id}",
 	"/api/v2/admin/project-roles",
 	"/api/v2/admin/project-roles/{id}",

@@ -4,6 +4,7 @@ import type {
   AdminSettingsPatch,
   AdminUser,
   AdminExtensionsList,
+  AdminExtensionsReloadResponse,
   AdminExtension,
   AdminExtensionPatch,
   ProjectExtensionsList,
@@ -1210,6 +1211,12 @@ export const api = {
 
   listAdminExtensions() {
     return request<AdminExtensionsList>('/api/v2/admin/extensions')
+  },
+
+  reloadAdminExtensions() {
+    return request<AdminExtensionsReloadResponse>('/api/v2/admin/extensions/reload', {
+      method: 'POST',
+    })
   },
 
   patchAdminExtension(id: string, payload: AdminExtensionPatch) {

@@ -216,3 +216,23 @@ func TestProjectExtensionVisibleRespectsWorkflowScope(t *testing.T) {
 		t.Fatalf("kanban-only visible on classic=%v err=%v", ok, err)
 	}
 }
+
+func TestAPIV1AdminExtensionsReloadMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/admin/extensions/reload", nil)
+	rec := httptest.NewRecorder()
+	APIV1AdminExtensionsRouter(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status=%d, want 405", rec.Code)
+	}
+}
+
+func TestAPIV1AdminExtensionsReloadRouting(t *testing.T) {
+	t.Setenv("EXTENSIONS_DIR", t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/admin/extensions/reload", nil)
+	req = utils.SetAPIUserID(req, 1)
+	rec := httptest.NewRecorder()
+	APIV1AdminExtensionsRouter(rec, req)
+	if rec.Code != http.StatusOK && rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}

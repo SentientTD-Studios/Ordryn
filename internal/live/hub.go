@@ -68,6 +68,7 @@ const (
 	TypeJoinApproved             = "join.approved"
 	TypeJoinDenied               = "join.denied"
 	TypeExtensionStore           = "extension.store"
+	TypeExtensionsReloaded       = "extensions.reloaded"
 )
 
 // Hub fans events out to in-process SSE subscribers and, when Redis is
@@ -118,10 +119,19 @@ func (h *Hub) deliverLocal(channelKey string, event []byte) {
 		return
 	}
 	h.mu.RLock()
-	subs := h.channels[channelKey]
-	targets := make([]chan []byte, 0, len(subs))
-	for ch := range subs {
-		targets = append(targets, ch)
+	var targets []chan []byte
+	if channelKey == "broadcast" {
+		for _, subs := range h.channels {
+			for ch := range subs {
+				targets = append(targets, ch)
+			}
+		}
+	} else {
+		subs := h.channels[channelKey]
+		targets = make([]chan []byte, 0, len(subs))
+		for ch := range subs {
+			targets = append(targets, ch)
+		}
 	}
 	h.mu.RUnlock()
 	for _, ch := range targets {
@@ -183,4 +193,20 @@ func (h *Hub) Publish(ev Event, userIDs []int) {
 	for _, id := range uniquePositive(userIDs) {
 		h.Broadcast(UserChannelKey(id), payload)
 	}
+}
+
+// BroadcastAll sends ev to all active subscribers across all channels.
+func (h *Hub) BroadcastAll(ev Event) {
+	if h == nil {
+		return
+	}
+	ev.Origin = h.origin
+	if ev.Timestamp == "" {
+		ev.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	h.Broadcast("broadcast", payload)
 }

@@ -657,6 +657,12 @@ export type AdminExtensionsList = {
   extensions: AdminExtension[]
 }
 
+export type AdminExtensionsReloadResponse = {
+  ok: boolean
+  message: string
+  extensions: AdminExtension[]
+}
+
 export type AdminExtensionPatch = {
   enabled?: boolean
   webhook_url?: string
