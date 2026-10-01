@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"GoTodo/internal/hooks"
 	"GoTodo/internal/live"
@@ -17,8 +18,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// MaxDescriptionLength is the shared limit for task descriptions.
-const MaxDescriptionLength = 1000
+// MaxDescriptionLength is the shared limit for task descriptions, in characters.
+const MaxDescriptionLength = storage.MaxTaskTextLength
+
+// validateDescriptionLength enforces MaxDescriptionLength in characters (not
+// bytes) so multi-byte text gets the same allowance the UI shows.
+func validateDescriptionLength(description string) error {
+	if utf8.RuneCountInString(description) > MaxDescriptionLength {
+		return fmt.Errorf("%w: description must be %d characters or less", ErrValidation, MaxDescriptionLength)
+	}
+	return nil
+}
 
 // CreateTaskInput is the shared create payload for HTMX and /api/v2.
 type CreateTaskInput struct {
@@ -80,8 +90,8 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		return 0, fmt.Errorf("%w: title is required", ErrValidation)
 	}
 	description := strings.TrimSpace(in.Description)
-	if len(description) > MaxDescriptionLength {
-		return 0, fmt.Errorf("%w: description too long", ErrValidation)
+	if err := validateDescriptionLength(description); err != nil {
+		return 0, err
 	}
 	if in.Priority < 0 || in.Priority > 3 {
 		return 0, fmt.Errorf("%w: priority must be 0-3", ErrValidation)
@@ -410,8 +420,8 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 	if in.Description != nil {
 		description = strings.TrimSpace(*in.Description)
-		if len(description) > MaxDescriptionLength {
-			return nil, fmt.Errorf("%w: description too long", ErrValidation)
+		if err := validateDescriptionLength(description); err != nil {
+			return nil, err
 		}
 	}
 	if in.Priority != nil {

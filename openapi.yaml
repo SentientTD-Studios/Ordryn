@@ -3626,7 +3626,7 @@ paths:
                 body:
                   type: string
                   minLength: 1
-                  maxLength: 2000
+                  maxLength: 5000
       responses:
         "201":
           description: Created
@@ -3667,7 +3667,7 @@ paths:
                 body:
                   type: string
                   minLength: 1
-                  maxLength: 2000
+                  maxLength: 5000
       responses:
         "200":
           description: Updated comment
@@ -6908,6 +6908,7 @@ components:
           type: string
         description:
           type: string
+          maxLength: 5000
         due_date:
           type: string
         project_id:
@@ -6951,6 +6952,7 @@ components:
           type: string
         description:
           type: string
+          maxLength: 5000
         due_date:
           type: string
         clear_due_date:

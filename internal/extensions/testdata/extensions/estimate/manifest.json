@@ -1,0 +1,49 @@
+{
+  "id": "estimate",
+  "name": "Estimate",
+  "version": "1.1.0",
+  "host_api": 1,
+  "description": "Adds a story-point estimate on project tasks. Shown in the sidebar and as a kanban badge.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "fields": [
+    {
+      "key": "points",
+      "type": "enum",
+      "label": "Estimate",
+      "description": "Relative size. Distinct from the built-in task estimate field if you prefer a badge on the board.",
+      "show_on": [
+        "sidebar",
+        "kanban"
+      ],
+      "options": [
+        {
+          "value": "1",
+          "label": "1"
+        },
+        {
+          "value": "2",
+          "label": "2"
+        },
+        {
+          "value": "3",
+          "label": "3"
+        },
+        {
+          "value": "5",
+          "label": "5"
+        },
+        {
+          "value": "8",
+          "label": "8"
+        },
+        {
+          "value": "13",
+          "label": "13"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,228 @@
+{
+  "id": "ntfy",
+  "name": "ntfy",
+  "version": "1.2.0",
+  "host_api": 1,
+  "description": "Push task events to an ntfy topic (ntfy.sh or a public HTTPS self-hosted server).",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "hooks": [
+    {
+      "on": "task.created",
+      "label": "Task created"
+    },
+    {
+      "on": "task.updated",
+      "label": "Task updated"
+    },
+    {
+      "on": "task.deleted",
+      "label": "Task deleted"
+    },
+    {
+      "on": "task.commented",
+      "label": "Comment posted"
+    },
+    {
+      "on": "task.claimed",
+      "label": "Task claimed"
+    },
+    {
+      "on": "task.due_changed",
+      "label": "Due date changed"
+    },
+    {
+      "on": "task.overdue",
+      "label": "Task overdue"
+    },
+    {
+      "on": "task.mentioned",
+      "label": "You were mentioned"
+    },
+    {
+      "on": "task.completed",
+      "label": "Task completed"
+    },
+    {
+      "on": "task.reopened",
+      "label": "Task reopened"
+    },
+    {
+      "on": "task.due_soon",
+      "label": "Due tomorrow"
+    },
+    {
+      "on": "task.archived",
+      "label": "Task archived"
+    },
+    {
+      "on": "task.restored",
+      "label": "Task restored"
+    },
+    {
+      "on": "task.project_changed",
+      "label": "Moved to another project"
+    },
+    {
+      "on": "task.sprint_changed",
+      "label": "Sprint changed"
+    },
+    {
+      "on": "project.archived",
+      "label": "Project archived"
+    },
+    {
+      "on": "project.restored",
+      "label": "Project restored"
+    },
+    {
+      "on": "project.member_joined",
+      "label": "Member joined"
+    },
+    {
+      "on": "project.member_left",
+      "label": "Member left"
+    },
+    {
+      "on": "sprint.created",
+      "label": "Sprint created"
+    },
+    {
+      "on": "sprint.started",
+      "label": "Sprint started"
+    },
+    {
+      "on": "sprint.ended",
+      "label": "Sprint ended"
+    }
+  ],
+  "delivery": {
+    "type": "ntfy.webhook",
+    "url_from": "webhook_url"
+  },
+  "settings": [
+    {
+      "key": "webhook_url",
+      "type": "secret",
+      "label": "Topic URL",
+      "description": "HTTPS topic URL such as https://ntfy.sh/my-topic. Private/LAN hosts are rejected.",
+      "required": true,
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "ntfy_auth",
+      "type": "secret",
+      "label": "Access token (optional)",
+      "description": "Bearer token if the ntfy topic requires authentication.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "triggers",
+      "type": "hook_select",
+      "label": "Triggers",
+      "description": "Choose which events should notify this topic.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "status_only",
+      "type": "bool",
+      "label": "Only notify when status changes (for task.updated)",
+      "description": "When enabled, task.updated is skipped unless the kanban or list status actually changed.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "skip_self",
+      "type": "bool",
+      "label": "Skip events I caused",
+      "description": "Do not post when you are the actor.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "claimed_only",
+      "type": "bool",
+      "label": "Only claimed tasks",
+      "description": "Skip events for tasks that nobody has claimed.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "min_priority",
+      "type": "priority",
+      "label": "Minimum priority",
+      "description": "Ignore events below this priority.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "tag_ids",
+      "type": "tag_ids",
+      "label": "Only these tags",
+      "description": "If any tags are selected, only matching tasks notify.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "quiet_hours_start",
+      "type": "time",
+      "label": "Quiet hours start",
+      "description": "Hold deliveries until quiet hours end. Leave blank to send immediately.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "quiet_hours_end",
+      "type": "time",
+      "label": "Quiet hours end",
+      "description": "End of the quiet window in your timezone.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "digest",
+      "type": "digest",
+      "label": "Digest",
+      "description": "Batch notifications hourly or daily instead of sending immediately.",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "field_filter",
+      "type": "field_filter",
+      "label": "Custom field filter",
+      "description": "Only notify when this custom field key matches (and equals the value if set).",
+      "scope": ["project", "kanban"]
+    },
+    {
+      "key": "mention_map",
+      "type": "mention_map",
+      "label": "Actor mention map (JSON)",
+      "description": "Map Ordryn usernames to chat mentions, for example {\"ada\":\"<@U123>\"}.",
+      "scope": ["project", "kanban"]
+    }
+  ],
+  "templates": {
+    "task.created": "New task {name} in {project}",
+    "task.updated": "{name} → {status} in {project}",
+    "task.deleted": "{name} deleted from {project}",
+    "task.commented": "{actor} on {name}: {comment}",
+    "task.claimed": "{actor} claimed {name}",
+    "task.due_changed": "{name} due {due_date}",
+    "task.overdue": "{name} is overdue ({due_date})",
+    "task.mentioned": "{mentions} mentioned in {name} by {actor}: {comment} ({url})",
+    "task.completed": "{actor} completed {name} in {project} ({url})",
+    "task.reopened": "{actor} reopened {name} in {project} ({url})",
+    "task.due_soon": "{name} is due tomorrow ({due_date}) in {project} ({url})",
+    "task.archived": "{actor} archived {name} in {project}",
+    "task.restored": "{actor} restored {name} in {project} ({url})",
+    "task.project_changed": "{name} moved to project {project} ({url})",
+    "task.sprint_changed": "{name} is now in sprint {sprint} ({url})",
+    "project.archived": "Project {project} was archived by {actor}",
+    "project.restored": "Project {project} was restored by {actor}",
+    "project.member_joined": "{member} joined {project}",
+    "project.member_left": "{member} left {project}",
+    "sprint.created": "Sprint {sprint} created in {project}",
+    "sprint.started": "Sprint {sprint} started in {project}",
+    "sprint.ended": "Sprint {sprint} ended in {project}"
+  },
+  "controls": [
+    "send_test",
+    "rotate_signing",
+    "sample_json"
+  ]
+}

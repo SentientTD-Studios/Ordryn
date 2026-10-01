@@ -1,0 +1,21 @@
+{
+  "id": "retro",
+  "name": "Retro",
+  "version": "1.0.0",
+  "host_api": 2,
+  "description": "Sprint retrospective on the kanban board. A sandboxed Retro tab stores Went well / Improve / Actions cards in the project document store so the team can add notes and vote together.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "ui": "panel.html",
+  "surfaces": [
+    {
+      "id": "board",
+      "file": "board.html",
+      "at": "kanban.tab",
+      "label": "Retro"
+    }
+  ],
+  "permissions": ["store:read", "store:write"]
+}

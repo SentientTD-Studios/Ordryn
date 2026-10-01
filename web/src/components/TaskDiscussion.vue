@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
+import { MAX_TASK_TEXT_LENGTH } from '@/utils/taskText'
 import type { TaskComment, TaskCommentRevision } from '@/api/types'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
@@ -48,7 +49,7 @@ const editEditor = ref<InstanceType<typeof WysiwygEditor> | null>(null)
 const editEl = computed(() => editEditor.value?.textarea ?? null)
 const mentionListEl = ref<HTMLElement | null>(null)
 const bottomEl = ref<HTMLElement | null>(null)
-const MAX_BODY = 2000
+const MAX_BODY = MAX_TASK_TEXT_LENGTH
 const editingId = ref<number | null>(null)
 const editDraft = ref('')
 const savingEdit = ref(false)
@@ -396,7 +397,7 @@ function insertCommentImage(markdown: string, target: 'draft' | 'edit' = 'draft'
   const end = el?.selectionEnd ?? start
   const next = insertMarkdownAtCursor(current, markdown, start, end)
   if (next.body.length > MAX_BODY) {
-    toast.push('Comment would exceed 2000 characters', 'error')
+    toast.push(`Comment would exceed ${MAX_BODY} characters`, 'error')
     return
   }
   if (target === 'edit') editDraft.value = next.body

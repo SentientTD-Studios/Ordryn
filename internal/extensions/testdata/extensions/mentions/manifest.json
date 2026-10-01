@@ -1,0 +1,60 @@
+{
+  "id": "mentions",
+  "name": "Mentions",
+  "version": "1.0.0",
+  "host_api": 1,
+  "description": "Push ntfy alerts when someone @-mentions a project member in a comment. Team topic gets every mention; Notify me only fires for you.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "hooks": [
+    {
+      "on": "task.mentioned",
+      "label": "You were mentioned"
+    }
+  ],
+  "delivery": {
+    "type": "ntfy.webhook",
+    "url_from": "webhook_url"
+  },
+  "settings": [
+    {
+      "key": "webhook_url",
+      "type": "secret",
+      "label": "Topic URL",
+      "description": "HTTPS topic URL such as https://ntfy.sh/my-mentions. Private/LAN hosts are rejected.",
+      "required": true,
+      "scope": "project"
+    },
+    {
+      "key": "ntfy_auth",
+      "type": "secret",
+      "label": "Access token (optional)",
+      "description": "Bearer token if the ntfy topic requires authentication.",
+      "scope": "project"
+    },
+    {
+      "key": "triggers",
+      "type": "hook_select",
+      "label": "Triggers",
+      "description": "Leave enabled to post @-mentions. Blank the message template to skip.",
+      "scope": "project"
+    },
+    {
+      "key": "skip_self",
+      "type": "bool",
+      "label": "Skip mentions I wrote",
+      "description": "On Notify me, do not push when you mentioned yourself.",
+      "scope": "member"
+    }
+  ],
+  "templates": {
+    "task.mentioned": "{actor} mentioned {mentions} on {name}: {comment} ({url})"
+  },
+  "controls": [
+    "send_test",
+    "rotate_signing",
+    "sample_json"
+  ]
+}

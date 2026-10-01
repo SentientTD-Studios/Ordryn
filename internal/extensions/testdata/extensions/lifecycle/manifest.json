@@ -1,0 +1,109 @@
+{
+  "id": "lifecycle",
+  "name": "Project lifecycle",
+  "version": "1.0.0",
+  "host_api": 1,
+  "description": "JSON webhook for sprint and membership lifecycle plus archive/restore and the task.moved split (project vs sprint). Use this when a chat channel would be too noisy.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "hooks": [
+    {
+      "on": "task.moved",
+      "label": "Task moved (project or sprint)"
+    },
+    {
+      "on": "task.project_changed",
+      "label": "Moved to another project"
+    },
+    {
+      "on": "task.sprint_changed",
+      "label": "Sprint changed"
+    },
+    {
+      "on": "task.archived",
+      "label": "Task archived"
+    },
+    {
+      "on": "task.restored",
+      "label": "Task restored"
+    },
+    {
+      "on": "project.archived",
+      "label": "Project archived"
+    },
+    {
+      "on": "project.restored",
+      "label": "Project restored"
+    },
+    {
+      "on": "project.member_joined",
+      "label": "Member joined"
+    },
+    {
+      "on": "project.member_left",
+      "label": "Member left"
+    },
+    {
+      "on": "sprint.created",
+      "label": "Sprint created"
+    },
+    {
+      "on": "sprint.started",
+      "label": "Sprint started"
+    },
+    {
+      "on": "sprint.ended",
+      "label": "Sprint ended"
+    }
+  ],
+  "delivery": {
+    "type": "http.webhook",
+    "url_from": "webhook_url",
+    "format": "json"
+  },
+  "settings": [
+    {
+      "key": "webhook_url",
+      "type": "secret",
+      "label": "Webhook URL",
+      "description": "HTTPS URL of the receiver (n8n, Zapier, or a listener you write). Private addresses are rejected.",
+      "required": true,
+      "scope": "project"
+    },
+    {
+      "key": "triggers",
+      "type": "hook_select",
+      "label": "Triggers",
+      "description": "Sprint dates, membership, archive/restore, and the project/sprint move split. Uncheck events you do not want.",
+      "scope": "project"
+    },
+    {
+      "key": "skip_self",
+      "type": "bool",
+      "label": "Skip events I caused",
+      "description": "Do not post when you are the actor.",
+      "scope": "project"
+    }
+  ],
+  "templates": {
+    "task.moved": "{name} moved in {project} (sprint {sprint}) ({url})",
+    "task.project_changed": "{name} moved to project {project} ({url})",
+    "task.sprint_changed": "{name} is now in sprint {sprint} ({url})",
+    "task.archived": "{actor} archived {name} in {project}",
+    "task.restored": "{actor} restored {name} in {project} ({url})",
+    "project.archived": "Project {project} was archived by {actor}",
+    "project.restored": "Project {project} was restored by {actor}",
+    "project.member_joined": "{member} joined {project}",
+    "project.member_left": "{member} left {project}",
+    "sprint.created": "Sprint {sprint} created in {project}",
+    "sprint.started": "Sprint {sprint} started in {project}",
+    "sprint.ended": "Sprint {sprint} ended in {project}"
+  },
+  "controls": [
+    "send_test",
+    "rotate_signing",
+    "sample_json"
+  ]
+}

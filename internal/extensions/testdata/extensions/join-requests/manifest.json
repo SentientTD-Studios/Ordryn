@@ -1,0 +1,48 @@
+{
+  "id": "join-requests",
+  "name": "Join requests",
+  "version": "1.2.0",
+  "host_api": 1,
+  "description": "Post site join requests (submitted, approved, denied) to one HTTPS webhook. Configured in Admin, not on every project channel.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "hooks": [
+    {
+      "on": "join.request",
+      "label": "Join request submitted"
+    },
+    {
+      "on": "join.approved",
+      "label": "Join request approved"
+    },
+    {
+      "on": "join.denied",
+      "label": "Join request denied"
+    }
+  ],
+  "delivery": {
+    "type": "http.webhook",
+    "url_from": "webhook_url",
+    "format": "json"
+  },
+  "settings": [
+    {
+      "key": "webhook_url",
+      "type": "secret",
+      "label": "Webhook URL",
+      "description": "Site-level HTTPS URL. Join requests are never posted into project Slack/Discord channels.",
+      "required": true,
+      "scope": "site"
+    }
+  ],
+  "templates": {
+    "join.request": "New join request from {join_email}: {join_message}",
+    "join.approved": "Join request approved for {join_email}",
+    "join.denied": "Join request denied for {join_email}"
+  },
+  "controls": [
+    "send_test"
+  ]
+}

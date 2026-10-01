@@ -1,0 +1,143 @@
+{
+  "id": "callback-bot",
+  "name": "Callback bot",
+  "version": "1.0.0",
+  "host_api": 1,
+  "description": "HTTP JSON relay with a sandboxed project panel, select/status/user settings, date/markdown fields, scoped callback tokens, and inbound complete/set_field actions.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "ui": "panel.html",
+  "hooks": [
+    {
+      "on": "task.created",
+      "label": "Task created"
+    },
+    {
+      "on": "task.commented",
+      "label": "Comment posted"
+    },
+    {
+      "on": "task.mentioned",
+      "label": "You were mentioned"
+    },
+    {
+      "on": "task.completed",
+      "label": "Task completed"
+    },
+    {
+      "on": "task.reopened",
+      "label": "Task reopened"
+    },
+    {
+      "on": "task.due_soon",
+      "label": "Due tomorrow"
+    },
+    {
+      "on": "task.archived",
+      "label": "Task archived"
+    }
+  ],
+  "delivery": {
+    "type": "http.webhook",
+    "url_from": "webhook_url",
+    "format": "json"
+  },
+  "settings": [
+    {
+      "key": "webhook_url",
+      "type": "secret",
+      "label": "Relay URL",
+      "description": "Public HTTPS URL of the sample relay (see relay/main.go) or any listener that accepts JSON. Private/LAN hosts are rejected.",
+      "required": true,
+      "scope": "project"
+    },
+    {
+      "key": "triggers",
+      "type": "hook_select",
+      "label": "Triggers",
+      "description": "Events posted to the relay. JSON includes callback_token so the relay can comment or complete.",
+      "scope": "project"
+    },
+    {
+      "key": "skip_self",
+      "type": "bool",
+      "label": "Skip events I caused",
+      "description": "Do not post when you are the actor.",
+      "scope": "project"
+    },
+    {
+      "key": "alert_mode",
+      "type": "select",
+      "label": "Alert mode",
+      "description": "Stored in the JSON config object. The sample relay only comments on High priority when set to Urgent.",
+      "scope": "project",
+      "options": [
+        {
+          "value": "all",
+          "label": "All matching events"
+        },
+        {
+          "value": "urgent",
+          "label": "Urgent only (High priority)"
+        }
+      ]
+    },
+    {
+      "key": "watch_status",
+      "type": "status",
+      "label": "Watch this status",
+      "description": "Optional kanban status id stored in config. The sample relay includes it in comments.",
+      "scope": "project"
+    },
+    {
+      "key": "ping_user",
+      "type": "user",
+      "label": "Ping this member",
+      "description": "Optional project member id stored in config. The sample relay @-mentions them when commenting.",
+      "scope": "project"
+    }
+  ],
+  "templates": {
+    "task.created": "Created {name} in {project} ({url})",
+    "task.commented": "{actor} on {name}: {comment} ({url})",
+    "task.mentioned": "{mentions} mentioned on {name}: {comment} ({url})",
+    "task.completed": "{actor} completed {name} in {project} ({url})",
+    "task.reopened": "{actor} reopened {name} in {project} ({url})",
+    "task.due_soon": "{name} is due tomorrow ({due_date}) in {project} ({url})",
+    "task.archived": "{actor} archived {name} in {project}"
+  },
+  "fields": [
+    {
+      "key": "review_by",
+      "type": "date",
+      "label": "Review by",
+      "description": "Date the callback bot (or inbound set_field) should treat as the review deadline.",
+      "show_on": ["sidebar", "list"]
+    },
+    {
+      "key": "notes",
+      "type": "markdown",
+      "label": "Bot notes",
+      "description": "Markdown the relay or inbound webhook can update via set_field.",
+      "show_on": ["sidebar"]
+    }
+  ],
+  "controls": [
+    "send_test",
+    "rotate_signing",
+    "rotate_callback",
+    "sample_json"
+  ],
+  "permissions": [
+    "tasks:read",
+    "tasks:write",
+    "comments:write"
+  ],
+  "actions": [
+    "complete",
+    "comment",
+    "set_field"
+  ]
+}

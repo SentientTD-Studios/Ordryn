@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Retro</title>
+  <style>
+    :root { color-scheme: light dark; --fg:#0f172a; --muted:#475569; --border:#cbd5e1; --bg:#f8fafc; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg:#e2e8f0; --muted:#94a3b8; --border:#334155; --bg:#0f172a; }
+    }
+    body { margin:0; padding:16px; font:14px/1.45 system-ui,Segoe UI,sans-serif; color:var(--fg); background:var(--bg); }
+    h1 { font-size:1.05rem; margin:0 0 8px; }
+    p { margin:0 0 10px; color:var(--muted); }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <h1>Retro</h1>
+  <p>
+    This settings iframe cannot read the Ordryn session. After you enable Retro for a
+    <strong>kanban</strong> project, open the board and use the <strong>Retro</strong> tab
+    next to List / Board.
+  </p>
+  <p>
+    Cards are stored per sprint in the extension document store
+    (<code>store:read</code> / <code>store:write</code>). The parent page talks to Ordryn;
+    this panel does not.
+  </p>
+</body>
+</html>

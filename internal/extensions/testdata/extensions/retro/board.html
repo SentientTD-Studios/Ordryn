@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Retro</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --fg: #0f172a;
+      --muted: #64748b;
+      --border: #cbd5e1;
+      --bg: #f1f5f9;
+      --card: #fff;
+      --accent: #7c3aed;
+      --accent-fg: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #e2e8f0;
+        --muted: #94a3b8;
+        --border: #334155;
+        --bg: #0f172a;
+        --card: #1e293b;
+        --accent: #a78bfa;
+        --accent-fg: #1e1b4b;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      font: 13px/1.4 system-ui, Segoe UI, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px 8px;
+    }
+    h1 { font-size: 1.05rem; margin: 0; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0 12px 12px;
+      align-items: start;
+    }
+    @media (max-width: 720px) {
+      .board { grid-template-columns: 1fr; }
+    }
+    .col {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      min-height: 12rem;
+    }
+    .col h2 { font-size: 0.85rem; margin: 0 0 8px; }
+    .col.drag-over { outline: 2px dashed var(--accent); }
+    .note {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    .note[draggable="true"] { cursor: grab; }
+    .note p { margin: 0 0 6px; white-space: pre-wrap; }
+    .note .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    button, textarea {
+      font: inherit;
+    }
+    button {
+      border: 0;
+      border-radius: 7px;
+      padding: 4px 8px;
+      background: var(--accent);
+      color: var(--accent-fg);
+      cursor: pointer;
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    textarea {
+      width: 100%;
+      min-height: 3.2rem;
+      margin-bottom: 6px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      color: var(--fg);
+      background: var(--bg);
+      resize: vertical;
+    }
+    .status { padding: 0 12px 10px; color: var(--muted); min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sprint retro</h1>
+    <div class="meta" id="meta">Connecting…</div>
+  </header>
+  <div class="status" id="status" role="status"></div>
+  <div class="board" id="board"></div>
+  <script>
+    (function () {
+      var COLUMNS = [
+        { id: "went-well", label: "Went well" },
+        { id: "improve", label: "Improve" },
+        { id: "actions", label: "Actions" }
+      ];
+      var pending = {};
+      var seq = 1;
+      var ctx = null;
+      var revision = 0;
+      var cards = [];
+      var saving = false;
+      var board = document.getElementById("board");
+      var meta = document.getElementById("meta");
+      var statusEl = document.getElementById("status");
+
+      function call(type, extra) {
+        return new Promise(function (resolve, reject) {
+          var id = String(seq++);
+          pending[id] = { resolve: resolve, reject: reject };
+          var msg = Object.assign({ v: 1, id: id, type: type }, extra || {});
+          parent.postMessage(msg, "*");
+          setTimeout(function () {
+            if (pending[id]) {
+              delete pending[id];
+              reject(new Error("bridge timeout"));
+            }
+          }, 8000);
+        });
+      }
+
+      window.addEventListener("message", function (ev) {
+        var msg = ev.data;
+        if (!msg || msg.v !== 1) return;
+        if (msg.id && pending[msg.id]) {
+          var p = pending[msg.id];
+          delete pending[msg.id];
+          if (msg.ok) p.resolve(msg.data);
+          else p.reject(Object.assign(new Error(msg.error || "failed"), { data: msg.data }));
+          return;
+        }
+        if (msg.type === "context" && msg.data) {
+          ctx = msg.data;
+          load();
+          return;
+        }
+        if (msg.type === "store.changed") {
+          load();
+        }
+      });
+
+      function storeKey() {
+        var sid = ctx && ctx.sprint_id ? ctx.sprint_id : 0;
+        return sid > 0 ? "sprint:" + sid : "sprint:backlog";
+      }
+
+      function emptyDoc() {
+        return { columns: COLUMNS.map(function (c) { return c.id; }), cards: [] };
+      }
+
+      function normalize(value) {
+        var doc = value && typeof value === "object" ? value : emptyDoc();
+        if (!Array.isArray(doc.cards)) doc.cards = [];
+        return doc;
+      }
+
+      function canWrite() { return !!(ctx && ctx.can_write); }
+
+      async function load() {
+        if (!ctx) return;
+        meta.textContent = (ctx.sprint_id ? "Sprint " + ctx.sprint_id : "Backlog") +
+          (canWrite() ? "" : " · view only");
+        try {
+          var out = await call("store.get", { key: storeKey() });
+          revision = out && out.revision ? out.revision : 0;
+          cards = normalize(out && out.value).cards;
+          render();
+          statusEl.textContent = "";
+        } catch (err) {
+          statusEl.textContent = err.message || "Failed to load retro";
+        }
+      }
+
+      async function mutate(fn) {
+        if (!canWrite() || saving) return;
+        saving = true;
+        try {
+          for (var i = 0; i < 5; i++) {
+            var next = { columns: COLUMNS.map(function (c) { return c.id; }), cards: cards.map(cloneCard) };
+            fn(next);
+            try {
+              var saved = await call("store.put", { key: storeKey(), revision: revision, value: next });
+              revision = saved.revision;
+              cards = normalize(saved.value).cards;
+              render();
+              statusEl.textContent = "";
+              return;
+            } catch (err) {
+              if (err.message === "conflict") {
+                await load();
+                continue;
+              }
+              throw err;
+            }
+          }
+          statusEl.textContent = "Could not save; try again.";
+        } catch (err) {
+          statusEl.textContent = err.message || "Save failed";
+        } finally {
+          saving = false;
+        }
+      }
+
+      function cloneCard(c) {
+        return { id: c.id, column: c.column, text: c.text, author_id: c.author_id, votes: (c.votes || []).slice() };
+      }
+
+      function uid() {
+        return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      }
+
+      function render() {
+        board.innerHTML = "";
+        COLUMNS.forEach(function (col) {
+          var wrap = document.createElement("section");
+          wrap.className = "col";
+          wrap.dataset.column = col.id;
+          var h = document.createElement("h2");
+          h.textContent = col.label;
+          wrap.appendChild(h);
+          cards.filter(function (c) { return c.column === col.id; }).forEach(function (card) {
+            wrap.appendChild(cardEl(card));
+          });
+          var ta = document.createElement("textarea");
+          ta.placeholder = canWrite() ? "Add a note" : "";
+          ta.disabled = !canWrite();
+          var add = document.createElement("button");
+          add.textContent = "Add";
+          add.disabled = !canWrite();
+          add.addEventListener("click", function () {
+            var text = String(ta.value || "").trim();
+            if (!text) return;
+            mutate(function (doc) {
+              doc.cards.push({
+                id: uid(),
+                column: col.id,
+                text: text,
+                author_id: ctx.user_id,
+                votes: []
+              });
+            });
+            ta.value = "";
+          });
+          wrap.appendChild(ta);
+          wrap.appendChild(add);
+          wrap.addEventListener("dragover", function (ev) {
+            if (!canWrite()) return;
+            ev.preventDefault();
+            wrap.classList.add("drag-over");
+          });
+          wrap.addEventListener("dragleave", function () { wrap.classList.remove("drag-over"); });
+          wrap.addEventListener("drop", function (ev) {
+            wrap.classList.remove("drag-over");
+            if (!canWrite()) return;
+            ev.preventDefault();
+            var id = ev.dataTransfer.getData("text/plain");
+            if (!id) return;
+            mutate(function (doc) {
+              doc.cards.forEach(function (c) {
+                if (c.id === id) c.column = col.id;
+              });
+            });
+          });
+          board.appendChild(wrap);
+        });
+      }
+
+      function cardEl(card) {
+        var el = document.createElement("article");
+        el.className = "note";
+        el.draggable = canWrite();
+        el.addEventListener("dragstart", function (ev) {
+          ev.dataTransfer.setData("text/plain", card.id);
+        });
+        var p = document.createElement("p");
+        p.textContent = card.text;
+        el.appendChild(p);
+        var row = document.createElement("div");
+        row.className = "row";
+        var vote = document.createElement("button");
+        vote.className = "secondary";
+        vote.textContent = "▲ " + (card.votes || []).length;
+        vote.disabled = !canWrite();
+        vote.addEventListener("click", function () {
+          mutate(function (doc) {
+            doc.cards.forEach(function (c) {
+              if (c.id !== card.id) return;
+              var votes = c.votes || [];
+              var i = votes.indexOf(ctx.user_id);
+              if (i >= 0) votes.splice(i, 1);
+              else votes.push(ctx.user_id);
+              c.votes = votes;
+            });
+          });
+        });
+        row.appendChild(vote);
+        if (canWrite() && card.author_id === ctx.user_id) {
+          var edit = document.createElement("button");
+          edit.className = "secondary";
+          edit.textContent = "Edit";
+          edit.addEventListener("click", function () {
+            var next = window.prompt("Edit note", card.text);
+            if (next == null) return;
+            next = String(next).trim();
+            if (!next) return;
+            mutate(function (doc) {
+              doc.cards.forEach(function (c) { if (c.id === card.id) c.text = next; });
+            });
+          });
+          var del = document.createElement("button");
+          del.className = "secondary";
+          del.textContent = "Delete";
+          del.addEventListener("click", function () {
+            mutate(function (doc) {
+              doc.cards = doc.cards.filter(function (c) { return c.id !== card.id; });
+            });
+          });
+          row.appendChild(edit);
+          row.appendChild(del);
+        }
+        el.appendChild(row);
+        return el;
+      }
+
+      call("ready").then(function (data) {
+        ctx = data;
+        load();
+      }).catch(function () {
+        statusEl.textContent = "Waiting for host bridge…";
+      });
+    })();
+  </script>
+</body>
+</html>

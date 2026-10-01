@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
@@ -317,7 +318,7 @@ func validateCommentBody(body string) (string, error) {
 	if body == "" {
 		return "", fmt.Errorf("%w: comment cannot be empty", ErrValidation)
 	}
-	if len(body) > storage.MaxTaskCommentBody {
+	if utf8.RuneCountInString(body) > storage.MaxTaskCommentBody {
 		return "", fmt.Errorf("%w: comment must be %d characters or less", ErrValidation, storage.MaxTaskCommentBody)
 	}
 	return body, nil

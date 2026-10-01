@@ -1,0 +1,122 @@
+{
+  "id": "claimed",
+  "name": "Claimed",
+  "version": "1.2.0",
+  "host_api": 1,
+  "description": "Push ntfy alerts when a kanban task is claimed, unclaimed, completed, reopened, or overdue. Works well as a personal Notify me destination.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "hooks": [
+    {
+      "on": "task.claimed",
+      "label": "Task claimed"
+    },
+    {
+      "on": "task.unclaimed",
+      "label": "Task unclaimed"
+    },
+    {
+      "on": "task.overdue",
+      "label": "Task overdue"
+    },
+    {
+      "on": "task.completed",
+      "label": "Task completed"
+    },
+    {
+      "on": "task.reopened",
+      "label": "Task reopened"
+    }
+  ],
+  "delivery": {
+    "type": "ntfy.webhook",
+    "url_from": "webhook_url"
+  },
+  "settings": [
+    {
+      "key": "webhook_url",
+      "type": "secret",
+      "label": "Topic URL",
+      "description": "HTTPS topic URL such as https://ntfy.sh/my-claims. Private/LAN hosts are rejected.",
+      "required": true,
+      "scope": "project"
+    },
+    {
+      "key": "ntfy_auth",
+      "type": "secret",
+      "label": "Access token (optional)",
+      "description": "Bearer token if the ntfy topic requires authentication.",
+      "scope": "project"
+    },
+    {
+      "key": "triggers",
+      "type": "hook_select",
+      "label": "Triggers",
+      "description": "Claim and overdue events. Enable claimed_is_me on Notify me to only hear about your own cards.",
+      "scope": "project"
+    },
+    {
+      "key": "skip_self",
+      "type": "bool",
+      "label": "Skip events I caused",
+      "description": "Do not post when you are the actor.",
+      "scope": "project"
+    },
+    {
+      "key": "min_priority",
+      "type": "priority",
+      "label": "Minimum priority",
+      "description": "Ignore events below this priority.",
+      "scope": "project"
+    },
+    {
+      "key": "tag_ids",
+      "type": "tag_ids",
+      "label": "Only these tags",
+      "description": "If any tags are selected, only matching tasks notify.",
+      "scope": "project"
+    },
+    {
+      "key": "quiet_hours_start",
+      "type": "time",
+      "label": "Quiet hours start",
+      "description": "Hold deliveries until quiet hours end. Leave blank to send immediately.",
+      "scope": "project"
+    },
+    {
+      "key": "quiet_hours_end",
+      "type": "time",
+      "label": "Quiet hours end",
+      "description": "End of the quiet window in your timezone.",
+      "scope": "project"
+    },
+    {
+      "key": "digest",
+      "type": "digest",
+      "label": "Digest",
+      "description": "Batch notifications hourly or daily instead of sending immediately.",
+      "scope": "project"
+    },
+    {
+      "key": "claimed_is_me",
+      "type": "bool",
+      "label": "Only when claimed by me",
+      "description": "On Notify me, skip tasks that someone else claimed.",
+      "scope": "member"
+    }
+  ],
+  "templates": {
+    "task.claimed": "{actor} claimed {name} in {project}",
+    "task.unclaimed": "{actor} unclaimed {name} in {project}",
+    "task.overdue": "{name} is overdue ({due_date}) in {project}",
+    "task.completed": "{actor} completed {name} in {project} ({url})",
+    "task.reopened": "{actor} reopened {name} in {project} ({url})"
+  },
+  "controls": [
+    "send_test",
+    "rotate_signing",
+    "sample_json"
+  ]
+}
