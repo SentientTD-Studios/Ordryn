@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Callback bot</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --fg: #0f172a;
+      --muted: #475569;
+      --border: #cbd5e1;
+      --bg: #f8fafc;
+      --code: #1e293b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #e2e8f0;
+        --muted: #94a3b8;
+        --border: #334155;
+        --bg: #0f172a;
+        --code: #f8fafc;
+      }
+    }
+    body {
+      margin: 0;
+      padding: 16px;
+      font: 14px/1.45 system-ui, Segoe UI, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+    }
+    h1 { font-size: 1.05rem; margin: 0 0 8px; }
+    p { margin: 0 0 10px; color: var(--muted); }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: var(--code);
+    }
+    pre {
+      margin: 0;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    ul { margin: 0 0 12px; padding-left: 1.2rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Callback bot</h1>
+  <p>
+    This panel is sandboxed (no session, no callback token). Rotate the project
+    callback token on the form above. JSON deliveries include
+    <code>callback_token</code> and <code>callback_url</code> for your relay.
+  </p>
+  <ul>
+    <li>Permissions: <code>tasks:read</code>, <code>tasks:write</code>, <code>comments:write</code></li>
+    <li>Inbound verbs (when inbound webhooks are enabled): <code>complete</code>, <code>set_field</code>, <code>comment</code></li>
+    <li>Fields: <code>callback-bot.review_by</code> (date), <code>callback-bot.notes</code> (markdown)</li>
+  </ul>
+  <pre>curl -sS -X POST "$CALLBACK_URL" \
+  -H "Authorization: Bearer $CALLBACK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"comment","task_id":42,"comment":"Noted by callback-bot"}'</pre>
+</body>
+</html>

@@ -1,0 +1,108 @@
+{
+  "id": "comments",
+  "name": "Comments webhook",
+  "version": "1.2.0",
+  "host_api": 1,
+  "description": "Post discussion comments as JSON to n8n, Zapier, or any public HTTPS listener.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "hooks": [
+    {
+      "on": "task.commented",
+      "label": "Comment posted"
+    },
+    {
+      "on": "task.mentioned",
+      "label": "You were mentioned"
+    }
+  ],
+  "delivery": {
+    "type": "http.webhook",
+    "url_from": "webhook_url",
+    "format": "json"
+  },
+  "settings": [
+    {
+      "key": "webhook_url",
+      "type": "secret",
+      "label": "Webhook URL",
+      "description": "HTTPS URL of the receiver. Private, loopback, and link-local addresses are rejected.",
+      "required": true,
+      "scope": "project"
+    },
+    {
+      "key": "triggers",
+      "type": "hook_select",
+      "label": "Triggers",
+      "description": "Leave enabled to post new comments. Blank the message template to skip.",
+      "scope": "project"
+    },
+    {
+      "key": "skip_self",
+      "type": "bool",
+      "label": "Skip events I caused",
+      "description": "Do not post when you are the actor.",
+      "scope": "project"
+    },
+    {
+      "key": "claimed_only",
+      "type": "bool",
+      "label": "Only claimed tasks",
+      "description": "Skip comments on tasks that nobody has claimed.",
+      "scope": "project"
+    },
+    {
+      "key": "min_priority",
+      "type": "priority",
+      "label": "Minimum priority",
+      "description": "Ignore comments on tasks below this priority.",
+      "scope": "project"
+    },
+    {
+      "key": "tag_ids",
+      "type": "tag_ids",
+      "label": "Only these tags",
+      "description": "If any tags are selected, only matching tasks notify.",
+      "scope": "project"
+    },
+    {
+      "key": "quiet_hours_start",
+      "type": "time",
+      "label": "Quiet hours start",
+      "description": "Hold deliveries until quiet hours end. Leave blank to send immediately.",
+      "scope": "project"
+    },
+    {
+      "key": "quiet_hours_end",
+      "type": "time",
+      "label": "Quiet hours end",
+      "description": "End of the quiet window in your timezone.",
+      "scope": "project"
+    },
+    {
+      "key": "digest",
+      "type": "digest",
+      "label": "Digest",
+      "description": "Batch notifications hourly or daily instead of sending immediately.",
+      "scope": "project"
+    },
+    {
+      "key": "field_filter",
+      "type": "field_filter",
+      "label": "Custom field filter",
+      "description": "Only notify when this custom field key matches (and equals the value if set).",
+      "scope": "project"
+    }
+  ],
+  "templates": {
+    "task.commented": "{actor} commented on {name}: {comment} ({url})",
+    "task.mentioned": "{mentions} mentioned in {name} by {actor}: {comment} ({url})"
+  },
+  "controls": [
+    "send_test",
+    "rotate_signing",
+    "sample_json"
+  ]
+}

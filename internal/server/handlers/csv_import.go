@@ -470,8 +470,8 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 		}
 
 		description := cellValue(row, cols.description)
-		if len(description) > domain.MaxDescriptionLength {
-			description = description[:domain.MaxDescriptionLength]
+		if r := []rune(description); len(r) > domain.MaxDescriptionLength {
+			description = string(r[:domain.MaxDescriptionLength])
 		}
 		completed := parseBoolCell(cellValue(row, cols.completed))
 		dueDate := cellValue(row, cols.dueDate)

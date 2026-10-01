@@ -343,7 +343,7 @@ Content-Type: application/json
                     <p>JSON body:</p>
                     <pre class="api-docs-pre"><code>{
   "title": "New task",           // required
-  "description": "",             // optional, max 1000 chars
+  "description": "",             // optional, max 5000 chars
   "due_date": "2026-07-20",      // optional, YYYY-MM-DD
   "project_id": 3,               // optional; omit or use 0 for no project
   "priority": 1,                 // optional, 0–3 (default 0)

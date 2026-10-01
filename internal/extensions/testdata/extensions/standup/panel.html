@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Standup</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --fg: #0f172a;
+      --muted: #475569;
+      --border: #cbd5e1;
+      --bg: #f8fafc;
+      --card: #fff;
+      --accent: #0f766e;
+      --accent-fg: #fff;
+      --code: #1e293b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #e2e8f0;
+        --muted: #94a3b8;
+        --border: #334155;
+        --bg: #0f172a;
+        --card: #1e293b;
+        --accent: #2dd4bf;
+        --accent-fg: #042f2e;
+        --code: #f8fafc;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0 auto;
+      padding: 12px 14px 16px;
+      max-width: 40rem;
+      font: 13px/1.4 system-ui, Segoe UI, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    h1 { font-size: 1.05rem; margin: 0; }
+    .meta { color: var(--muted); font-size: 12px; }
+    form {
+      display: grid;
+      gap: 8px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 12.5rem;
+      gap: 8px;
+    }
+    @media (max-width: 420px) {
+      .row { grid-template-columns: 1fr; }
+    }
+    input[type="date"] {
+      min-height: 2.15rem;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      opacity: 0.85;
+      cursor: pointer;
+    }
+    label {
+      display: grid;
+      gap: 3px;
+      font-weight: 600;
+    }
+    label span { color: var(--muted); font-weight: 500; font-size: 12px; }
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font: inherit;
+      color: var(--fg);
+      background: var(--card);
+    }
+    textarea { min-height: 3.4rem; resize: vertical; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+    .status { min-height: 1.2em; color: var(--muted); font-size: 12px; }
+    pre {
+      margin: 8px 0 0;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--code);
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: 9rem;
+    }
+    details {
+      margin-top: 10px;
+      color: var(--muted);
+    }
+    details summary { cursor: pointer; font-weight: 600; color: var(--fg); }
+    details p, details ul { margin: 6px 0 0; }
+    details ul { padding-left: 1.15rem; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Daily standup</h1>
+    <div class="meta" id="today-label"></div>
+  </header>
+  <form id="form" autocomplete="off">
+    <div class="row">
+      <label>
+        Task id
+        <span>Comment lands on this project task</span>
+        <input id="task" type="number" min="1" step="1" inputmode="numeric" placeholder="42" required />
+      </label>
+      <label>
+        Date
+        <span>Stamped as standup.last</span>
+        <input id="when" type="date" required />
+      </label>
+    </div>
+    <label>
+      Done
+      <textarea id="done" placeholder="Shipped the invite flow"></textarea>
+    </label>
+    <label>
+      Today
+      <textarea id="today" placeholder="Finish extension panel polish"></textarea>
+    </label>
+    <label>
+      Blockers
+      <span>Also stored on standup.notes</span>
+      <textarea id="blockers" placeholder="Waiting on review"></textarea>
+    </label>
+    <div class="actions">
+      <button type="submit">Copy comment</button>
+      <button type="button" class="secondary" id="copy-curl">Copy callback curl</button>
+      <button type="button" class="secondary" id="copy-json">Copy JSON</button>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </form>
+  <pre id="preview" aria-live="polite"></pre>
+  <details>
+    <summary>How this sandbox works</summary>
+    <p>
+      This document is the extension <code>ui</code> file, framed with
+      <code>sandbox</code> and no <code>allow-same-origin</code>. It cannot read
+      your session or the callback token. Compose here, then paste into Ordryn
+      or run the curl with <code>$CALLBACK_TOKEN</code> from a rotate on the form above.
+    </p>
+    <ul>
+      <li>Fields: <code>standup.last</code> (date), <code>standup.notes</code> (markdown)</li>
+      <li>Callback: <code>POST /api/v2/ext/callback</code> with <code>comment</code> or <code>set_field</code></li>
+    </ul>
+  </details>
+  <textarea id="scratch" class="sr" aria-hidden="true"></textarea>
+  <script>
+    (function () {
+      var form = document.getElementById("form");
+      var taskEl = document.getElementById("task");
+      var whenEl = document.getElementById("when");
+      var doneEl = document.getElementById("done");
+      var todayEl = document.getElementById("today");
+      var blockersEl = document.getElementById("blockers");
+      var preview = document.getElementById("preview");
+      var statusEl = document.getElementById("status");
+      var scratch = document.getElementById("scratch");
+      var todayLabel = document.getElementById("today-label");
+
+      function isoDate(d) {
+        var y = d.getFullYear();
+        var m = String(d.getMonth() + 1).padStart(2, "0");
+        var day = String(d.getDate()).padStart(2, "0");
+        return y + "-" + m + "-" + day;
+      }
+
+      function today() {
+        return isoDate(new Date());
+      }
+
+      whenEl.value = today();
+      todayLabel.textContent = "Check-in for " + whenEl.value;
+
+      function lines(el) {
+        return String(el.value || "").trim();
+      }
+
+      function section(title, body) {
+        if (!body) return "";
+        return "**" + title + ":**\n" + body + "\n";
+      }
+
+      function commentMarkdown() {
+        var date = whenEl.value || today();
+        var parts = [
+          "## Standup — " + date,
+          "",
+          section("Done", lines(doneEl)),
+          section("Today", lines(todayEl)),
+          section("Blockers", lines(blockersEl) || "_None_")
+        ];
+        return parts.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+      }
+
+      function notesValue() {
+        return lines(blockersEl) || commentMarkdown().trim();
+      }
+
+      function taskId() {
+        return parseInt(String(taskEl.value || "").trim(), 10) || 0;
+      }
+
+      function payloads() {
+        var id = taskId();
+        var date = whenEl.value || today();
+        return [
+          { action: "comment", task_id: id, comment: commentMarkdown().trim() },
+          { action: "set_field", task_id: id, field: "standup.last", value: date },
+          { action: "set_field", task_id: id, field: "standup.notes", value: notesValue() }
+        ];
+      }
+
+      function curl() {
+        var id = taskId() || 42;
+        var bodies = payloads().map(function (p) {
+          if (!p.task_id) p.task_id = id;
+          return "curl -sS -X POST \"$CALLBACK_URL\" \\\n  -H \"Authorization: Bearer $CALLBACK_TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '" + JSON.stringify(p).replace(/'/g, "'\\''") + "'";
+        });
+        return "# CALLBACK_URL defaults to https://your-host/api/v2/ext/callback\n" + bodies.join("\n\n") + "\n";
+      }
+
+      function render() {
+        todayLabel.textContent = "Check-in for " + (whenEl.value || today());
+        preview.textContent = commentMarkdown();
+      }
+
+      function copyText(text, ok) {
+        scratch.value = text;
+        scratch.focus();
+        scratch.select();
+        var done = false;
+        try { done = document.execCommand("copy"); } catch (e) { done = false; }
+        if (done) {
+          statusEl.textContent = ok;
+          return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            statusEl.textContent = ok;
+          }).catch(function () {
+            statusEl.textContent = "Select the preview and copy it manually.";
+          });
+          return;
+        }
+        statusEl.textContent = "Select the preview and copy it manually.";
+      }
+
+      ["done", "today", "blockers", "when", "task"].forEach(function (id) {
+        document.getElementById(id).addEventListener("input", render);
+      });
+
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        if (!taskId()) {
+          statusEl.textContent = "Enter the task id that should receive the comment.";
+          taskEl.focus();
+          return;
+        }
+        copyText(commentMarkdown(), "Comment markdown copied.");
+      });
+
+      document.getElementById("copy-curl").addEventListener("click", function () {
+        if (!taskId()) {
+          statusEl.textContent = "Enter the task id first.";
+          taskEl.focus();
+          return;
+        }
+        copyText(curl(), "Callback curl copied. Use $CALLBACK_TOKEN from Rotate callback token.");
+      });
+
+      document.getElementById("copy-json").addEventListener("click", function () {
+        if (!taskId()) {
+          statusEl.textContent = "Enter the task id first.";
+          taskEl.focus();
+          return;
+        }
+        copyText(JSON.stringify(payloads(), null, 2) + "\n", "Callback JSON copied.");
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
+import { MAX_TASK_TEXT_LENGTH } from '@/utils/taskText'
 import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskEvent, TaskGitHubIssue, TaskRecurrenceDetail, TaskTimeEntry } from '@/api/types'
 import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
@@ -208,6 +209,7 @@ const sidebarTitle = computed(() => {
 })
 const kanbanHeaderTitle = computed(() => (mode.value === 'add' ? 'Add Task' : 'Task'))
 const submitText = computed(() => (mode.value === 'edit' ? 'Save Task' : 'Add Task'))
+const MAX_DESCRIPTION = MAX_TASK_TEXT_LENGTH
 const charCount = computed(() => description.value.length)
 const editingDescription = ref(false)
 const showDescriptionEditor = computed(() => {
@@ -308,8 +310,8 @@ function insertDescriptionImage(markdown: string) {
   const start = el?.selectionStart ?? description.value.length
   const end = el?.selectionEnd ?? start
   const next = insertMarkdownAtCursor(description.value, markdown, start, end)
-  if (next.body.length > 1000) {
-    toast.push('Description would exceed 1000 characters', 'error')
+  if (next.body.length > MAX_DESCRIPTION) {
+    toast.push(`Description would exceed ${MAX_DESCRIPTION} characters`, 'error')
     return
   }
   description.value = next.body
@@ -781,8 +783,8 @@ async function resolveTagIds(): Promise<number[]> {
 }
 
 function validateDescription() {
-  if (description.value.length > 1000) {
-    descriptionError.value = 'Description must be 1000 characters or fewer.'
+  if (description.value.length > MAX_DESCRIPTION) {
+    descriptionError.value = `Description must be ${MAX_DESCRIPTION} characters or fewer.`
     return false
   }
   descriptionError.value = ''
@@ -1502,7 +1504,7 @@ async function removeTimeEntry(entryId: number) {
             id="description"
             ref="descriptionEditor"
             v-model="description"
-            :maxlength="1000"
+            :maxlength="MAX_DESCRIPTION"
             :rows="isKanbanTask ? 6 : 4"
             placeholder="Add a task description… Format with markdown, click 'Upload image' or paste/drop an image."
             @open-task="openRelated"
@@ -1530,7 +1532,7 @@ async function removeTimeEntry(entryId: number) {
           <div v-if="!readOnly && showDescriptionEditor" class="d-flex justify-content-between align-items-center mt-1 gap-2">
             <small class="form-hint">Supports Markdown. Use "Upload image" in the toolbar, or paste / drop an image.</small>
             <div class="d-flex align-items-center gap-2">
-              <small class="text-muted"><span id="char-count">{{ charCount }}</span>/1000</small>
+              <small class="text-muted"><span id="char-count">{{ charCount }}</span>/{{ MAX_DESCRIPTION }}</small>
             </div>
           </div>
           <!-- <div v-else-if="!readOnly && imageEnabled" class="form-hint mt-1">

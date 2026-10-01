@@ -570,6 +570,13 @@ func TestLoadFailSoftAndSkipMissingManifest(t *testing.T) {
 	}
 }
 
+// exampleDir returns a test-only example extension under testdata/extensions.
+// These fixtures are never loaded at runtime; update them alongside any change
+// to how manifests are parsed or validated.
+func exampleDir(id string) string {
+	return filepath.Join("testdata", "extensions", id)
+}
+
 func TestExampleNotificationManifestsValidate(t *testing.T) {
 	ids := []string{"discord", "slack", "teams", "google-chat", "webhook", "ntfy"}
 	wantType := map[string]string{
@@ -582,12 +589,9 @@ func TestExampleNotificationManifestsValidate(t *testing.T) {
 	}
 	for _, id := range ids {
 		t.Run(id, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+			raw, err := os.ReadFile(filepath.Join(exampleDir(id), "manifest.json"))
 			if err != nil {
-				raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", id, "manifest.json"))
-			}
-			if err != nil {
-				t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
+				t.Fatal(err)
 			}
 			var m Manifest
 			if err := json.Unmarshal(raw, &m); err != nil {
@@ -652,12 +656,9 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 	}
 	for id, w := range cases {
 		t.Run(id, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+			raw, err := os.ReadFile(filepath.Join(exampleDir(id), "manifest.json"))
 			if err != nil {
-				raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", id, "manifest.json"))
-			}
-			if err != nil {
-				t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
+				t.Fatal(err)
 			}
 			var m Manifest
 			if err := json.Unmarshal(raw, &m); err != nil {
@@ -722,12 +723,9 @@ func TestExampleFocusedHookManifestsValidate(t *testing.T) {
 
 func TestExampleFieldsManifestsValidate(t *testing.T) {
 	for _, id := range []string{"severity", "fields-demo", "estimate"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", id, "manifest.json"))
+		raw, err := os.ReadFile(filepath.Join(exampleDir(id), "manifest.json"))
 		if err != nil {
-			raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", id, "manifest.json"))
-		}
-		if err != nil {
-			t.Skipf("examples/extensions/%s not present (separate repo): %v", id, err)
+			t.Fatal(err)
 		}
 		var m Manifest
 		if err := json.Unmarshal(raw, &m); err != nil {
@@ -760,12 +758,9 @@ func TestExampleFieldsManifestsValidate(t *testing.T) {
 }
 
 func TestExampleStandupManifestValidate(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "standup", "manifest.json"))
+	raw, err := os.ReadFile(filepath.Join(exampleDir("standup"), "manifest.json"))
 	if err != nil {
-		raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", "standup", "manifest.json"))
-	}
-	if err != nil {
-		t.Skipf("standup example not present: %v", err)
+		t.Fatal(err)
 	}
 	var m Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
@@ -798,23 +793,13 @@ func TestExampleStandupManifestValidate(t *testing.T) {
 	if !sawDate || !sawMarkdown {
 		t.Fatal("standup should register standup.last and standup.notes")
 	}
-	uiPath := filepath.Join("..", "..", "data", "extensions", "standup", "panel.html")
-	if _, err := os.Stat(uiPath); err != nil {
-		uiPath = filepath.Join("..", "..", "examples", "extensions", "standup", "panel.html")
-		if _, err := os.Stat(uiPath); err != nil {
-			t.Fatal("standup panel.html is missing")
-		}
+	if _, err := os.Stat(filepath.Join(exampleDir("standup"), "panel.html")); err != nil {
+		t.Fatal("standup panel.html is missing")
 	}
 }
 
 func TestLoadStandupExample(t *testing.T) {
-	src := filepath.Join("..", "..", "data", "extensions", "standup")
-	if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
-		src = filepath.Join("..", "..", "examples", "extensions", "standup")
-		if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
-			t.Skipf("standup example not present: %v", err)
-		}
-	}
+	src := exampleDir("standup")
 	root := t.TempDir()
 	dst := filepath.Join(root, "standup")
 	if err := os.Mkdir(dst, 0o755); err != nil {
@@ -841,12 +826,9 @@ func TestLoadStandupExample(t *testing.T) {
 }
 
 func TestExampleRetroManifestValidate(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "retro", "manifest.json"))
+	raw, err := os.ReadFile(filepath.Join(exampleDir("retro"), "manifest.json"))
 	if err != nil {
-		raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", "retro", "manifest.json"))
-	}
-	if err != nil {
-		t.Skipf("retro example not present: %v", err)
+		t.Fatal(err)
 	}
 	var m Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
@@ -871,13 +853,7 @@ func TestExampleRetroManifestValidate(t *testing.T) {
 }
 
 func TestLoadRetroExample(t *testing.T) {
-	src := filepath.Join("..", "..", "data", "extensions", "retro")
-	if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
-		src = filepath.Join("..", "..", "examples", "extensions", "retro")
-		if _, err := os.Stat(filepath.Join(src, "manifest.json")); err != nil {
-			t.Skipf("retro example not present: %v", err)
-		}
-	}
+	src := exampleDir("retro")
 	root := t.TempDir()
 	dst := filepath.Join(root, "retro")
 	if err := os.Mkdir(dst, 0o755); err != nil {
@@ -904,12 +880,9 @@ func TestLoadRetroExample(t *testing.T) {
 }
 
 func TestExampleCallbackBotManifestValidate(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "callback-bot", "manifest.json"))
+	raw, err := os.ReadFile(filepath.Join(exampleDir("callback-bot"), "manifest.json"))
 	if err != nil {
-		raw, err = os.ReadFile(filepath.Join("..", "..", "data", "extensions", "callback-bot", "manifest.json"))
-	}
-	if err != nil {
-		t.Skipf("callback-bot example not present: %v", err)
+		t.Fatal(err)
 	}
 	var m Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {

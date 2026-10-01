@@ -1,0 +1,31 @@
+{
+  "id": "standup",
+  "name": "Standup",
+  "version": "1.0.0",
+  "host_api": 1,
+  "description": "Sandboxed project panel for daily check-ins. Compose done / today / blockers, copy a task comment, and stamp standup.last and standup.notes through a callback token or inbound set_field.",
+  "author": "SentientTD Studios",
+  "homepage": "https://sentienttd.studio",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "ui": "panel.html",
+  "fields": [
+    {
+      "key": "last",
+      "type": "date",
+      "label": "Last standup",
+      "description": "Date of the most recent check-in. The panel stamps this via set_field when you run the generated callback.",
+      "show_on": ["sidebar", "list"]
+    },
+    {
+      "key": "notes",
+      "type": "markdown",
+      "label": "Standup notes",
+      "description": "Latest blockers or follow-ups from the sandboxed panel. Sidebar only.",
+      "show_on": ["sidebar"]
+    }
+  ],
+  "controls": ["rotate_callback"],
+  "permissions": ["tasks:read", "tasks:write", "comments:write"],
+  "actions": ["comment", "set_field"]
+}
