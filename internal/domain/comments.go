@@ -192,6 +192,7 @@ func AddCommentForUser(ctx context.Context, userID, taskID int, body string) (*s
 	comment.Links = ResolveCommentTaskLinks(taskID, projectID, userID, comment.Body)
 	attachCommentRole(projectID, comment)
 	NotifyProjectMembersTaskCommented(taskID, userID, projectID, body)
+	autoWatchTask(userID, taskID)
 	live.AfterTaskChangeMeta(userID, taskID, live.TypeTaskCommented, &live.TaskHookMeta{Comment: body})
 	if meta := mentionHookMeta(projectID, userID, body); meta != nil {
 		live.DispatchHook(userID, taskID, live.TypeTaskMentioned, meta)

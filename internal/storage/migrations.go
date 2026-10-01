@@ -337,6 +337,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateTaskRecurrenceTables failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateWatchAndLinkTables(); err != nil {
+		fmt.Printf("migration: CreateWatchAndLinkTables failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {

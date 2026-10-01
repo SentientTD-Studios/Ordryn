@@ -149,6 +149,30 @@ const isReadOnlyProjectView = computed(
 )
 
 const isArchivedProjectView = computed(() => !!activeProjectObj.value?.archived)
+const projectWatching = ref<boolean | null>(null)
+watch(
+  () => activeProjectObj.value?.id,
+  async (id) => {
+    projectWatching.value = null
+    if (!id) return
+    try {
+      const res = await api.getProjectWatch(id)
+      if (activeProjectObj.value?.id === id) projectWatching.value = res.watching
+    } catch {
+      projectWatching.value = null
+    }
+  },
+  { immediate: true },
+)
+async function toggleProjectWatch() {
+  const id = activeProjectObj.value?.id
+  if (!id || projectWatching.value === null) return
+  try {
+    projectWatching.value = (await api.setProjectWatch(id, !projectWatching.value)).watching
+  } catch (err) {
+    toast.push(err instanceof Error ? err.message : 'Could not update project watch', 'error')
+  }
+}
 
 const canAddTasks = computed(
   () => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_CREATE) && !isArchivedProjectView.value,
@@ -1376,6 +1400,7 @@ onMounted(async () => {
 useLiveUpdates((event) => {
   if (event.type === 'task.commented') return
   if (event.type === 'extension.store') return
+  if (event.type === 'notification.created') return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
   if (event.type === 'extensions.reloaded') {
     clearCustomFieldDefsCache()
@@ -1439,6 +1464,18 @@ onUnmounted(() => {
             <span v-if="isArchivedProjectView" class="badge rounded-pill bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-20 px-2 py-1">
               Archived
             </span>
+            <button
+              v-if="activeProjectObj && projectWatching !== null"
+              type="button"
+              class="btn btn-sm py-0 px-2"
+              :class="projectWatching ? 'btn-primary' : 'btn-outline-secondary'"
+              :aria-pressed="projectWatching"
+              :title="projectWatching ? 'Stop watching every task in this project' : 'Get notified about changes to every task in this project'"
+              @click="toggleProjectWatch"
+            >
+              <i class="bi" :class="projectWatching ? 'bi-eye-fill' : 'bi-eye'" />
+              {{ projectWatching ? 'Watching project' : 'Watch project' }}
+            </button>
           </div>
 
           <!-- Actions Group: Import/Export & Add Task -->

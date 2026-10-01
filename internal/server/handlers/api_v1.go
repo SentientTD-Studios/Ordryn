@@ -52,6 +52,7 @@ type apiTaskJSON struct {
 	GitHub            *apiTaskGitHubJSON `json:"github,omitempty"`
 	Fields            map[string]any     `json:"fields,omitempty"`
 	Recurrence        *apiRecurrenceJSON `json:"recurrence"`
+	BlockedByOpen     int                `json:"blocked_by_open,omitempty"`
 }
 
 type apiTaskListResponse struct {
@@ -367,6 +368,7 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 	if t.Recurrence != nil {
 		out.Recurrence = recurrenceToAPIJSON(*t.Recurrence)
 	}
+	out.BlockedByOpen = t.BlockedByOpen
 	if len(t.Children) > 0 {
 		out.Children = make([]apiTaskJSON, 0, len(t.Children))
 		for _, c := range t.Children {
@@ -490,6 +492,16 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 			return
 		case "comments":
 			handleTaskComments(w, r, id, parts[2:])
+			return
+		case "watch":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskWatch(w, r, id)
+			return
+		case "links":
+			apiV1TaskLinks(w, r, id, parts[2:])
 			return
 		case "recurrence":
 			if len(parts) != 2 {

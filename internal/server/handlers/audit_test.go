@@ -70,3 +70,12 @@ func TestFormatEventLabelRecurrence(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatEventLabelLinks(t *testing.T) {
+	if got := formatEventLabel("link_added", map[string]interface{}{"kind": "blocked_by", "title": "Ship API"}); got != "Link added · blocked by Ship API" {
+		t.Fatalf("label=%q", got)
+	}
+	if got := formatEventLabel("link_removed", nil); got != "Link removed" {
+		t.Fatalf("label=%q", got)
+	}
+}

@@ -179,6 +179,14 @@ func TestMain(m *testing.M) {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (task_id, field_key)
 		);
+		CREATE TABLE task_links (
+			id SERIAL PRIMARY KEY,
+			from_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			to_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			link_type VARCHAR(16) NOT NULL,
+			created_by INTEGER,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
 		CREATE TABLE task_recurrence (
 			task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
 			frequency VARCHAR(16) NOT NULL,

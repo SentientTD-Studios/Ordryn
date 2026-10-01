@@ -427,6 +427,9 @@ func applyKanbanColumnMove(userID, taskID, projectID, newStatusID, oldStatusID i
 		Changed:       []string{"status"},
 	}
 	live.DispatchHook(userID, taskID, live.TypeTaskStatusChanged, meta)
+	if st.IsDone == oldCompleted {
+		notifyTaskWatchers(userID, taskID, NotificationTaskActivity, "Status → "+to+": "+taskTitleOrID(taskID), "")
+	}
 	return nil
 }
 

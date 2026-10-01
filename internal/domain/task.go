@@ -144,6 +144,7 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 			return 0, err
 		}
 		_ = storage.LogTaskEvent(newID, userID, "created", map[string]interface{}{"parent_id": *in.ParentID})
+		autoWatchTask(userID, newID)
 		if pid, ok := projectArg.(int); ok && pid > 0 {
 			NotifyProjectMembersTaskCreated(newID, userID, pid, title)
 		}
@@ -194,6 +195,7 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		return 0, err
 	}
 	_ = storage.LogTaskEvent(newID, userID, "created", nil)
+	autoWatchTask(userID, newID)
 	if pid, ok := projectArg.(int); ok && pid > 0 {
 		NotifyProjectMembersTaskCreated(newID, userID, pid, title)
 	}
@@ -734,6 +736,17 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	estimateChanged := !sameNullInt64(oldEstimate, newEstimate)
 	completedChanged := oldCompleted != completed
 	statusChanged := statusTouched && newStatusID != oldStatusID
+	if statusChanged && !completedChanged {
+		_, to := statusHookNames(effectiveProjectID, oldStatusID, newStatusID)
+		notifyTaskWatchers(userID, taskID, NotificationTaskActivity, "Status → "+to+": "+title, "")
+	}
+	if dueChanged {
+		body := "Due date cleared"
+		if dueDate != "" {
+			body = "Due " + dueDate
+		}
+		notifyTaskWatchers(userID, taskID, NotificationTaskActivity, "Due date changed: "+title, body)
+	}
 
 	changed := make([]string, 0, 10)
 	fieldChanges := make([]hooks.FieldChange, 0, 8)
