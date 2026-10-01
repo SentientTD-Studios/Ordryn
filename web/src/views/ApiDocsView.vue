@@ -46,6 +46,7 @@ onUnmounted(() => {
                         <ul class="list-inline mb-0">
                             <li class="list-inline-item"><a href="#overview">Overview</a></li>
                             <li class="list-inline-item"><a href="#authentication">Authentication</a></li>
+                            <li class="list-inline-item"><a href="#project-keys">Project API keys</a></li>
                             <li class="list-inline-item"><a href="#session-auth">Session auth (SPA)</a></li>
                             <li class="list-inline-item"><a href="#device-auth">Device authorization</a></li>
                             <li class="list-inline-item"><a href="#errors">Errors</a></li>
@@ -92,6 +93,8 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/me/mfa/recovery-codes</code></a></td><td>Replace recovery codes</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/api-keys</code></a></td><td>List / create API keys</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span> <span class="badge bg-danger">DELETE</span></td><td><a href="#session-auth"><code>/api/v2/api-keys/{id}</code></a></td><td>Rename or revoke an API key</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#project-keys"><code>/api/v2/projects/{id}/api-keys</code></a></td><td>List / create project-scoped API keys</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#project-keys"><code>/api/v2/projects/{id}/api-keys/{keyId}</code></a></td><td>Revoke a project API key</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks</code></a></td><td>List tasks (with filters and pagination)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks</code></a></td><td>Create a task</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}</code></a></td><td>Get one task</td></tr>
@@ -133,9 +136,37 @@ onUnmounted(() => {
                     </p>
                     <pre class="api-docs-pre"><code>Authorization: Bearer YOUR_API_KEY</code></pre>
                     <p class="text-muted small mb-0">
-                        Keys are created on the profile page and shown in full only once at creation.
+                        Personal keys are created on the profile page; project keys in a project's settings under
+                        <strong>API keys</strong>. Either is shown in full only once at creation.
                         Revoked keys stop working immediately. The API requires Redis for key validation and rate limiting.
                     </p>
+
+                    <h2 id="project-keys" class="h4 mt-4">Project API keys</h2>
+                    <p>
+                        Project managers can mint keys that only work inside one project. A project key acts as the
+                        manager who created it, so their project role still applies, but it is further limited to the
+                        scopes chosen at creation:
+                    </p>
+                    <table class="table table-sm">
+                        <thead><tr><th>Scope</th><th>Allows</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>tasks:read</code></td><td><code>GET /tasks</code>, <code>GET /tasks/{id}</code>, <code>GET /tasks/{id}/comments</code>, and <code>GET</code> on the project, its <code>statuses</code>, <code>sprints</code> and <code>custom-fields</code></td></tr>
+                            <tr><td><code>tasks:write</code></td><td><code>POST /tasks</code> (with this <code>project_id</code>) and <code>PATCH /tasks/{id}</code></td></tr>
+                            <tr><td><code>comments:write</code></td><td><code>POST /tasks/{id}/comments</code></td></tr>
+                        </tbody>
+                    </table>
+                    <p class="text-muted small">
+                        Every other endpoint returns <code>403</code>, including deleting tasks and managing keys. Tasks in
+                        other projects return <code>404</code>, <code>GET /tasks</code> is always filtered to the key's
+                        project, and tasks cannot be moved out of it. Keys can expire, and stop working if their creator
+                        loses manage access to the project.
+                    </p>
+                    <pre class="api-docs-pre"><code>POST {{ basePath }}/api/v2/projects/12/api-keys
+Content-Type: application/json
+
+{ "name": "Zapier intake", "scopes": ["tasks:read", "tasks:write"], "expires_at": "2027-01-01T00:00:00Z" }
+
+→ 201 { "id", "name", "key_prefix", "scopes", "expires_at", "key": "gotodo_…" }</code></pre>
 
                     <h2 id="session-auth" class="h4 mt-4">Session auth (SPA)</h2>
                     <p>

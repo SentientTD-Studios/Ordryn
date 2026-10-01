@@ -914,6 +914,19 @@ export type APIKey = {
   last_used_at?: string | null
 }
 
+export type ProjectAPIKey = {
+  id: number
+  name: string
+  key_prefix: string
+  scopes: string[]
+  created_at: string
+  last_used_at: string | null
+  expires_at: string | null
+  expired: boolean
+  created_by_id: number
+  created_by?: string
+}
+
 export type DeviceStatus = {
   user_code: string
   client_name: string

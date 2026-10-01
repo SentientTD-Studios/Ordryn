@@ -153,13 +153,9 @@ func RequireAPIKey(next http.HandlerFunc) http.HandlerFunc {
 				"Missing or invalid Authorization header. Use: Bearer <api_key>")
 			return
 		}
-		userID, err := storage.LookupAPIKeyUserID(token)
-		if err != nil {
-			APIJSONError(w, http.StatusUnauthorized, "unauthorized",
-				"Invalid or revoked API key.")
+		if !authenticateBearer(w, r, token) {
 			return
 		}
-		*r = *SetAPIAuthKind(SetAPIUserID(r, userID), AuthKindAPIKey)
 		next(w, r)
 	}
 }
@@ -271,13 +267,9 @@ func AuthMeChain(handler http.HandlerFunc) http.HandlerFunc {
 						"The REST API requires Redis for authentication and rate limiting.")
 					return
 				}
-				userID, err := storage.LookupAPIKeyUserID(token)
-				if err != nil {
-					APIJSONError(w, http.StatusUnauthorized, "unauthorized",
-						"Invalid or revoked API key.")
+				if !authenticateBearer(w, r, token) {
 					return
 				}
-				*r = *SetAPIAuthKind(SetAPIUserID(r, userID), AuthKindAPIKey)
 			} else if uid := GetSessionUserID(r); uid != nil {
 				*r = *SetAPIAuthKind(SetAPIUserID(r, *uid), AuthKindSession)
 			}
@@ -301,13 +293,9 @@ func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
 					"The REST API requires Redis for authentication and rate limiting.")
 				return
 			}
-			userID, err := storage.LookupAPIKeyUserID(token)
-			if err != nil {
-				APIJSONError(w, http.StatusUnauthorized, "unauthorized",
-					"Invalid or revoked API key.")
+			if !authenticateBearer(w, r, token) {
 				return
 			}
-			*r = *SetAPIAuthKind(SetAPIUserID(r, userID), AuthKindAPIKey)
 			next(w, r)
 			return
 		}

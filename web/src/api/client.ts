@@ -15,6 +15,7 @@ import type {
   ProjectInboundPatch,
   CustomFieldDefList,
   APIKey,
+  ProjectAPIKey,
   CalendarInfo,
   CalendarMonth,
   ChangelogEntry,
@@ -300,6 +301,24 @@ export const api = {
 
   revokeAPIKey(id: number) {
     return request<void>(`/api/v2/api-keys/${id}`, { method: 'DELETE' })
+  },
+
+  listProjectAPIKeys(projectId: number) {
+    return request<ProjectAPIKey[]>(`/api/v2/projects/${projectId}/api-keys`)
+  },
+
+  createProjectAPIKey(
+    projectId: number,
+    payload: { name: string; scopes: string[]; expires_at: string | null },
+  ) {
+    return request<ProjectAPIKey & { key: string }>(`/api/v2/projects/${projectId}/api-keys`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  revokeProjectAPIKey(projectId: number, keyId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/api-keys/${keyId}`, { method: 'DELETE' })
   },
 
   listTasks(params: Record<string, string | number | undefined> = {}) {

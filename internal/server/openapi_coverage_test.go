@@ -46,6 +46,8 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/tasks/{id}/links",
 	"/api/v2/tasks/{id}/links/{linkId}",
 	"/api/v2/projects/{id}/watch",
+	"/api/v2/projects/{id}/api-keys",
+	"/api/v2/projects/{id}/api-keys/{keyId}",
 	"/api/v2/tasks/{id}/comments",
 	"/api/v2/tasks/{id}/comments/{commentId}",
 	"/api/v2/tasks/{id}/comments/{commentId}/revisions",
