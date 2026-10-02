@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 )
@@ -11,6 +13,14 @@ import (
 func logTaskEvent(taskID, userID int, eventType string, metadata map[string]interface{}) {
 	if err := storage.LogTaskEvent(taskID, userID, eventType, metadata); err != nil {
 		fmt.Printf("audit: failed to log %s for task %d: %v\n", eventType, taskID, err)
+	}
+}
+
+// logAdminEvent records a site-admin action attributed to the request's user.
+func logAdminEvent(r *http.Request, eventType, targetType string, targetID int64, targetLabel string, metadata map[string]interface{}) {
+	actorID, _ := utils.GetAPIUserID(r)
+	if err := storage.LogAdminEvent(actorID, eventType, targetType, targetID, targetLabel, metadata); err != nil {
+		fmt.Printf("audit: failed to log admin %s: %v\n", eventType, err)
 	}
 }
 

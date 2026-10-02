@@ -47,6 +47,7 @@ type adminSettingsJSON struct {
 	EmailSMTPPasswordSet    bool   `json:"email_smtp_password_set"`
 	EmailSMTPTLS            bool   `json:"email_smtp_tls"`
 	EmailAuditRetentionDays int    `json:"email_audit_retention_days"`
+	AuditRetentionDays      int    `json:"audit_retention_days"`
 
 	GitHubOAuthClientID        string `json:"github_oauth_client_id"`
 	GitHubOAuthClientSecretSet bool   `json:"github_oauth_client_secret_set"`
@@ -93,6 +94,7 @@ type adminSettingsPatch struct {
 	EmailSMTPPassword       *string `json:"email_smtp_password"`
 	EmailSMTPTLS            *bool   `json:"email_smtp_tls"`
 	EmailAuditRetentionDays *int    `json:"email_audit_retention_days"`
+	AuditRetentionDays      *int    `json:"audit_retention_days"`
 
 	GitHubOAuthClientID     *string `json:"github_oauth_client_id"`
 	GitHubOAuthClientSecret *string `json:"github_oauth_client_secret"`
@@ -264,6 +266,15 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		next.EmailAuditRetentionDays = d
 	}
+	if req.AuditRetentionDays != nil {
+		d := *req.AuditRetentionDays
+		if d < 0 || d > storage.MaxAuditRetentionDays {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("audit_retention_days must be between 0 (keep forever) and %d.", storage.MaxAuditRetentionDays))
+			return
+		}
+		next.AuditRetentionDays = d
+	}
 	if req.GitHubOAuthClientID != nil {
 		next.GitHubOAuthClientID = strings.TrimSpace(*req.GitHubOAuthClientID)
 	}
@@ -354,7 +365,45 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 	if saved == nil {
 		saved = &next
 	}
+	if changes := siteSettingsAuditDiff(current, saved); len(changes) > 0 {
+		logAdminEvent(r, "site_settings_updated", "site_settings", 0, "Site settings",
+			map[string]interface{}{"changes": changes})
+	}
 	writeAdminSettings(w, saved)
+}
+
+// siteSettingsAuditDiff returns {field: {from, to}} for changed settings. Secret
+// values are never recorded; a rotated secret shows only {"changed": true}.
+func siteSettingsAuditDiff(before, after *storage.SiteSettings) map[string]interface{} {
+	toMap := func(s *storage.SiteSettings) map[string]interface{} {
+		m := map[string]interface{}{}
+		if b, err := json.Marshal(adminSettingsView(s)); err == nil {
+			_ = json.Unmarshal(b, &m)
+		}
+		return m
+	}
+	from, to := toMap(before), toMap(after)
+	changes := map[string]interface{}{}
+	for k, v := range to {
+		if strings.HasSuffix(k, "_set") {
+			continue // covered by the secrets check below
+		}
+		if fmt.Sprint(from[k]) != fmt.Sprint(v) {
+			changes[k] = map[string]interface{}{"from": from[k], "to": v}
+		}
+	}
+	secrets := map[string][2]string{
+		"email_mailgun_api_key":      {before.Email.MailgunAPIKeyEnc, after.Email.MailgunAPIKeyEnc},
+		"email_smtp_password":        {before.Email.SMTPPasswordEnc, after.Email.SMTPPasswordEnc},
+		"github_oauth_client_secret": {before.GitHubOAuthClientSecretEnc, after.GitHubOAuthClientSecretEnc},
+		"image_s3_secret_key":        {before.ImageS3SecretKeyEnc, after.ImageS3SecretKeyEnc},
+	}
+	for k, pair := range secrets {
+		if pair[0] != pair[1] {
+			changes[k] = map[string]interface{}{"changed": true}
+		}
+	}
+	return changes
 }
 
 func normalizeEmailProvider(p string) string {
@@ -432,7 +481,11 @@ func taskTextLengthFromPatch(w http.ResponseWriter, field string, n int) (int, b
 
 func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(adminSettingsJSON{
+	_ = json.NewEncoder(w).Encode(adminSettingsView(s))
+}
+
+func adminSettingsView(s *storage.SiteSettings) adminSettingsJSON {
+	return adminSettingsJSON{
 		SiteName:                   s.SiteName,
 		DefaultTimezone:            s.DefaultTimezone,
 		ShowChangelog:              s.ShowChangelog,
@@ -461,7 +514,8 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 		EmailSMTPPasswordSet:       s.Email.SMTPPasswordEnc != "",
 		EmailSMTPTLS:               s.Email.SMTPTLS,
 		EmailAuditRetentionDays:    storage.ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays),
-		GitHubOAuthClientID:        s.GitHubOAuthClientID,
+		AuditRetentionDays:         storage.ClampAuditRetentionDays(s.AuditRetentionDays),
+		GitHubOAuthClientID:       s.GitHubOAuthClientID,
 		GitHubOAuthClientSecretSet: s.GitHubOAuthClientSecretEnc != "",
 		GitHubOAuthConfigured:      strings.TrimSpace(s.GitHubOAuthClientID) != "" && s.GitHubOAuthClientSecretEnc != "",
 		ImageHostingProvider:       imagehost.NormalizeProvider(s.Image.Provider),
@@ -474,7 +528,7 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 		ImageS3PublicURL:           s.Image.S3PublicURL,
 		ImageS3ForcePathStyle:      s.Image.S3ForcePathStyle,
 		ImageLocalPath:             s.Image.LocalPath,
-	})
+	}
 }
 
 // APIV1AdminUsersRouter handles /api/v2/admin/users and ban/unban.
@@ -521,6 +575,8 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 				utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
 				return
 			}
+			logAdminEvent(r, "user_banned", "user", int64(id), storage.UserAuditLabel(id),
+				map[string]interface{}{"from": "active", "to": "banned"})
 		case "unban":
 			if r.Method != http.MethodPost {
 				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -530,6 +586,8 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 				utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
 				return
 			}
+			logAdminEvent(r, "user_unbanned", "user", int64(id), storage.UserAuditLabel(id),
+				map[string]interface{}{"from": "banned", "to": "active"})
 		case "username":
 			if r.Method != http.MethodPatch {
 				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -559,6 +617,7 @@ func apiV1AdminSetUsername(w http.ResponseWriter, r *http.Request, userID int) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
+	oldName, _ := storage.UserNameAndEmail(userID)
 	profile, err := domain.AdminSetUsername(r.Context(), userID, req.UserName)
 	if err != nil {
 		if errors.Is(err, domain.ErrValidation) {
@@ -571,6 +630,10 @@ func apiV1AdminSetUsername(w http.ResponseWriter, r *http.Request, userID int) {
 		}
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update username.")
 		return
+	}
+	if oldName != profile.UserName {
+		logAdminEvent(r, "username_changed", "user", int64(userID), storage.UserAuditLabel(userID),
+			map[string]interface{}{"from": oldName, "to": profile.UserName})
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{

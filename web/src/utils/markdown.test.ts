@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { applyFormat, handleListEnter, renderMarkdown, stripMarkdown } from './markdown.ts'
+import { applyFormat, handleListEnter, renderMarkdown } from './markdown.ts'
 
 describe('renderMarkdown', () => {
   it('renders bold, italic, and underline', () => {
@@ -36,6 +36,15 @@ describe('renderMarkdown', () => {
   it('renders safe images', () => {
     const html = renderMarkdown('![my picture](https://example.com/pic.png)')
     assert.match(html, /<img class="rich-body-image" src="https:\/\/example\.com\/pic\.png" alt="my picture"/)
+  })
+
+  it('does not render unsafe image sources', () => {
+    for (const src of ['javascript:alert(1)', 'data:image/png;base64,aaa', '//evil.example/x.png']) {
+      const html = renderMarkdown(`![x](${src})`)
+      assert.doesNotMatch(html, /<img/, src)
+      assert.doesNotMatch(html, /javascript:|data:image|evil\.example/, src)
+      assert.match(html, /\[image: x\]/, src)
+    }
   })
 
   it('renders mentions with class', () => {
@@ -138,30 +147,6 @@ describe('renderMarkdown', () => {
   it('handles mentions with trailing punctuation', () => {
     const html = renderMarkdown('Hey @alice, check with @bob!')
     assert.match(html, /<span class="rich-body-mention">@alice<\/span>, check with <span class="rich-body-mention">@bob<\/span>!/)
-  })
-})
-
-describe('stripMarkdown', () => {
-  it('strips bold, italic, underline, links, and images', () => {
-    const raw = 'Check **bold** and *italic* and <u>underlined</u> with [link](https://foo.com) and ![alt](https://pic.png)'
-    const stripped = stripMarkdown(raw)
-    assert.equal(stripped, 'Check bold and italic and underlined with link and [image: alt]')
-  })
-
-  it('strips list prefixes', () => {
-    const raw = '- Item 1\n- Item 2\n1. First\n2. Second'
-    const stripped = stripMarkdown(raw)
-    assert.equal(stripped, 'Item 1 Item 2 First Second')
-  })
-
-  it('respects limit', () => {
-    const raw = 'Long text that should be truncated'
-    const stripped = stripMarkdown(raw, 10)
-    assert.equal(stripped, 'Long text…')
-  })
-
-  it('handles empty input', () => {
-    assert.equal(stripMarkdown(''), '')
   })
 })
 

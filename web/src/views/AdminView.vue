@@ -50,6 +50,7 @@ const settings = reactive<AdminSettings>({
   email_smtp_password_set: false,
   email_smtp_tls: true,
   email_audit_retention_days: 7,
+  audit_retention_days: 0,
   github_oauth_client_id: '',
   github_oauth_client_secret_set: false,
   github_oauth_configured: false,

@@ -28,6 +28,9 @@ import type {
   DeviceStatus,
   EmailAuditList,
   EmailAuditQuery,
+  AuditFacets,
+  AuditList,
+  AuditQuery,
   GitHubConnection,
   ImageUpload,
   ImageHostingTestResult,
@@ -82,6 +85,14 @@ import type {
   MFARecoveryCodes,
 } from './types'
 import { APIError, type APIErrorBody } from './types'
+
+function auditQueryString(params: AuditQuery): string {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '' && v !== 0) qs.set(k, String(v))
+  }
+  return qs.toString()
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
@@ -769,13 +780,6 @@ export const api = {
     })
   },
 
-  renameProject(id: number, name: string) {
-    return request<Project>(`/api/v2/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ name }),
-    })
-  },
-
   reorderProjects(projectIds: number[]) {
     return request<{ ok: boolean }>('/api/v2/projects/reorder', {
       method: 'POST',
@@ -838,10 +842,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(payload),
     })
-  },
-
-  listProjectRolesCatalog() {
-    return request<ProjectRolesList>('/api/v2/project-roles')
   },
 
   listProjectRoles(projectId: number) {
@@ -970,10 +970,6 @@ export const api = {
     return request<void>(`/api/v2/organization-invites/${id}/decline`, { method: 'POST' })
   },
 
-  addOrganizationMember(orgId: number, username: string, role: string) {
-    return this.createOrganizationInvite(orgId, username, role)
-  },
-
   updateOrganizationMember(orgId: number, userId: number, role: string) {
     return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, {
       method: 'PATCH',
@@ -1052,17 +1048,6 @@ export const api = {
     return request<ProjectSprint>(`/api/v2/projects/${projectId}/sprints/${sprintId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
-    })
-  },
-
-  updateProjectBacklogSprint(
-    projectId: number,
-    payload: string | Partial<{ name: string; description: string }>,
-  ) {
-    const body = typeof payload === 'string' ? { name: payload } : payload
-    return request<ProjectSprint>(`/api/v2/projects/${projectId}/sprints/backlog`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
     })
   },
 
@@ -1413,6 +1398,21 @@ export const api = {
     }
     const q = qs.toString()
     return request<EmailAuditList>(`/api/v2/admin/email-audit${q ? `?${q}` : ''}`)
+  },
+
+  listAdminAudit(params: AuditQuery = {}) {
+    const q = auditQueryString(params)
+    return request<AuditList>(`/api/v2/admin/audit${q ? `?${q}` : ''}`)
+  },
+
+  /** URL for the CSV export; a plain link download carries the session cookie. */
+  adminAuditExportURL(params: AuditQuery = {}) {
+    const q = auditQueryString({ ...params, limit: undefined, offset: undefined })
+    return withBase(`/api/v2/admin/audit/export${q ? `?${q}` : ''}`)
+  },
+
+  getAdminAuditFacets() {
+    return request<AuditFacets>('/api/v2/admin/audit/facets')
   },
 
   listAdminCommentAudit(params: CommentAuditQuery = {}) {

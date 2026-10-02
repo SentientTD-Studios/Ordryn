@@ -47,6 +47,9 @@ type SiteSettings struct {
 
 	EmailAuditRetentionDays int
 
+	// AuditRetentionDays bounds task/project/comment/admin audit history; 0 keeps it forever.
+	AuditRetentionDays int
+
 	GitHubOAuthClientID        string
 	GitHubOAuthClientSecretEnc string
 
@@ -136,7 +139,8 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(image_local_path, ''),
 			COALESCE(enable_inbound_webhooks, FALSE),
 			COALESCE(max_description_length, 20000),
-			COALESCE(max_comment_length, 20000)
+			COALESCE(max_comment_length, 20000),
+			COALESCE(audit_retention_days, 0)
 		FROM site_settings WHERE id = 1`)
 	if err := row.Scan(
 		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
@@ -155,10 +159,12 @@ func GetSiteSettings() (*SiteSettings, error) {
 		&s.Image.S3ForcePathStyle, &s.Image.LocalPath,
 		&s.EnableInboundWebhooks,
 		&s.MaxDescriptionLength, &s.MaxCommentLength,
+		&s.AuditRetentionDays,
 	); err != nil {
 		return nil, err
 	}
 	s.EmailAuditRetentionDays = ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays)
+	s.AuditRetentionDays = ClampAuditRetentionDays(s.AuditRetentionDays)
 	s.Image.MaxBytes = imagehost.ClampMaxBytes(s.Image.MaxBytes)
 	s.MaxDescriptionLength = ClampTaskTextLength(s.MaxDescriptionLength)
 	s.MaxCommentLength = ClampTaskTextLength(s.MaxCommentLength)
@@ -178,6 +184,7 @@ func UpsertSiteSettings(s SiteSettings) error {
 		s.Email.SMTPPort = 587
 	}
 	s.EmailAuditRetentionDays = ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays)
+	s.AuditRetentionDays = ClampAuditRetentionDays(s.AuditRetentionDays)
 	s.Image.MaxBytes = imagehost.ClampMaxBytes(s.Image.MaxBytes)
 	s.Image.Provider = imagehost.NormalizeProvider(s.Image.Provider)
 	if s.Image.LocalPath == "" {
@@ -208,9 +215,10 @@ func UpsertSiteSettings(s SiteSettings) error {
 			image_s3_bucket, image_s3_access_key, image_s3_secret_key_enc,
 			image_s3_public_url, image_s3_force_path_style, image_local_path,
 			enable_inbound_webhooks,
-			max_description_length, max_comment_length
+			max_description_length, max_comment_length,
+			audit_retention_days
 		)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
@@ -250,7 +258,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 			image_local_path = EXCLUDED.image_local_path,
 			enable_inbound_webhooks = EXCLUDED.enable_inbound_webhooks,
 			max_description_length = EXCLUDED.max_description_length,
-			max_comment_length = EXCLUDED.max_comment_length
+			max_comment_length = EXCLUDED.max_comment_length,
+			audit_retention_days = EXCLUDED.audit_retention_days
     `, s.SiteName, s.DefaultTimezone, s.ShowChangelog,
 		s.EnableRegistration, s.InviteOnly, s.EnableJoinRequests, s.MetaDescription,
 		s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI,
@@ -266,7 +275,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 		s.Image.S3AccessKey, s.ImageS3SecretKeyEnc, s.Image.S3PublicURL,
 		s.Image.S3ForcePathStyle, s.Image.LocalPath,
 		s.EnableInboundWebhooks,
-		s.MaxDescriptionLength, s.MaxCommentLength)
+		s.MaxDescriptionLength, s.MaxCommentLength,
+		s.AuditRetentionDays)
 	if err != nil {
 		return fmt.Errorf("failed to upsert site_settings: %v", err)
 	}

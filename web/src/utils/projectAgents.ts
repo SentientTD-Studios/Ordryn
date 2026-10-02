@@ -12,27 +12,6 @@ export const AGENT_FIELDS: { id: AgentEditableField; label: string; help: string
   { id: 'custom_fields', label: 'Custom fields', help: 'Edit extension-defined fields' },
 ]
 
-/** Defaults for a new agent: conservative, matching the server. */
-export function defaultAgentSettings(): Required<Omit<ProjectAgentInput, 'name' | 'role' | 'webhook_url'>> {
-  return {
-    description: '',
-    instructions: '',
-    enabled: true,
-    trigger_on_mention: true,
-    trigger_status_ids: [],
-    trigger_by: 'managers',
-    trigger_role_slugs: [],
-    trigger_user_ids: [],
-    claim_on_dispatch: true,
-    allowed_status_ids: [],
-    editable_fields: ['status'],
-    can_complete: false,
-    can_create_tasks: false,
-    can_comment: true,
-    max_runs_per_hour: 20,
-  }
-}
-
 const HANDLE_RE = /^[A-Za-z0-9_]{3,32}$/
 
 /** Client-side check matching the server's username rules; "" when valid. */

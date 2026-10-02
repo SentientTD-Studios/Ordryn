@@ -73,6 +73,11 @@ func APIV1AdminInvitesRouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			emailSiteInvite(r, inv.Email, inv.Token)
+			meta := map[string]interface{}{}
+			if inv.ExpiresAt != nil {
+				meta["expires_at"] = inv.ExpiresAt.UTC().Format(time.RFC3339)
+			}
+			logAdminEvent(r, "site_invite_created", "invite", int64(inv.ID), inv.Email, meta)
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(inviteToJSON(*inv))
@@ -91,9 +96,19 @@ func APIV1AdminInvitesRouter(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
 	}
+	inviteEmail := ""
+	if all, err := storage.ListAllInvites(); err == nil {
+		for _, inv := range all {
+			if inv.ID == id {
+				inviteEmail = inv.Email
+				break
+			}
+		}
+	}
 	if err := storage.DeleteInvite(id, userID, true); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	logAdminEvent(r, "site_invite_revoked", "invite", int64(id), inviteEmail, nil)
 	w.WriteHeader(http.StatusNoContent)
 }

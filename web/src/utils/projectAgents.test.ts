@@ -3,7 +3,6 @@ import { describe, it } from 'node:test'
 import {
   apiRoot,
   claudeCodeMcpCommand,
-  defaultAgentSettings,
   handleError,
   isOpenRun,
   mcpJsonConfig,
@@ -36,16 +35,6 @@ describe('suggestHandle', () => {
     assert.equal(suggestHandle('  QA — Triage!! '), 'qa_triage')
     assert.equal(suggestHandle('X'), 'x_ai')
     assert.equal(suggestHandle('***'), '')
-  })
-})
-
-describe('defaultAgentSettings', () => {
-  it('starts conservative', () => {
-    const d = defaultAgentSettings()
-    assert.deepEqual(d.editable_fields, ['status'])
-    assert.equal(d.can_complete, false)
-    assert.equal(d.can_create_tasks, false)
-    assert.equal(d.trigger_by, 'managers')
   })
 })
 

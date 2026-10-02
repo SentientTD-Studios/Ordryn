@@ -189,6 +189,8 @@ func APIV1AdminProjectRolesRouter(w http.ResponseWriter, r *http.Request) {
 				writeProjectRoleDomainError(w, err)
 				return
 			}
+			logAdminEvent(r, "role_template_created", "role", int64(created.ID), created.Name,
+				map[string]interface{}{"slug": created.Slug, "to": created.Permissions})
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(roleDefToJSON(*created))
@@ -227,6 +229,7 @@ func APIV1AdminProjectRolesRouter(w http.ResponseWriter, r *http.Request) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 			return
 		}
+		before, _ := storage.GetProjectRoleDef(roleID)
 		updated, err := domain.UpdateSiteProjectRoleForAdmin(r.Context(), userID, roleID, domain.UpdateSiteProjectRoleInput{
 			Name:        req.Name,
 			Description: req.Description,
@@ -237,13 +240,23 @@ func APIV1AdminProjectRolesRouter(w http.ResponseWriter, r *http.Request) {
 			writeProjectRoleDomainError(w, err)
 			return
 		}
+		logAdminEvent(r, "role_template_updated", "role", int64(updated.ID), updated.Name,
+			roleTemplateChangeMetadata(before, updated))
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(roleDefToJSON(*updated))
 	case http.MethodDelete:
+		before, _ := storage.GetProjectRoleDef(roleID)
 		if err := domain.DeleteSiteProjectRoleForAdmin(r.Context(), userID, roleID); err != nil {
 			writeProjectRoleDomainError(w, err)
 			return
 		}
+		label, meta := "", map[string]interface{}{}
+		if before != nil {
+			label = before.Name
+			meta["slug"] = before.Slug
+			meta["from"] = before.Permissions
+		}
+		logAdminEvent(r, "role_template_deleted", "role", int64(roleID), label, meta)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -378,4 +391,21 @@ func handleStatusGatesResource(w http.ResponseWriter, r *http.Request, projectID
 		EnterRoleSlugs: gate.EnterRoleSlugs,
 		LeaveRoleSlugs: gate.LeaveRoleSlugs,
 	})
+}
+
+// roleTemplateChangeMetadata records name/permission changes on a site role template.
+func roleTemplateChangeMetadata(before, after *storage.ProjectRoleDef) map[string]interface{} {
+	meta := map[string]interface{}{"slug": after.Slug}
+	if before == nil {
+		meta["to"] = after.Permissions
+		return meta
+	}
+	if before.Name != after.Name {
+		meta["name"] = map[string]interface{}{"from": before.Name, "to": after.Name}
+	}
+	if strings.Join(before.Permissions, ",") != strings.Join(after.Permissions, ",") {
+		meta["from"] = before.Permissions
+		meta["to"] = after.Permissions
+	}
+	return meta
 }

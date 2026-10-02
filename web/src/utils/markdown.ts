@@ -256,38 +256,6 @@ export function renderMarkdown(
 }
 
 /**
- * Strip Markdown tags for plain text summaries (e.g. task cards or table rows).
- */
-export function stripMarkdown(body: string, limit = 0): string {
-  if (!body) return ''
-  let text = body
-    // Images
-    .replace(/!\[([^\]]*)]\([^)]+\)/g, (_, alt) => (alt ? `[image: ${alt}]` : '[image]'))
-    // Links
-    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
-    // Task brackets [[123]] -> #123
-    .replace(/\[\[(\d+)\]\]/g, '#$1')
-    // Bold / Italic
-    .replace(/(\*\*|__)(.*?)\1/g, '$2')
-    .replace(/(\*|_)(.*?)\1/g, '$2')
-    // Underline tags
-    .replace(/<\/?(u|ins)>/gi, '')
-    // HTML tags
-    .replace(/<[^>]+>/g, '')
-    // List item prefixes
-    .replace(/^[\s*+-]+\s+/gm, '')
-    .replace(/^\s*\d+\.\s+/gm, '')
-    // Normalize spaces and newlines
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  if (limit > 0 && text.length > limit) {
-    return text.slice(0, limit - 1) + '…'
-  }
-  return text
-}
-
-/**
  * Apply a formatting action (bold, italic, underline, ul, ol, link) to the selected text range in a textarea.
  */
 export function applyFormat(
