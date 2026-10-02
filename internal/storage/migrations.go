@@ -320,6 +320,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSiteSettingsAddInboundWebhooks failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateSiteSettingsAddTaskTextLimits(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddTaskTextLimits failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateInvitesAddFields(); err != nil {
 		fmt.Printf("migration: MigrateInvitesAddFields failed: %v\n", err)
 		errCount++

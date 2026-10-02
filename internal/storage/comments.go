@@ -12,13 +12,6 @@ import (
 )
 
 const (
-	// MaxTaskTextLength caps task descriptions and comment bodies, counted in
-	// characters (runes). The underlying columns are TEXT, so raising this only
-	// requires changing the constant (and the matching UI constant).
-	MaxTaskTextLength = 5000
-
-	MaxTaskCommentBody = MaxTaskTextLength
-
 	CommentDeletedByUser  = "user"
 	CommentDeletedByOwner = "owner"
 

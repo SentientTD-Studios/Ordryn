@@ -314,12 +314,16 @@ func commentActorRole(projectID, userID int, comment *storage.TaskComment) (isAu
 }
 
 func validateCommentBody(body string) (string, error) {
+	return validateCommentBodyMax(body, storage.GetTaskTextLimits().Comment)
+}
+
+func validateCommentBodyMax(body string, max int) (string, error) {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return "", fmt.Errorf("%w: comment cannot be empty", ErrValidation)
 	}
-	if utf8.RuneCountInString(body) > storage.MaxTaskCommentBody {
-		return "", fmt.Errorf("%w: comment must be %d characters or less", ErrValidation, storage.MaxTaskCommentBody)
+	if utf8.RuneCountInString(body) > max {
+		return "", fmt.Errorf("%w: comment must be %d characters or less", ErrValidation, max)
 	}
 	return body, nil
 }

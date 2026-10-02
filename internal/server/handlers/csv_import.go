@@ -461,6 +461,7 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 	newProjects := make([]int, 0)
 
 	projectCache := make(map[string]int)
+	maxDescription := domain.MaxDescriptionLength()
 
 	for _, row := range rows {
 		title := cellValue(row, cols.title)
@@ -470,8 +471,8 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 		}
 
 		description := cellValue(row, cols.description)
-		if r := []rune(description); len(r) > domain.MaxDescriptionLength {
-			description = string(r[:domain.MaxDescriptionLength])
+		if r := []rune(description); len(r) > maxDescription {
+			description = string(r[:maxDescription])
 		}
 		completed := parseBoolCell(cellValue(row, cols.completed))
 		dueDate := cellValue(row, cols.dueDate)

@@ -132,4 +132,96 @@ function onContainerClick(e: MouseEvent) {
 .rich-body :deep(.rich-body-task-link:hover) {
   filter: brightness(1.15);
 }
+
+/* Syntax highlighting styles for code blocks */
+.rich-body :deep(pre) {
+  background: var(--ordryn-muted-bg, #f8f6ee);
+  border: 1px solid var(--ordryn-card-border, #dee2e6);
+  border-radius: 0.375rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.rich-body :deep(pre code) {
+  font-family: 'Consolas', 'Monaco', 'Andale Mono', 'DejaVu Sans Mono', monospace;
+  font-size: 0.9em;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+/* Highlight.js theme styles - Monokai-like dark theme */
+.rich-body :deep(pre.hljs) {
+  background: #272822;
+  color: #f8f8f2;
+}
+
+/* Generic token styles for highlight.js */
+.rich-body :deep(pre.hljs .hljs-comment),
+.rich-body :deep(pre.hljs .hljs-quote) {
+  color: #75715e;
+  font-style: italic;
+}
+
+.rich-body :deep(pre.hljs .hljs-keyword),
+.rich-body :deep(pre.hljs .hljs-selector-tag),
+.rich-body :deep(pre.hljs .hljs-section),
+.rich-body :deep(pre.hljs .hljs-subst) {
+  color: #f92672;
+}
+
+.rich-body :deep(pre.hljs .hljs-string),
+.rich-body :deep(pre.hljs .hljs-title),
+.rich-body :deep(pre.hljs .hljs-name),
+.rich-body :deep(pre.hljs .hljs-type),
+.rich-body :deep(pre.hljs .hljs-symbol),
+.rich-body :deep(pre.hljs .hljs-bullet),
+.rich-body :deep(pre.hljs .hljs-variable),
+.rich-body :deep(pre.hljs .hljs-template-variable),
+.rich-body :deep(pre.hljs .hljs-link) {
+  color: #a6e22e;
+}
+
+.rich-body :deep(pre.hljs .hljs-number),
+.rich-body :deep(pre.hljs .hljs-built_in),
+.rich-body :deep(pre.hljs .hljs-builtin-name),
+.rich-body :deep(pre.hljs .hljs-literal),
+.rich-body :deep(pre.hljs .hljs-params),
+.rich-body :deep(pre.hljs .hljs-meta),
+.rich-body :deep(pre.hljs .hljs-regexp),
+.rich-body :deep(pre.hljs .hljs-title.class_) {
+  color: #ae81ff;
+}
+
+.rich-body :deep(pre.hljs .hljs-attr) {
+  color: #66d9ef;
+}
+
+.rich-body :deep(pre.hljs .hljs-class .hljs-title) {
+  color: #f8f8f2;
+}
+
+/* Scrollbar styling for code blocks */
+.rich-body :deep(pre)::-webkit-scrollbar {
+  height: 8px;
+}
+.rich-body :deep(pre)::-webkit-scrollbar-track {
+  background: var(--ordryn-muted-bg, #f8f6ee);
+  border-radius: 0.375rem;
+}
+.rich-body :deep(pre)::-webkit-scrollbar-thumb {
+  background: var(--ordryn-card-border, #dee2e6);
+  border-radius: 4px;
+}
+.rich-body :deep(pre)::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ordryn-accent, #2563eb) 30%, transparent);
+}
+
+/* Compact mode adjustments */
+.rich-body--compact :deep(pre) {
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+}
+.rich-body--compact :deep(pre code) {
+  font-size: 0.85em;
+}
 </style>

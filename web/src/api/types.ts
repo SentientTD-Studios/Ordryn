@@ -442,6 +442,8 @@ export type SiteInfo = {
   user_invite_limit?: number
   invite_expiration_days?: number
   enable_inbound_webhooks?: boolean
+  max_description_length?: number
+  max_comment_length?: number
 }
 
 export type ChangelogEntry = {
@@ -558,6 +560,8 @@ export type AdminSettings = {
   allow_user_invites: boolean
   user_invite_limit: number
   invite_expiration_days: number
+  max_description_length: number
+  max_comment_length: number
   email_provider: string
   email_from_address: string
   email_from_name: string

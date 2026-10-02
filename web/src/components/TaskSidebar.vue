@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import { MAX_TASK_TEXT_LENGTH } from '@/utils/taskText'
+import { useTaskTextLimits } from '@/utils/taskText'
 import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskEvent, TaskGitHubIssue, TaskRecurrenceDetail, TaskTimeEntry } from '@/api/types'
 import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
@@ -211,7 +211,7 @@ const sidebarTitle = computed(() => {
 })
 const kanbanHeaderTitle = computed(() => (mode.value === 'add' ? 'Add Task' : 'Task'))
 const submitText = computed(() => (mode.value === 'edit' ? 'Save Task' : 'Add Task'))
-const MAX_DESCRIPTION = MAX_TASK_TEXT_LENGTH
+const { maxDescription: MAX_DESCRIPTION } = useTaskTextLimits()
 const charCount = computed(() => description.value.length)
 const editingDescription = ref(false)
 const showDescriptionEditor = computed(() => {
@@ -312,8 +312,8 @@ function insertDescriptionImage(markdown: string) {
   const start = el?.selectionStart ?? description.value.length
   const end = el?.selectionEnd ?? start
   const next = insertMarkdownAtCursor(description.value, markdown, start, end)
-  if (next.body.length > MAX_DESCRIPTION) {
-    toast.push(`Description would exceed ${MAX_DESCRIPTION} characters`, 'error')
+  if (next.body.length > MAX_DESCRIPTION.value) {
+    toast.push(`Description would exceed ${MAX_DESCRIPTION.value} characters`, 'error')
     return
   }
   description.value = next.body
@@ -798,8 +798,8 @@ async function resolveTagIds(): Promise<number[]> {
 }
 
 function validateDescription() {
-  if (description.value.length > MAX_DESCRIPTION) {
-    descriptionError.value = `Description must be ${MAX_DESCRIPTION} characters or fewer.`
+  if (description.value.length > MAX_DESCRIPTION.value) {
+    descriptionError.value = `Description must be ${MAX_DESCRIPTION.value} characters or fewer.`
     return false
   }
   descriptionError.value = ''

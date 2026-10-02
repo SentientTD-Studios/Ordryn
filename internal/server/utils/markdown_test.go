@@ -32,6 +32,30 @@ func TestRenderMarkdownImages(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownEscapesCodeBlocks(t *testing.T) {
+	cases := []string{
+		"```html\n<script>alert(1)</script>\n```",
+		"```js\n</code></pre><img src=x onerror=alert(1)>\n```",
+		"```\"><img src=x onerror=alert(1)>\nx\n```",
+		"    <img src=x onerror=alert(1)>",
+		"a `<img src=x onerror=alert(1)>` b",
+		"- [ ] <img src=x onerror=alert(1)>",
+		"| a |\n|---|\n| <script>alert(1)</script> |",
+	}
+	for _, md := range cases {
+		html := RenderMarkdown(md)
+		for _, bad := range []string{"<script", "<img"} {
+			if strings.Contains(html, bad) {
+				t.Fatalf("%q leaked %q: %s", md, bad, html)
+			}
+		}
+	}
+	html := RenderMarkdown("```go\nx := 1 < 2\n```")
+	if !strings.Contains(html, "<pre><code>x := 1 &lt; 2") {
+		t.Fatalf("expected escaped code block, got: %s", html)
+	}
+}
+
 func TestTruncateDescription(t *testing.T) {
 	if got := TruncateDescription("hello world", 20); got != "hello world" {
 		t.Fatalf("short text unchanged: %q", got)

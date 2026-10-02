@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,6 +33,8 @@ type adminSettingsJSON struct {
 	AllowUserInvites         bool   `json:"allow_user_invites"`
 	UserInviteLimit          int    `json:"user_invite_limit"`
 	InviteExpirationDays     int    `json:"invite_expiration_days"`
+	MaxDescriptionLength     int    `json:"max_description_length"`
+	MaxCommentLength         int    `json:"max_comment_length"`
 
 	EmailProvider           string `json:"email_provider"`
 	EmailFromAddress        string `json:"email_from_address"`
@@ -76,6 +79,8 @@ type adminSettingsPatch struct {
 	AllowUserInvites         *bool   `json:"allow_user_invites"`
 	UserInviteLimit          *int    `json:"user_invite_limit"`
 	InviteExpirationDays     *int    `json:"invite_expiration_days"`
+	MaxDescriptionLength     *int    `json:"max_description_length"`
+	MaxCommentLength         *int    `json:"max_comment_length"`
 
 	EmailProvider           *string `json:"email_provider"`
 	EmailFromAddress        *string `json:"email_from_address"`
@@ -185,6 +190,20 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		if next.InviteExpirationDays < 0 {
 			next.InviteExpirationDays = 0
 		}
+	}
+	if req.MaxDescriptionLength != nil {
+		n, ok := taskTextLengthFromPatch(w, "max_description_length", *req.MaxDescriptionLength)
+		if !ok {
+			return
+		}
+		next.MaxDescriptionLength = n
+	}
+	if req.MaxCommentLength != nil {
+		n, ok := taskTextLengthFromPatch(w, "max_comment_length", *req.MaxCommentLength)
+		if !ok {
+			return
+		}
+		next.MaxCommentLength = n
 	}
 	if req.EmailProvider != nil {
 		next.Email.Provider = normalizeEmailProvider(*req.EmailProvider)
@@ -400,6 +419,17 @@ func validateImageHostingSettings(s *storage.SiteSettings) string {
 	return msg
 }
 
+// taskTextLengthFromPatch validates a description/comment character limit,
+// writing a 400 and returning ok=false when out of range.
+func taskTextLengthFromPatch(w http.ResponseWriter, field string, n int) (int, bool) {
+	if n < storage.MinTaskTextLength || n > storage.MaxTaskTextLengthCap {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("%s must be between %d and %d.", field, storage.MinTaskTextLength, storage.MaxTaskTextLengthCap))
+		return 0, false
+	}
+	return n, true
+}
+
 func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(adminSettingsJSON{
@@ -418,6 +448,8 @@ func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
 		AllowUserInvites:           s.AllowUserInvites,
 		UserInviteLimit:            s.UserInviteLimit,
 		InviteExpirationDays:       s.InviteExpirationDays,
+		MaxDescriptionLength:       storage.ClampTaskTextLength(s.MaxDescriptionLength),
+		MaxCommentLength:           storage.ClampTaskTextLength(s.MaxCommentLength),
 		EmailProvider:              s.Email.Provider,
 		EmailFromAddress:           s.Email.FromAddress,
 		EmailFromName:              s.Email.FromName,

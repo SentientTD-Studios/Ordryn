@@ -1,6 +1,37 @@
 import { Marked, type TokenizerAndRendererExtension } from 'marked'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js/lib/core'
+import bash from 'highlight.js/lib/languages/bash'
+import c from 'highlight.js/lib/languages/c'
+import cpp from 'highlight.js/lib/languages/cpp'
+import csharp from 'highlight.js/lib/languages/csharp'
+import css from 'highlight.js/lib/languages/css'
+import diff from 'highlight.js/lib/languages/diff'
+import dockerfile from 'highlight.js/lib/languages/dockerfile'
+import go from 'highlight.js/lib/languages/go'
+import java from 'highlight.js/lib/languages/java'
+import javascript from 'highlight.js/lib/languages/javascript'
+import json from 'highlight.js/lib/languages/json'
+import markdown from 'highlight.js/lib/languages/markdown'
+import php from 'highlight.js/lib/languages/php'
+import python from 'highlight.js/lib/languages/python'
+import ruby from 'highlight.js/lib/languages/ruby'
+import rust from 'highlight.js/lib/languages/rust'
+import shell from 'highlight.js/lib/languages/shell'
+import sql from 'highlight.js/lib/languages/sql'
+import typescript from 'highlight.js/lib/languages/typescript'
+import xml from 'highlight.js/lib/languages/xml'
+import yaml from 'highlight.js/lib/languages/yaml'
 import { isSafeImageSrc } from './taskCommentBody.ts'
+
+// Register a curated language set; the full highlight.js bundle is ~1MB.
+// Language aliases (js, ts, sh, html, yml, ...) come from each definition.
+for (const [name, lang] of Object.entries({
+  bash, c, cpp, csharp, css, diff, dockerfile, go, java, javascript, json,
+  markdown, php, python, ruby, rust, shell, sql, typescript, xml, yaml,
+})) {
+  hljs.registerLanguage(name, lang)
+}
 
 export type FormatAction = 'bold' | 'italic' | 'underline' | 'ul' | 'ol' | 'link'
 
@@ -19,9 +50,20 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;')
 }
 
+// Reverses escapeHtml. renderMarkdown pre-escapes tag-like input before parsing,
+// so code block text must be decoded once before it is escaped or highlighted.
+function unescapeHtml(str: string): string {
+  return str
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
 /**
  * Configure marked instance with custom extensions for mentions, task references,
- * safe links, and safe images.
+ * safe links, safe images, and syntax-highlighted code blocks.
  */
 function createMarked(taskTitle?: (id: number) => string | undefined) {
   const marked = new Marked()
@@ -111,6 +153,22 @@ function createMarked(taskTitle?: (id: number) => string | undefined) {
         const alt = text ? escapeHtml(text) : 'image'
         const titleAttr = title ? ` title="${escapeHtml(title)}"` : ` title="Open ${alt}"`
         return `<a class="rich-body-image-link" href="${escapeHtml(src)}" target="_blank" rel="noopener noreferrer"${titleAttr}><img class="rich-body-image" src="${escapeHtml(src)}" alt="${alt}" loading="lazy" decoding="async" /></a>`
+      },
+      code({ text: rawText, lang }) {
+        const text = unescapeHtml(rawText)
+        // Block code only (fenced/indented); inline code is rendered by codespan.
+        // Use the first word of the info string as the language, e.g. ```ts title="x".
+        const language = (lang || '').trim().split(/\s+/)[0]
+        if (!language) {
+          return `<pre><code>${escapeHtml(text)}</code></pre>`
+        }
+        const langClass = `language-${escapeHtml(language)}`
+        if (!hljs.getLanguage(language)) {
+          return `<pre><code class="${langClass}">${escapeHtml(text)}</code></pre>`
+        }
+        // highlight() escapes the raw source itself and only emits <span class="hljs-*">.
+        const highlighted = hljs.highlight(text, { language, ignoreIllegals: true }).value
+        return `<pre class="hljs"><code class="hljs ${langClass}">${highlighted}</code></pre>`
       },
     },
   })

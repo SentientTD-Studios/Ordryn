@@ -4305,7 +4305,8 @@ paths:
                 body:
                   type: string
                   minLength: 1
-                  maxLength: 5000
+                  maxLength: 100000
+                  description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
       responses:
         "201":
           description: Created
@@ -4346,7 +4347,8 @@ paths:
                 body:
                   type: string
                   minLength: 1
-                  maxLength: 5000
+                  maxLength: 100000
+                  description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
       responses:
         "200":
           description: Updated comment
@@ -6232,6 +6234,12 @@ components:
         enable_inbound_webhooks:
           type: boolean
           description: True when an admin has allowed public inbound webhooks.
+        max_description_length:
+          type: integer
+          description: Maximum task description length in characters (site-configurable, default 20000).
+        max_comment_length:
+          type: integer
+          description: Maximum task comment length in characters (site-configurable, default 20000).
 
     User:
       type: object
@@ -7852,7 +7860,8 @@ components:
           type: string
         description:
           type: string
-          maxLength: 5000
+          maxLength: 100000
+          description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
         due_date:
           type: string
         project_id:
@@ -7896,7 +7905,8 @@ components:
           type: string
         description:
           type: string
-          maxLength: 5000
+          maxLength: 100000
+          description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
         due_date:
           type: string
         clear_due_date:
@@ -8775,6 +8785,16 @@ components:
           type: integer
         invite_expiration_days:
           type: integer
+        max_description_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task description length in characters (default 20000).
+        max_comment_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task comment length in characters (default 20000).
         email_provider:
           type: string
           description: none, mailgun, or smtp
@@ -8863,6 +8883,16 @@ components:
           type: integer
         invite_expiration_days:
           type: integer
+        max_description_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task description length in characters (default 20000).
+        max_comment_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task comment length in characters (default 20000).
         email_provider:
           type: string
         email_from_address:

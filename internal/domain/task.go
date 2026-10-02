@@ -18,14 +18,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// MaxDescriptionLength is the shared limit for task descriptions, in characters.
-const MaxDescriptionLength = storage.MaxTaskTextLength
+// MaxDescriptionLength returns the site-configured limit for task
+// descriptions, in characters.
+func MaxDescriptionLength() int {
+	return storage.GetTaskTextLimits().Description
+}
 
-// validateDescriptionLength enforces MaxDescriptionLength in characters (not
-// bytes) so multi-byte text gets the same allowance the UI shows.
-func validateDescriptionLength(description string) error {
-	if utf8.RuneCountInString(description) > MaxDescriptionLength {
-		return fmt.Errorf("%w: description must be %d characters or less", ErrValidation, MaxDescriptionLength)
+// validateDescriptionLength enforces max in characters (not bytes) so
+// multi-byte text gets the same allowance the UI shows.
+func validateDescriptionLength(description string, max int) error {
+	if utf8.RuneCountInString(description) > max {
+		return fmt.Errorf("%w: description must be %d characters or less", ErrValidation, max)
 	}
 	return nil
 }
@@ -90,7 +93,7 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		return 0, fmt.Errorf("%w: title is required", ErrValidation)
 	}
 	description := strings.TrimSpace(in.Description)
-	if err := validateDescriptionLength(description); err != nil {
+	if err := validateDescriptionLength(description, MaxDescriptionLength()); err != nil {
 		return 0, err
 	}
 	if in.Priority < 0 || in.Priority > 3 {
@@ -420,7 +423,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 	if in.Description != nil {
 		description = strings.TrimSpace(*in.Description)
-		if err := validateDescriptionLength(description); err != nil {
+		if err := validateDescriptionLength(description, MaxDescriptionLength()); err != nil {
 			return nil, err
 		}
 	}

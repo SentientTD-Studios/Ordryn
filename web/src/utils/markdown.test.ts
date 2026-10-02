@@ -90,7 +90,40 @@ describe('renderMarkdown', () => {
     assert.match(codeHtml, /<code>const x = 42<\/code>/)
 
     const fenceHtml = renderMarkdown('```js\nconsole.log("hi")\n```')
-    assert.match(fenceHtml, /<pre><code/)
+    assert.match(fenceHtml, /<pre class="hljs"><code class="hljs language-js">/)
+    assert.match(fenceHtml, /<span class="hljs-string">/)
+
+    const plainFence = renderMarkdown('```\n<b>a</b> && b\n```')
+    assert.match(plainFence, /<pre><code>&lt;b&gt;a&lt;\/b&gt; &amp;&amp; b<\/code><\/pre>/)
+
+    const unknownLang = renderMarkdown('```klingon\n<b>hi</b>\n```')
+    assert.match(unknownLang, /<pre><code class="language-klingon">&lt;b&gt;hi&lt;\/b&gt;<\/code><\/pre>/)
+
+    const htmlFence = renderMarkdown('```html\n<div class="x">&amp;</div>\n```')
+    assert.doesNotMatch(htmlFence, /&amp;lt;/)
+    assert.doesNotMatch(htmlFence, /<div/)
+  })
+
+  // No DOMPurify under node, so these exercise the renderer's own escaping.
+  it('escapes code content without relying on DOMPurify', () => {
+    const payloads = [
+      '```html\n<script>alert(1)</script>\n```',
+      '```js\n</code></pre><img src=x onerror=alert(1)>\n```',
+      '```\n</code></pre><img src=x onerror=alert(1)>\n```',
+      '```klingon\n</code></pre><img src=x onerror=alert(1)>\n```',
+      '```"><img src=x onerror=alert(1)>\nx\n```',
+      '```js"onmouseover="alert(1)\nx\n```',
+      '```html\n&lt;script&gt;alert(1)&lt;/script&gt;\n```',
+      '```\n&lt;img src=x onerror=alert(1)&gt;\n```',
+      '~~~xml\n<svg onload=alert(1)>\n~~~',
+      '    </code></pre><script>alert(1)</script>',
+      'a `</code><script>alert(1)</script>` b',
+    ]
+    for (const md of payloads) {
+      const html = renderMarkdown(md)
+      assert.doesNotMatch(html, /<(script|img|svg)\b/i, md)
+      assert.doesNotMatch(html, /<[^>]*\son\w+=/i, md)
+    }
 
     const quoteHtml = renderMarkdown('> Important warning')
     assert.match(quoteHtml, /<blockquote>/)
