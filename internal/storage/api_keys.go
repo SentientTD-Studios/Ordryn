@@ -52,6 +52,8 @@ type APIKeyPrincipal struct {
 	UserID    int
 	ProjectID int // 0 for personal keys
 	Scopes    []string
+	// IsAgent is true when the key belongs to an AI agent account.
+	IsAgent bool
 }
 
 // IsProjectScoped reports whether the key is limited to a single project.
@@ -296,12 +298,12 @@ func LookupAPIKey(rawKey string) (*APIKeyPrincipal, error) {
 	var projectID *int
 	var isBanned bool
 	err = pool.QueryRow(context.Background(),
-		`SELECT ak.id, ak.user_id, ak.project_id, ak.scopes, COALESCE(u.is_banned, FALSE)
+		`SELECT ak.id, ak.user_id, ak.project_id, ak.scopes, COALESCE(u.is_banned, FALSE), COALESCE(u.is_agent, FALSE)
 		 FROM api_keys ak
 		 JOIN users u ON u.id = ak.user_id
 		 WHERE ak.key_hash = $1 AND ak.revoked_at IS NULL
 		   AND (ak.expires_at IS NULL OR ak.expires_at > NOW())`,
-		HashAPIKey(rawKey)).Scan(&p.KeyID, &p.UserID, &projectID, &p.Scopes, &isBanned)
+		HashAPIKey(rawKey)).Scan(&p.KeyID, &p.UserID, &projectID, &p.Scopes, &isBanned, &p.IsAgent)
 	if err != nil || isBanned {
 		return nil, fmt.Errorf("invalid key")
 	}
@@ -376,7 +378,7 @@ func ListProjectAPIKeys(projectID int) ([]APIKey, error) {
 		        COALESCE(NULLIF(u.user_name, ''), u.email)
 		 FROM api_keys ak
 		 JOIN users u ON u.id = ak.user_id
-		 WHERE ak.project_id = $1 AND ak.revoked_at IS NULL
+		 WHERE ak.project_id = $1 AND ak.revoked_at IS NULL AND NOT COALESCE(u.is_agent, FALSE)
 		 ORDER BY ak.created_at DESC`, projectID)
 	if err != nil {
 		return nil, err

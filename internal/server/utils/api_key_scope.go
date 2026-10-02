@@ -17,6 +17,8 @@ type apiKeyPrincipalKey struct{}
 
 // Project-key lookups, swappable in tests.
 var (
+	scopedKeyAgent         = storage.GetAgentByUserID
+	scopedKeyStatus        = storage.GetProjectStatus
 	scopedKeyTaskProjectID = storage.GetTaskProjectID
 	scopedKeyCanManage     = func(projectID, userID int) bool {
 		proj, err := storage.GetAccessibleProjectByID(projectID, userID)
@@ -54,6 +56,34 @@ func errScopedBadRequest(msg string) error {
 	return &scopedKeyError{http.StatusBadRequest, "invalid_request", msg}
 }
 
+func errAgentGuardrail(msg string) error {
+	return &scopedKeyError{http.StatusForbidden, "agent_guardrail", msg}
+}
+
+func errAgentOnly() error {
+	return &scopedKeyError{http.StatusForbidden, "forbidden", "This endpoint is only available to AI agent keys."}
+}
+
+// resolveKeyAgent loads and checks the agent behind an agent key.
+func resolveKeyAgent(p *storage.APIKeyPrincipal) (*storage.ProjectAgent, error) {
+	a, err := scopedKeyAgent(p.UserID)
+	if err != nil || a == nil || a.ProjectID != p.ProjectID {
+		return nil, &scopedKeyError{http.StatusUnauthorized, "unauthorized", "This agent has been removed."}
+	}
+	if a.Role == "" {
+		return nil, &scopedKeyError{http.StatusUnauthorized, "unauthorized", "This agent is no longer a member of its project."}
+	}
+	if !a.Enabled {
+		return nil, &scopedKeyError{http.StatusForbidden, "agent_paused", "This agent is paused by a project manager."}
+	}
+	return a, nil
+}
+
+// WithAPIKeyPrincipal returns r carrying p, as authenticateBearer does.
+func WithAPIKeyPrincipal(r *http.Request, p *storage.APIKeyPrincipal) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), apiKeyPrincipalKey{}, p))
+}
+
 // GetAPIKeyPrincipal returns the Bearer key behind the request, if any.
 func GetAPIKeyPrincipal(r *http.Request) (*storage.APIKeyPrincipal, bool) {
 	p, ok := r.Context().Value(apiKeyPrincipalKey{}).(*storage.APIKeyPrincipal)
@@ -68,8 +98,14 @@ func authenticateBearer(w http.ResponseWriter, r *http.Request, token string) bo
 		APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Invalid, expired, or revoked API key.")
 		return false
 	}
+	if p.IsAgent && !p.IsProjectScoped() {
+		APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Invalid, expired, or revoked API key.")
+		return false
+	}
 	if p.IsProjectScoped() {
-		if !scopedKeyCanManage(p.ProjectID, p.UserID) {
+		// Agent keys act as the agent, whose own checks run in
+		// authorizeProjectKeyRequest; other project keys act as their creator.
+		if !p.IsAgent && !scopedKeyCanManage(p.ProjectID, p.UserID) {
 			APIJSONError(w, http.StatusUnauthorized, "unauthorized",
 				"This API key's creator no longer manages its project.")
 			return false
@@ -101,8 +137,35 @@ func authorizeProjectKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) err
 		}
 		return nil
 	}
+	// Agent keys are also bound by the agent's guardrails.
+	var agent *storage.ProjectAgent
+	if p.IsAgent {
+		a, err := resolveKeyAgent(p)
+		if err != nil {
+			return err
+		}
+		agent = a
+	}
 
 	switch {
+	// /agent/... and /mcp: the agent's own queue and MCP endpoint.
+	case parts[0] == "agent" || (len(parts) == 1 && parts[0] == "mcp"):
+		if agent == nil {
+			return errAgentOnly()
+		}
+		return require(storage.APIScopeTasksRead)
+
+	// /tasks/{id}/claim (agents only)
+	case len(parts) == 3 && parts[0] == "tasks" && parts[2] == "claim" && agent != nil:
+		taskID, ok := positiveInt(parts[1])
+		if !ok || (r.Method != http.MethodPost && r.Method != http.MethodDelete) {
+			break
+		}
+		if err := require(storage.APIScopeTasksWrite); err != nil {
+			return err
+		}
+		return requireTaskInProject(taskID, pid)
+
 	// /tasks
 	case len(parts) == 1 && parts[0] == "tasks":
 		switch r.Method {
@@ -119,7 +182,10 @@ func authorizeProjectKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) err
 			if err := require(storage.APIScopeTasksWrite); err != nil {
 				return err
 			}
-			return checkScopedTaskBody(r, pid, true)
+			if agent != nil && !agent.CanCreateTasks {
+				return errAgentGuardrail("This agent is not allowed to create tasks.")
+			}
+			return checkScopedTaskBody(r, pid, true, agent)
 		}
 
 	// /tasks/{id}
@@ -141,7 +207,7 @@ func authorizeProjectKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) err
 			if err := requireTaskInProject(taskID, pid); err != nil {
 				return err
 			}
-			return checkScopedTaskBody(r, pid, false)
+			return checkScopedTaskBody(r, pid, false, agent)
 		}
 
 	// /tasks/{id}/comments
@@ -159,6 +225,9 @@ func authorizeProjectKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) err
 		case http.MethodPost:
 			if err := require(storage.APIScopeCommentsWrite); err != nil {
 				return err
+			}
+			if agent != nil && !agent.CanComment {
+				return errAgentGuardrail("This agent is not allowed to post comments.")
 			}
 			return requireTaskInProject(taskID, pid)
 		}
@@ -191,7 +260,8 @@ func requireTaskInProject(taskID, projectID int) error {
 
 // checkScopedTaskBody keeps creates and updates inside the key's project:
 // project_id may only name that project, and parent_id must be one of its tasks.
-func checkScopedTaskBody(r *http.Request, projectID int, create bool) error {
+// For agent keys it also applies the agent's field and status guardrails.
+func checkScopedTaskBody(r *http.Request, projectID int, create bool, agent *storage.ProjectAgent) error {
 	if r.Body == nil {
 		if create {
 			return errScopedBadRequest("project_id is required for this API key.")
@@ -234,6 +304,90 @@ func checkScopedTaskBody(r *http.Request, projectID int, create bool) error {
 	}
 	if create && !hasProject {
 		return errScopedBadRequest("project_id is required for this API key.")
+	}
+	if agent != nil {
+		return checkAgentTaskFields(agent, body, create)
+	}
+	return nil
+}
+
+// agentBodyFields maps task body keys to the guardrail that governs them.
+// Keys not listed here are refused for agents (fail closed).
+var agentBodyFields = map[string]string{
+	"title":           storage.AgentFieldTitle,
+	"description":     storage.AgentFieldDescription,
+	"priority":        storage.AgentFieldPriority,
+	"due_date":        storage.AgentFieldDueDate,
+	"clear_due_date":  storage.AgentFieldDueDate,
+	"tag_ids":         storage.AgentFieldTags,
+	"estimate_points": storage.AgentFieldEstimate,
+	"sprint_id":       storage.AgentFieldSprint,
+	"fields":          storage.AgentFieldCustomFields,
+	"status_id":       storage.AgentFieldStatus,
+}
+
+// checkAgentTaskFields enforces an agent's guardrails on a task create or update.
+func checkAgentTaskFields(a *storage.ProjectAgent, body map[string]json.RawMessage, create bool) error {
+	for key, val := range body {
+		k := strings.ToLower(key)
+		switch k {
+		case "project_id":
+			continue // already pinned to the agent's project
+		case "parent_id":
+			// Re-parenting reshapes the board; only agents that may create tasks can do it.
+			if !create && !a.CanCreateTasks {
+				return errAgentGuardrail("This agent is not allowed to move tasks under a different parent.")
+			}
+			continue
+		case "completed":
+			if !a.CanComplete {
+				return errAgentGuardrail("This agent is not allowed to complete or reopen tasks.")
+			}
+			continue
+		case "title", "description":
+			if create {
+				continue // a new task needs a title and description
+			}
+		}
+		field, ok := agentBodyFields[k]
+		if !ok {
+			return errAgentGuardrail("This agent is not allowed to change " + key + ".")
+		}
+		if !a.HasField(field) {
+			return errAgentGuardrail("This agent is not allowed to change " + field + ".")
+		}
+		if field == storage.AgentFieldStatus {
+			if err := checkAgentStatusMove(a, val); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func checkAgentStatusMove(a *storage.ProjectAgent, raw json.RawMessage) error {
+	var statusID *int
+	if err := json.Unmarshal(raw, &statusID); err != nil || statusID == nil || *statusID <= 0 {
+		return errAgentGuardrail("This agent must move tasks to a specific status.")
+	}
+	if len(a.AllowedStatusIDs) > 0 {
+		allowed := false
+		for _, id := range a.AllowedStatusIDs {
+			if id == *statusID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return errAgentGuardrail("This agent is not allowed to move tasks to that status.")
+		}
+	}
+	st, err := scopedKeyStatus(a.ProjectID, *statusID)
+	if err != nil || st == nil {
+		return errScopedBadRequest("Invalid status_id.")
+	}
+	if st.IsDone && !a.CanComplete {
+		return errAgentGuardrail("This agent is not allowed to move tasks to a done status.")
 	}
 	return nil
 }

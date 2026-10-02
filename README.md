@@ -32,6 +32,8 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v2` (session cookie auth)
 - Live updates over Server-Sent Events so shared projects and other tabs stay in sync without a refresh
 - Drop-in **extensions** (`data/extensions/<id>/manifest.json`): outbound event hooks, custom fields, a sandboxed project panel, and scoped callback tokens for HTTP relays
+- Project-scoped **API keys** limited to one project and a set of scopes
+- **AI agents** as project members: managers add an agent with its own `@handle`, role, standing instructions, triggers (@mention, column move, or "Send to agent"), and guardrails. The agent connects over a signed webhook, a REST queue, or MCP (Claude Code and other MCP clients)
 
 ## Extensions
 
@@ -108,6 +110,50 @@ Host API 2 adds `surfaces` so a panel can also sit on the kanban board (`at: "ka
 ### Delivery
 
 `delivery.type`: `discord.webhook`, `slack.webhook`, `teams.webhook`, `googlechat.webhook`, `ntfy.webhook`, `http.webhook`. `delivery.url_from` must be a `secret` setting key. Optional `format` for HTTP: `text`, `content`, or `json`. Optional HMAC signing via `controls`: `rotate_signing`.
+
+## AI agents
+
+Project managers can add AI agents from **project settings → AI agents**. Each agent is a project member backed by a bot account (`users.is_agent`), so its comments, claims, status changes, and activity are attributed to it and badged as an agent. Agent accounts cannot sign in, receive no notifications, and are managed only from that tab. The agent itself runs outside Ordryn (Claude Code, a CI job, your own service). Ordryn tells it when there is work, hands it the task, and enforces what it may change.
+
+**What you need:** an agent on the project and something connected to its key that runs a model. A GitHub repository is **not** required. **What the agent sees:** the task (title, description, status, priority, due date, tags, custom fields), its discussion, the note sent with the run, and the agent's standing instructions, plus the project's linked GitHub repo and the task's linked issue when there are any. Nothing else, so vague one-line tasks get vague results.
+
+**Starting setups** (picked when adding an agent; they fill in instructions and guardrails, and none of them can complete tasks):
+
+| Setup | Send it | You get back | Runs on |
+| --- | --- | --- | --- |
+| Triage & clarify | Rough requests | Rewritten description with "done when" criteria, priority, questions; moved to Review | Any model, including local (Ollama) |
+| Break down into subtasks | Features / epics | 3–10 subtasks and a plan | Any model |
+| Draft & write | Docs, emails, release notes, checklists | The draft as a comment | Any model |
+| Investigate code (read-only) | Bug reports, "how does X work?" | Findings with file:line references and a proposed patch | An agent that can read the code (e.g. the Ollama example with `REPO_DIR`) |
+| Code changes | Bugs / small features | Branch or PR, tests, summary | An agent with the code checked out (e.g. Claude Code over MCP) |
+
+To try it locally for free, see [`examples/agents/ollama`](examples/agents/ollama/README.md).
+
+**Runs.** A run asks one agent to work on one task. A run starts when a permitted member `@mentions` the agent in a comment, moves a card into one of the agent's trigger columns, or clicks **Send to agent** on a task (optionally with a note, such as acceptance criteria). **Who can trigger** is managers only (the default), anyone who can edit tasks, or only the roles and/or specific members the manager selects (`trigger_by: "selected"` with `trigger_role_slugs` / `trigger_user_ids`; managers aren't included unless selected). A mention or column move from anyone else is ignored: no run, no error. "Send to agent" isn't offered to them. Events caused by agents never start runs, so agents can't loop on each other. An agent has at most one open run per task and an hourly limit. On kanban boards it can claim the card while it works, and the claim is released when the run finishes or is cancelled.
+
+**Guardrails** apply on top of the agent's project role and status gates, at the API edge, for every agent key:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| Role | `editor` | Base permissions; roles with `project:manage` are refused |
+| Editable fields | `status` | Which task fields it may PATCH (status, title, description, priority, due date, tags, estimate, sprint, custom fields). Unknown fields are refused |
+| Allowed columns | any non-done | Columns it may move cards into |
+| Complete tasks | off | Needed for `completed` and done columns. Leave off to keep a human sign-off |
+| Create tasks | off | Needed for `POST /tasks` and re-parenting |
+| Comment | on | Needed to post comments |
+| Max runs / hour | 20 | 1–500 |
+
+Refusals return `403 agent_guardrail`. **Pause** refuses the agent's keys and stops new runs. **Remove** revokes its keys, cancels open runs, clears its claims, and takes it off the project. Its history stays.
+
+**Connecting an agent.** Mint a key on the agent's settings (it acts as the agent, never as you), then use any of:
+
+- **MCP:** `POST /api/v2/mcp` is a Model Context Protocol server (streamable HTTP, JSON responses). For Claude Code:
+  `claude mcp add --transport http gotodo-<handle> https://<host>/api/v2/mcp --header "Authorization: Bearer <agent key>"`.
+  Tools: `get_agent_context`, `list_my_runs`, `start_run`, `finish_run`, `get_task`, `get_task_comments`, `list_tasks`, `add_comment`, `move_task`, `update_task`, `create_task`. They run through the REST API with the same key, so guardrails and rate limits are identical.
+- **REST queue:** `GET /api/v2/agent` (instructions, guardrails, statuses), `GET /api/v2/agent/runs`, `POST /api/v2/agent/runs/{id}/start`, `POST /api/v2/agent/runs/{id}/finish` with `{ "status": "succeeded"|"failed", "summary" }`.
+- **Webhook:** set a public HTTPS `webhook_url` and each new run is POSTed as `agent.run` JSON (run, agent instructions, task, guardrails, API URLs; never a key). Requests are signed with `X-Ordryn-Signature: sha256=HMAC(secret, body)` once you create a signing secret. Delivery is tried once. Failures show on the run, and the run stays in the agent's queue.
+
+Treat anything members write on a task as input the agent will read: limit who can trigger it and give it only the role and guardrails it needs. Full reference: the in-app API docs (`/docs/api/v2#ai-agents`) and [`openapi.yaml`](openapi.yaml) (tag **AI Agents**).
 
 ## Requirements
 

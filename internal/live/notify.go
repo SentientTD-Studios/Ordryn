@@ -153,10 +153,11 @@ func emitHook(ev hooks.Event) {
 	if hooks.HasWork() {
 		go hooks.Dispatch(ev)
 	}
+	hooks.RunSinks(ev)
 }
 
 func wantOutboundHooks() bool {
-	return hooks.HasWork() || hasHookListeners()
+	return hooks.HasWork() || hasHookListeners() || hooks.SinksActive()
 }
 
 func dispatchHook(actorID, taskID, projectID int, typ string, meta *TaskHookMeta) {

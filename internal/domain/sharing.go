@@ -112,6 +112,9 @@ func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, member
 	if current == storage.RoleOwner {
 		return fmt.Errorf("%w: cannot change owner role", ErrValidation)
 	}
+	if storage.IsAgentUser(memberUserID) {
+		return fmt.Errorf("%w: change an AI agent's role on the AI agents tab", ErrValidation)
+	}
 	if err := storage.UpsertProjectMember(projectID, memberUserID, role); err != nil {
 		return err
 	}
@@ -152,6 +155,9 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 	}
 	if targetRole == storage.RoleOwner {
 		return fmt.Errorf("%w: cannot remove the project owner", ErrValidation)
+	}
+	if storage.IsAgentUser(memberUserID) {
+		return fmt.Errorf("%w: remove an AI agent on the AI agents tab", ErrValidation)
 	}
 	if err := storage.RemoveProjectMember(projectID, memberUserID); err != nil {
 		return ErrNotFound

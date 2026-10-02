@@ -672,18 +672,31 @@ defineExpose({ reload, isDirty, flushUnsaved })
     <div v-else class="task-discussion-thread mb-2">
       <ul v-if="comments.length" class="list-unstyled mb-0">
         <li v-for="c in comments" :key="c.id" class="task-discussion-post">
-          <article class="task-post-card" :class="{ 'task-post-card--deleted': c.deleted }">
+          <article
+            class="task-post-card"
+            :class="{ 'task-post-card--deleted': c.deleted, 'task-post-card--agent': c.author_is_agent }"
+          >
             <header class="task-post-header">
               <img
-                v-if="c.avatar_url"
+                v-if="c.avatar_url && !c.author_is_agent"
                 :src="c.avatar_url"
                 alt=""
                 class="task-post-avatar-img"
                 aria-hidden="true"
               />
+              <div v-else-if="c.author_is_agent" class="task-post-avatar task-post-avatar--agent" aria-hidden="true">
+                <i class="bi bi-robot" />
+              </div>
               <div v-else class="task-post-avatar" aria-hidden="true">{{ initials(c) }}</div>
               <div class="task-post-meta">
-                <div class="task-post-author text-truncate">{{ authorLabel(c) }}</div>
+                <div class="task-post-author d-flex align-items-center gap-1" style="min-width: 0">
+                  <span class="text-truncate">{{ authorLabel(c) }}</span>
+                  <span
+                    v-if="c.author_is_agent"
+                    class="badge task-post-agent-badge flex-shrink-0"
+                    title="Written by an AI agent, not a person"
+                  ><i class="bi bi-robot me-1" aria-hidden="true" />AI agent</span>
+                </div>
                 <div class="task-post-times">
                   <time class="task-post-time" :datetime="c.created_at">Posted {{ formatWhen(c.created_at) }}</time>
                   <time
@@ -936,6 +949,23 @@ defineExpose({ reload, isDirty, flushUnsaved })
   color: var(--ordryn-filter-active-text, #fff);
   background: var(--ordryn-accent, #2563eb);
   flex-shrink: 0;
+}
+.task-post-avatar--agent {
+  border-radius: 0.45rem;
+  font-size: 1rem;
+  background: var(--ordryn-agent, #7c3aed);
+}
+.task-post-agent-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--ordryn-agent, #7c3aed);
+}
+.task-post-card--agent {
+  border-left: 3px solid var(--ordryn-agent, #7c3aed);
+}
+.task-post-card--agent .task-post-header {
+  background: color-mix(in srgb, var(--ordryn-agent, #7c3aed) 8%, var(--ordryn-card-bg, #fff));
 }
 .task-post-avatar-img {
   width: 2rem;

@@ -249,6 +249,27 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "mfa recovery: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateRolesTable(); err != nil {
+		fmt.Fprintf(os.Stderr, "roles: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateAPIKeysTable(); err != nil {
+		fmt.Fprintf(os.Stderr, "api keys: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateUsersAddIsAgent(); err != nil {
+		fmt.Fprintf(os.Stderr, "users.is_agent: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateProjectAgentTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "agents: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO roles (name, permissions) VALUES ('user', '{}') ON CONFLICT DO NOTHING`); err != nil {
+		fmt.Fprintf(os.Stderr, "seed roles: %v\n", err)
+		os.Exit(1)
+	}
 
 	_, err = pool.Exec(context.Background(), `
 		INSERT INTO users (id, email, password, role_id) VALUES

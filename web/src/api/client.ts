@@ -16,6 +16,10 @@ import type {
   CustomFieldDefList,
   APIKey,
   ProjectAPIKey,
+  ProjectAgent,
+  ProjectAgentInput,
+  AgentRun,
+  TaskAgentRuns,
   CalendarInfo,
   CalendarMonth,
   ChangelogEntry,
@@ -319,6 +323,73 @@ export const api = {
 
   revokeProjectAPIKey(projectId: number, keyId: number) {
     return request<void>(`/api/v2/projects/${projectId}/api-keys/${keyId}`, { method: 'DELETE' })
+  },
+
+  listProjectAgents(projectId: number) {
+    return request<ProjectAgent[]>(`/api/v2/projects/${projectId}/agents`)
+  },
+
+  createProjectAgent(projectId: number, payload: ProjectAgentInput & { handle: string }) {
+    return request<ProjectAgent>(`/api/v2/projects/${projectId}/agents`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateProjectAgent(projectId: number, agentId: number, patch: ProjectAgentInput) {
+    return request<ProjectAgent>(`/api/v2/projects/${projectId}/agents/${agentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  removeProjectAgent(projectId: number, agentId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/agents/${agentId}`, { method: 'DELETE' })
+  },
+
+  listAgentKeys(projectId: number, agentId: number) {
+    return request<ProjectAPIKey[]>(`/api/v2/projects/${projectId}/agents/${agentId}/keys`)
+  },
+
+  createAgentKey(projectId: number, agentId: number, payload: { name?: string; expires_at: string | null }) {
+    return request<ProjectAPIKey & { key: string }>(`/api/v2/projects/${projectId}/agents/${agentId}/keys`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  revokeAgentKey(projectId: number, agentId: number, keyId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/agents/${agentId}/keys/${keyId}`, { method: 'DELETE' })
+  },
+
+  rotateAgentWebhookSecret(projectId: number, agentId: number) {
+    return request<{ secret: string }>(`/api/v2/projects/${projectId}/agents/${agentId}/webhook-secret`, {
+      method: 'POST',
+    })
+  },
+
+  testAgentWebhook(projectId: number, agentId: number) {
+    return request<{ ok: boolean }>(`/api/v2/projects/${projectId}/agents/${agentId}/test`, { method: 'POST' })
+  },
+
+  listProjectAgentRuns(projectId: number, agentId?: number) {
+    const qs = agentId ? `?agent_id=${agentId}` : ''
+    return request<AgentRun[]>(`/api/v2/projects/${projectId}/agents/runs${qs}`)
+  },
+
+  getTaskAgentRuns(taskId: number) {
+    return request<TaskAgentRuns>(`/api/v2/tasks/${taskId}/agent-runs`)
+  },
+
+  sendTaskToAgent(taskId: number, agentId: number, note: string) {
+    return request<AgentRun>(`/api/v2/tasks/${taskId}/agent-runs`, {
+      method: 'POST',
+      body: JSON.stringify({ agent_id: agentId, note }),
+    })
+  },
+
+  cancelAgentRun(taskId: number, runId: number) {
+    return request<AgentRun>(`/api/v2/tasks/${taskId}/agent-runs/${runId}/cancel`, { method: 'POST' })
   },
 
   listTasks(params: Record<string, string | number | undefined> = {}) {

@@ -51,7 +51,7 @@ func APIV1ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := storage.GetUserByEmail(email)
-	if err == nil && user != nil {
+	if err == nil && user != nil && !storage.IsAgentEmail(email) {
 		resetToken, err := storage.GenerateResetToken(email)
 		if err == nil {
 			resetLink := utils.AbsoluteURLForRequest(r,

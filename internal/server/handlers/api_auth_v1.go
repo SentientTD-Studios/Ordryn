@@ -256,6 +256,10 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hashedPassword, _, _, err := storage.GetAuthCredentials(email)
+	// AI agent accounts have no password and only ever use their API keys.
+	if err == nil && storage.IsAgentEmail(email) {
+		err = errors.New("agent accounts cannot sign in")
+	}
 	if err != nil {
 		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
 			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)

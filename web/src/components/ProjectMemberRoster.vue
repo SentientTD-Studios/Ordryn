@@ -23,7 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const canEdit = (member: ProjectMember) =>
-  props.editable && !props.locked && member.role !== 'owner'
+  props.editable && !props.locked && member.role !== 'owner' && !member.is_agent
 </script>
 
 <template>
@@ -31,7 +31,10 @@ const canEdit = (member: ProjectMember) =>
     <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
       <span>{{ m.user_name || m.email }}</span>
       <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
-      <span v-if="m.inherited || (locked && m.role !== 'owner')" class="badge text-bg-info">from org</span>
+      <span v-if="m.is_agent" class="badge text-bg-dark" title="Managed on the AI agents tab">
+        <i class="bi bi-robot me-1" />AI agent
+      </span>
+      <span v-else-if="m.inherited || (locked && m.role !== 'owner')" class="badge text-bg-info">from org</span>
       <template v-if="canEdit(m)">
         <select
           class="form-select form-select-sm w-auto"

@@ -12,6 +12,7 @@ import TaskSidebarFields from '@/components/TaskSidebarFields.vue'
 import TaskRecurrenceEditor from '@/components/TaskRecurrenceEditor.vue'
 import TaskWatchButton from '@/components/TaskWatchButton.vue'
 import TaskLinksPanel from '@/components/TaskLinksPanel.vue'
+import TaskAgentsPanel from '@/components/TaskAgentsPanel.vue'
 import { draftFromRecurrence, emptyRecurrenceDraft, recurrencePayload, sameRecurrenceDraft, type RecurrenceDraft } from '@/utils/recurrence'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
@@ -25,7 +26,8 @@ import { useConfirm } from '@/composables/useConfirm'
 import { canMoveTaskStatus, hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
 import { isArchivedProject, isProjectOwner, projectOptionLabel } from '@/utils/projectLabel'
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
-import { useLiveUpdates, isOwnFocusedLiveEvent, type LiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnFocusedLiveEvent, LIVE_RESYNC, type LiveEvent } from '@/composables/useLiveUpdates'
+import { batchTouchesDiscussion } from '@/utils/liveEvents'
 import { assignableTags, archiveConfirmMessage, isArchivedTask, isProtectedTag } from '@/utils/tags'
 
 const {
@@ -713,27 +715,40 @@ async function flushDiscussion(): Promise<boolean> {
   return discussionRef.value.flushUnsaved()
 }
 
-useLiveUpdates(async (event: LiveEvent) => {
+useLiveUpdates(async (_last: LiveEvent, batch: LiveEvent[]) => {
   if (!open.value || !taskId.value) return
-  if (event.type === 'notification.created') return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
-  if (event.type === 'task.commented') {
-    if (!event.task_id || event.task_id === taskId.value) {
-      await discussionRef.value?.reload()
-    }
-    return
+  const id = taskId.value
+  const relevant = batch.filter(
+    (e) => e.type !== 'notification.created' && !isOwnFocusedLiveEvent(e, user.value?.id),
+  )
+  if (!relevant.length) return
+
+  // The discussion is independent of the edit form, so new comments always
+  // show up, even while the task form has unsaved changes.
+  if (batchTouchesDiscussion(relevant, id)) {
+    await discussionRef.value?.reload()
   }
-  if (event.type === 'project.updated' || event.type === 'project.created' || event.type === 'project.deleted') {
-    if (currentTask.value?.project_id && event.project_id === currentTask.value.project_id) {
-      await loadMeta()
-      await loadTagsForProject(projectId.value)
-      await loadStatusesForProject(projectId.value)
-      await loadSprintsForProject(projectId.value)
-    }
-    return
+
+  const projectChanged = relevant.some(
+    (e) =>
+      (e.type === 'project.updated' || e.type === 'project.created' || e.type === 'project.deleted') &&
+      !!currentTask.value?.project_id &&
+      e.project_id === currentTask.value.project_id,
+  )
+  if (projectChanged) {
+    await loadMeta()
+    await loadTagsForProject(projectId.value)
+    await loadStatusesForProject(projectId.value)
+    await loadSprintsForProject(projectId.value)
   }
-  if (event.task_id && event.task_id !== taskId.value) return
-  if (event.type === 'task.deleted') {
+
+  const taskEvents = relevant.filter(
+    (e) =>
+      e.type === LIVE_RESYNC ||
+      (e.type !== 'task.commented' && !e.type.startsWith('project.') && (!e.task_id || e.task_id === id)),
+  )
+  if (!taskEvents.length) return
+  if (taskEvents.some((e) => e.type === 'task.deleted')) {
     toast.push('This task was deleted in another session', 'info')
     close()
     return
@@ -744,7 +759,7 @@ useLiveUpdates(async (event: LiveEvent) => {
     return
   }
   try {
-    await loadTask(taskId.value)
+    await loadTask(id)
     await linksPanel.value?.reload()
     if (eventsLoaded.value) await loadEvents(true)
   } catch {
@@ -1590,6 +1605,9 @@ async function removeTimeEntry(entryId: number) {
         </div>
         <div v-if="(mode === 'edit' || mode === 'view') && taskId" class="form-group mt-2 kanban-order-related">
           <TaskLinksPanel ref="linksPanel" :task-id="taskId" :can-edit="canEditDetails" @open="openRelated" />
+        </div>
+        <div v-if="(mode === 'edit' || mode === 'view') && taskId && currentTask?.project_id" class="form-group mt-2 kanban-order-related">
+          <TaskAgentsPanel :task-id="taskId" />
         </div>
         <div class="form-group mt-2 kanban-order-project">
           <label for="project_id">Project (optional):</label>

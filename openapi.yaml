@@ -17,6 +17,13 @@ info:
     key's project. Keys stop working when they expire, are revoked, or their
     creator loses project:manage.
 
+    AI agents (`/api/v2/projects/{id}/agents`) are project members backed by a
+    bot account. Managers mint keys that act as the agent; agent keys get the
+    project-key allowlist plus the agent's own guardrails (editable fields,
+    allowed columns, completion, task creation, comments), the agent queue under
+    `/api/v2/agent`, and an MCP endpoint at `/api/v2/mcp`. Edits outside the
+    guardrails return 403 `agent_guardrail`.
+
     Rate limits (per user, Redis token bucket). Reads and writes are independent.
     Bearer API keys: 120 GET/min (~2/sec) and 60 writes/min (~1/sec).
     SPA session cookies use a higher budget (600 GET/min, 240 writes/min) so the
@@ -40,6 +47,7 @@ tags:
   - name: Tasks
   - name: Notifications
   - name: Projects
+  - name: AI Agents
   - name: Organizations
   - name: Tags
   - name: Saved Views
@@ -3056,6 +3064,327 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/{id}/agents:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [AI Agents]
+      summary: List the project's AI agents (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Agents, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [AI Agents]
+      summary: Add an AI agent member (project:manage)
+      description: |
+        Creates a bot account with the given @handle, adds it to the project with
+        `role` (default `editor`; roles with project:manage are refused), and stores
+        its triggers and guardrails. Defaults are conservative: triggered by
+        @mention from managers, may edit only `status`, may comment, may not
+        complete or create tasks, 20 runs per hour. At most 10 agents per project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/AgentInput"
+                - type: object
+                  required: [handle]
+                  properties:
+                    handle:
+                      type: string
+                      pattern: "^[A-Za-z0-9_]{3,32}$"
+                      description: Username used for @mentions; must be unused site-wide
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/agents/runs:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [AI Agents]
+      summary: Agent run history for the project (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentRun"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/agents/{agentId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/AgentID"
+    get:
+      tags: [AI Agents]
+      summary: Get one agent (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [AI Agents]
+      summary: Update an agent's settings, role, triggers, or guardrails (project:manage)
+      description: Omitted fields keep their value. The handle cannot be changed.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentInput"
+      responses:
+        "200":
+          description: Updated agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [AI Agents]
+      summary: Remove an agent (project:manage)
+      description: |
+        Removes the agent from the project, revokes its keys, cancels its open
+        runs, and clears its claims. Its past comments and activity keep their author.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/agents/{agentId}/keys:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/AgentID"
+    get:
+      tags: [AI Agents]
+      summary: List an agent's API keys (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Active keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectAPIKey"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [AI Agents]
+      summary: Mint an API key that acts as the agent (project:manage)
+      description: |
+        Agent keys always carry tasks:read, tasks:write and comments:write; the
+        agent's guardrails decide what those allow. They do not appear in
+        `/projects/{id}/api-keys`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 80
+                  description: Defaults to "<handle> key"
+                expires_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+      responses:
+        "201":
+          description: Key created; plaintext shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAPIKeyCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/agents/{agentId}/keys/{keyId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/AgentID"
+      - name: keyId
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      tags: [AI Agents]
+      summary: Revoke an agent key (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Revoked
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/agents/{agentId}/webhook-secret:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/AgentID"
+    post:
+      tags: [AI Agents]
+      summary: Rotate the webhook signing secret (project:manage)
+      description: |
+        Returns the new secret once. Deliveries carry
+        `X-Ordryn-Signature: sha256=<hex HMAC-SHA256 of the raw body>`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: New secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret:
+                    type: string
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/agents/{agentId}/test:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/AgentID"
+    post:
+      tags: [AI Agents]
+      summary: Send a sample run to the agent's webhook (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Delivered
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/agents/{agentId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/AgentID"
+    get:
+      tags: [AI Agents]
+      summary: One agent's run history (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentRun"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/projects/{id}/statuses:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -3683,6 +4012,258 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskTimeEntry"
+
+  /api/v2/tasks/{id}/agent-runs:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [AI Agents]
+      summary: Agent runs on a task, and the agents the caller may send it to
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Runs (newest first) and dispatchable agents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentRun"
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        handle:
+                          type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [AI Agents]
+      summary: Send a task to an AI agent
+      description: |
+        Queues a run. Allowed for project managers (`trigger_by: managers`), members
+        who can edit tasks (`writers`), or only the listed roles and members (`selected`). Returns 409 when the agent
+        is paused, already has an open run on the task, or hit its hourly limit.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id]
+              properties:
+                agent_id:
+                  type: integer
+                note:
+                  type: string
+                  maxLength: 2000
+                  description: Extra direction or acceptance criteria for this run
+      responses:
+        "201":
+          description: Run queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/tasks/{id}/agent-runs/{runId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/RunID"
+    post:
+      tags: [AI Agents]
+      summary: Cancel an open run (managers, or whoever started it)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Cancelled run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/agent:
+    get:
+      tags: [AI Agents]
+      summary: The calling agent's profile, instructions, guardrails, and board statuses (agent keys only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Agent context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSelf"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/agent/runs:
+    get:
+      tags: [AI Agents]
+      summary: The calling agent's queue (agent keys only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Comma-separated statuses; defaults to queued,running
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentRun"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/agent/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/RunID"
+    get:
+      tags: [AI Agents]
+      summary: One of the calling agent's runs (agent keys only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/agent/runs/{runId}/start:
+    parameters:
+      - $ref: "#/components/parameters/RunID"
+    post:
+      tags: [AI Agents]
+      summary: Mark a queued run as running (agent keys only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/agent/runs/{runId}/finish:
+    parameters:
+      - $ref: "#/components/parameters/RunID"
+    post:
+      tags: [AI Agents]
+      summary: Finish a run as succeeded or failed (agent keys only)
+      description: Records the summary on the run and releases the agent's claim on the task.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [succeeded, failed]
+                summary:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/mcp:
+    post:
+      tags: [AI Agents]
+      summary: Model Context Protocol endpoint (agent keys only)
+      description: |
+        MCP over the streamable HTTP transport, answering with plain JSON (no SSE
+        stream). Supports `initialize`, `ping`, `tools/list`, and `tools/call`.
+        Tools: get_agent_context, list_my_runs, start_run, finish_run, get_task,
+        get_task_comments, list_tasks, add_comment, move_task, update_task,
+        create_task. Each tool is replayed through the REST API with the caller's
+        key, so the same guardrails and rate limits apply; guardrail refusals come
+        back as tool results with `isError: true`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: A JSON-RPC 2.0 request or notification
+      responses:
+        "200":
+          description: JSON-RPC response
+          content:
+            application/json:
+              schema:
+                type: object
+        "202":
+          description: Notification accepted (no body)
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v2/tasks/{id}/comments:
     parameters:
@@ -5516,6 +6097,21 @@ components:
         type: integer
         minimum: 1
 
+    AgentID:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    RunID:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+
   responses:
     BadRequest:
       description: Invalid request
@@ -5841,6 +6437,213 @@ components:
             key:
               type: string
               description: Plaintext key; shown only once
+
+    AgentInput:
+      type: object
+      description: Agent settings. On PATCH, omitted fields keep their value.
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        instructions:
+          type: string
+          maxLength: 8000
+          description: Standing directions sent with every run
+        enabled:
+          type: boolean
+          description: Paused agents get no runs and their keys are refused
+        role:
+          type: string
+          description: Project role slug; roles with project:manage are refused
+        webhook_url:
+          type: string
+          description: Public HTTPS URL to POST runs to; empty for queue/MCP-only agents
+        trigger_on_mention:
+          type: boolean
+        trigger_status_ids:
+          type: array
+          items:
+            type: integer
+          description: Moving a task into one of these columns starts a run
+        trigger_by:
+          type: string
+          enum: [managers, writers, selected]
+          description: |
+            Who may start runs (by mention, column move, or Send to agent). With `selected`,
+            only callers whose role is in `trigger_role_slugs` or whose id is in
+            `trigger_user_ids` may; managers are not implied. Anyone else is ignored.
+        trigger_role_slugs:
+          type: array
+          items:
+            type: string
+          description: Project role slugs that may call the agent (trigger_by `selected`)
+        trigger_user_ids:
+          type: array
+          items:
+            type: integer
+          description: Project members who may call the agent (trigger_by `selected`)
+        claim_on_dispatch:
+          type: boolean
+          description: Claim the kanban card for the agent while a run is open
+        allowed_status_ids:
+          type: array
+          items:
+            type: integer
+          description: Columns the agent may move tasks into; empty means any non-done column
+        editable_fields:
+          type: array
+          items:
+            type: string
+            enum: [status, title, description, priority, due_date, tags, estimate, sprint, custom_fields]
+        can_complete:
+          type: boolean
+          description: Allow completing/reopening tasks and moving them into done columns
+        can_create_tasks:
+          type: boolean
+          description: Allow creating tasks and subtasks, and re-parenting tasks
+        can_comment:
+          type: boolean
+        max_runs_per_hour:
+          type: integer
+          minimum: 1
+          maximum: 500
+
+    Agent:
+      allOf:
+        - $ref: "#/components/schemas/AgentInput"
+        - type: object
+          properties:
+            id:
+              type: integer
+            project_id:
+              type: integer
+            user_id:
+              type: integer
+              description: The agent's member account
+            handle:
+              type: string
+            role_name:
+              type: string
+            webhook_secret_set:
+              type: boolean
+            last_delivery_at:
+              type: string
+              format: date-time
+              nullable: true
+            last_delivery_error:
+              type: string
+            created_by_id:
+              type: integer
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    AgentRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        agent_id:
+          type: integer
+        agent_name:
+          type: string
+        project_id:
+          type: integer
+        task_id:
+          type: integer
+        task_title:
+          type: string
+        trigger:
+          type: string
+          enum: [manual, mention, status]
+        triggered_by_id:
+          type: integer
+        triggered_by:
+          type: string
+        note:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled]
+        delivered:
+          type: boolean
+          description: True once the webhook accepted the run
+        delivery_error:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AgentSelf:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        name:
+          type: string
+        handle:
+          type: string
+        description:
+          type: string
+        instructions:
+          type: string
+        project:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        statuses:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              description:
+                type: string
+              is_done:
+                type: boolean
+        guardrails:
+          type: object
+          properties:
+            editable_fields:
+              type: array
+              items:
+                type: string
+            allowed_status_ids:
+              type: array
+              items:
+                type: integer
+            can_complete:
+              type: boolean
+            can_create_tasks:
+              type: boolean
+            can_comment:
+              type: boolean
+            role:
+              type: string
 
     Tag:
       type: object

@@ -15,8 +15,11 @@
       <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
         <span>{{ m.user_name || m.email }}</span>
         <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
-        <span v-if="m.inherited || (orgManaged && m.role !== 'owner')" class="badge text-bg-info">from org</span>
-        <template v-if="canEditMembers && m.role !== 'owner'">
+        <span v-if="m.is_agent" class="badge text-bg-dark" title="Managed on the AI agents tab">
+          <i class="bi bi-robot me-1" />AI agent
+        </span>
+        <span v-else-if="m.inherited || (orgManaged && m.role !== 'owner')" class="badge text-bg-info">from org</span>
+        <template v-if="canEditMembers && m.role !== 'owner' && !m.is_agent">
           <select
             class="form-select form-select-sm w-auto"
             :value="m.role"

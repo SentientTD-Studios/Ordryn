@@ -1397,8 +1397,9 @@ onMounted(async () => {
   await consumeTaskQuery()
 })
 
-useLiveUpdates((event) => {
-  if (event.type === 'task.commented') return
+useLiveUpdates((event, batch) => {
+  // Comments alone don't change this view; skip only when nothing else arrived.
+  if (batch.every((e) => e.type === 'task.commented')) return
   if (event.type === 'extension.store') return
   if (event.type === 'notification.created') return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return

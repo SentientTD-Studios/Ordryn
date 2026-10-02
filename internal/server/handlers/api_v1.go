@@ -493,6 +493,9 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 		case "comments":
 			handleTaskComments(w, r, id, parts[2:])
 			return
+		case "agent-runs":
+			apiV1TaskAgentRuns(w, r, id, parts[2:])
+			return
 		case "watch":
 			if len(parts) != 2 {
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
