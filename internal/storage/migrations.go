@@ -341,6 +341,14 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateWatchAndLinkTables failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateUsersAddIsAgent(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddIsAgent failed: %v\n", err)
+		errCount++
+	}
+	if err := CreateProjectAgentTables(); err != nil {
+		fmt.Printf("migration: CreateProjectAgentTables failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {

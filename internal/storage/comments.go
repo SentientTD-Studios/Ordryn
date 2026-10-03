@@ -47,7 +47,9 @@ type TaskComment struct {
 	EditedByUserName string
 	AuthorRole       string
 	AuthorRoleName   string
-	Links            []TaskCommentLink
+	// AuthorIsAgent is true when an AI agent wrote the comment.
+	AuthorIsAgent bool
+	Links         []TaskCommentLink
 }
 
 // TaskCommentLink is a task mentioned in a comment that the viewer can open.
@@ -141,7 +143,7 @@ func scanTaskComment(row interface {
 		&c.ID, &c.TaskID, &c.UserID, &c.Body, &c.CreatedAt,
 		&deletedAt, &deletedBy, &deletedKind,
 		&editedAt, &c.EditedByUserID, &c.UserName, &c.EditedByUserName,
-		&c.AvatarURL,
+		&c.AvatarURL, &c.AuthorIsAgent,
 	)
 	if err != nil {
 		return err
@@ -168,7 +170,8 @@ const taskCommentSelect = `SELECT c.id, c.task_id, COALESCE(c.user_id, 0), COALE
 		c.edited_at, COALESCE(c.edited_by_user_id, 0),
 		COALESCE(u.user_name, u.email, ''),
 		COALESCE(eu.user_name, eu.email, ''),
-		COALESCE(u.avatar_url, '')
+		COALESCE(u.avatar_url, ''),
+		COALESCE(u.is_agent, FALSE)
 	 FROM task_comments c
 	 LEFT JOIN users u ON u.id = c.user_id
 	 LEFT JOIN users eu ON eu.id = c.edited_by_user_id`

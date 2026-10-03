@@ -192,7 +192,30 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 			return "GitHub issue synced · " + state
 		}
 		return "GitHub issue synced"
+	case "agent_run_queued":
+		name := agentEventName(meta)
+		switch meta["trigger"] {
+		case "mention":
+			return "Sent to " + name + " · @mention"
+		case "status":
+			return "Sent to " + name + " · column move"
+		}
+		return "Sent to " + name
+	case "agent_run_finished":
+		if s, ok := meta["status"].(string); ok && s == "failed" {
+			return agentEventName(meta) + " could not finish"
+		}
+		return agentEventName(meta) + " finished"
+	case "agent_run_cancelled":
+		return "Cancelled " + agentEventName(meta) + "'s run"
 	default:
 		return eventType
 	}
+}
+
+func agentEventName(meta map[string]interface{}) string {
+	if name, ok := meta["agent_name"].(string); ok && name != "" {
+		return name
+	}
+	return "AI agent"
 }

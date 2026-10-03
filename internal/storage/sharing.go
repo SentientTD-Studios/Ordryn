@@ -55,6 +55,7 @@ type ProjectMember struct {
 	UserName  string
 	Role      string
 	Inherited bool
+	IsAgent   bool
 	CreatedAt time.Time
 }
 
@@ -418,7 +419,7 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, FALSE, pm.created_at
+		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, FALSE, COALESCE(u.is_agent, FALSE), pm.created_at
 		FROM project_members pm
 		JOIN users u ON u.id = pm.user_id
 		WHERE pm.project_id = $1
@@ -433,10 +434,11 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	var out []ProjectMember
 	for rows.Next() {
 		var m ProjectMember
-		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.Inherited, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.Inherited, &m.IsAgent, &m.CreatedAt); err != nil {
 			return nil, err
 		}
-		if locked && m.Role != RoleOwner {
+		// Agents belong to the project itself, never to the organization roster.
+		if locked && m.Role != RoleOwner && !m.IsAgent {
 			m.Inherited = true
 		}
 		out = append(out, m)

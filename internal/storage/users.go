@@ -13,7 +13,8 @@ type UserSummary struct {
 	IsBanned bool
 }
 
-// ListUsers returns all registered users ordered by id.
+// ListUsers returns all registered users ordered by id. AI agent accounts are
+// left out; they are managed per project.
 func ListUsers() ([]UserSummary, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -23,7 +24,7 @@ func ListUsers() ([]UserSummary, error) {
 
 	rows, err := pool.Query(context.Background(),
 		`SELECT id, email, COALESCE(user_name, ''), COALESCE(is_banned, FALSE)
-		 FROM users ORDER BY id ASC`)
+		 FROM users WHERE NOT COALESCE(is_agent, FALSE) ORDER BY id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %v", err)
 	}

@@ -252,6 +252,15 @@ func DeleteProject(id int, userID int) error {
 	}
 	defer CloseDatabase(pool)
 
+	// The project's AI agent accounts outlive it (their comments keep an
+	// author), so retire them first. Best-effort: older schemas lack the table.
+	_, _ = pool.Exec(context.Background(), `
+		UPDATE users SET is_banned = TRUE
+		WHERE is_agent AND id IN (
+			SELECT pa.user_id FROM project_agents pa
+			JOIN projects p ON p.id = pa.project_id
+			WHERE p.id = $1 AND p.user_id = $2)`, id, userID)
+
 	_, err = pool.Exec(context.Background(), "DELETE FROM projects WHERE id = $1 AND user_id = $2", id, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete project: %v", err)

@@ -46,6 +46,8 @@ onUnmounted(() => {
                         <ul class="list-inline mb-0">
                             <li class="list-inline-item"><a href="#overview">Overview</a></li>
                             <li class="list-inline-item"><a href="#authentication">Authentication</a></li>
+                            <li class="list-inline-item"><a href="#project-keys">Project API keys</a></li>
+                            <li class="list-inline-item"><a href="#ai-agents">AI agents &amp; MCP</a></li>
                             <li class="list-inline-item"><a href="#session-auth">Session auth (SPA)</a></li>
                             <li class="list-inline-item"><a href="#device-auth">Device authorization</a></li>
                             <li class="list-inline-item"><a href="#errors">Errors</a></li>
@@ -92,6 +94,17 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/me/mfa/recovery-codes</code></a></td><td>Replace recovery codes</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/api-keys</code></a></td><td>List / create API keys</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span> <span class="badge bg-danger">DELETE</span></td><td><a href="#session-auth"><code>/api/v2/api-keys/{id}</code></a></td><td>Rename or revoke an API key</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#project-keys"><code>/api/v2/projects/{id}/api-keys</code></a></td><td>List / create project-scoped API keys</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#project-keys"><code>/api/v2/projects/{id}/api-keys/{keyId}</code></a></td><td>Revoke a project API key</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/projects/{id}/agents</code></a></td><td>List / add AI agents (managers)</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span> <span class="badge bg-danger">DELETE</span></td><td><a href="#ai-agents"><code>/api/v2/projects/{id}/agents/{agentId}</code></a></td><td>Get, configure, or remove an agent</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/projects/{id}/agents/{agentId}/keys</code></a></td><td>List / mint keys that act as the agent</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/projects/{id}/agents/{agentId}/webhook-secret</code></a></td><td>Rotate the webhook signing secret</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#ai-agents"><code>/api/v2/projects/{id}/agents/runs</code></a></td><td>Agent run history</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/tasks/{id}/agent-runs</code></a></td><td>Runs on a task / send a task to an agent</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#ai-agents"><code>/api/v2/agent</code></a>, <code>/api/v2/agent/runs</code></td><td>Agent keys: who am I, my queue</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/agent/runs/{runId}/start|finish</code></a></td><td>Agent keys: start or finish a run</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/mcp</code></a></td><td>Agent keys: Model Context Protocol endpoint</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks</code></a></td><td>List tasks (with filters and pagination)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks</code></a></td><td>Create a task</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}</code></a></td><td>Get one task</td></tr>
@@ -133,9 +146,116 @@ onUnmounted(() => {
                     </p>
                     <pre class="api-docs-pre"><code>Authorization: Bearer YOUR_API_KEY</code></pre>
                     <p class="text-muted small mb-0">
-                        Keys are created on the profile page and shown in full only once at creation.
+                        Personal keys are created on the profile page; project keys in a project's settings under
+                        <strong>API keys</strong>. Either is shown in full only once at creation.
                         Revoked keys stop working immediately. The API requires Redis for key validation and rate limiting.
                     </p>
+
+                    <h2 id="project-keys" class="h4 mt-4">Project API keys</h2>
+                    <p>
+                        Project managers can mint keys that only work inside one project. A project key acts as the
+                        manager who created it, so their project role still applies, but it is further limited to the
+                        scopes chosen at creation:
+                    </p>
+                    <table class="table table-sm">
+                        <thead><tr><th>Scope</th><th>Allows</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>tasks:read</code></td><td><code>GET /tasks</code>, <code>GET /tasks/{id}</code>, <code>GET /tasks/{id}/comments</code>, and <code>GET</code> on the project, its <code>statuses</code>, <code>sprints</code> and <code>custom-fields</code></td></tr>
+                            <tr><td><code>tasks:write</code></td><td><code>POST /tasks</code> (with this <code>project_id</code>) and <code>PATCH /tasks/{id}</code></td></tr>
+                            <tr><td><code>comments:write</code></td><td><code>POST /tasks/{id}/comments</code></td></tr>
+                        </tbody>
+                    </table>
+                    <p class="text-muted small">
+                        Every other endpoint returns <code>403</code>, including deleting tasks and managing keys. Tasks in
+                        other projects return <code>404</code>, <code>GET /tasks</code> is always filtered to the key's
+                        project, and tasks cannot be moved out of it. Keys can expire, and stop working if their creator
+                        loses manage access to the project.
+                    </p>
+                    <pre class="api-docs-pre"><code>POST {{ basePath }}/api/v2/projects/12/api-keys
+Content-Type: application/json
+
+{ "name": "Zapier intake", "scopes": ["tasks:read", "tasks:write"], "expires_at": "2027-01-01T00:00:00Z" }
+
+→ 201 { "id", "name", "key_prefix", "scopes", "expires_at", "key": "gotodo_…" }</code></pre>
+
+                    <h2 id="ai-agents" class="h4 mt-4">AI agents &amp; MCP</h2>
+                    <p>
+                        Project managers can add AI agents under project settings → <strong>AI agents</strong> (or
+                        <code>POST /api/v2/projects/{id}/agents</code>). An agent is a real project member backed by a bot
+                        account with its own <code>@handle</code> and role, so its comments, claims, and edits are attributed
+                        to it. Agents cannot sign in, get no notifications, and never trigger other agents.
+                    </p>
+                    <p>
+                        A <strong>run</strong> asks an agent to work on one task. Runs start when a permitted member
+                        <code>@mentions</code> the agent in a comment, moves a card into one of its trigger columns, or calls
+                        <code>POST /api/v2/tasks/{id}/agent-runs</code> with <code>{ "agent_id", "note" }</code>. An agent has at
+                        most one open run per task and an hourly run limit. Run status goes
+                        <code>queued → running → succeeded | failed</code>, or <code>cancelled</code>.
+                    </p>
+                    <p>
+                        Who counts as permitted is set by <code>trigger_by</code>: <code>managers</code> (default),
+                        <code>writers</code> (anyone who can edit tasks), or <code>selected</code>. With <code>selected</code>, only callers
+                        whose project role is in <code>trigger_role_slugs</code> or whose user id is in <code>trigger_user_ids</code>
+                        qualify, and managers are not implied. Mentions and column moves from anyone else are ignored
+                        silently. <code>POST …/agent-runs</code> from them returns <code>403</code>.
+                    </p>
+                    <h3 class="h6 mt-3">Agent keys and guardrails</h3>
+                    <p>
+                        <code>POST /api/v2/projects/{id}/agents/{agentId}/keys</code> mints a key that acts as the agent. It
+                        gets the project-key allowlist above plus <code>POST|DELETE /tasks/{id}/claim</code>,
+                        <code>/agent/*</code>, and <code>/mcp</code>. Every write is checked against the agent's guardrails:
+                    </p>
+                    <ul class="small">
+                        <li><code>editable_fields</code>: which <code>PATCH /tasks/{id}</code> keys it may send (<code>status</code>,
+                            <code>title</code>, <code>description</code>, <code>priority</code>, <code>due_date</code>, <code>tags</code>,
+                            <code>estimate</code>, <code>sprint</code>, <code>custom_fields</code>). Unknown keys are refused.</li>
+                        <li><code>allowed_status_ids</code>: columns it may move cards into (empty = any non-done column).</li>
+                        <li><code>can_complete</code>: needed for <code>completed</code> and for moving into a done column.</li>
+                        <li><code>can_create_tasks</code>: needed for <code>POST /tasks</code> and re-parenting.</li>
+                        <li><code>can_comment</code>: needed for <code>POST /tasks/{id}/comments</code>.</li>
+                    </ul>
+                    <p class="text-muted small">
+                        The agent's project role and the board's status gates still apply. Refusals return
+                        <code>403</code> with code <code>agent_guardrail</code>. A paused agent's keys return
+                        <code>403 agent_paused</code>, and a removed agent's keys return <code>401</code>.
+                    </p>
+                    <h3 class="h6 mt-3">Working the queue over REST</h3>
+                    <pre class="api-docs-pre"><code>GET  {{ basePath }}/api/v2/agent                      → name, instructions, guardrails, board statuses
+GET  {{ basePath }}/api/v2/agent/runs                 → open runs (?status=queued,running,succeeded,…)
+POST {{ basePath }}/api/v2/agent/runs/41/start
+GET  {{ basePath }}/api/v2/tasks/88                   → the task;  GET /tasks/88/comments → discussion
+POST {{ basePath }}/api/v2/tasks/88/comments           { "body": "Fixed in #412; tests pass." }
+PATCH {{ basePath }}/api/v2/tasks/88                   { "status_id": 7 }
+POST {{ basePath }}/api/v2/agent/runs/41/finish        { "status": "succeeded", "summary": "Fixed and moved to Review" }</code></pre>
+                    <p class="small text-muted">Finishing or cancelling a run releases the agent's claim on the card.</p>
+                    <h3 class="h6 mt-3">Webhook delivery</h3>
+                    <p>
+                        If the agent has a <code>webhook_url</code> (public HTTPS), each new run is POSTed to it with
+                        <code>X-Ordryn-Event: agent.run</code>, <code>X-Ordryn-Event-Id</code>, and, once a secret is set,
+                        <code>X-Ordryn-Signature: sha256=&lt;hex HMAC-SHA256 of the raw body&gt;</code>. Delivery is tried once.
+                        A failed delivery is shown on the run, and the run stays in the agent's queue. The body never contains
+                        a key:
+                    </p>
+                    <pre class="api-docs-pre"><code>{
+  "event": "agent.run",
+  "run": { "id": 41, "trigger": "mention", "note": "@release_bot please fix…", "triggered_by": { "id": 3, "username": "ada" } },
+  "agent": { "id": 2, "name": "Release Bot", "handle": "release_bot", "instructions": "…" },
+  "project": { "id": 12, "name": "Website" },
+  "task": { "id": 88, "title": "…", "description": "…", "status": "AI queue", "status_id": 6, "priority": 2, "due_date": "", "tags": [], "fields": {}, "url": "https://…/tasks/88" },
+  "guardrails": { "editable_fields": ["status"], "allowed_status_ids": [7], "can_complete": false, "can_create_tasks": false, "can_comment": true, "role": "editor" },
+  "api": { "base_url": "https://…/api/v2", "mcp_url": "https://…/api/v2/mcp" }
+}</code></pre>
+                    <h3 class="h6 mt-3">MCP (Claude Code and other MCP clients)</h3>
+                    <p>
+                        <code>POST /api/v2/mcp</code> is a Model Context Protocol server (streamable HTTP, JSON responses)
+                        for agent keys. Tools: <code>get_agent_context</code>, <code>list_my_runs</code>, <code>start_run</code>,
+                        <code>finish_run</code>, <code>get_task</code>, <code>get_task_comments</code>, <code>list_tasks</code>,
+                        <code>add_comment</code>, <code>move_task</code>, <code>update_task</code>, <code>create_task</code>. Each
+                        tool runs through the REST API with the same key, so guardrails and rate limits are identical.
+                        Refusals come back as tool results with <code>isError: true</code>.
+                    </p>
+                    <pre class="api-docs-pre"><code>claude mcp add --transport http gotodo-release_bot https://todo.example.com{{ basePath }}/api/v2/mcp \
+  --header "Authorization: Bearer gotodo_…"</code></pre>
 
                     <h2 id="session-auth" class="h4 mt-4">Session auth (SPA)</h2>
                     <p>

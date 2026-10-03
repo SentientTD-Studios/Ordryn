@@ -3,8 +3,11 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -83,13 +86,19 @@ func CreateUserNotification(n UserNotification) (int, error) {
 		taskArg = n.TaskID
 	}
 
+	// AI agents have no inbox; their notifications are dropped (id 0).
 	var id int
 	err = pool.QueryRow(context.Background(),
 		`INSERT INTO user_notifications
 			(user_id, actor_user_id, type, project_id, task_id, title, body)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		 SELECT $1, $2, $3, $4, $5, $6, $7
+		 WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = $1 AND is_agent)
+		 RETURNING id`,
 		n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body,
 	).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
 	return id, err
 }
 
@@ -118,7 +127,8 @@ func CreateUserNotificationsBulk(items []UserNotification) error {
 		if _, err := pool.Exec(context.Background(),
 			`INSERT INTO user_notifications
 				(user_id, actor_user_id, type, project_id, task_id, title, body)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			 SELECT $1, $2, $3, $4, $5, $6, $7
+			 WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = $1 AND is_agent)`,
 			n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body,
 		); err != nil {
 			return err

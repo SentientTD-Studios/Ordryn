@@ -144,6 +144,8 @@ export type TaskComment = {
   edited_by_user_name?: string
   author_role?: string
   author_role_name?: string
+  /** True when an AI agent wrote the comment. */
+  author_is_agent?: boolean
   deleted: boolean
   deleted_at?: string | null
   deleted_by_user_id?: number
@@ -190,6 +192,8 @@ export type ProjectMember = {
   role: string
   role_name?: string
   inherited?: boolean
+  /** True for AI agent members (managed on the AI agents tab). */
+  is_agent?: boolean
   created_at: string
 }
 
@@ -912,6 +916,97 @@ export type APIKey = {
   key_prefix: string
   created_at: string
   last_used_at?: string | null
+}
+
+export type ProjectAPIKey = {
+  id: number
+  name: string
+  key_prefix: string
+  scopes: string[]
+  created_at: string
+  last_used_at: string | null
+  expires_at: string | null
+  expired: boolean
+  created_by_id: number
+  created_by?: string
+}
+
+export type AgentEditableField =
+  | 'status'
+  | 'title'
+  | 'description'
+  | 'priority'
+  | 'due_date'
+  | 'tags'
+  | 'estimate'
+  | 'sprint'
+  | 'custom_fields'
+
+export type AgentTriggerBy = 'managers' | 'writers' | 'selected'
+
+/** Settings shared by create and PATCH; omitted fields keep their value. */
+export type ProjectAgentInput = {
+  name?: string
+  description?: string
+  instructions?: string
+  enabled?: boolean
+  role?: string
+  webhook_url?: string
+  trigger_on_mention?: boolean
+  trigger_status_ids?: number[]
+  trigger_by?: AgentTriggerBy
+  /** With trigger_by 'selected': roles whose members may call the agent. */
+  trigger_role_slugs?: string[]
+  /** With trigger_by 'selected': members who may call the agent. */
+  trigger_user_ids?: number[]
+  claim_on_dispatch?: boolean
+  allowed_status_ids?: number[]
+  editable_fields?: AgentEditableField[]
+  can_complete?: boolean
+  can_create_tasks?: boolean
+  can_comment?: boolean
+  max_runs_per_hour?: number
+}
+
+export type ProjectAgent = Required<ProjectAgentInput> & {
+  id: number
+  project_id: number
+  user_id: number
+  handle: string
+  role_name: string
+  webhook_secret_set: boolean
+  last_delivery_at: string | null
+  last_delivery_error: string
+  created_by_id: number
+  created_at: string
+  updated_at: string
+}
+
+export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export type AgentRun = {
+  id: number
+  agent_id: number
+  agent_name: string
+  project_id: number
+  task_id: number
+  task_title: string
+  trigger: 'manual' | 'mention' | 'status'
+  triggered_by_id: number
+  triggered_by: string
+  note: string
+  status: AgentRunStatus
+  delivered: boolean
+  delivery_error: string
+  summary: string
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export type TaskAgentRuns = {
+  runs: AgentRun[]
+  agents: { id: number; name: string; handle: string }[]
 }
 
 export type DeviceStatus = {

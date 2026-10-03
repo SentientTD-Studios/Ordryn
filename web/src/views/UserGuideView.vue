@@ -31,6 +31,7 @@ onUnmounted(() => {
             <li class="list-inline-item"><a href="#tasks">Tasks</a></li>
             <li class="list-inline-item"><a href="#projects-views">Projects &amp; views</a></li>
             <li class="list-inline-item"><a href="#roles-permissions">Roles</a></li>
+            <li class="list-inline-item"><a href="#ai-agents">AI agents</a></li>
             <li class="list-inline-item"><a href="#calendar-dashboard">Calendar &amp; dashboard</a></li>
             <li class="list-inline-item"><a href="#collaboration">Collaboration</a></li>
             <li class="list-inline-item"><a href="#shortcuts">Shortcuts</a></li>
@@ -143,6 +144,89 @@ onUnmounted(() => {
             Empty lists mean any role with “change status” may move that direction. Owners and
             site admins always bypass gates. A common setup is Ready for QA (open) and In QA
             (QA plus owner only).
+          </li>
+        </ul>
+
+        <h2 id="ai-agents" class="h4 mt-4">AI agents</h2>
+        <p>
+          Project managers can add AI agents to a project and hand them tasks. An agent is a project
+          member with its own <code>@handle</code>, a role, and guardrails, so its comments, claims, and
+          edits show up under its name (with an <strong>AI agent</strong> badge) rather than yours. The
+          agent itself runs outside {{ siteName }}: for example Claude Code on a developer machine, a CI
+          job, or your own service. {{ siteName }} tells it when there is work, hands it the task, and
+          records what it did.
+        </p>
+        <p>
+          <strong>What you need:</strong> an agent set up on the project, and something connected to its key
+          that runs a model. A GitHub repository is <em>not</em> required. It only matters for agents that change
+          code.
+        </p>
+        <p>
+          <strong>What the agent sees:</strong> the task's title, description, status, priority, due date, tags,
+          custom fields, and discussion, plus the note sent with the run and your standing instructions. If the project
+          has a linked GitHub repository or the task has a linked issue, those are included too. That's all it knows.
+          A one-line task like “Fix login” gives it little to work with. Say what you want back and how you'll
+          judge it done, in the task or in the note.
+        </p>
+        <p><strong>What it's good for</strong>, depending on where the agent runs:</p>
+        <table class="table table-sm small">
+          <thead><tr><th>Starting setup</th><th>Send it…</th><th>You get back</th><th>Runs on</th></tr></thead>
+          <tbody>
+            <tr><td>Triage &amp; clarify</td><td>Rough or one-line requests</td><td>A rewritten description with steps and “done when” criteria, a priority, and open questions; card moved to Review</td><td>Any model, including local</td></tr>
+            <tr><td>Break down into subtasks</td><td>A feature or epic</td><td>3–10 subtasks plus a plan comment</td><td>Any model</td></tr>
+            <tr><td>Draft &amp; write</td><td>“Write the release notes for…”, “Draft an email to…”</td><td>The draft as a comment, with assumptions and questions</td><td>Any model</td></tr>
+            <tr><td>Investigate code (read-only)</td><td>A bug report or “how does this work?”</td><td>Findings with file:line references and a proposed patch to apply yourself</td><td>An agent that can read the code, e.g. the local Ollama example with <code>REPO_DIR</code></td></tr>
+            <tr><td>Code changes</td><td>A bug or small feature, ideally with a linked issue</td><td>A branch or pull request, tests, and a summary comment</td><td>An agent with the code checked out, e.g. Claude Code over MCP</td></tr>
+          </tbody>
+        </table>
+        <ol>
+          <li>
+            Open project settings → <strong>AI agents</strong> and choose <strong>Add AI agent</strong>.
+            Pick what it should do (this fills in instructions and guardrails), a name, a handle, and a project
+            role. Roles that can manage the project are not allowed.
+          </li>
+          <li>
+            Write <strong>standing instructions</strong>: how to do the work, what “done” means, and when
+            to stop and ask in a comment instead.
+          </li>
+          <li>
+            Choose <strong>triggers</strong>: an <code>@mention</code> in a comment (the comment becomes the
+            run's note), moving a card into a column such as “AI queue”, or <strong>Send to agent</strong>
+            on the task. Decide who may send work: managers only (the default), anyone who can edit tasks, or only the
+            roles and specific members you pick. Calls from anyone else are ignored and nothing happens.
+          </li>
+          <li>
+            Set <strong>guardrails</strong>: which fields it may change, which columns it may move cards
+            into, and whether it may complete tasks, create tasks, or comment. By default it may only move
+            cards and comment, cannot complete anything, and is limited to 20 runs per hour. Keep
+            “complete tasks” off and limit it to a Review column if you want a person to sign off.
+          </li>
+          <li>
+            Under <strong>Connect the agent</strong>, create a key. For Claude Code or another MCP client,
+            copy the <code>claude mcp add …</code> command shown there. For your own service, set a webhook
+            URL so each new run is POSTed to it, or poll the agent's queue over the API.
+          </li>
+        </ol>
+        <p>
+          On a task, the <strong>AI agents</strong> section shows each run (queued, running, succeeded,
+          failed, or cancelled), the agent's summary, and a <strong>Send to agent</strong> button with an
+          optional note for extra direction or acceptance criteria. While a run is open the card is claimed
+          by the agent. The claim is released when it finishes. Managers, or whoever started a run, can
+          cancel it.
+        </p>
+        <ul>
+          <li>
+            Agents never trigger other agents. They cannot sign in, receive no notifications, and are
+            managed only from the AI agents tab, not Sharing.
+          </li>
+          <li>
+            <strong>Pause</strong> stops new runs and refuses the agent's keys right away.
+            <strong>Remove</strong> revokes its keys, cancels open runs, and takes it off the project.
+            Its past comments and activity stay, and its handle stays reserved.
+          </li>
+          <li>
+            Anything members write on a task becomes input the agent reads. Keep triggers limited to
+            people you trust, and give the agent only the role and guardrails it needs.
           </li>
         </ul>
 

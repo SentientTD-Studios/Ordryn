@@ -149,8 +149,9 @@ watch(lastDeletedTask, (payload) => {
   })
 })
 
-useLiveUpdates((event) => {
-  if (event.type === 'task.commented') return
+useLiveUpdates((event, batch) => {
+  // Comments alone don't change this view; skip only when nothing else arrived.
+  if (batch.every((e) => e.type === 'task.commented')) return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return
   void refreshDashboard().catch(() => {
     /* keep current view if refresh fails */

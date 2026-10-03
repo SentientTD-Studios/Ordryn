@@ -20,6 +20,7 @@ type apiProjectMemberJSON struct {
 	Role      string `json:"role"`
 	RoleName  string `json:"role_name,omitempty"`
 	Inherited bool   `json:"inherited,omitempty"`
+	IsAgent   bool   `json:"is_agent,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -163,6 +164,12 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 	case "extensions":
 		apiV1ProjectExtensions(w, r, projectID, parts[2:])
 		return true
+	case "api-keys":
+		apiV1ProjectAPIKeys(w, r, projectID, parts[2:])
+		return true
+	case "agents":
+		apiV1ProjectAgents(w, r, projectID, parts[2:])
+		return true
 	case "inbound":
 		if len(parts) == 2 {
 			apiV1ProjectInbound(w, r, projectID)
@@ -222,13 +229,18 @@ func apiV1ProjectMembers(w http.ResponseWriter, r *http.Request, projectID int, 
 		}
 		out := make([]apiProjectMemberJSON, 0, len(members))
 		for _, m := range members {
+			email := m.Email
+			if m.IsAgent {
+				email = "" // agent accounts have a placeholder address
+			}
 			out = append(out, apiProjectMemberJSON{
 				UserID:    m.UserID,
-				Email:     m.Email,
+				Email:     email,
 				UserName:  m.UserName,
 				Role:      m.Role,
 				RoleName:  storage.RoleDisplayName(projectID, m.Role),
 				Inherited: m.Inherited,
+				IsAgent:   m.IsAgent,
 				CreatedAt: formatRFC3339(m.CreatedAt),
 			})
 		}
@@ -491,6 +503,14 @@ func formatProjectEventLabel(eventType string, metadata map[string]interface{}) 
 		return "Project archived"
 	case "restored":
 		return "Project restored"
+	case "agent_added":
+		return "AI agent added · " + metadataString(metadata, "name")
+	case "agent_updated":
+		return "AI agent updated · " + metadataString(metadata, "name")
+	case "agent_removed":
+		return "AI agent removed · " + metadataString(metadata, "name")
+	case "agent_key_created":
+		return "AI agent key created · " + metadataString(metadata, "name")
 	default:
 		return eventType
 	}

@@ -104,7 +104,7 @@ func HasActiveAPIKeyNamed(userID int, name string) (bool, error) {
 	var id int
 	err = pool.QueryRow(context.Background(),
 		`SELECT id FROM api_keys
-		 WHERE user_id = $1 AND name = $2 AND revoked_at IS NULL
+		 WHERE user_id = $1 AND name = $2 AND project_id IS NULL AND revoked_at IS NULL
 		 LIMIT 1`, userID, name).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -80,6 +80,7 @@ func StartServer() error {
 	domain.StartAutoSprintWorker()
 	hooks.StartOverdueHookWorker()
 	hooks.StartDeliveryWorker()
+	domain.StartAgentDispatcher()
 
 	registerAPIV1Routes()
 
@@ -160,6 +161,12 @@ func registerAPIV1Routes() {
 	handleAPI("/saved-views/", v1(handlers.APIV1SavedViewsRouter))
 	handleAPI("/dashboard", v1(handlers.APIV1Dashboard))
 	handleAPI("/events", v1(handlers.APIV1Events))
+	handleAPI("/agent", v1(handlers.APIV1AgentRouter))
+	handleAPI("/agent/", v1(handlers.APIV1AgentRouter))
+	// MCP tool calls are replayed through the REST API, which applies the key's
+	// normal rate limits; the envelope only gets a light per-key limit.
+	handleAPI("/mcp", utils.RequireAPIRedis(utils.RequireSessionOrAPIKey(
+		utils.RateLimitMiddleware(240, 4.0, 60, utils.KeyByIPAndBearer)(handlers.APIV1MCP))))
 	handleAPI("/calendar", v1(handlers.APIV1CalendarRouter))
 	handleAPI("/calendar/", v1(handlers.APIV1CalendarRouter))
 	handleAPI("/export", v1(handlers.APIV1Export))

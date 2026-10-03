@@ -802,6 +802,7 @@ func AttachProjectOrganization(projectID, ownerUserID int, spec OrgImportSpec) (
 	rows, err := tx.Query(context.Background(),
 		`DELETE FROM project_members
 		 WHERE project_id = $1 AND role <> 'owner'
+		   AND user_id NOT IN (SELECT id FROM users WHERE is_agent)
 		 RETURNING user_id`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove project members: %v", err)
