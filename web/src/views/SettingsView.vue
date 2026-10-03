@@ -9,6 +9,7 @@ import type { User } from '@/api/types'
 import ProfileSectionNav from '@/components/profile/ProfileSectionNav.vue'
 import ProfileAccountSection from '@/components/profile/ProfileAccountSection.vue'
 import ProfilePreferencesSection from '@/components/profile/ProfilePreferencesSection.vue'
+import ProfileNotificationsSection from '@/components/profile/ProfileNotificationsSection.vue'
 import ProfileIntegrationsSection from '@/components/profile/ProfileIntegrationsSection.vue'
 import ProfileDataSection from '@/components/profile/ProfileDataSection.vue'
 import ProfileDeveloperSection from '@/components/profile/ProfileDeveloperSection.vue'
@@ -147,6 +148,7 @@ onUnmounted(() => {
           :dirty="prefsDirty"
           @save="save"
         />
+        <ProfileNotificationsSection v-else-if="activeSection === 'notifications'" />
         <ProfileIntegrationsSection v-else-if="activeSection === 'integrations'" />
         <ProfileDataSection v-else-if="activeSection === 'data'" />
         <ProfileDeveloperSection v-else-if="activeSection === 'developer'" />
