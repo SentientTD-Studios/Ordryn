@@ -442,6 +442,8 @@ export type SiteInfo = {
   user_invite_limit?: number
   invite_expiration_days?: number
   enable_inbound_webhooks?: boolean
+  max_description_length?: number
+  max_comment_length?: number
 }
 
 export type ChangelogEntry = {
@@ -558,6 +560,8 @@ export type AdminSettings = {
   allow_user_invites: boolean
   user_invite_limit: number
   invite_expiration_days: number
+  max_description_length: number
+  max_comment_length: number
   email_provider: string
   email_from_address: string
   email_from_name: string
@@ -569,6 +573,7 @@ export type AdminSettings = {
   email_smtp_password_set: boolean
   email_smtp_tls: boolean
   email_audit_retention_days: number
+  audit_retention_days: number
   github_oauth_client_id: string
   github_oauth_client_secret_set: boolean
   github_oauth_configured: boolean
@@ -1134,4 +1139,47 @@ export class APIError extends Error {
     this.code = code
     this.payload = payload
   }
+}
+
+export type AuditSource = 'task' | 'project' | 'comment' | 'email' | 'admin'
+
+export type AuditEntry = {
+  key: string
+  source: AuditSource
+  id: number
+  created_at: string
+  event_type: string
+  summary?: string
+  actor_user_id: number
+  actor_user_name: string
+  actor_email: string
+  target_type: string
+  target_id: number
+  target_label: string
+  project_id: number
+  project_name: string
+  metadata: Record<string, unknown>
+}
+
+export type AuditList = {
+  items: AuditEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type AuditQuery = {
+  user_id?: number | ''
+  project_id?: number | ''
+  source?: AuditSource | ''
+  event_type?: string
+  since?: string
+  until?: string
+  limit?: number
+  offset?: number
+}
+
+export type AuditFacets = {
+  event_types: { source: AuditSource; event_type: string }[]
+  projects: { id: number; name: string; archived: boolean }[]
 }

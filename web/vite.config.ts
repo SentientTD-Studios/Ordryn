@@ -36,5 +36,17 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Split shared vendor code out of the entry chunk so it stays under the
+        // 500 kB warning and caches independently of app releases.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (/node_modules[\\/](@vue|vue|vue-router)[\\/]/.test(id)) return 'vendor-vue'
+          if (/node_modules[\\/](marked|dompurify|highlight\.js)[\\/]/.test(id)) return 'vendor-markdown'
+          if (/node_modules[\\/](bootstrap|@popperjs)[\\/]/.test(id)) return 'vendor-bootstrap'
+        },
+      },
+    },
   },
 }))

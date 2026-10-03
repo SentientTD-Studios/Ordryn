@@ -84,12 +84,6 @@ export function statusHasGates(status: ProjectStatus | null | undefined): boolea
   return !!((status?.enter_role_slugs && status.enter_role_slugs.length) || (status?.leave_role_slugs && status.leave_role_slugs.length))
 }
 
-export function roleDisplayName(role?: string | null, roleName?: string | null): string {
-  if (roleName && roleName.trim()) return roleName
-  if (!role) return ''
-  return role
-}
-
 export function discussionAuthorLabel(
   userName: string,
   roleName?: string | null,

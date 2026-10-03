@@ -32,6 +32,8 @@ const settings = reactive<AdminSettings>({
   allow_user_invites: false,
   user_invite_limit: 5,
   invite_expiration_days: 7,
+  max_description_length: 20000,
+  max_comment_length: 20000,
   meta_description: '',
   enable_global_announcement: false,
   global_announcement_text: '',
@@ -48,6 +50,7 @@ const settings = reactive<AdminSettings>({
   email_smtp_password_set: false,
   email_smtp_tls: true,
   email_audit_retention_days: 7,
+  audit_retention_days: 0,
   github_oauth_client_id: '',
   github_oauth_client_secret_set: false,
   github_oauth_configured: false,
@@ -89,6 +92,8 @@ async function saveSettings() {
       allow_user_invites: settings.allow_user_invites,
       user_invite_limit: settings.user_invite_limit,
       invite_expiration_days: settings.invite_expiration_days,
+      max_description_length: settings.max_description_length,
+      max_comment_length: settings.max_comment_length,
       meta_description: settings.meta_description,
       enable_global_announcement: settings.enable_global_announcement,
       global_announcement_text: settings.global_announcement_text,
@@ -284,6 +289,35 @@ onMounted(load)
               min="0"
             />
             <div class="form-text">Days before a sent invite expires. Set to 0 for invites that never expire.</div>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <label for="admin-max-description" class="form-label">Max task description length</label>
+              <input
+                id="admin-max-description"
+                v-model.number="settings.max_description_length"
+                type="number"
+                class="form-control"
+                style="max-width: 12rem"
+                min="500"
+                max="100000"
+                step="500"
+              />
+            </div>
+            <div class="col-sm-6">
+              <label for="admin-max-comment" class="form-label">Max comment length</label>
+              <input
+                id="admin-max-comment"
+                v-model.number="settings.max_comment_length"
+                type="number"
+                class="form-control"
+                style="max-width: 12rem"
+                min="500"
+                max="100000"
+                step="500"
+              />
+            </div>
+            <div class="form-text mt-1">Character limits for task descriptions and discussion comments (500–100,000, default 20,000).</div>
           </div>
           <div class="form-check mb-2">
             <input id="admin-changelog" v-model="settings.show_changelog" class="form-check-input" type="checkbox" />

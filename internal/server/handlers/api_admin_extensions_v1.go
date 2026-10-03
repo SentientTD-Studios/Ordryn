@@ -177,11 +177,25 @@ func adminExtensionPatchHandler(w http.ResponseWriter, r *http.Request, id strin
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load extension settings.")
 		return
 	}
+	auditMeta := map[string]interface{}{}
 	if req.Enabled != nil {
+		if cur.Enabled != *req.Enabled {
+			auditMeta["enabled"] = map[string]interface{}{"from": cur.Enabled, "to": *req.Enabled}
+		}
 		cur.Enabled = *req.Enabled
 	}
 	if req.Triggers != nil {
-		cur.Triggers = filterDeclaredTriggers(e.Manifest, *req.Triggers)
+		next := filterDeclaredTriggers(e.Manifest, *req.Triggers)
+		if strings.Join(cur.Triggers, ",") != strings.Join(next, ",") {
+			auditMeta["triggers"] = map[string]interface{}{"from": cur.Triggers, "to": next}
+		}
+		cur.Triggers = next
+	}
+	if req.Templates != nil {
+		auditMeta["templates_updated"] = true
+	}
+	if req.WebhookURL != nil && strings.TrimSpace(*req.WebhookURL) != "" {
+		auditMeta["webhook_url_updated"] = true
 	}
 	if req.Templates != nil {
 		cur.Templates = *req.Templates
@@ -206,6 +220,9 @@ func adminExtensionPatchHandler(w http.ResponseWriter, r *http.Request, id strin
 	if err := storage.UpsertExtensionSettings(id, cur); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save extension settings.")
 		return
+	}
+	if len(auditMeta) > 0 {
+		logAdminEvent(r, "extension_updated", "extension", 0, id, auditMeta)
 	}
 	item, err := adminExtensionFromEntry(e)
 	if err != nil {

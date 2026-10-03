@@ -47,6 +47,8 @@ func TestAPISiteResponsePublicFields(t *testing.T) {
 		"user_invite_limit",
 		"invite_expiration_days",
 		"enable_inbound_webhooks",
+		"max_description_length",
+		"max_comment_length",
 	} {
 		if _, ok := m[key]; !ok {
 			t.Fatalf("missing key %q in %s", key, string(raw))

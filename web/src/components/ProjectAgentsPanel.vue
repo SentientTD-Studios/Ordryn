@@ -235,8 +235,10 @@ function openRunCount(agentId: number) {
           </li>
           <li>
             <strong>Code changes</strong> need an agent that runs where the code is, such as Claude Code on a machine
-            with the repository checked out, connected over MCP. Linking a GitHub repository tells it which repo to use;
-            it doesn't give the agent access by itself.
+            with the repository checked out, connected over MCP, or the bundled local agent with
+            <code>REPO_WRITE=true</code> (edits on its own git branch, never commits). Linking a GitHub repository tells
+            it which repo to use; it doesn't give the agent access by itself. How much an agent may do on that machine
+            is up to whoever runs it; the guardrails here only cover GoTodo.
           </li>
         </ul>
       </details>
@@ -304,9 +306,10 @@ function openRunCount(agentId: number) {
             <code>.env</code>, and can't change anything. It explains and proposes a patch for a person to apply.
           </div>
           <div v-else-if="recipe?.runner === 'repo'" class="alert alert-info small py-2 mt-2 mb-0">
-            This setup needs an agent that runs where your code is and can change it, such as Claude Code on a machine
-            with the repository checked out, connected over MCP. The bundled local agent can only <em>read</em> code; use
-            <strong>Investigate code</strong> with it instead.
+            This setup needs an agent that runs where your code is and can change it: Claude Code on a machine with the
+            repository checked out (over MCP), or the bundled local agent (<code>examples/agents/ollama</code>) with
+            <code>REPO_DIR</code> and <code>REPO_WRITE=true</code>. The local agent edits only on a new git branch,
+            never touches main or secrets, and never commits or runs commands, so a person reviews the diff and commits.
             <template v-if="!repoLinked">Link the repository on the <strong>GitHub</strong> tab so the agent knows which one to use.</template>
           </div>
           <div v-else-if="recipe && recipe.reviewOnly" class="form-text">

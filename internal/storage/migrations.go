@@ -312,12 +312,24 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateEmailAuditAddRateLimitedStatus failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateAdminEventsTable(); err != nil {
+		fmt.Printf("migration: CreateAdminEventsTable failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateSiteSettingsAddAuditRetention(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddAuditRetention failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateSiteSettingsAddUserInvitesAndExpiration(); err != nil {
 		fmt.Printf("migration: MigrateSiteSettingsAddUserInvitesAndExpiration failed: %v\n", err)
 		errCount++
 	}
 	if err := MigrateSiteSettingsAddInboundWebhooks(); err != nil {
 		fmt.Printf("migration: MigrateSiteSettingsAddInboundWebhooks failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateSiteSettingsAddTaskTextLimits(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddTaskTextLimits failed: %v\n", err)
 		errCount++
 	}
 	if err := MigrateInvitesAddFields(); err != nil {

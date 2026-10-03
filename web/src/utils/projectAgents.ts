@@ -12,27 +12,6 @@ export const AGENT_FIELDS: { id: AgentEditableField; label: string; help: string
   { id: 'custom_fields', label: 'Custom fields', help: 'Edit extension-defined fields' },
 ]
 
-/** Defaults for a new agent: conservative, matching the server. */
-export function defaultAgentSettings(): Required<Omit<ProjectAgentInput, 'name' | 'role' | 'webhook_url'>> {
-  return {
-    description: '',
-    instructions: '',
-    enabled: true,
-    trigger_on_mention: true,
-    trigger_status_ids: [],
-    trigger_by: 'managers',
-    trigger_role_slugs: [],
-    trigger_user_ids: [],
-    claim_on_dispatch: true,
-    allowed_status_ids: [],
-    editable_fields: ['status'],
-    can_complete: false,
-    can_create_tasks: false,
-    can_comment: true,
-    max_runs_per_hour: 20,
-  }
-}
-
 const HANDLE_RE = /^[A-Za-z0-9_]{3,32}$/
 
 /** Client-side check matching the server's username rules; "" when valid. */
@@ -206,13 +185,15 @@ export const AGENT_RECIPES: AgentRecipe[] = [
     id: 'code',
     label: 'Code changes',
     summary: 'Makes code changes in the linked repository and reports back.',
-    goodFor: 'Bugs and small features, when the agent runs somewhere with the code checked out (e.g. Claude Code over MCP).',
+    goodFor:
+      'Bugs and small features, when the agent runs where the code is checked out (Claude Code over MCP, or the local agent with REPO_WRITE=true).',
     runner: 'repo',
     instructions: [
       'Work in the project\'s repository. Read the task, its discussion, and any linked GitHub issue. Make the',
-      'change on a new branch, add or update tests, and run them. Comment with what changed, the branch or pull',
-      'request link, and how you verified it, then move the card to Review. If you cannot reproduce or the request',
-      'is ambiguous, comment with what you found and your questions, and finish the run as failed.',
+      'change on a new branch and add or update tests. Run the tests if you can; if you cannot run commands, say',
+      'so and list what a reviewer should run or check. Comment with what changed, the branch or pull request',
+      'link, and how it was verified, then move the card to Review. Never commit to main. If you cannot reproduce or',
+      'the request is ambiguous, comment with what you found and your questions, and finish the run as failed.',
     ].join(' '),
     settings: { editable_fields: ['status'], can_create_tasks: false, can_complete: false, claim_on_dispatch: true },
     reviewOnly: true,

@@ -77,6 +77,7 @@ func StartServer() error {
 
 	mailer.SetAuditor(storage.RecordEmailAudit)
 	storage.StartEmailAuditPurgeWorker()
+	storage.StartAuditPurgeWorker()
 	domain.StartAutoSprintWorker()
 	hooks.StartOverdueHookWorker()
 	hooks.StartDeliveryWorker()
@@ -189,6 +190,8 @@ func registerAPIV1Routes() {
 	handleAPI("/admin/email-audit", utils.AdminAPIChain(handlers.APIV1AdminEmailAudit))
 	handleAPI("/admin/comment-audit", utils.AdminAPIChain(handlers.APIV1AdminCommentAuditRouter))
 	handleAPI("/admin/comment-audit/", utils.AdminAPIChain(handlers.APIV1AdminCommentAuditRouter))
+	handleAPI("/admin/audit", utils.AdminAPIChain(handlers.APIV1AdminAuditRouter))
+	handleAPI("/admin/audit/", utils.AdminAPIChain(handlers.APIV1AdminAuditRouter))
 	handleAPI("/admin/extensions", utils.AdminAPIChain(handlers.APIV1AdminExtensionsRouter))
 	handleAPI("/admin/extensions/", utils.AdminAPIChain(handlers.APIV1AdminExtensionsRouter))
 	handleAPI("/extensions/", v1(handlers.APIV1ExtensionsStatic))

@@ -4305,7 +4305,8 @@ paths:
                 body:
                   type: string
                   minLength: 1
-                  maxLength: 5000
+                  maxLength: 100000
+                  description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
       responses:
         "201":
           description: Created
@@ -4346,7 +4347,8 @@ paths:
                 body:
                   type: string
                   minLength: 1
-                  maxLength: 5000
+                  maxLength: 100000
+                  description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
       responses:
         "200":
           description: Updated comment
@@ -5634,6 +5636,160 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
+  /api/v2/admin/audit:
+    get:
+      tags: [Admin]
+      summary: Query the unified audit log
+      description: |
+        One newest-first view over task events, project events, comment revisions,
+        outbound email attempts, and site-admin actions (bans, username changes,
+        site settings, role templates, invites, join requests, extensions).
+        Change events carry `metadata.from` / `metadata.to`; site settings changes
+        carry `metadata.changes` keyed by field. Secret values are never recorded.
+        Rows older than `audit_retention_days` (when non-zero) are deleted automatically.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          description: Actor user id
+          schema:
+            type: integer
+            minimum: 1
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [task, project, comment, email, admin]
+        - name: event_type
+          in: query
+          description: Exact event type (see /api/v2/admin/audit/facets)
+          schema:
+            type: string
+        - name: since
+          in: query
+          description: RFC3339 timestamp or YYYY-MM-DD (inclusive start)
+          schema:
+            type: string
+        - name: until
+          in: query
+          description: RFC3339 timestamp or YYYY-MM-DD (inclusive end of day when a date)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Audit rows, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/admin/audit/export:
+    get:
+      tags: [Admin]
+      summary: Export the unified audit log as CSV
+      description: |
+        Same filters as /api/v2/admin/audit (limit/offset ignored); returns up to 50,000 rows,
+        newest first. Cells starting with = + - @ are prefixed with ' to prevent formula injection.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [task, project, comment, email, admin]
+        - name: event_type
+          in: query
+          schema:
+            type: string
+        - name: since
+          in: query
+          schema:
+            type: string
+        - name: until
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/admin/audit/facets:
+    get:
+      tags: [Admin]
+      summary: Audit log filter choices
+      description: Distinct (source, event_type) pairs on record, and every project (archived included).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Filter choices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_types:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        event_type:
+                          type: string
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        archived:
+                          type: boolean
+
   /api/v2/admin/comment-audit:
     get:
       tags: [Admin]
@@ -6232,6 +6388,12 @@ components:
         enable_inbound_webhooks:
           type: boolean
           description: True when an admin has allowed public inbound webhooks.
+        max_description_length:
+          type: integer
+          description: Maximum task description length in characters (site-configurable, default 20000).
+        max_comment_length:
+          type: integer
+          description: Maximum task comment length in characters (site-configurable, default 20000).
 
     User:
       type: object
@@ -7852,7 +8014,8 @@ components:
           type: string
         description:
           type: string
-          maxLength: 5000
+          maxLength: 100000
+          description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
         due_date:
           type: string
         project_id:
@@ -7896,7 +8059,8 @@ components:
           type: string
         description:
           type: string
-          maxLength: 5000
+          maxLength: 100000
+          description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
         due_date:
           type: string
         clear_due_date:
@@ -8775,6 +8939,16 @@ components:
           type: integer
         invite_expiration_days:
           type: integer
+        max_description_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task description length in characters (default 20000).
+        max_comment_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task comment length in characters (default 20000).
         email_provider:
           type: string
           description: none, mailgun, or smtp
@@ -8801,6 +8975,11 @@ components:
           minimum: 1
           maximum: 90
           description: How many days to keep outbound email audit rows (default 7)
+        audit_retention_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Days to keep task/project/comment/admin audit history; 0 keeps it forever (default)
         image_hosting_provider:
           type: string
           description: none, s3, or local
@@ -8863,6 +9042,16 @@ components:
           type: integer
         invite_expiration_days:
           type: integer
+        max_description_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task description length in characters (default 20000).
+        max_comment_length:
+          type: integer
+          minimum: 500
+          maximum: 100000
+          description: Maximum task comment length in characters (default 20000).
         email_provider:
           type: string
         email_from_address:
@@ -8889,6 +9078,10 @@ components:
           type: integer
           minimum: 1
           maximum: 90
+        audit_retention_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
         image_hosting_provider:
           type: string
         image_max_bytes:
@@ -8953,6 +9146,60 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EmailAuditEntry"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    AuditEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Unique row key (source:id)
+        source:
+          type: string
+          enum: [task, project, comment, email, admin]
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+        summary:
+          type: string
+          description: Human-readable label (task events only)
+        actor_user_id:
+          type: integer
+          description: 0 for system actions and email rows
+        actor_user_name:
+          type: string
+        actor_email:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: integer
+        target_label:
+          type: string
+        project_id:
+          type: integer
+        project_name:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AuditList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
         total:
           type: integer
         limit:

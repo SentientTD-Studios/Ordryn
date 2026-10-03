@@ -188,6 +188,8 @@ func APIV1AdminJoinRequestsRouter(w http.ResponseWriter, r *http.Request) {
 		}
 		emailSiteInvite(r, jr.Email, inv.Token)
 		live.AfterJoinReviewed(jr.Email, jr.Message, true)
+		logAdminEvent(r, "join_request_approved", "join_request", int64(jr.ID), jr.Email,
+			map[string]interface{}{"from": "pending", "to": "approved", "invite_id": inv.ID})
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok":      true,
@@ -206,6 +208,8 @@ func APIV1AdminJoinRequestsRouter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		live.AfterJoinReviewed(jr.Email, jr.Message, false)
+		logAdminEvent(r, "join_request_denied", "join_request", int64(jr.ID), jr.Email,
+			map[string]interface{}{"from": "pending", "to": "denied"})
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok":      true,

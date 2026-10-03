@@ -21,10 +21,6 @@ export function activeProjects(projects: Project[]): Project[] {
   return projects.filter((p) => !isArchivedProject(p))
 }
 
-export function archivedProjects(projects: Project[]): Project[] {
-  return projects.filter((p) => isArchivedProject(p))
-}
-
 export function isProjectOwner(project: Project): boolean {
   return !project.role || project.role === 'owner'
 }

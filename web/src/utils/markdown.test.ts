@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { applyFormat, handleListEnter, renderMarkdown, stripMarkdown } from './markdown.ts'
+import { applyFormat, handleListEnter, renderMarkdown } from './markdown.ts'
 
 describe('renderMarkdown', () => {
   it('renders bold, italic, and underline', () => {
@@ -36,6 +36,15 @@ describe('renderMarkdown', () => {
   it('renders safe images', () => {
     const html = renderMarkdown('![my picture](https://example.com/pic.png)')
     assert.match(html, /<img class="rich-body-image" src="https:\/\/example\.com\/pic\.png" alt="my picture"/)
+  })
+
+  it('does not render unsafe image sources', () => {
+    for (const src of ['javascript:alert(1)', 'data:image/png;base64,aaa', '//evil.example/x.png']) {
+      const html = renderMarkdown(`![x](${src})`)
+      assert.doesNotMatch(html, /<img/, src)
+      assert.doesNotMatch(html, /javascript:|data:image|evil\.example/, src)
+      assert.match(html, /\[image: x\]/, src)
+    }
   })
 
   it('renders mentions with class', () => {
@@ -90,7 +99,40 @@ describe('renderMarkdown', () => {
     assert.match(codeHtml, /<code>const x = 42<\/code>/)
 
     const fenceHtml = renderMarkdown('```js\nconsole.log("hi")\n```')
-    assert.match(fenceHtml, /<pre><code/)
+    assert.match(fenceHtml, /<pre class="hljs"><code class="hljs language-js">/)
+    assert.match(fenceHtml, /<span class="hljs-string">/)
+
+    const plainFence = renderMarkdown('```\n<b>a</b> && b\n```')
+    assert.match(plainFence, /<pre><code>&lt;b&gt;a&lt;\/b&gt; &amp;&amp; b<\/code><\/pre>/)
+
+    const unknownLang = renderMarkdown('```klingon\n<b>hi</b>\n```')
+    assert.match(unknownLang, /<pre><code class="language-klingon">&lt;b&gt;hi&lt;\/b&gt;<\/code><\/pre>/)
+
+    const htmlFence = renderMarkdown('```html\n<div class="x">&amp;</div>\n```')
+    assert.doesNotMatch(htmlFence, /&amp;lt;/)
+    assert.doesNotMatch(htmlFence, /<div/)
+  })
+
+  // No DOMPurify under node, so these exercise the renderer's own escaping.
+  it('escapes code content without relying on DOMPurify', () => {
+    const payloads = [
+      '```html\n<script>alert(1)</script>\n```',
+      '```js\n</code></pre><img src=x onerror=alert(1)>\n```',
+      '```\n</code></pre><img src=x onerror=alert(1)>\n```',
+      '```klingon\n</code></pre><img src=x onerror=alert(1)>\n```',
+      '```"><img src=x onerror=alert(1)>\nx\n```',
+      '```js"onmouseover="alert(1)\nx\n```',
+      '```html\n&lt;script&gt;alert(1)&lt;/script&gt;\n```',
+      '```\n&lt;img src=x onerror=alert(1)&gt;\n```',
+      '~~~xml\n<svg onload=alert(1)>\n~~~',
+      '    </code></pre><script>alert(1)</script>',
+      'a `</code><script>alert(1)</script>` b',
+    ]
+    for (const md of payloads) {
+      const html = renderMarkdown(md)
+      assert.doesNotMatch(html, /<(script|img|svg)\b/i, md)
+      assert.doesNotMatch(html, /<[^>]*\son\w+=/i, md)
+    }
 
     const quoteHtml = renderMarkdown('> Important warning')
     assert.match(quoteHtml, /<blockquote>/)
@@ -105,30 +147,6 @@ describe('renderMarkdown', () => {
   it('handles mentions with trailing punctuation', () => {
     const html = renderMarkdown('Hey @alice, check with @bob!')
     assert.match(html, /<span class="rich-body-mention">@alice<\/span>, check with <span class="rich-body-mention">@bob<\/span>!/)
-  })
-})
-
-describe('stripMarkdown', () => {
-  it('strips bold, italic, underline, links, and images', () => {
-    const raw = 'Check **bold** and *italic* and <u>underlined</u> with [link](https://foo.com) and ![alt](https://pic.png)'
-    const stripped = stripMarkdown(raw)
-    assert.equal(stripped, 'Check bold and italic and underlined with link and [image: alt]')
-  })
-
-  it('strips list prefixes', () => {
-    const raw = '- Item 1\n- Item 2\n1. First\n2. Second'
-    const stripped = stripMarkdown(raw)
-    assert.equal(stripped, 'Item 1 Item 2 First Second')
-  })
-
-  it('respects limit', () => {
-    const raw = 'Long text that should be truncated'
-    const stripped = stripMarkdown(raw, 10)
-    assert.equal(stripped, 'Long text…')
-  })
-
-  it('handles empty input', () => {
-    assert.equal(stripMarkdown(''), '')
   })
 })
 

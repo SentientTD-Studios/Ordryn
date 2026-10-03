@@ -27,6 +27,8 @@ type apiSiteResponse struct {
 	UserInviteLimit          int    `json:"user_invite_limit"`
 	InviteExpirationDays     int    `json:"invite_expiration_days"`
 	EnableInboundWebhooks    bool   `json:"enable_inbound_webhooks"`
+	MaxDescriptionLength     int    `json:"max_description_length"`
+	MaxCommentLength         int    `json:"max_comment_length"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -54,6 +56,8 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		imageMax = imagehost.ClampMaxBytes(cfg.MaxBytes)
 	}
 
+	textLimits := settings.TaskTextLimits()
+
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(apiSiteResponse{
 		SiteName:                 settings.SiteName,
@@ -72,5 +76,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		UserInviteLimit:          settings.UserInviteLimit,
 		InviteExpirationDays:     settings.InviteExpirationDays,
 		EnableInboundWebhooks:    settings.EnableInboundWebhooks,
+		MaxDescriptionLength:     textLimits.Description,
+		MaxCommentLength:         textLimits.Comment,
 	})
 }

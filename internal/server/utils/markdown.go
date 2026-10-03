@@ -6,17 +6,22 @@ import (
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 )
 
 var markdownPolicy = bluemonday.UGCPolicy()
 
-// RenderMarkdown converts Markdown to sanitized HTML for task descriptions.
+// markdownConverter renders GFM. Raw HTML is never passed through (goldmark's
+// default), and the UGC policy strips anything unsafe, including code classes.
+var markdownConverter = goldmark.New(goldmark.WithExtensions(extension.GFM))
+
+// RenderMarkdown converts Markdown to sanitized HTML for task descriptions and comments.
 func RenderMarkdown(md string) string {
 	if strings.TrimSpace(md) == "" {
 		return ""
 	}
 	var buf bytes.Buffer
-	if err := goldmark.Convert([]byte(md), &buf); err != nil {
+	if err := markdownConverter.Convert([]byte(md), &buf); err != nil {
 		return ""
 	}
 	return markdownPolicy.Sanitize(buf.String())
