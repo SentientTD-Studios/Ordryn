@@ -166,6 +166,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "notifications: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateUserNotificationOptOutsTable(); err != nil {
+		fmt.Fprintf(os.Stderr, "notification opt-outs: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateTaskCommentsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "task comments: %v\n", err)
 		os.Exit(1)

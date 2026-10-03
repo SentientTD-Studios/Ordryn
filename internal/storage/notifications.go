@@ -67,6 +67,17 @@ func CreateUserNotificationsTable() error {
 	return nil
 }
 
+// insertUserNotificationSQL inserts one notification unless the recipient is an
+// AI agent (no inbox) or opted out of its type.
+const insertUserNotificationSQL = `INSERT INTO user_notifications
+		(user_id, actor_user_id, type, project_id, task_id, title, body)
+	 SELECT $1, $2, $3, $4, $5, $6, $7
+	 WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = $1 AND is_agent)
+	   AND NOT EXISTS (
+		SELECT 1 FROM user_notification_optouts
+		WHERE user_id = $1 AND notification_type = $3
+	 )`
+
 // CreateUserNotification inserts a single notification.
 func CreateUserNotification(n UserNotification) (int, error) {
 	pool, err := OpenDatabase()
@@ -86,14 +97,9 @@ func CreateUserNotification(n UserNotification) (int, error) {
 		taskArg = n.TaskID
 	}
 
-	// AI agents have no inbox; their notifications are dropped (id 0).
+	// AI agents and recipients who opted out of this type get nothing (id 0).
 	var id int
-	err = pool.QueryRow(context.Background(),
-		`INSERT INTO user_notifications
-			(user_id, actor_user_id, type, project_id, task_id, title, body)
-		 SELECT $1, $2, $3, $4, $5, $6, $7
-		 WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = $1 AND is_agent)
-		 RETURNING id`,
+	err = pool.QueryRow(context.Background(), insertUserNotificationSQL+` RETURNING id`,
 		n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body,
 	).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -102,17 +108,19 @@ func CreateUserNotification(n UserNotification) (int, error) {
 	return id, err
 }
 
-// CreateUserNotificationsBulk inserts many notifications (best-effort per row via multi-insert).
-func CreateUserNotificationsBulk(items []UserNotification) error {
+// CreateUserNotificationsBulk inserts many notifications and returns the user IDs
+// that actually received one (agents and recipients who opted out are skipped).
+func CreateUserNotificationsBulk(items []UserNotification) ([]int, error) {
 	if len(items) == 0 {
-		return nil
+		return nil, nil
 	}
 	pool, err := OpenDatabase()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer CloseDatabase(pool)
 
+	delivered := make([]int, 0, len(items))
 	for _, n := range items {
 		var actorArg, projectArg, taskArg interface{}
 		if n.ActorUserID > 0 {
@@ -124,17 +132,17 @@ func CreateUserNotificationsBulk(items []UserNotification) error {
 		if n.TaskID > 0 {
 			taskArg = n.TaskID
 		}
-		if _, err := pool.Exec(context.Background(),
-			`INSERT INTO user_notifications
-				(user_id, actor_user_id, type, project_id, task_id, title, body)
-			 SELECT $1, $2, $3, $4, $5, $6, $7
-			 WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = $1 AND is_agent)`,
+		tag, err := pool.Exec(context.Background(), insertUserNotificationSQL,
 			n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body,
-		); err != nil {
-			return err
+		)
+		if err != nil {
+			return delivered, err
+		}
+		if tag.RowsAffected() > 0 {
+			delivered = append(delivered, n.UserID)
 		}
 	}
-	return nil
+	return delivered, nil
 }
 
 // ListUserNotifications returns newest notifications for a user.

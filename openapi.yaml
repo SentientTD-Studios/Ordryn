@@ -644,6 +644,60 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v2/me/notification-preferences:
+    get:
+      tags: [Profile]
+      summary: List notification preferences
+      description: |
+        Returns the optional notification types visible to the caller and whether each is
+        enabled. Security emails (password reset, password changed) and invites are always
+        sent and are not listed. Admin-only types appear only for admins.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Notification preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferences"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Profile]
+      summary: Update notification preferences
+      description: Turns optional notification types on or off. Omitted types are unchanged.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [preferences]
+              properties:
+                preferences:
+                  type: object
+                  description: Map of notification type to enabled.
+                  additionalProperties:
+                    type: boolean
+                  example:
+                    task_created: false
+      responses:
+        "200":
+          description: Updated notification preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferences"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/v2/me/password:
     post:
       tags: [Profile]
@@ -6394,6 +6448,26 @@ components:
         max_comment_length:
           type: integer
           description: Maximum task comment length in characters (site-configurable, default 20000).
+
+    NotificationPreferences:
+      type: object
+      required: [preferences]
+      properties:
+        preferences:
+          type: array
+          items:
+            type: object
+            required: [type, label, description, enabled]
+            properties:
+              type:
+                type: string
+                enum: [task_created, task_commented, task_mentioned, task_activity, task_unblocked, join_request]
+              label:
+                type: string
+              description:
+                type: string
+              enabled:
+                type: boolean
 
     User:
       type: object

@@ -33,7 +33,7 @@ func NotifyAdminsOfJoinRequest(email, message string) {
 				Body:   body,
 			})
 		}
-		if err := storage.CreateUserNotificationsBulk(items); err != nil {
+		if _, err := storage.CreateUserNotificationsBulk(items); err != nil {
 			log.Printf("notify join_request: insert: %v", err)
 		} else {
 			live.Push(live.Event{Type: live.TypeJoinRequest}, ids)
@@ -101,7 +101,7 @@ func NotifyProjectMembersTaskCreated(taskID, actorUserID, projectID int, taskTit
 			Body:        body,
 		})
 	}
-	if err := storage.CreateUserNotificationsBulk(items); err != nil {
+	if _, err := storage.CreateUserNotificationsBulk(items); err != nil {
 		log.Printf("notify task_created: insert task=%d: %v", taskID, err)
 	}
 }
@@ -151,6 +151,15 @@ func NotifyProjectMembersTaskCommented(taskID, actorUserID, projectID int, comme
 		}
 		mentioned[m.UserID] = struct{}{}
 	}
+	// Users who muted mentions fall back to the plain comment notification.
+	mentionIDs := make([]int, 0, len(mentioned))
+	for id := range mentioned {
+		mentionIDs = append(mentionIDs, id)
+	}
+	mutedMentions, err := storage.UsersOptedOut(mentionIDs, storage.NotificationTaskMentioned)
+	if err != nil {
+		log.Printf("notify task_commented: mention opt-outs task=%d: %v", taskID, err)
+	}
 
 	items := make([]storage.UserNotification, 0, len(members))
 	for _, m := range members {
@@ -159,7 +168,7 @@ func NotifyProjectMembersTaskCommented(taskID, actorUserID, projectID int, comme
 		}
 		nType := storage.NotificationTaskCommented
 		title := commentTitle
-		if _, ok := mentioned[m.UserID]; ok {
+		if _, ok := mentioned[m.UserID]; ok && !mutedMentions[m.UserID] {
 			nType = storage.NotificationTaskMentioned
 			title = mentionTitle
 		}
@@ -173,7 +182,7 @@ func NotifyProjectMembersTaskCommented(taskID, actorUserID, projectID int, comme
 			Body:        body,
 		})
 	}
-	if err := storage.CreateUserNotificationsBulk(items); err != nil {
+	if _, err := storage.CreateUserNotificationsBulk(items); err != nil {
 		log.Printf("notify task_commented: insert task=%d: %v", taskID, err)
 	}
 }

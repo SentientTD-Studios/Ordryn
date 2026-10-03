@@ -1,10 +1,18 @@
-export const PROFILE_SECTIONS = ['account', 'preferences', 'integrations', 'data', 'developer'] as const
+export const PROFILE_SECTIONS = [
+  'account',
+  'preferences',
+  'notifications',
+  'integrations',
+  'data',
+  'developer',
+] as const
 
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number]
 
 export const PROFILE_SECTION_ITEMS: { id: ProfileSection; label: string }[] = [
   { id: 'account', label: 'Account' },
   { id: 'preferences', label: 'Preferences' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'data', label: 'Data' },
   { id: 'developer', label: 'Developer' },

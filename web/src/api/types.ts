@@ -403,6 +403,13 @@ export type NotificationList = {
   unread_count: number
 }
 
+export type NotificationPreference = {
+  type: string
+  label: string
+  description: string
+  enabled: boolean
+}
+
 export type TaskEvent = {
   id: number
   task_id: number

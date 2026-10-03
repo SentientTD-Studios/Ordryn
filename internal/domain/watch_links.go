@@ -122,7 +122,6 @@ func notifyTaskWatchers(actorID, taskID int, nType, title, body string) {
 	}
 	projectID, _ := storage.GetTaskProjectID(taskID)
 	items := make([]storage.UserNotification, 0, len(recipients))
-	notified := make([]int, 0, len(recipients))
 	for _, uid := range recipients {
 		if uid == actorID {
 			continue
@@ -139,16 +138,18 @@ func notifyTaskWatchers(actorID, taskID int, nType, title, body string) {
 			Title:       title,
 			Body:        body,
 		})
-		notified = append(notified, uid)
 	}
 	if len(items) == 0 {
 		return
 	}
-	if err := storage.CreateUserNotificationsBulk(items); err != nil {
+	notified, err := storage.CreateUserNotificationsBulk(items)
+	if err != nil {
 		log.Printf("watch: notify task %d: %v", taskID, err)
 		return
 	}
-	live.Push(live.Event{Type: live.TypeNotificationCreated, TaskID: taskID}, notified)
+	if len(notified) > 0 {
+		live.Push(live.Event{Type: live.TypeNotificationCreated, TaskID: taskID}, notified)
+	}
 }
 
 func taskTitleOrID(taskID int) string {

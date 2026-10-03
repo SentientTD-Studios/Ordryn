@@ -63,6 +63,7 @@ import type {
   SiteInfo,
   Tag,
   NotificationList,
+  NotificationPreference,
   Task,
   TaskRecurrenceDetail,
   TaskLink,
@@ -1139,6 +1140,17 @@ export const api = {
 
   markAllNotificationsRead() {
     return request<void>('/api/v2/notifications/read-all', { method: 'POST' })
+  },
+
+  getNotificationPreferences() {
+    return request<{ preferences: NotificationPreference[] }>('/api/v2/me/notification-preferences')
+  },
+
+  updateNotificationPreferences(preferences: Record<string, boolean>) {
+    return request<{ preferences: NotificationPreference[] }>('/api/v2/me/notification-preferences', {
+      method: 'PATCH',
+      body: JSON.stringify({ preferences }),
+    })
   },
 
   deleteProject(id: number) {

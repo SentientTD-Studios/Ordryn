@@ -125,7 +125,7 @@ func notifyAdminsOfJoinRequest(r *http.Request, siteName, email, message string)
 	if strings.TrimSpace(siteName) == "" {
 		siteName = "GoTodo"
 	}
-	admins, err := storage.ListAdminEmails()
+	admins, err := storage.ListAdminEmails(storage.NotificationJoinRequest)
 	if err != nil || len(admins) == 0 {
 		return
 	}

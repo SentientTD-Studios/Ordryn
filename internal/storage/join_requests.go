@@ -319,8 +319,9 @@ func DenyJoinRequest(id, reviewerID int) (*JoinRequest, error) {
 	return &jr, nil
 }
 
-// ListAdminEmails returns emails of unbanned users with the admin permission.
-func ListAdminEmails() ([]string, error) {
+// ListAdminEmails returns emails of unbanned users with the admin permission,
+// skipping admins who opted out of notificationType.
+func ListAdminEmails(notificationType string) ([]string, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -331,7 +332,11 @@ func ListAdminEmails() ([]string, error) {
 		`SELECT u.email FROM users u
 		 JOIN roles r ON r.id = u.role_id
 		 WHERE r.permissions @> ARRAY['admin']::text[]
-		   AND COALESCE(u.is_banned, FALSE) = FALSE`)
+		   AND COALESCE(u.is_banned, FALSE) = FALSE
+		   AND NOT EXISTS (
+			SELECT 1 FROM user_notification_optouts o
+			WHERE o.user_id = u.id AND o.notification_type = $1
+		   )`, notificationType)
 	if err != nil {
 		return nil, err
 	}
