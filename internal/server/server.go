@@ -10,6 +10,7 @@ import (
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 )
@@ -51,11 +52,17 @@ func StartServer() error {
 	mode := utils.ResolveMode(os.Args[1:])
 	utils.SetRuntimeMode(mode)
 
+	host := os.Getenv("HOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	addr := fmt.Sprintf(":%s", port)
+	addr := net.JoinHostPort(host, port)
+	//addr := fmt.Sprintf(":%s", port)
 
 	if err := utils.InitRedis(); err != nil {
 		return fmt.Errorf("redis: %w", err)
