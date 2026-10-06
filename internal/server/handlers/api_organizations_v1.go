@@ -506,11 +506,21 @@ func handleOrganizationRoles(w http.ResponseWriter, r *http.Request, userID, org
 				writeProjectRoleDomainError(w, err)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_ = json.NewEncoder(w).Encode(apiProjectRolesListJSON{
+			resp := apiProjectRolesListJSON{
 				Catalog: permCatalogToJSON(catalog),
 				Roles:   roleDefsToJSON(roles),
-			})
+			}
+			owner, err := domain.GetOrganizationOwnerRoleForUser(r.Context(), userID, orgID)
+			if err != nil {
+				writeProjectRoleDomainError(w, err)
+				return
+			}
+			if owner != nil {
+				ownerJSON := roleDefToJSON(*owner)
+				resp.OwnerRole = &ownerJSON
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_ = json.NewEncoder(w).Encode(resp)
 		case http.MethodPost:
 			var req apiProjectRoleWriteRequest
 			if err := decodeJSONBody(r, &req); err != nil {

@@ -23,6 +23,9 @@ const invites = ref<OrganizationInvite[]>([])
 const myInvites = ref<OrganizationInvite[]>([])
 const catalog = ref<ProjectPermInfo[]>([])
 const roles = ref<ProjectRoleDef[]>([])
+const ownerRole = ref<ProjectRoleDef | null>(null)
+const renamingOwner = ref(false)
+const ownerNameValue = ref('')
 const saving = ref(false)
 const newName = ref('')
 const newDescription = ref('')
@@ -101,6 +104,7 @@ async function loadDetail() {
     projectRoleOptions.value = {}
     invites.value = []
     roles.value = []
+    ownerRole.value = null
     return
   }
   try {
@@ -116,6 +120,8 @@ async function loadDetail() {
     invites.value = inv
     catalog.value = roleData.catalog || []
     roles.value = roleData.roles || []
+    ownerRole.value = roleData.owner_role || null
+    renamingOwner.value = false
     const idx = orgs.value.findIndex((o) => o.id === fresh.id)
     if (idx >= 0) orgs.value[idx] = fresh
     if (!inviteRole.value && assignableRoles.value.length) {
@@ -471,6 +477,28 @@ async function deleteRole(role: ProjectRoleDef) {
   }
 }
 
+function startRenameOwner() {
+  if (!ownerRole.value) return
+  ownerNameValue.value = ownerRole.value.name
+  renamingOwner.value = true
+}
+
+async function saveOwnerName(name = ownerNameValue.value.trim()) {
+  const owner = ownerRole.value
+  if (!selectedId.value || !canManage.value || !owner || !name) return
+  saving.value = true
+  try {
+    await api.updateOrganizationRole(selectedId.value, owner.id, { name })
+    toast.push(name === owner.default_name ? 'Owner name reset' : 'Owner renamed', 'success')
+    renamingOwner.value = false
+    await loadDetail()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not rename owner', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
 async function resetOverride(role: ProjectRoleDef) {
   if (!selectedId.value) return
   const ok = await askConfirm({
@@ -733,7 +761,7 @@ onBeforeUnmount(destroySortable)
             <h2 class="h6">Roles</h2>
             <p class="small text-muted">
               Customize a site default to change its name and permissions for this organization only.
-              Owner always has every permission and cannot be changed. Reset a customized role to
+              Owner always has every permission; you can only rename it, and locked projects use that name. Reset a customized role to
               restore the site template; members keep the same slug. Drag organization roles to
               change their order. Copy a role to start from its permissions under a new slug.
             </p>
@@ -748,9 +776,42 @@ onBeforeUnmount(destroySortable)
                 <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
               </li>
               <li class="mb-2">
-                <strong>Owner</strong>
-                <span class="badge text-bg-secondary ms-1">built-in</span>
-                <div class="small text-muted">All permissions. The owner role cannot be customized for this organization.</div>
+                <form
+                  v-if="renamingOwner"
+                  class="d-flex flex-wrap gap-1 align-items-center"
+                  @submit.prevent="saveOwnerName()"
+                >
+                  <input
+                    v-model="ownerNameValue"
+                    type="text"
+                    class="form-control form-control-sm w-auto"
+                    maxlength="80"
+                    required
+                    aria-label="New name for the owner role"
+                  />
+                  <button class="btn btn-sm btn-primary" type="submit" :disabled="saving || !ownerNameValue.trim()">Save</button>
+                  <button class="btn btn-sm btn-outline-secondary" type="button" @click="renamingOwner = false">Cancel</button>
+                </form>
+                <template v-else>
+                  <strong>{{ ownerRole?.name || 'Owner' }}</strong>
+                  <span class="badge text-bg-secondary ms-1">built-in</span>
+                  <span v-if="ownerRole?.default_name" class="badge text-bg-light border ms-1">
+                    renamed from {{ ownerRole.default_name }}
+                  </span>
+                  <template v-if="canManage && ownerRole">
+                    <button class="btn btn-sm btn-link py-0" type="button" @click="startRenameOwner">Rename</button>
+                    <button
+                      v-if="ownerRole.default_name"
+                      class="btn btn-sm btn-link py-0"
+                      type="button"
+                      :disabled="saving"
+                      @click="saveOwnerName(ownerRole.default_name)"
+                    >
+                      Reset name
+                    </button>
+                  </template>
+                </template>
+                <div class="small text-muted">All permissions. Only the name can be changed for this organization.</div>
               </li>
             </ul>
             <h3 class="h6">Organization roles</h3>

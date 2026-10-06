@@ -1195,11 +1195,13 @@ export type ProjectRoleDef = {
   sort_order: number
   created_at: string
   overrides_site?: boolean
+  default_name?: string
 }
 
 export type ProjectRolesList = {
   catalog: ProjectPermInfo[]
   roles: ProjectRoleDef[]
+  owner_role?: ProjectRoleDef
 }
 
 export type ProjectRoleWrite = {

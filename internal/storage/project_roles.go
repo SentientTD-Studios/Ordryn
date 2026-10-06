@@ -62,6 +62,8 @@ type ProjectRoleDef struct {
 	CreatedAt      time.Time
 	// OverridesSite is true when an organization role replaces a site template with the same slug.
 	OverridesSite bool
+	// DefaultName is the inherited name when a project has renamed a site or organization role.
+	DefaultName string
 }
 
 // ProjectStatusGate restricts which roles may enter or leave a status.
@@ -247,6 +249,18 @@ func CreateProjectRoleTables() error {
 			status_id INTEGER PRIMARY KEY REFERENCES project_statuses(id) ON DELETE CASCADE,
 			enter_role_slugs TEXT[] NOT NULL DEFAULT '{}',
 			leave_role_slugs TEXT[] NOT NULL DEFAULT '{}'
+		)`,
+		`CREATE TABLE IF NOT EXISTS project_role_labels (
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			slug VARCHAR(40) NOT NULL,
+			name VARCHAR(80) NOT NULL,
+			PRIMARY KEY (project_id, slug)
+		)`,
+		`CREATE TABLE IF NOT EXISTS organization_role_labels (
+			organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+			slug VARCHAR(40) NOT NULL,
+			name VARCHAR(80) NOT NULL,
+			PRIMARY KEY (organization_id, slug)
 		)`,
 	}
 	for _, s := range stmts {
@@ -523,6 +537,9 @@ func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
 		out = append(out, d)
 	}
 	out = append(out, orgRoles...)
+	if err := applyProjectRoleLabels(projectID, out); err != nil {
+		return nil, err
+	}
 	if bind != nil && bind.OrgManaged {
 		return out, nil
 	}
@@ -532,6 +549,194 @@ func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
 	}
 	out = append(out, custom...)
 	return out, nil
+}
+
+// ProjectOwnerRoleDef returns the owner role as seen by one project, including organization and project renames.
+func ProjectOwnerRoleDef(projectID int) (*ProjectRoleDef, error) {
+	def := InheritedRoleDef(projectID, RoleOwner)
+	if def == nil {
+		return nil, nil
+	}
+	one := []ProjectRoleDef{*def}
+	if err := applyProjectRoleLabels(projectID, one); err != nil {
+		return nil, err
+	}
+	return &one[0], nil
+}
+
+// InheritedRoleDef resolves a role for a project before project renames: a site role
+// picks up its organization's name when the project belongs to one.
+func InheritedRoleDef(projectID int, slug string) *ProjectRoleDef {
+	def := ResolveRoleDef(projectID, slug)
+	if def == nil {
+		return nil
+	}
+	cp := *def
+	if cp.ProjectID == nil && cp.OrganizationID == nil && projectID > 0 {
+		if bind, err := GetProjectOrgBinding(projectID); err == nil && bind != nil && bind.OrganizationID != nil {
+			if name := organizationRoleLabel(*bind.OrganizationID, cp.Slug); name != "" {
+				cp.DefaultName = cp.Name
+				cp.Name = name
+			}
+		}
+	}
+	return &cp
+}
+
+// OrganizationOwnerRoleDef returns the owner role as seen by one organization, including its rename.
+func OrganizationOwnerRoleDef(orgID int) *ProjectRoleDef {
+	def := ResolveOrgRoleDef(orgID, RoleOwner)
+	if def == nil {
+		return nil
+	}
+	cp := *def
+	if name := organizationRoleLabel(orgID, cp.Slug); name != "" {
+		cp.DefaultName = cp.Name
+		cp.Name = name
+	}
+	return &cp
+}
+
+func organizationRoleLabel(orgID int, slug string) string {
+	if orgID <= 0 || slug == "" {
+		return ""
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return ""
+	}
+	defer CloseDatabase(pool)
+
+	var name string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT name FROM organization_role_labels WHERE organization_id = $1 AND slug = $2`, orgID, slug).Scan(&name); err != nil {
+		return ""
+	}
+	return name
+}
+
+// SetOrganizationRoleLabel renames a site role for one organization and its projects.
+// Labels never carry permissions, so site permission changes keep applying.
+func SetOrganizationRoleLabel(orgID int, slug, name string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO organization_role_labels (organization_id, slug, name)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (organization_id, slug) DO UPDATE SET name = EXCLUDED.name`,
+		orgID, slug, name)
+	return err
+}
+
+// DeleteOrganizationRoleLabel restores the site name of a role for one organization.
+func DeleteOrganizationRoleLabel(orgID int, slug string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(),
+		`DELETE FROM organization_role_labels WHERE organization_id = $1 AND slug = $2`, orgID, slug)
+	return err
+}
+
+// projectRoleLabelsActive skips labels on org-managed projects, whose roles are locked to the organization.
+const projectRoleLabelsActive = `
+	FROM project_role_labels l
+	JOIN projects p ON p.id = l.project_id
+	WHERE l.project_id = $1 AND NOT (p.organization_id IS NOT NULL AND COALESCE(p.org_managed, false))`
+
+// ListProjectRoleLabels returns project-specific names for inherited roles, keyed by slug.
+func ListProjectRoleLabels(projectID int) (map[string]string, error) {
+	out := map[string]string{}
+	if projectID <= 0 {
+		return out, nil
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `SELECT l.slug, l.name`+projectRoleLabelsActive, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var slug, name string
+		if err := rows.Scan(&slug, &name); err != nil {
+			return nil, err
+		}
+		out[slug] = name
+	}
+	return out, rows.Err()
+}
+
+func projectRoleLabel(projectID int, slug string) string {
+	if projectID <= 0 || slug == "" {
+		return ""
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return ""
+	}
+	defer CloseDatabase(pool)
+
+	var name string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT l.name`+projectRoleLabelsActive+` AND l.slug = $2`, projectID, slug).Scan(&name); err != nil {
+		return ""
+	}
+	return name
+}
+
+// applyProjectRoleLabels renames inherited site and organization roles in place.
+func applyProjectRoleLabels(projectID int, defs []ProjectRoleDef) error {
+	labels, err := ListProjectRoleLabels(projectID)
+	if err != nil || len(labels) == 0 {
+		return err
+	}
+	for i := range defs {
+		if defs[i].ProjectID != nil {
+			continue
+		}
+		if name, ok := labels[defs[i].Slug]; ok {
+			defs[i].DefaultName = defs[i].Name
+			defs[i].Name = name
+		}
+	}
+	return nil
+}
+
+// SetProjectRoleLabel renames an inherited role for one project.
+func SetProjectRoleLabel(projectID int, slug, name string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO project_role_labels (project_id, slug, name)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (project_id, slug) DO UPDATE SET name = EXCLUDED.name`,
+		projectID, slug, name)
+	return err
+}
+
+// DeleteProjectRoleLabel restores the inherited name of a role for one project.
+func DeleteProjectRoleLabel(projectID int, slug string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(),
+		`DELETE FROM project_role_labels WHERE project_id = $1 AND slug = $2`, projectID, slug)
+	return err
 }
 
 // GetProjectRoleDef loads a role by id.
@@ -709,8 +914,16 @@ func RolePermissionList(projectID int, role string) []string {
 
 // RoleDisplayName returns the human label for a membership slug.
 func RoleDisplayName(projectID int, role string) string {
-	def := ResolveRoleDef(projectID, role)
-	if def == nil || strings.TrimSpace(def.Name) == "" {
+	def := InheritedRoleDef(projectID, role)
+	if def == nil {
+		return role
+	}
+	if def.ProjectID == nil {
+		if label := projectRoleLabel(projectID, def.Slug); label != "" {
+			return label
+		}
+	}
+	if strings.TrimSpace(def.Name) == "" {
 		return role
 	}
 	return def.Name
@@ -1297,6 +1510,11 @@ func ValidInviteRoleForOrg(orgID int, role string) bool {
 // OrgRoleDisplayName returns the human label for an org membership slug.
 func OrgRoleDisplayName(orgID int, role string) string {
 	def := ResolveOrgRoleDef(orgID, role)
+	if def != nil && def.OrganizationID == nil {
+		if name := organizationRoleLabel(orgID, def.Slug); name != "" {
+			return name
+		}
+	}
 	if def == nil || strings.TrimSpace(def.Name) == "" {
 		return role
 	}

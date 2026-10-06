@@ -825,8 +825,9 @@ func TestOrgCustomizeDefaultRoles(t *testing.T) {
 		t.Fatal("project should use org editor override")
 	}
 
-	if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &name}); !errors.Is(err, ErrValidation) {
-		t.Fatalf("customize owner: err=%v want validation", err)
+	ownerPerms := []string{storage.PermTasksEdit}
+	if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &name, Permissions: &ownerPerms}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("customize owner permissions: err=%v want validation", err)
 	}
 	if _, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
 		Slug: storage.RoleOwner, Name: "Not Owner", Permissions: []string{storage.PermTasksEdit},
@@ -955,5 +956,246 @@ func TestOrgAcceptAndSyncAddsMembersToCopyAndLockNotSelect(t *testing.T) {
 	}
 	if !sawCopy || !sawLock || !sawSelect {
 		t.Fatalf("roster import modes: %+v", rosters)
+	}
+}
+
+func TestProjectRenamesInheritedRoles(t *testing.T) {
+	ctx := context.Background()
+	ownerID := 1
+	memberID := 2
+	proj, err := CreateProject(ctx, ownerID, "Renamed Roles", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	other, err := CreateProject(ctx, ownerID, "Untouched Roles", "")
+	if err != nil {
+		t.Fatalf("create other project: %v", err)
+	}
+	if err := storage.UpsertProjectMember(proj.ID, memberID, storage.RoleEditor); err != nil {
+		t.Fatalf("add editor: %v", err)
+	}
+
+	owner, err := GetProjectOwnerRoleForUser(ctx, ownerID, proj.ID)
+	if err != nil || owner == nil || owner.ID == 0 {
+		t.Fatalf("owner role: %+v err=%v", owner, err)
+	}
+	name := "Project Manager"
+	renamed, err := UpdateProjectCustomRoleForUser(ctx, ownerID, proj.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &name})
+	if err != nil {
+		t.Fatalf("rename owner: %v", err)
+	}
+	if renamed.Name != "Project Manager" || renamed.DefaultName != "Owner" {
+		t.Fatalf("renamed owner: name=%q default=%q", renamed.Name, renamed.DefaultName)
+	}
+	if got := storage.RoleDisplayName(proj.ID, storage.RoleOwner); got != "Project Manager" {
+		t.Fatalf("owner display name: %q", got)
+	}
+	if got := storage.RoleDisplayName(other.ID, storage.RoleOwner); got != "Owner" {
+		t.Fatalf("other project owner display name: %q", got)
+	}
+	if !storage.HasProjectPerm(proj.ID, storage.RoleOwner, storage.PermProjectManage) {
+		t.Fatal("renamed owner should keep permissions")
+	}
+
+	var editorID int
+	roles, _, err := ListProjectRolesForUser(ctx, ownerID, proj.ID)
+	if err != nil {
+		t.Fatalf("list roles: %v", err)
+	}
+	for _, r := range roles {
+		if r.Slug == storage.RoleEditor {
+			editorID = r.ID
+		}
+	}
+	lead := "Lead Developer"
+	if _, err := UpdateProjectCustomRoleForUser(ctx, memberID, proj.ID, editorID, UpdateSiteProjectRoleInput{Name: &lead}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("editor rename: err=%v want forbidden", err)
+	}
+	if _, err := UpdateProjectCustomRoleForUser(ctx, ownerID, proj.ID, editorID, UpdateSiteProjectRoleInput{Name: &lead}); err != nil {
+		t.Fatalf("rename editor: %v", err)
+	}
+	perms := []string{storage.PermTasksCreate}
+	if _, err := UpdateProjectCustomRoleForUser(ctx, ownerID, proj.ID, editorID, UpdateSiteProjectRoleInput{Permissions: &perms}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("editor perms patch: err=%v want validation", err)
+	}
+	roles, _, err = ListProjectRolesForUser(ctx, ownerID, proj.ID)
+	if err != nil {
+		t.Fatalf("list roles: %v", err)
+	}
+	for _, r := range roles {
+		if r.Slug == storage.RoleEditor && (r.Name != "Lead Developer" || r.DefaultName != "Editor") {
+			t.Fatalf("listed editor: name=%q default=%q", r.Name, r.DefaultName)
+		}
+	}
+	members, err := storage.ListProjectMembers(proj.ID)
+	if err != nil {
+		t.Fatalf("members: %v", err)
+	}
+	for _, m := range members {
+		if m.UserID == memberID && storage.RoleDisplayName(proj.ID, m.Role) != "Lead Developer" {
+			t.Fatalf("member role label: %q", storage.RoleDisplayName(proj.ID, m.Role))
+		}
+	}
+
+	reset := "Editor"
+	restored, err := UpdateProjectCustomRoleForUser(ctx, ownerID, proj.ID, editorID, UpdateSiteProjectRoleInput{Name: &reset})
+	if err != nil || restored.DefaultName != "" {
+		t.Fatalf("reset editor: %+v err=%v", restored, err)
+	}
+	if got := storage.RoleDisplayName(proj.ID, storage.RoleEditor); got != "Editor" {
+		t.Fatalf("reset display name: %q", got)
+	}
+}
+
+func TestOrgRoleRenamePropagatesToLockedProjects(t *testing.T) {
+	ctx := context.Background()
+	org, err := CreateOrganizationForUser(ctx, 1, "Rename Sync Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	locked, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Rename Sync Locked",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportLock,
+	})
+	if err != nil || !locked.OrgManaged {
+		t.Fatalf("create locked: %+v err=%v", locked, err)
+	}
+
+	var editorID int
+	site, err := storage.ListSiteProjectRoles()
+	if err != nil {
+		t.Fatalf("list site roles: %v", err)
+	}
+	for _, d := range site {
+		if d.Slug == storage.RoleEditor {
+			editorID = d.ID
+		}
+	}
+
+	// A project label written before the lock must not mask the organization's name.
+	if err := storage.SetProjectRoleLabel(locked.ID, storage.RoleEditor, "Stale Project Name"); err != nil {
+		t.Fatalf("seed stale label: %v", err)
+	}
+	stale := "Should Not Apply"
+	if _, err := UpdateProjectCustomRoleForUser(ctx, 1, locked.ID, editorID, UpdateSiteProjectRoleInput{Name: &stale}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("rename on locked project: err=%v want forbidden", err)
+	}
+
+	for _, name := range []string{"Lead Developer", "Senior Developer"} {
+		n := name
+		if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, editorID, UpdateSiteProjectRoleInput{Name: &n}); err != nil {
+			t.Fatalf("org rename editor to %q: %v", name, err)
+		}
+		if got := storage.RoleDisplayName(locked.ID, storage.RoleEditor); got != name {
+			t.Fatalf("locked display name: got %q want %q", got, name)
+		}
+		roles, _, err := ListProjectRolesForUser(ctx, 1, locked.ID)
+		if err != nil {
+			t.Fatalf("list locked roles: %v", err)
+		}
+		var found bool
+		for _, r := range roles {
+			if r.Slug == storage.RoleEditor {
+				found = true
+				if r.Name != name || r.DefaultName != "" {
+					t.Fatalf("locked listed editor: name=%q default=%q want %q", r.Name, r.DefaultName, name)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("locked project should list the org editor")
+		}
+	}
+}
+
+func TestOrgOwnerRenamePropagatesAndKeepsAllPermissions(t *testing.T) {
+	ctx := context.Background()
+	org, err := CreateOrganizationForUser(ctx, 1, "Owner Rename Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	locked, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Owner Rename Locked",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportLock,
+	})
+	if err != nil {
+		t.Fatalf("create locked: %v", err)
+	}
+	copied, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name:           "Owner Rename Copy",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportCopy,
+	})
+	if err != nil {
+		t.Fatalf("create copy: %v", err)
+	}
+	standalone, err := CreateProject(ctx, 1, "Owner Rename Standalone", "")
+	if err != nil {
+		t.Fatalf("create standalone: %v", err)
+	}
+
+	owner, err := GetOrganizationOwnerRoleForUser(ctx, 1, org.ID)
+	if err != nil || owner == nil || owner.ID == 0 {
+		t.Fatalf("org owner role: %+v err=%v", owner, err)
+	}
+	pm := "Project Manager"
+	renamed, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &pm})
+	if err != nil {
+		t.Fatalf("org rename owner: %v", err)
+	}
+	if renamed.Name != pm || renamed.DefaultName != "Owner" {
+		t.Fatalf("renamed org owner: name=%q default=%q", renamed.Name, renamed.DefaultName)
+	}
+	if got := storage.OrgRoleDisplayName(org.ID, storage.RoleOwner); got != pm {
+		t.Fatalf("org owner display: %q", got)
+	}
+	for _, pid := range []int{locked.ID, copied.ID} {
+		if got := storage.RoleDisplayName(pid, storage.RoleOwner); got != pm {
+			t.Fatalf("project %d owner display: %q", pid, got)
+		}
+		po, err := GetProjectOwnerRoleForUser(ctx, 1, pid)
+		if err != nil || po.Name != pm {
+			t.Fatalf("project %d owner role: %+v err=%v", pid, po, err)
+		}
+		for _, perm := range storage.AllProjectPerms() {
+			if !storage.HasProjectPerm(pid, storage.RoleOwner, perm) {
+				t.Fatalf("renamed owner lost %s on project %d", perm, pid)
+			}
+		}
+		roles, _, err := ListProjectRolesForUser(ctx, 1, pid)
+		if err != nil {
+			t.Fatalf("list roles: %v", err)
+		}
+		for _, r := range roles {
+			if r.Slug == storage.RoleOwner {
+				t.Fatalf("owner must not be assignable on project %d", pid)
+			}
+		}
+	}
+	if got := storage.RoleDisplayName(standalone.ID, storage.RoleOwner); got != "Owner" {
+		t.Fatalf("standalone owner display: %q", got)
+	}
+
+	// An unlocked project can still choose its own name on top of the organization's.
+	lead := "Lead Developer"
+	projRenamed, err := UpdateProjectCustomRoleForUser(ctx, 1, copied.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &lead})
+	if err != nil || projRenamed.Name != lead || projRenamed.DefaultName != pm {
+		t.Fatalf("project rename over org name: %+v err=%v", projRenamed, err)
+	}
+	if got := storage.RoleDisplayName(locked.ID, storage.RoleOwner); got != pm {
+		t.Fatalf("locked project should keep org name: %q", got)
+	}
+
+	site := "Owner"
+	if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &site}); err != nil {
+		t.Fatalf("reset org owner: %v", err)
+	}
+	if got := storage.RoleDisplayName(locked.ID, storage.RoleOwner); got != "Owner" {
+		t.Fatalf("locked owner after reset: %q", got)
+	}
+	if got := storage.RoleDisplayName(copied.ID, storage.RoleOwner); got != lead {
+		t.Fatalf("copied project should keep its own name: %q", got)
 	}
 }

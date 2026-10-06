@@ -2297,6 +2297,10 @@ paths:
     patch:
       tags: [Organizations]
       summary: Update an organization role or customize a site default
+      description: |
+        For the owner role, only `name` is accepted. It renames Owner for the organization and every
+        project in it (locked projects always follow it); Owner keeps every permission. Sending the
+        site name clears the rename.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -4886,7 +4890,11 @@ paths:
           type: integer
     patch:
       tags: [Projects]
-      summary: Update a project-created role (owner)
+      summary: Update a project-created role, or rename a site/organization role for this project (owner)
+      description: |
+        For project-created roles, any field may be patched. For site and organization roles
+        (including owner), only `name` is accepted; it sets a project-only display name and
+        permissions continue to follow the template. Sending the inherited name clears the rename.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7818,6 +7826,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectRoleDef"
+        owner_role:
+          $ref: "#/components/schemas/ProjectRoleDef"
+          description: The owner role is not assignable but can be renamed per organization or project; it always has every permission
 
     ProjectPerm:
       type: object
@@ -7862,6 +7873,9 @@ components:
         overrides_site:
           type: boolean
           description: True when an organization role replaces a site template with the same slug
+        default_name:
+          type: string
+          description: Inherited site or organization name when this project has renamed the role
 
     ProjectRoleWrite:
       type: object

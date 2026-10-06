@@ -565,7 +565,7 @@ func UpdateOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID in
 		return nil, ErrNotFound
 	}
 	if cur.Slug == storage.RoleOwner {
-		return nil, fmt.Errorf("%w: cannot change owner role", ErrValidation)
+		return renameOrganizationOwnerRole(orgID, in)
 	}
 	if isSiteRoleDef(cur) {
 		return upsertOrganizationRoleOverride(orgID, cur, in)
@@ -585,6 +585,43 @@ func UpdateOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID in
 	}
 	markOrgRoleSiteOverride(updated)
 	return updated, nil
+}
+
+// renameOrganizationOwnerRole gives Owner an organization-wide name. Owner always keeps every
+// permission, so only the name may change; renaming back to the site name clears the override.
+func renameOrganizationOwnerRole(orgID int, in UpdateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
+	if in.Description != nil || in.Permissions != nil || in.SortOrder != nil {
+		return nil, fmt.Errorf("%w: the owner role can only be renamed", ErrValidation)
+	}
+	if in.Name == nil {
+		return nil, fmt.Errorf("%w: role name is required", ErrValidation)
+	}
+	name, err := normalizeRoleName(*in.Name)
+	if err != nil {
+		return nil, err
+	}
+	site := storage.ResolveOrgRoleDef(0, storage.RoleOwner)
+	if site == nil {
+		return nil, ErrNotFound
+	}
+	if name == site.Name {
+		err = storage.DeleteOrganizationRoleLabel(orgID, storage.RoleOwner)
+	} else {
+		err = storage.SetOrganizationRoleLabel(orgID, storage.RoleOwner, name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return storage.OrganizationOwnerRoleDef(orgID), nil
+}
+
+// GetOrganizationOwnerRoleForUser returns the owner role (not assignable, but renameable) for an organization.
+func GetOrganizationOwnerRoleForUser(ctx context.Context, userID, orgID int) (*storage.ProjectRoleDef, error) {
+	_ = ctx
+	if _, err := requireOrgAccess(orgID, userID); err != nil {
+		return nil, err
+	}
+	return storage.OrganizationOwnerRoleDef(orgID), nil
 }
 
 func normalizeRolePatch(in *UpdateSiteProjectRoleInput) error {

@@ -334,6 +334,15 @@ func ListProjectRolesForUser(ctx context.Context, userID, projectID int) ([]stor
 	return roles, storage.ProjectPermissionCatalog(), nil
 }
 
+// GetProjectOwnerRoleForUser returns the owner role (not assignable, but renameable) for a project the user can access.
+func GetProjectOwnerRoleForUser(ctx context.Context, userID, projectID int) (*storage.ProjectRoleDef, error) {
+	_ = ctx
+	if _, err := storage.GetAccessibleProjectByID(projectID, userID); err != nil {
+		return nil, ErrNotFound
+	}
+	return storage.ProjectOwnerRoleDef(projectID)
+}
+
 // CreateProjectCustomRoleForUser adds a project-only role built from the catalog.
 func CreateProjectCustomRoleForUser(ctx context.Context, userID, projectID int, in CreateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
 	_ = ctx
@@ -398,7 +407,13 @@ func UpdateProjectCustomRoleForUser(ctx context.Context, userID, projectID, role
 		return nil, err
 	}
 	cur, err := storage.GetProjectRoleDef(roleID)
-	if err != nil || cur == nil || cur.ProjectID == nil || *cur.ProjectID != projectID {
+	if err != nil || cur == nil {
+		return nil, ErrNotFound
+	}
+	if cur.ProjectID == nil {
+		return renameInheritedProjectRole(projectID, cur, in)
+	}
+	if *cur.ProjectID != projectID {
 		return nil, ErrNotFound
 	}
 	if in.Name != nil {
@@ -423,6 +438,48 @@ func UpdateProjectCustomRoleForUser(ctx context.Context, userID, projectID, role
 		return nil, err
 	}
 	return updated, nil
+}
+
+// renameInheritedProjectRole gives a site or organization role a project-only name.
+// Permissions stay with the template; renaming back to the template name clears the override.
+func renameInheritedProjectRole(projectID int, cur *storage.ProjectRoleDef, in UpdateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
+	if !isSiteRoleDef(cur) {
+		bind, err := storage.GetProjectOrgBinding(projectID)
+		if err != nil {
+			return nil, err
+		}
+		if bind == nil || bind.OrganizationID == nil || cur.OrganizationID == nil || *cur.OrganizationID != *bind.OrganizationID {
+			return nil, ErrNotFound
+		}
+	}
+	if in.Description != nil || in.Permissions != nil || in.SortOrder != nil {
+		return nil, fmt.Errorf("%w: site and organization roles can only be renamed in a project", ErrValidation)
+	}
+	if in.Name == nil {
+		return nil, fmt.Errorf("%w: role name is required", ErrValidation)
+	}
+	name, err := normalizeRoleName(*in.Name)
+	if err != nil {
+		return nil, err
+	}
+	// Use the definition this project actually inherits (an org role or org rename may apply).
+	inherited := storage.InheritedRoleDef(projectID, cur.Slug)
+	if inherited == nil || inherited.ProjectID != nil {
+		return nil, ErrNotFound
+	}
+	out := *inherited
+	out.DefaultName = ""
+	if name == inherited.Name {
+		err = storage.DeleteProjectRoleLabel(projectID, cur.Slug)
+	} else {
+		err = storage.SetProjectRoleLabel(projectID, cur.Slug, name)
+		out.DefaultName = inherited.Name
+		out.Name = name
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // DeleteProjectCustomRoleForUser removes an unused project-created role.
