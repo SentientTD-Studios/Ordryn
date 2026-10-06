@@ -565,6 +565,10 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid user id.")
 			return
 		}
+		if storage.IsSystemUser(id) {
+			utils.APIJSONError(w, http.StatusForbidden, "protected_account", "The automation account is managed by the system and cannot be changed.")
+			return
+		}
 		switch parts[1] {
 		case "ban":
 			if r.Method != http.MethodPost {

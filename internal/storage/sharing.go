@@ -281,6 +281,9 @@ func EnsureProjectOwnerMember(projectID, ownerUserID int) error {
 
 // GetProjectRole returns the caller's role for a project, or empty if no access.
 func GetProjectRole(projectID, userID int) (string, error) {
+	if role, ok := automationRoleFor(projectID, userID); ok {
+		return role, nil
+	}
 	pool, err := OpenDatabase()
 	if err != nil {
 		return "", err
@@ -393,14 +396,14 @@ func GetAccessibleProjectByID(projectID, userID int) (*ProjectWithAccess, error)
 	var p ProjectWithAccess
 	err = scanProjectWithAccess(pool.QueryRow(context.Background(), `
 		SELECT `+projectAccessSelectCols+`,
-		       COALESCE(pm.role, CASE WHEN p.user_id = $2 THEN 'owner' END),
+		       COALESCE(pm.role, CASE WHEN p.user_id = $2 THEN 'owner' WHEN $3 THEN '`+RoleAutomation+`' END),
 		       u.email, COALESCE(u.user_name, ''), p.user_id
 		FROM projects p
 		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		JOIN users u ON u.id = p.user_id
-		WHERE p.id = $1 AND (p.user_id = $2 OR pm.user_id = $2)`,
-		projectID, userID), &p)
+		WHERE p.id = $1 AND (p.user_id = $2 OR pm.user_id = $2 OR $3)`,
+		projectID, userID, IsSystemUser(userID)), &p)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("project not found")

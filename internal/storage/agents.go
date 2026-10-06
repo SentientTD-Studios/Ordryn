@@ -35,6 +35,8 @@ const (
 	AgentTriggerManual  = "manual"
 	AgentTriggerMention = "mention"
 	AgentTriggerStatus  = "status"
+	// AgentTriggerAutomation is a run queued by a project automation rule.
+	AgentTriggerAutomation = "automation"
 )
 
 // Who may start an agent run.
@@ -154,6 +156,12 @@ func MigrateUsersAddIsAgent() error {
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_agent BOOLEAN NOT NULL DEFAULT FALSE`)
 	if err != nil {
 		return fmt.Errorf("failed to add users.is_agent: %v", err)
+	}
+	// is_system marks the site automation account (also is_agent).
+	_, err = pool.Exec(context.Background(),
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE`)
+	if err != nil {
+		return fmt.Errorf("failed to add users.is_system: %v", err)
 	}
 	return nil
 }

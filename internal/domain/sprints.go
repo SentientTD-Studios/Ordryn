@@ -327,6 +327,10 @@ func rejectLockedSprintAssignment(userID, projectID int, sprint *storage.Project
 	if sprint == nil || !storage.SprintIsLocked(sprint.LockDate, time.Now()) {
 		return nil
 	}
+	// Rules are configured by project managers, who may add to locked sprints.
+	if storage.IsSystemUser(userID) {
+		return nil
+	}
 	proj, err := storage.GetAccessibleProjectByID(projectID, userID)
 	if err != nil {
 		return ErrNotFound

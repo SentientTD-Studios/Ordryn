@@ -20,6 +20,9 @@ import type {
   ProjectAgentInput,
   AgentRun,
   TaskAgentRuns,
+  AutomationRule,
+  AutomationRuleInput,
+  AutomationRun,
   CalendarInfo,
   CalendarMonth,
   ChangelogEntry,
@@ -387,6 +390,47 @@ export const api = {
   listProjectAgentRuns(projectId: number, agentId?: number) {
     const qs = agentId ? `?agent_id=${agentId}` : ''
     return request<AgentRun[]>(`/api/v2/projects/${projectId}/agents/runs${qs}`)
+  },
+
+  listAutomationRules(projectId: number) {
+    return request<AutomationRule[]>(`/api/v2/projects/${projectId}/automations`)
+  },
+
+  createAutomationRule(projectId: number, payload: AutomationRuleInput) {
+    return request<AutomationRule>(`/api/v2/projects/${projectId}/automations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateAutomationRule(projectId: number, ruleId: number, patch: AutomationRuleInput) {
+    return request<AutomationRule>(`/api/v2/projects/${projectId}/automations/${ruleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  deleteAutomationRule(projectId: number, ruleId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/automations/${ruleId}`, { method: 'DELETE' })
+  },
+
+  reorderAutomationRules(projectId: number, ids: number[]) {
+    return request<AutomationRule[]>(`/api/v2/projects/${projectId}/automations/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+  },
+
+  previewAutomationRule(projectId: number, payload: AutomationRuleInput) {
+    return request<{ tasks: { id: number; title: string }[] }>(`/api/v2/projects/${projectId}/automations/preview`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listAutomationRuns(projectId: number, ruleId?: number) {
+    const qs = ruleId ? `?rule_id=${ruleId}` : ''
+    return request<AutomationRun[]>(`/api/v2/projects/${projectId}/automations/runs${qs}`)
   },
 
   getTaskAgentRuns(taskId: number) {

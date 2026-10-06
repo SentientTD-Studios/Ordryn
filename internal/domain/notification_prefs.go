@@ -23,6 +23,7 @@ var optionalNotifications = []NotificationOption{
 	{Type: storage.NotificationTaskMentioned, Label: "Mentions", Description: "Someone @mentions you in a comment. When off, you get a regular comment notification instead if comments are on."},
 	{Type: NotificationTaskActivity, Label: "Watched task activity", Description: "A task you watch is claimed, moved, blocked, completed, reopened, or has its due date changed."},
 	{Type: NotificationTaskUnblocked, Label: "Unblocked tasks", Description: "A task you watch has its last open blocker completed."},
+	{Type: storage.NotificationAutomation, Label: "Automation", Description: "A project automation rule changes, comments on, assigns, or flags a task you follow. When off, nothing caused by Automation reaches your inbox."},
 	{Type: storage.NotificationJoinRequest, Label: "Join requests", Description: "Someone asks to join the site. Covers both the in-app notification and the email.", AdminOnly: true},
 }
 

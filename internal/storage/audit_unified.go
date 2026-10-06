@@ -470,6 +470,9 @@ func runAuditPurge() {
 		return
 	}
 	days := ClampAuditRetentionDays(s.AuditRetentionDays)
+	if err := PurgeAutomationRuns(days); err != nil {
+		log.Printf("audit purge: automation runs: %v", err)
+	}
 	n, err := PurgeAuditEvents(days)
 	if err != nil {
 		log.Printf("audit purge: %v", err)
