@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
 import type { Organization, OrganizationInvite, OrganizationMember, OrganizationProjectRoster, OrgMemberProjectImpact, OrgMemberRoleImpact, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
 import RolePermissionFields from '@/components/RolePermissionFields.vue'
-import ProjectMemberRoster from '@/components/ProjectMemberRoster.vue'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -48,7 +48,6 @@ const roleChangeMember = ref<OrganizationMember | null>(null)
 const roleChangeNext = ref('')
 const roleImpact = ref<OrgMemberRoleImpact | null>(null)
 const roleImpactError = ref('')
-const projectRoleOptions = ref<Record<number, ProjectRoleDef[]>>({})
 const syncing = ref(false)
 
 const canManage = computed(() => !!org.value?.can_manage)
@@ -101,7 +100,6 @@ async function loadDetail() {
   if (!selectedId.value) {
     members.value = []
     orgProjects.value = []
-    projectRoleOptions.value = {}
     invites.value = []
     roles.value = []
     ownerRole.value = null
@@ -130,59 +128,8 @@ async function loadDetail() {
     }
     editName.value = fresh.name
     editDescription.value = fresh.description || ''
-    await loadProjectRoleOptions(projects)
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load organization', 'error')
-  }
-}
-
-async function loadProjectRoleOptions(projects: OrganizationProjectRoster[]) {
-  const next: Record<number, ProjectRoleDef[]> = {}
-  await Promise.all(
-    projects
-      .filter((p) => p.can_manage && !p.org_managed)
-      .map(async (p) => {
-        try {
-          const data = await api.listProjectRoles(p.id)
-          next[p.id] = (data.roles || []).filter((r) => r.slug !== 'owner')
-        } catch {
-          next[p.id] = assignableRoles.value.filter((r) => r.slug !== 'owner')
-        }
-      }),
-  )
-  projectRoleOptions.value = next
-}
-
-function rolesForProject(projectId: number) {
-  return projectRoleOptions.value[projectId] || assignableRoles.value.filter((r) => r.slug !== 'owner')
-}
-
-async function onProjectRosterRoleChange(projectId: number, userId: number, role: string) {
-  if (!role || role === 'owner') return
-  try {
-    await api.updateProjectMember(projectId, userId, role)
-    toast.push('Project role updated', 'success')
-    await loadDetail()
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not update project role', 'error')
-    await loadDetail()
-  }
-}
-
-async function onProjectRosterRemove(projectId: number, userId: number) {
-  const ok = await askConfirm({
-    title: 'Remove member?',
-    message: 'Remove this person from the project? They stay in the organization.',
-    confirmLabel: 'Remove',
-    danger: true,
-  })
-  if (!ok) return
-  try {
-    await api.removeProjectMember(projectId, userId)
-    toast.push('Removed from project', 'info')
-    await loadDetail()
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not remove from project', 'error')
   }
 }
 
@@ -728,9 +675,9 @@ onBeforeUnmount(destroySortable)
               <div>
                 <h2 class="h6 mb-1">Attached projects</h2>
                 <p class="small text-muted mb-0">
-                  People currently on each imported project. New organization members are added automatically
-                  after they accept, except on boards where members were chosen manually. On unlocked boards
-                  you can change a member's project role here. Locked boards stay in sync with the organization role.
+                  Projects that belong to this organization. Open a project to see or change its members.
+                  New organization members are added automatically after they accept, except on boards where
+                  members were chosen manually. Locked boards stay in sync with organization roles.
                 </p>
               </div>
               <button
@@ -743,24 +690,14 @@ onBeforeUnmount(destroySortable)
                 {{ syncing ? 'Syncing…' : 'Sync members' }}
               </button>
             </div>
-            <div v-if="orgProjects.length">
-              <div v-for="p in orgProjects" :key="p.id" class="mb-3">
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-                  <strong>{{ p.name }}</strong>
-                  <span v-if="p.org_managed" class="badge text-bg-info">roles locked</span>
-                  <span v-else class="badge text-bg-secondary">roles editable</span>
-                  <span class="badge text-bg-light text-muted">{{ importLabel(p.org_import) }}</span>
-                </div>
-                <ProjectMemberRoster
-                  :members="p.members"
-                  :locked="p.org_managed"
-                  :editable="!!p.can_manage && !p.org_managed"
-                  :roles="rolesForProject(p.id)"
-                  @role-change="(userId, role) => onProjectRosterRoleChange(p.id, userId, role)"
-                  @remove="(userId) => onProjectRosterRemove(p.id, userId)"
-                />
-              </div>
-            </div>
+            <ul v-if="orgProjects.length" class="list-unstyled mb-0">
+              <li v-for="p in orgProjects" :key="p.id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <RouterLink :to="{ path: '/', query: { project: p.id } }" class="fw-semibold">{{ p.name }}</RouterLink>
+                <span v-if="p.org_managed" class="badge text-bg-info">roles locked</span>
+                <span v-else class="badge text-bg-secondary">roles editable</span>
+                <span class="badge text-bg-light text-muted">{{ importLabel(p.org_import) }}</span>
+              </li>
+            </ul>
             <p v-else class="small text-muted mb-0">No projects are attached to this organization yet.</p>
           </div>
         </div>
