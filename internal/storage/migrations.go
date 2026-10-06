@@ -390,6 +390,15 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	// Project automation rules and the protected @automation account (needs the 'user' role).
+	if err := CreateAutomationTables(); err != nil {
+		fmt.Printf("migration: CreateAutomationTables failed: %v\n", err)
+		errCount++
+	} else if _, err := EnsureSystemUser(); err != nil {
+		fmt.Printf("migration: EnsureSystemUser failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

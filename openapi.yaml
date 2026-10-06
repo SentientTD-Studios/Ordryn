@@ -48,6 +48,7 @@ tags:
   - name: Notifications
   - name: Projects
   - name: AI Agents
+  - name: Automation
   - name: Organizations
   - name: Tags
   - name: Saved Views
@@ -4067,6 +4068,257 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskTimeEntry"
 
+  /api/v2/projects/{id}/automations:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Automation]
+      summary: List the project's automation rules (project:manage)
+      description: |
+        Rules run as the protected site account `@automation` (shown as "Automation" in history).
+        Changes made by a rule never trigger other rules.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Rules in evaluation order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutomationRule"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Automation]
+      summary: Create an automation rule (project:manage)
+      description: At most 25 rules per project and 5 actions per rule. Status, sprint, assignee, and agent features need a kanban project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationRuleInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/automations/runs:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Automation]
+      summary: Rule run history for the project (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: rule_id
+          in: query
+          schema:
+            type: integer
+        - name: task_id
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutomationRun"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/automations/preview:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Automation]
+      summary: Dry-run a rule without saving it (project:manage)
+      description: |
+        Timed rules list the tasks their next pass would act on. Event rules list existing tasks that pass the
+        rule's conditions. Nothing is changed. Returns at most 50 tasks.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationRuleInput"
+      responses:
+        "200":
+          description: Matching tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        title:
+                          type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/automations/reorder:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Automation]
+      summary: Set rule evaluation order (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        "200":
+          description: Rules in the new order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutomationRule"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/automations/{ruleId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/RuleID"
+    get:
+      tags: [Automation]
+      summary: Get one rule (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Automation]
+      summary: Update a rule (project:manage)
+      description: Omitted fields keep their value. Re-enabling a paused rule clears its error streak.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationRuleInput"
+      responses:
+        "200":
+          description: Updated rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Automation]
+      summary: Delete a rule and its run history (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/automations/{ruleId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/RuleID"
+    get:
+      tags: [Automation]
+      summary: Run history for one rule (project:manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutomationRun"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/tasks/{id}/agent-runs:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -6314,6 +6566,13 @@ components:
       schema:
         type: integer
         minimum: 1
+    RuleID:
+      name: ruleId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     RunID:
       name: runId
       in: path
@@ -6779,6 +7038,234 @@ components:
             updated_at:
               type: string
               format: date-time
+
+    AutomationTriggerConfig:
+      type: object
+      properties:
+        days:
+          type: integer
+          minimum: 0
+          maximum: 365
+          description: Threshold for timed triggers (time.*).
+        from_status_ids:
+          type: array
+          items:
+            type: integer
+          description: task.status_changed only — the column the task left.
+        to_status_ids:
+          type: array
+          items:
+            type: integer
+          description: task.status_changed only — the column the task entered.
+        tag_ids:
+          type: array
+          items:
+            type: integer
+          description: task.tagged only — fire when one of these tags is added.
+
+    AutomationConditions:
+      type: object
+      description: The rule's "if" filters. Every set filter must match.
+      properties:
+        status_ids:
+          type: array
+          items:
+            type: integer
+        exclude_status_ids:
+          type: array
+          items:
+            type: integer
+        min_priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+        tags_any:
+          type: array
+          items:
+            type: integer
+        tags_none:
+          type: array
+          items:
+            type: integer
+        sprint:
+          type: string
+          enum: ["", none, current, any, specific]
+        sprint_id:
+          type: integer
+        assignee:
+          type: string
+          enum: ["", unassigned, assigned, user]
+        assignee_id:
+          type: integer
+        field_key:
+          type: string
+        field_value:
+          type: string
+        has_due:
+          type: string
+          enum: ["", "yes", "no"]
+        completion:
+          type: string
+          enum: ["", open, done]
+        task_kind:
+          type: string
+          enum: ["", root, subtask]
+
+    AutomationAction:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [set_status, set_priority, add_tag, remove_tag, assign, unassign, set_sprint, set_due,
+            complete, reopen, archive, comment, notify, queue_agent]
+        status_id:
+          type: integer
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+        tag_id:
+          type: integer
+        user_id:
+          type: integer
+          description: assign — a human project member.
+        sprint:
+          type: string
+          enum: [current, next, backlog, specific]
+        sprint_id:
+          type: integer
+        days:
+          type: integer
+          description: set_due — days from today (project owner's timezone).
+        body:
+          type: string
+          description: |
+            comment / notify text, or the note for queue_agent. Supports {task}, {id}, {status}, {priority},
+            {due_date}, {assignee}, {sprint}, {project}, {tags}, {rule}, {today}, {url}, {description}.
+        target:
+          type: string
+          enum: [watchers, assignee]
+        agent_id:
+          type: integer
+
+    AutomationRuleInput:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        enabled:
+          type: boolean
+        trigger_type:
+          type: string
+          enum: [task.created, task.status_changed, task.completed, task.reopened, task.claimed, task.unclaimed,
+            task.due_changed, task.tagged, task.sprint_changed, task.commented, task.unblocked,
+            time.overdue, time.due_soon, time.completed_ago, time.in_status, time.inactive, time.sprint_ended]
+        trigger_config:
+          $ref: "#/components/schemas/AutomationTriggerConfig"
+        conditions:
+          $ref: "#/components/schemas/AutomationConditions"
+        actions:
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/AutomationAction"
+        recipe_id:
+          type: string
+          description: Built-in recipe the rule was started from (informational).
+
+    AutomationRule:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        name:
+          type: string
+        enabled:
+          type: boolean
+        position:
+          type: integer
+        trigger_type:
+          type: string
+        trigger_config:
+          $ref: "#/components/schemas/AutomationTriggerConfig"
+        conditions:
+          $ref: "#/components/schemas/AutomationConditions"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationAction"
+        recipe_id:
+          type: string
+        created_by_id:
+          type: integer
+        updated_by_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        run_count:
+          type: integer
+        error_count:
+          type: integer
+        consecutive_errors:
+          type: integer
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_error:
+          type: string
+        paused_reason:
+          type: string
+          description: Set when the system paused the rule (error streak or hourly limit).
+
+    AutomationRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        rule_id:
+          type: integer
+        rule_name:
+          type: string
+        project_id:
+          type: integer
+        task_id:
+          type: integer
+        task_title:
+          type: string
+        trigger:
+          type: string
+        outcome:
+          type: string
+          enum: [applied, error]
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+              field:
+                type: string
+              from:
+                type: string
+              to:
+                type: string
+              error:
+                type: string
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
 
     AgentRun:
       type: object

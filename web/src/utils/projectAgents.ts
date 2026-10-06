@@ -60,6 +60,8 @@ export function triggerLabel(trigger: string): string {
       return '@mentioned'
     case 'status':
       return 'Column move'
+    case 'automation':
+      return 'Automation rule'
     default:
       return trigger
   }

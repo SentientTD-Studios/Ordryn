@@ -42,7 +42,9 @@ type TaskComment struct {
 	AuthorRoleName   string
 	// AuthorIsAgent is true when an AI agent wrote the comment.
 	AuthorIsAgent bool
-	Links         []TaskCommentLink
+	// AuthorIsSystem is true when a project automation rule wrote the comment.
+	AuthorIsSystem bool
+	Links          []TaskCommentLink
 }
 
 // TaskCommentLink is a task mentioned in a comment that the viewer can open.
@@ -140,6 +142,10 @@ func scanTaskComment(row interface {
 	)
 	if err != nil {
 		return err
+	}
+	if c.AuthorIsAgent && IsSystemUser(c.UserID) {
+		c.AuthorIsSystem = true
+		c.UserName = SystemUserDisplayName
 	}
 	if deletedAt.Valid {
 		t := deletedAt.Time

@@ -111,6 +111,10 @@ func scanTaskEvents(rows interface {
 		if len(metaRaw) > 0 {
 			_ = json.Unmarshal(metaRaw, &ev.Metadata)
 		}
+		if IsSystemUser(ev.UserID) {
+			ev.ActorUserName = SystemUserDisplayName
+			ev.ActorEmail = ""
+		}
 		out = append(out, ev)
 	}
 	return out, rows.Err()

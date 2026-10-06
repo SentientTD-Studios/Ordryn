@@ -32,6 +32,7 @@ onUnmounted(() => {
             <li class="list-inline-item"><a href="#projects-views">Projects &amp; views</a></li>
             <li class="list-inline-item"><a href="#roles-permissions">Roles</a></li>
             <li class="list-inline-item"><a href="#ai-agents">AI agents</a></li>
+            <li class="list-inline-item"><a href="#automation">Automation</a></li>
             <li class="list-inline-item"><a href="#calendar-dashboard">Calendar &amp; dashboard</a></li>
             <li class="list-inline-item"><a href="#collaboration">Collaboration</a></li>
             <li class="list-inline-item"><a href="#shortcuts">Shortcuts</a></li>
@@ -229,6 +230,46 @@ onUnmounted(() => {
             people you trust, and give the agent only the role and guardrails it needs.
           </li>
         </ul>
+
+        <h2 id="automation" class="h4 mt-4">Automation rules</h2>
+        <p>
+          Project managers can set up rules under project settings → <strong>Rules</strong> so routine cleanup happens
+          on its own. Each rule reads as one sentence: <strong>when</strong> something happens, <strong>if</strong> the
+          task matches, <strong>then</strong> change it.
+        </p>
+        <ul>
+          <li>
+            <strong>When</strong> is either an event (created, moved to a column, completed, reopened, claimed, unclaimed,
+            due date changed, tag added, sprint changed, commented, unblocked) or a timed check run every 15 minutes
+            (overdue N days, due within N days, completed N days ago, in one column N days, no activity N days, sprint
+            ended). A timed rule acts once per task each time it newly qualifies, so a task is tagged once per due date,
+            not every 15 minutes.
+          </li>
+          <li>
+            <strong>If</strong> narrows it down by column, priority, tags, sprint, assignee, custom field, due date,
+            open/completed, and top-level/subtask.
+          </li>
+          <li>
+            <strong>Then</strong> runs up to five actions in order: move column, set priority, add or remove a tag,
+            assign or unassign, move sprint, set a due date, complete, reopen, archive, comment, notify watchers or the
+            assignee, or send the task to an AI agent. Comments and notifications can use placeholders like
+            <code>{task}</code>, <code>{assignee}</code>, and <code>{due_date}</code>.
+          </li>
+        </ul>
+        <p>
+          <strong>Starter rules</strong> add common setups in one click: archive finished work after 30 days, flag
+          slipping tasks, move unblocked work to Ready, start work on claim, nudge stale tasks, and more. Missing tags
+          (like <code>slipping</code>) are created for you. <strong>Test rule</strong> shows which tasks a rule would
+          match before you save it.
+        </p>
+        <p>
+          Rules act as the protected <strong>Automation</strong> account. It can't sign in, can't be edited or banned,
+          and isn't a project member. Every change it makes appears in the task's activity as
+          <em>Automation</em>, next to a line naming the rule, and in the Rules tab's run history. Changes made by a rule
+          <strong>never trigger other rules</strong>, so rules can't loop. A rule that fails 10 times in a row, or acts
+          more than 200 times in an hour, pauses itself and shows why. Don't want inbox notices caused by rules? Turn
+          off <strong>Automation</strong> under profile → notifications.
+        </p>
 
         <h2 id="calendar-dashboard" class="h4 mt-4">Calendar and dashboard</h2>
         <p>

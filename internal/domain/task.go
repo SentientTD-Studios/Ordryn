@@ -676,6 +676,8 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 
 	tagsChanged := false
+	// Tag ids before/after, so hook consumers (automation) can tell which were added.
+	var tagIDsBefore, tagIDsAfter string
 	if in.TagIDs != nil {
 		beforeTags, err := storage.GetTagsForTask(taskID)
 		if err != nil {
@@ -687,6 +689,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		if afterTags, err := storage.GetTagsForTask(taskID); err == nil {
 			logTagChanges(taskID, userID, beforeTags, afterTags)
 			tagsChanged = !sameTagSet(beforeTags, afterTags)
+			tagIDsBefore, tagIDsAfter = tagIDList(beforeTags), tagIDList(afterTags)
 		} else {
 			tagsChanged = true
 		}
@@ -793,7 +796,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		appendChange("sprint", strconv.Itoa(oldSprintID), strconv.Itoa(newSprintID))
 	}
 	if tagsChanged {
-		changed = append(changed, "tags")
+		appendChange("tags", tagIDsBefore, tagIDsAfter)
 	}
 	if parentChanged {
 		appendChange("parent", strconv.Itoa(nullInt(oldParentID)), strconv.Itoa(nullInt(newParentID)))
@@ -956,6 +959,15 @@ func logTagChanges(taskID, userID int, before, after []storage.Tag) {
 			_ = storage.LogTaskEvent(taskID, userID, "tag_removed", map[string]interface{}{"tag": t.Name, "tag_id": t.ID})
 		}
 	}
+}
+
+// tagIDList is a comma-separated list of tag ids.
+func tagIDList(tags []storage.Tag) string {
+	ids := make([]string, 0, len(tags))
+	for _, t := range tags {
+		ids = append(ids, strconv.Itoa(t.ID))
+	}
+	return strings.Join(ids, ",")
 }
 
 func sameTagSet(a, b []storage.Tag) bool {

@@ -155,6 +155,16 @@ Refusals return `403 agent_guardrail`. **Pause** refuses the agent's keys and st
 
 Treat anything members write on a task as input the agent will read: limit who can trigger it and give it only the role and guardrails it needs. Full reference: the in-app API docs (`/docs/api/v2#ai-agents`) and [`openapi.yaml`](openapi.yaml) (tag **AI Agents**).
 
+## Automation rules
+
+Project managers can automate routine cleanup from **project settings → Rules**. Each rule is **when** (an event such as claimed, completed, unblocked, tag added, or a timed check such as overdue N days or no activity N days) / **if** (column, priority, tags, sprint, assignee, custom field, due date, open/done) / **then** (up to 5 actions: move column, priority, add/remove tag, assign, sprint, due date, complete, reopen, archive, comment, notify, send to an AI agent).
+
+Starter rules cover common needs in one click: archive tasks 30 days after completion, tag `slipping` when 3+ days overdue (and clear it), move unblocked tasks to Ready, start work on claim, return unclaimed work to To Do, nudge stale In Progress work, escalate unassigned work that's due soon, mark bugs high priority, and carry unfinished work into the next sprint.
+
+Rules run as the protected site account **`@automation`** (`users.is_system`; created by migrations). It can't sign in, has no inbox, can't be banned or renamed, and isn't stored as a project member. Instead it holds a built-in role on every project that can edit, move, claim, complete, and archive tasks, but never delete them or manage the project. Its changes appear in task history as **Automation**, alongside a line naming the rule, and in the Rules tab's run history.
+
+**Safety:** changes made by Automation never trigger other rules (no chains, no loops). Timed rules act once per task per episode, such as once per due date. A rule pauses itself after 10 failed runs in a row or 200 runs in an hour. Members can opt out of Automation notices under profile → notifications. Reference: `/docs/api/v2#automation` and [`openapi.yaml`](openapi.yaml) (tag **Automation**).
+
 ## Requirements
 
 - Go 1.24+

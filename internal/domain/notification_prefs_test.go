@@ -51,8 +51,8 @@ func TestNotificationPreferencesListAndValidate(t *testing.T) {
 			t.Fatal("join_request should be hidden from non-admins")
 		}
 	}
-	if len(prefs) != 5 {
-		t.Fatalf("want 5 optional types for non-admin, got %d", len(prefs))
+	if len(prefs) != 6 {
+		t.Fatalf("want 6 optional types for non-admin, got %d", len(prefs))
 	}
 
 	for _, bad := range []string{"password_reset", "nope", storage.NotificationJoinRequest} {
