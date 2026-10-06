@@ -85,6 +85,19 @@ func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsernam
 	return inv, nil
 }
 
+// denyOwnerMemberEdit protects owners. The project creator can never be changed or removed.
+// Other owners (organization owners imported into the project) can only be changed or removed
+// by another owner, or leave on their own.
+func denyOwnerMemberEdit(proj *storage.ProjectWithAccess, memberUserID int, memberRole string, selfLeave bool) error {
+	if memberUserID == proj.OwnerUserID {
+		return fmt.Errorf("%w: cannot change or remove the project owner", ErrValidation)
+	}
+	if memberRole == storage.RoleOwner && !selfLeave && proj.Role != storage.RoleOwner {
+		return fmt.Errorf("%w: only an owner can change or remove another owner", ErrForbidden)
+	}
+	return nil
+}
+
 // UpdateProjectMemberRole changes a member's role (owner only). Cannot change owner role via this.
 func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, memberUserID int, role string) error {
 	_ = ctx
@@ -109,8 +122,8 @@ func UpdateProjectMemberRole(ctx context.Context, actorUserID, projectID, member
 	if current == "" {
 		return ErrNotFound
 	}
-	if current == storage.RoleOwner {
-		return fmt.Errorf("%w: cannot change owner role", ErrValidation)
+	if err := denyOwnerMemberEdit(proj, memberUserID, current, false); err != nil {
+		return err
 	}
 	if storage.IsAgentUser(memberUserID) {
 		return fmt.Errorf("%w: change an AI agent's role on the AI agents tab", ErrValidation)
@@ -153,8 +166,8 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 	if targetRole == "" {
 		return ErrNotFound
 	}
-	if targetRole == storage.RoleOwner {
-		return fmt.Errorf("%w: cannot remove the project owner", ErrValidation)
+	if err := denyOwnerMemberEdit(proj, memberUserID, targetRole, selfLeave); err != nil {
+		return err
 	}
 	if storage.IsAgentUser(memberUserID) {
 		return fmt.Errorf("%w: remove an AI agent on the AI agents tab", ErrValidation)

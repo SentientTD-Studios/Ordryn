@@ -15,7 +15,7 @@ func sharedProject(t *testing.T, name string) int {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, "editor"); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
 	return proj.ID

@@ -3,42 +3,39 @@ package domain
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"GoTodo/internal/storage"
 )
 
-func TestSiteRoleDefaultsAndPermissions(t *testing.T) {
+func TestOwnerIsOnlySiteRole(t *testing.T) {
 	if err := storage.SeedDefaultProjectRoles(); err != nil {
 		t.Fatalf("seed: %v", err)
+	}
+	site, err := storage.ListSiteProjectRoles()
+	if err != nil {
+		t.Fatalf("list site roles: %v", err)
+	}
+	if len(site) != 1 || site[0].Slug != storage.RoleOwner {
+		t.Fatalf("site roles should be just owner: %+v", site)
 	}
 	if !storage.HasProjectPerm(0, storage.RoleOwner, storage.PermProjectManage) {
 		t.Fatal("owner should manage")
 	}
-	if storage.HasProjectPerm(0, storage.RoleEditor, storage.PermProjectManage) {
-		t.Fatal("editor should not manage")
+	for _, slug := range []string{testRoleEditor, testRoleViewer, testRoleDeveloper, testRoleQA} {
+		if storage.ResolveRoleDef(0, slug) != nil {
+			t.Fatalf("%s should not exist as a site role", slug)
+		}
+		if storage.RoleCanWriteTask(0, slug) {
+			t.Fatalf("%s should not write without a project or org role", slug)
+		}
 	}
-	if storage.HasProjectPerm(0, storage.RoleQA, storage.PermTasksCreate) {
-		t.Fatal("qa should not create tasks")
-	}
-	if !storage.HasProjectPerm(0, storage.RoleQA, storage.PermTasksStatus) {
-		t.Fatal("qa should change status")
-	}
-	if !storage.HasProjectPerm(0, storage.RoleDeveloper, storage.PermTasksDelete) {
-		t.Fatal("developer should delete")
-	}
-	if storage.RoleCanWrite(storage.RoleViewer) {
-		t.Fatal("viewer should not write")
-	}
-	if !storage.RoleCanWriteTask(0, storage.RoleQA) {
-		t.Fatal("qa should be a write role")
-	}
-	if !storage.ValidInviteRole(storage.RoleQA) || !storage.ValidInviteRole(storage.RoleDeveloper) {
-		t.Fatal("qa/developer should be inviteable")
-	}
-	if storage.ValidInviteRole(storage.RoleOwner) {
-		t.Fatal("owner should not be inviteable")
+	if _, err := CreateSiteProjectRoleForAdmin(context.Background(), 1, CreateSiteProjectRoleInput{
+		Slug: "qa-two", Name: "QA Two",
+	}); err == nil {
+		t.Fatal("creating a site role should be refused")
 	}
 }
 
@@ -53,7 +50,7 @@ func TestQACannotCreateOrDeleteButCanMoveStatus(t *testing.T) {
 	if _, err := SetProjectWorkflowMode(ctx, ownerID, proj.ID, storage.WorkflowKanban); err != nil {
 		t.Fatalf("kanban: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, qaID, storage.RoleQA); err != nil {
+	if err := upsertTestMember(t, proj.ID, qaID, testRoleQA); err != nil {
 		t.Fatalf("add qa: %v", err)
 	}
 
@@ -98,10 +95,10 @@ func TestStatusGatesRestrictEnterAndLeave(t *testing.T) {
 	if _, err := SetProjectWorkflowMode(ctx, ownerID, proj.ID, storage.WorkflowKanban); err != nil {
 		t.Fatalf("kanban: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, devID, storage.RoleDeveloper); err != nil {
+	if err := upsertTestMember(t, proj.ID, devID, testRoleDeveloper); err != nil {
 		t.Fatalf("add developer: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, qaID, storage.RoleQA); err != nil {
+	if err := upsertTestMember(t, proj.ID, qaID, testRoleQA); err != nil {
 		t.Fatalf("add qa: %v", err)
 	}
 
@@ -109,7 +106,7 @@ func TestStatusGatesRestrictEnterAndLeave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create In QA: %v", err)
 	}
-	if _, err := UpdateStatusGatesForUser(ctx, ownerID, proj.ID, inQA.ID, []string{storage.RoleQA}, []string{storage.RoleQA}); err != nil {
+	if _, err := UpdateStatusGatesForUser(ctx, ownerID, proj.ID, inQA.ID, []string{testRoleQA}, []string{testRoleQA}); err != nil {
 		t.Fatalf("set gates: %v", err)
 	}
 
@@ -200,38 +197,34 @@ func TestProjectCustomRoleAndDiscussionLabel(t *testing.T) {
 	}
 }
 
-func TestCopyAndReorderSiteRoles(t *testing.T) {
+func TestCopyAndReorderProjectRoles(t *testing.T) {
 	ctx := context.Background()
-	listed, err := storage.ListSiteProjectRoles()
-	if err != nil || len(listed) < 2 {
-		t.Fatalf("list site roles: %v n=%d", err, len(listed))
+	proj, err := CreateProject(ctx, 1, "Copy Reorder Roles", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
 	}
-	qa := listed[0]
-	for _, d := range listed {
-		if d.Slug == storage.RoleQA {
-			qa = d
-			break
-		}
+	first, err := CreateProjectCustomRoleForUser(ctx, 1, proj.ID, CreateSiteProjectRoleInput{
+		Slug: "tester", Name: "Tester", Permissions: []string{storage.PermTasksStatus},
+	})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
 	}
-	copied, err := storage.CreateProjectRoleDef(nil, "qa-copy-test", qa.Name+" (copy)", qa.Description, qa.Permissions, false, 50)
+	copied, err := CreateProjectCustomRoleForUser(ctx, 1, proj.ID, CreateSiteProjectRoleInput{
+		Slug: "tester-copy", CopyFromID: first.ID,
+	})
 	if err != nil {
 		t.Fatalf("copy role: %v", err)
 	}
-	ids := []int{copied.ID}
-	for _, d := range listed {
-		ids = append(ids, d.ID)
+	if copied.Name != "Tester (copy)" || strings.Join(copied.Permissions, ",") != storage.PermTasksStatus {
+		t.Fatalf("copied role: %+v", copied)
 	}
-	if err := storage.ReorderProjectRoleDefs(ids, true, 0, 0); err != nil {
+	if err := ReorderProjectCustomRolesForUser(ctx, 1, proj.ID, []int{copied.ID, first.ID}); err != nil {
 		t.Fatalf("reorder: %v", err)
 	}
-	after, err := storage.ListSiteProjectRoles()
-	if err != nil || len(after) == 0 || after[0].ID != copied.ID {
-		t.Fatalf("reorder result first=%v err=%v", after, err)
+	after, err := storage.ListProjectCustomRoles(proj.ID)
+	if err != nil || len(after) != 2 || after[0].ID != copied.ID {
+		t.Fatalf("reorder result: %+v err=%v", after, err)
 	}
-	if err := storage.DeleteProjectRoleDef(copied.ID); err != nil {
-		t.Fatalf("cleanup copy: %v", err)
-	}
-	_ = ctx
 }
 
 func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
@@ -242,7 +235,7 @@ func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	if _, err := InviteToOrganization(ctx, 1, org.ID, "editor_user", storage.RoleEditor); err != nil {
+	if _, err := inviteToTestOrg(t, ctx, 1, org.ID, "editor_user", testRoleEditor); err != nil {
 		t.Fatalf("invite org member: %v", err)
 	}
 	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != "" {
@@ -290,7 +283,7 @@ func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
 	}
 
 	role, err := storage.GetProjectRole(proj.ID, 2)
-	if err != nil || role != storage.RoleEditor {
+	if err != nil || role != testRoleEditor {
 		t.Fatalf("imported role: %q err=%v", role, err)
 	}
 	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err != nil {
@@ -302,7 +295,7 @@ func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
 	}
 	var sawEditor bool
 	for _, m := range members {
-		if m.UserID == 2 && !m.Inherited && m.Role == storage.RoleEditor {
+		if m.UserID == 2 && !m.Inherited && m.Role == testRoleEditor {
 			sawEditor = true
 		}
 	}
@@ -310,7 +303,7 @@ func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
 		t.Fatalf("expected copied editor membership, got %+v", members)
 	}
 
-	if _, err := InviteToProject(ctx, 1, proj.ID, "viewer_user", storage.RoleViewer); err != nil {
+	if _, err := inviteToTestProject(t, ctx, 1, proj.ID, "viewer_user", testRoleViewer); err != nil {
 		t.Fatalf("invite on imported project: %v", err)
 	}
 	custom, err := CreateProjectCustomRoleForUser(ctx, 1, proj.ID, CreateSiteProjectRoleInput{
@@ -339,7 +332,7 @@ func TestOrgImportCopiesMembersAndAllowsProjectEdits(t *testing.T) {
 		t.Fatalf("org role change should not overwrite project role: %q err=%v", got, err)
 	}
 
-	if err := storage.UpsertOrganizationMember(org.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestOrgMember(t, org.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add later org member: %v", err)
 	}
 	if _, err := storage.GetAccessibleProjectByID(proj.ID, 3); err == nil {
@@ -356,7 +349,7 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	if _, err := InviteToOrganization(ctx, 1, org.ID, "attach_editor", storage.RoleEditor); err != nil {
+	if _, err := inviteToTestOrg(t, ctx, 1, org.ID, "attach_editor", testRoleEditor); err != nil {
 		t.Fatalf("invite org member: %v", err)
 	}
 	invites, err := storage.ListPendingOrganizationInvitesForEmail("editor@example.com")
@@ -371,13 +364,13 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add outsider: %v", err)
 	}
-	if _, err := storage.CreateProjectInvite(proj.ID, "pending@example.com", storage.RoleViewer, 1, time.Now().Add(time.Hour)); err != nil {
+	if _, err := storage.CreateProjectInvite(proj.ID, "pending@example.com", testRoleViewer, 1, time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("pending invite: %v", err)
 	}
 
@@ -405,7 +398,7 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 		t.Fatal("non-org member should lose access")
 	}
 	role, err := storage.GetProjectRole(proj.ID, 2)
-	if err != nil || role != storage.RoleEditor {
+	if err != nil || role != testRoleEditor {
 		t.Fatalf("org editor role: %q err=%v", role, err)
 	}
 	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err != nil {
@@ -421,7 +414,7 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 		if m.UserID == 3 {
 			sawOutsider = true
 		}
-		if m.UserID == 2 && !m.Inherited && m.Role == storage.RoleEditor {
+		if m.UserID == 2 && !m.Inherited && m.Role == testRoleEditor {
 			sawCopiedEditor = true
 		}
 	}
@@ -439,7 +432,7 @@ func TestAttachOrganizationToExistingProjectRemovesNonOrgMembers(t *testing.T) {
 	if len(pendingProjectInvites) != 0 {
 		t.Fatalf("pending invites should be cancelled, got %+v", pendingProjectInvites)
 	}
-	if _, err := InviteToProject(ctx, 1, proj.ID, "attach_outsider", storage.RoleViewer); err != nil {
+	if _, err := inviteToTestProject(t, ctx, 1, proj.ID, "attach_outsider", testRoleViewer); err != nil {
 		t.Fatalf("invite after attach: %v", err)
 	}
 
@@ -468,14 +461,14 @@ func TestInviteToOrganizationRequiresAccept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	inv, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_editor", storage.RoleEditor)
+	inv, err := inviteToTestOrg(t, ctx, 1, org.ID, "org_invite_editor", testRoleEditor)
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}
-	if _, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_editor", storage.RoleViewer); !errors.Is(err, ErrValidation) {
+	if _, err := inviteToTestOrg(t, ctx, 1, org.ID, "org_invite_editor", testRoleViewer); !errors.Is(err, ErrValidation) {
 		t.Fatalf("duplicate invite: err=%v", err)
 	}
-	if _, err := InviteToOrganization(ctx, 2, org.ID, "org_invite_viewer", storage.RoleViewer); !errors.Is(err, ErrForbidden) && !errors.Is(err, ErrNotFound) {
+	if _, err := inviteToTestOrg(t, ctx, 2, org.ID, "org_invite_viewer", testRoleViewer); !errors.Is(err, ErrForbidden) && !errors.Is(err, ErrNotFound) {
 		t.Fatalf("non-member invite: err=%v", err)
 	}
 
@@ -493,14 +486,14 @@ func TestInviteToOrganizationRequiresAccept(t *testing.T) {
 	if err := AcceptOrganizationInviteForUser(ctx, 2, "editor@example.com", inv.ID); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != storage.RoleEditor {
+	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != testRoleEditor {
 		t.Fatalf("membership after accept: %q err=%v", role, err)
 	}
-	if role, err := storage.GetProjectRole(proj.ID, 2); err != nil || role != storage.RoleEditor {
+	if role, err := storage.GetProjectRole(proj.ID, 2); err != nil || role != testRoleEditor {
 		t.Fatalf("accepting an org invite should add the user to copy/lock projects: %q err=%v", role, err)
 	}
 
-	declined, err := InviteToOrganization(ctx, 1, org.ID, "org_invite_viewer", storage.RoleViewer)
+	declined, err := inviteToTestOrg(t, ctx, 1, org.ID, "org_invite_viewer", testRoleViewer)
 	if err != nil {
 		t.Fatalf("invite viewer: %v", err)
 	}
@@ -523,7 +516,7 @@ func TestOrgImportLockBlocksEditsAndAppliesOrgRoleChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	if _, err := InviteToOrganization(ctx, 1, org.ID, "lock_editor", storage.RoleEditor); err != nil {
+	if _, err := inviteToTestOrg(t, ctx, 1, org.ID, "lock_editor", testRoleEditor); err != nil {
 		t.Fatalf("invite: %v", err)
 	}
 	invites, err := storage.ListPendingOrganizationInvitesForEmail("editor@example.com")
@@ -545,7 +538,7 @@ func TestOrgImportLockBlocksEditsAndAppliesOrgRoleChanges(t *testing.T) {
 	if !locked.OrgManaged {
 		t.Fatalf("expected lock: %+v", locked)
 	}
-	if _, err := InviteToProject(ctx, 1, locked.ID, "lock_viewer", storage.RoleViewer); !errors.Is(err, ErrForbidden) {
+	if _, err := inviteToTestProject(t, ctx, 1, locked.ID, "lock_viewer", testRoleViewer); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("invite on locked project: err=%v", err)
 	}
 	if _, err := CreateProjectCustomRoleForUser(ctx, 1, locked.ID, CreateSiteProjectRoleInput{
@@ -572,7 +565,7 @@ func TestOrgImportLockBlocksEditsAndAppliesOrgRoleChanges(t *testing.T) {
 	}
 	var sawLockedEditor bool
 	for _, m := range lockedMembers {
-		if m.UserID == 2 && m.Inherited && m.Role == storage.RoleEditor {
+		if m.UserID == 2 && m.Inherited && m.Role == testRoleEditor {
 			sawLockedEditor = true
 		}
 	}
@@ -622,13 +615,13 @@ func TestOrgImportLockBlocksEditsAndAppliesOrgRoleChanges(t *testing.T) {
 		t.Fatalf("unlocked impact: %+v", impact.Unlocked)
 	}
 
-	if err := UpdateOrganizationMemberRoleForUser(ctx, 1, org.ID, 2, storage.RoleViewer); err != nil {
+	if err := UpdateOrganizationMemberRoleForUser(ctx, 1, org.ID, 2, testRoleViewer); err != nil {
 		t.Fatalf("org role: %v", err)
 	}
-	if role, err := storage.GetProjectRole(locked.ID, 2); err != nil || role != storage.RoleViewer {
+	if role, err := storage.GetProjectRole(locked.ID, 2); err != nil || role != testRoleViewer {
 		t.Fatalf("locked project role after org change: %q err=%v", role, err)
 	}
-	if role, err := storage.GetProjectRole(unlocked.ID, 2); err != nil || role != storage.RoleEditor {
+	if role, err := storage.GetProjectRole(unlocked.ID, 2); err != nil || role != testRoleEditor {
 		t.Fatalf("unlocked project role should stay editor: %q err=%v", role, err)
 	}
 }
@@ -641,10 +634,10 @@ func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	if _, err := InviteToOrganization(ctx, 1, org.ID, "select_editor", storage.RoleEditor); err != nil {
+	if _, err := inviteToTestOrg(t, ctx, 1, org.ID, "select_editor", testRoleEditor); err != nil {
 		t.Fatalf("invite editor: %v", err)
 	}
-	if _, err := InviteToOrganization(ctx, 1, org.ID, "select_viewer", storage.RoleViewer); err != nil {
+	if _, err := inviteToTestOrg(t, ctx, 1, org.ID, "select_viewer", testRoleViewer); err != nil {
 		t.Fatalf("invite viewer: %v", err)
 	}
 	for _, email := range []string{"editor@example.com", "viewer@example.com"} {
@@ -674,7 +667,7 @@ func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
 		Name:           "Select Board",
 		OrganizationID: &org.ID,
 		ImportMode:     storage.OrgImportSelect,
-		Members:        []storage.OrgImportMember{{UserID: 3, Role: storage.RoleEditor}},
+		Members:        []storage.OrgImportMember{{UserID: 3, Role: testRoleEditor}},
 	})
 	if err != nil {
 		t.Fatalf("create select: %v", err)
@@ -685,10 +678,10 @@ func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
 	if _, err := storage.GetAccessibleProjectByID(proj.ID, 2); err == nil {
 		t.Fatal("unselected org member should not be imported")
 	}
-	if role, err := storage.GetProjectRole(proj.ID, 3); err != nil || role != storage.RoleEditor {
+	if role, err := storage.GetProjectRole(proj.ID, 3); err != nil || role != testRoleEditor {
 		t.Fatalf("selected member role: %q err=%v", role, err)
 	}
-	if _, err := InviteToProject(ctx, 1, proj.ID, "select_editor", storage.RoleViewer); err != nil {
+	if _, err := inviteToTestProject(t, ctx, 1, proj.ID, "select_editor", testRoleViewer); err != nil {
 		t.Fatalf("invite after select import: %v", err)
 	}
 
@@ -699,7 +692,7 @@ func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
 	attached, err := AttachOrganizationToProject(ctx, 1, existing.ID, CreateProjectInput{
 		OrganizationID: &org.ID,
 		ImportMode:     storage.OrgImportSelect,
-		Members:        []storage.OrgImportMember{{UserID: 2, Role: storage.RoleViewer}},
+		Members:        []storage.OrgImportMember{{UserID: 2, Role: testRoleViewer}},
 	})
 	if err != nil {
 		t.Fatalf("attach select: %v", err)
@@ -707,7 +700,7 @@ func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
 	if attached.OrgManaged {
 		t.Fatalf("attach select should not lock: %+v", attached)
 	}
-	if role, err := storage.GetProjectRole(existing.ID, 2); err != nil || role != storage.RoleViewer {
+	if role, err := storage.GetProjectRole(existing.ID, 2); err != nil || role != testRoleViewer {
 		t.Fatalf("attached selected role: %q err=%v", role, err)
 	}
 	if _, err := storage.GetAccessibleProjectByID(existing.ID, 3); err == nil {
@@ -715,93 +708,31 @@ func TestOrgImportSelectCopiesChosenMembers(t *testing.T) {
 	}
 }
 
-func TestOrgCustomizeDefaultRoles(t *testing.T) {
+func TestOrgRolesApplyToOrgProjects(t *testing.T) {
 	ctx := context.Background()
-	org, err := CreateOrganizationForUser(ctx, 1, "Override Org", "")
+	org, err := CreateOrganizationForUser(ctx, 1, "Org Role Scope", "")
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	if err := storage.UpsertOrganizationMember(org.ID, 2, storage.RoleEditor); err != nil {
+	if storage.ValidInviteRoleForOrg(org.ID, testRoleEditor) {
+		t.Fatal("a role the org has not created should not be assignable")
+	}
+	created, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
+		Slug:        testRoleEditor,
+		Name:        "Org Editor",
+		Permissions: []string{storage.PermTasksCreate, storage.PermTasksEdit},
+	})
+	if err != nil {
+		t.Fatalf("create org role: %v", err)
+	}
+	if created.OverridesSite {
+		t.Fatal("org roles no longer override a site role")
+	}
+	if err := storage.UpsertOrganizationMember(org.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor member: %v", err)
 	}
 
-	site, err := storage.ListSiteProjectRoles()
-	if err != nil {
-		t.Fatalf("list site roles: %v", err)
-	}
-	var owner, editor storage.ProjectRoleDef
-	for _, d := range site {
-		switch d.Slug {
-		case storage.RoleOwner:
-			owner = d
-		case storage.RoleEditor:
-			editor = d
-		}
-	}
-	if owner.ID == 0 || editor.ID == 0 {
-		t.Fatalf("missing built-in roles: owner=%+v editor=%+v", owner, editor)
-	}
-	if !storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksCreate) {
-		t.Fatal("site editor should create tasks before override")
-	}
-
-	name := "Org Editor"
-	desc := "Trimmed for this org"
-	perms := []string{storage.PermTasksEdit, storage.PermTasksStatus}
-	overridden, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, editor.ID, UpdateSiteProjectRoleInput{
-		Name:        &name,
-		Description: &desc,
-		Permissions: &perms,
-	})
-	if err != nil {
-		t.Fatalf("customize editor: %v", err)
-	}
-	if overridden.OrganizationID == nil || *overridden.OrganizationID != org.ID || overridden.Slug != storage.RoleEditor {
-		t.Fatalf("override scope: %+v", overridden)
-	}
-	if !overridden.OverridesSite || overridden.Name != name {
-		t.Fatalf("override flags: %+v", overridden)
-	}
-
-	again, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, editor.ID, UpdateSiteProjectRoleInput{Name: &name})
-	if err != nil || again.ID != overridden.ID {
-		t.Fatalf("second customize should update existing override: %+v err=%v", again, err)
-	}
-
-	listed, _, err := ListOrganizationRolesForUser(ctx, 1, org.ID)
-	if err != nil {
-		t.Fatalf("list org roles: %v", err)
-	}
-	var sawSiteEditor, sawOverride bool
-	for _, d := range listed {
-		if d.Slug == storage.RoleEditor && d.OrganizationID == nil {
-			sawSiteEditor = true
-		}
-		if d.ID == overridden.ID && d.OverridesSite {
-			sawOverride = true
-		}
-	}
-	if sawSiteEditor || !sawOverride {
-		t.Fatalf("list should hide site editor and show override: %+v", listed)
-	}
-
-	if storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksCreate) {
-		t.Fatal("org editor override should drop create")
-	}
-	if !storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksEdit) {
-		t.Fatal("org editor override should keep edit")
-	}
-	if !storage.HasProjectPerm(0, storage.RoleEditor, storage.PermTasksCreate) {
-		t.Fatal("site editor template must stay unchanged")
-	}
-	if storage.OrgRoleDisplayName(org.ID, storage.RoleEditor) != name {
-		t.Fatalf("display name: %q", storage.OrgRoleDisplayName(org.ID, storage.RoleEditor))
-	}
-
-	proj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
-		Name:           "Override Board",
-		OrganizationID: &org.ID,
-	})
+	proj, err := CreateProjectForUser(ctx, 1, CreateProjectInput{Name: "Org Role Board", OrganizationID: &org.ID})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -809,43 +740,36 @@ func TestOrgCustomizeDefaultRoles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assignable: %v", err)
 	}
-	var sawAssignableSiteEditor, sawAssignableOverride bool
-	for _, d := range assignable {
-		if d.Slug == storage.RoleEditor && d.OrganizationID == nil {
-			sawAssignableSiteEditor = true
-		}
-		if d.ID == overridden.ID {
-			sawAssignableOverride = true
-		}
+	if len(assignable) != 1 || assignable[0].ID != created.ID {
+		t.Fatalf("assignable should be just the org role: %+v", assignable)
 	}
-	if sawAssignableSiteEditor || !sawAssignableOverride {
-		t.Fatalf("assignable should prefer org editor: %+v", assignable)
-	}
-	if storage.HasProjectPerm(proj.ID, storage.RoleEditor, storage.PermTasksCreate) {
-		t.Fatal("project should use org editor override")
+	if !storage.HasProjectPerm(proj.ID, testRoleEditor, storage.PermTasksCreate) {
+		t.Fatal("project should use org editor permissions")
 	}
 
+	perms := []string{storage.PermTasksEdit}
+	if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, created.ID, UpdateSiteProjectRoleInput{Permissions: &perms}); err != nil {
+		t.Fatalf("update org role: %v", err)
+	}
+	if storage.HasProjectPerm(proj.ID, testRoleEditor, storage.PermTasksCreate) {
+		t.Fatal("org permission change should reach the project")
+	}
+	if !storage.HasOrgPerm(org.ID, testRoleEditor, storage.PermTasksEdit) {
+		t.Fatal("org editor should keep edit")
+	}
+
+	owner := storage.ResolveOrgRoleDef(0, storage.RoleOwner)
 	ownerPerms := []string{storage.PermTasksEdit}
-	if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, owner.ID, UpdateSiteProjectRoleInput{Name: &name, Permissions: &ownerPerms}); !errors.Is(err, ErrValidation) {
+	if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, owner.ID, UpdateSiteProjectRoleInput{Permissions: &ownerPerms}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("customize owner permissions: err=%v want validation", err)
 	}
 	if _, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
 		Slug: storage.RoleOwner, Name: "Not Owner", Permissions: []string{storage.PermTasksEdit},
-	}); !errors.Is(err, ErrValidation) {
-		t.Fatalf("create owner slug: err=%v want validation", err)
+	}); err == nil {
+		t.Fatal("creating an owner-slug org role should fail")
 	}
-
-	if err := DeleteOrganizationRoleForUser(ctx, 1, org.ID, overridden.ID); err != nil {
-		t.Fatalf("reset override while assigned: %v", err)
-	}
-	if !storage.HasOrgPerm(org.ID, storage.RoleEditor, storage.PermTasksCreate) {
-		t.Fatal("reset should restore site editor permissions")
-	}
-	if storage.OrgRoleDisplayName(org.ID, storage.RoleEditor) == name {
-		t.Fatal("reset should restore site editor name")
-	}
-	if role, err := storage.GetOrganizationRole(org.ID, 2); err != nil || role != storage.RoleEditor {
-		t.Fatalf("member should keep editor slug after reset: %q err=%v", role, err)
+	if err := DeleteOrganizationRoleForUser(ctx, 1, org.ID, created.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("delete assigned org role: err=%v want conflict", err)
 	}
 }
 
@@ -858,7 +782,7 @@ func TestOrgAcceptAndSyncAddsMembersToCopyAndLockNotSelect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	inv2, err := InviteToOrganization(ctx, 1, org.ID, "sync_copy_editor", storage.RoleEditor)
+	inv2, err := inviteToTestOrg(t, ctx, 1, org.ID, "sync_copy_editor", testRoleEditor)
 	if err != nil {
 		t.Fatalf("invite editor: %v", err)
 	}
@@ -886,23 +810,23 @@ func TestOrgAcceptAndSyncAddsMembersToCopyAndLockNotSelect(t *testing.T) {
 		Name:           "Select Board",
 		OrganizationID: &org.ID,
 		ImportMode:     storage.OrgImportSelect,
-		Members:        []storage.OrgImportMember{{UserID: 2, Role: storage.RoleEditor}},
+		Members:        []storage.OrgImportMember{{UserID: 2, Role: testRoleEditor}},
 	})
 	if err != nil {
 		t.Fatalf("select project: %v", err)
 	}
 
-	inv3, err := InviteToOrganization(ctx, 1, org.ID, "sync_copy_viewer", storage.RoleViewer)
+	inv3, err := inviteToTestOrg(t, ctx, 1, org.ID, "sync_copy_viewer", testRoleViewer)
 	if err != nil {
 		t.Fatalf("invite viewer: %v", err)
 	}
 	if err := AcceptOrganizationInviteForUser(ctx, 3, "viewer@example.com", inv3.ID); err != nil {
 		t.Fatalf("accept viewer: %v", err)
 	}
-	if role, err := storage.GetProjectRole(copyProj.ID, 3); err != nil || role != storage.RoleViewer {
+	if role, err := storage.GetProjectRole(copyProj.ID, 3); err != nil || role != testRoleViewer {
 		t.Fatalf("copy after accept: %q err=%v", role, err)
 	}
-	if role, err := storage.GetProjectRole(lockProj.ID, 3); err != nil || role != storage.RoleViewer {
+	if role, err := storage.GetProjectRole(lockProj.ID, 3); err != nil || role != testRoleViewer {
 		t.Fatalf("lock after accept: %q err=%v", role, err)
 	}
 	if _, err := storage.GetAccessibleProjectByID(selectProj.ID, 3); err == nil {
@@ -912,10 +836,10 @@ func TestOrgAcceptAndSyncAddsMembersToCopyAndLockNotSelect(t *testing.T) {
 	if err := RemoveProjectMember(ctx, 1, copyProj.ID, 3); err != nil {
 		t.Fatalf("remove from copy: %v", err)
 	}
-	if err := storage.UpsertProjectMember(lockProj.ID, 2, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, lockProj.ID, 2, testRoleViewer); err != nil {
 		t.Fatalf("stale lock role: %v", err)
 	}
-	if err := UpdateProjectMemberRole(ctx, 1, copyProj.ID, 2, storage.RoleViewer); err != nil {
+	if err := UpdateProjectMemberRole(ctx, 1, copyProj.ID, 2, testRoleViewer); err != nil {
 		t.Fatalf("custom copy role: %v", err)
 	}
 
@@ -926,13 +850,13 @@ func TestOrgAcceptAndSyncAddsMembersToCopyAndLockNotSelect(t *testing.T) {
 	if result.Added < 1 {
 		t.Fatalf("sync should add missing copy membership: %+v", result)
 	}
-	if role, err := storage.GetProjectRole(copyProj.ID, 3); err != nil || role != storage.RoleViewer {
+	if role, err := storage.GetProjectRole(copyProj.ID, 3); err != nil || role != testRoleViewer {
 		t.Fatalf("copy after sync: %q err=%v", role, err)
 	}
-	if role, err := storage.GetProjectRole(copyProj.ID, 2); err != nil || role != storage.RoleViewer {
+	if role, err := storage.GetProjectRole(copyProj.ID, 2); err != nil || role != testRoleViewer {
 		t.Fatalf("copy should keep custom role: %q err=%v", role, err)
 	}
-	if role, err := storage.GetProjectRole(lockProj.ID, 2); err != nil || role != storage.RoleEditor {
+	if role, err := storage.GetProjectRole(lockProj.ID, 2); err != nil || role != testRoleEditor {
 		t.Fatalf("lock should realign org role: %q err=%v", role, err)
 	}
 	if _, err := storage.GetAccessibleProjectByID(selectProj.ID, 3); err == nil {
@@ -963,7 +887,16 @@ func TestProjectRenamesInheritedRoles(t *testing.T) {
 	ctx := context.Background()
 	ownerID := 1
 	memberID := 2
-	proj, err := CreateProject(ctx, ownerID, "Renamed Roles", "")
+	// Editor here is an organization role the project inherits; Owner is the site role.
+	org, err := CreateOrganizationForUser(ctx, ownerID, "Renamed Roles Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	proj, err := CreateProjectForUser(ctx, ownerID, CreateProjectInput{
+		Name:           "Renamed Roles",
+		OrganizationID: &org.ID,
+		ImportMode:     storage.OrgImportCopy,
+	})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -971,7 +904,7 @@ func TestProjectRenamesInheritedRoles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create other project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, memberID, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, memberID, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 
@@ -1003,7 +936,7 @@ func TestProjectRenamesInheritedRoles(t *testing.T) {
 		t.Fatalf("list roles: %v", err)
 	}
 	for _, r := range roles {
-		if r.Slug == storage.RoleEditor {
+		if r.Slug == testRoleEditor {
 			editorID = r.ID
 		}
 	}
@@ -1023,7 +956,7 @@ func TestProjectRenamesInheritedRoles(t *testing.T) {
 		t.Fatalf("list roles: %v", err)
 	}
 	for _, r := range roles {
-		if r.Slug == storage.RoleEditor && (r.Name != "Lead Developer" || r.DefaultName != "Editor") {
+		if r.Slug == testRoleEditor && (r.Name != "Lead Developer" || r.DefaultName != "Editor") {
 			t.Fatalf("listed editor: name=%q default=%q", r.Name, r.DefaultName)
 		}
 	}
@@ -1042,7 +975,7 @@ func TestProjectRenamesInheritedRoles(t *testing.T) {
 	if err != nil || restored.DefaultName != "" {
 		t.Fatalf("reset editor: %+v err=%v", restored, err)
 	}
-	if got := storage.RoleDisplayName(proj.ID, storage.RoleEditor); got != "Editor" {
+	if got := storage.RoleDisplayName(proj.ID, testRoleEditor); got != "Editor" {
 		t.Fatalf("reset display name: %q", got)
 	}
 }
@@ -1062,19 +995,16 @@ func TestOrgRoleRenamePropagatesToLockedProjects(t *testing.T) {
 		t.Fatalf("create locked: %+v err=%v", locked, err)
 	}
 
-	var editorID int
-	site, err := storage.ListSiteProjectRoles()
+	editor, err := CreateOrganizationRoleForUser(ctx, 1, org.ID, CreateSiteProjectRoleInput{
+		Slug: testRoleEditor, Name: "Editor", Permissions: []string{storage.PermTasksEdit},
+	})
 	if err != nil {
-		t.Fatalf("list site roles: %v", err)
+		t.Fatalf("create org editor: %v", err)
 	}
-	for _, d := range site {
-		if d.Slug == storage.RoleEditor {
-			editorID = d.ID
-		}
-	}
+	editorID := editor.ID
 
 	// A project label written before the lock must not mask the organization's name.
-	if err := storage.SetProjectRoleLabel(locked.ID, storage.RoleEditor, "Stale Project Name"); err != nil {
+	if err := storage.SetProjectRoleLabel(locked.ID, testRoleEditor, "Stale Project Name"); err != nil {
 		t.Fatalf("seed stale label: %v", err)
 	}
 	stale := "Should Not Apply"
@@ -1087,7 +1017,7 @@ func TestOrgRoleRenamePropagatesToLockedProjects(t *testing.T) {
 		if _, err := UpdateOrganizationRoleForUser(ctx, 1, org.ID, editorID, UpdateSiteProjectRoleInput{Name: &n}); err != nil {
 			t.Fatalf("org rename editor to %q: %v", name, err)
 		}
-		if got := storage.RoleDisplayName(locked.ID, storage.RoleEditor); got != name {
+		if got := storage.RoleDisplayName(locked.ID, testRoleEditor); got != name {
 			t.Fatalf("locked display name: got %q want %q", got, name)
 		}
 		roles, _, err := ListProjectRolesForUser(ctx, 1, locked.ID)
@@ -1096,7 +1026,7 @@ func TestOrgRoleRenamePropagatesToLockedProjects(t *testing.T) {
 		}
 		var found bool
 		for _, r := range roles {
-			if r.Slug == storage.RoleEditor {
+			if r.Slug == testRoleEditor {
 				found = true
 				if r.Name != name || r.DefaultName != "" {
 					t.Fatalf("locked listed editor: name=%q default=%q want %q", r.Name, r.DefaultName, name)
@@ -1197,5 +1127,205 @@ func TestOrgOwnerRenamePropagatesAndKeepsAllPermissions(t *testing.T) {
 	}
 	if got := storage.RoleDisplayName(copied.ID, storage.RoleOwner); got != lead {
 		t.Fatalf("copied project should keep its own name: %q", got)
+	}
+}
+
+func TestMigrateLegacySiteRolesKeepsAccess(t *testing.T) {
+	ctx := context.Background()
+	// Recreate an old site role the way earlier releases seeded them.
+	const slug = "legacy-tester"
+	legacyPerms := []string{storage.PermTasksEdit, storage.PermTasksStatus}
+	if _, err := storage.CreateProjectRoleDef(nil, slug, "Legacy Tester", "Old site role", legacyPerms, true, 5); err != nil {
+		t.Fatalf("create legacy site role: %v", err)
+	}
+	storage.InvalidateSiteRoleCache()
+
+	usedOrg, err := CreateOrganizationForUser(ctx, 1, "Legacy Used Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if err := storage.UpsertOrganizationMember(usedOrg.ID, 2, slug); err != nil {
+		t.Fatalf("org member: %v", err)
+	}
+	locked, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name: "Legacy Locked", OrganizationID: &usedOrg.ID, ImportMode: storage.OrgImportLock,
+	})
+	if err != nil {
+		t.Fatalf("create locked: %v", err)
+	}
+
+	customOrg, err := CreateOrganizationForUser(ctx, 1, "Legacy Custom Org", "")
+	if err != nil {
+		t.Fatalf("create custom org: %v", err)
+	}
+	custom, err := storage.CreateOrganizationRoleDef(customOrg.ID, slug, "Org Tester", "", []string{storage.PermTasksClaim}, 1)
+	if err != nil {
+		t.Fatalf("org override: %v", err)
+	}
+	if err := storage.UpsertOrganizationMember(customOrg.ID, 3, slug); err != nil {
+		t.Fatalf("custom org member: %v", err)
+	}
+
+	standalone, err := CreateProject(ctx, 1, "Legacy Standalone", "")
+	if err != nil {
+		t.Fatalf("create standalone: %v", err)
+	}
+	if err := storage.UpsertProjectMember(standalone.ID, 3, slug); err != nil {
+		t.Fatalf("standalone member: %v", err)
+	}
+	if err := storage.SetProjectRoleLabel(standalone.ID, slug, "Checker"); err != nil {
+		t.Fatalf("label: %v", err)
+	}
+
+	gated, err := CreateProject(ctx, 1, "Legacy Gated", "")
+	if err != nil {
+		t.Fatalf("create gated: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, gated.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("kanban: %v", err)
+	}
+	statuses, err := storage.ListProjectStatuses(gated.ID)
+	if err != nil || len(statuses) == 0 {
+		t.Fatalf("statuses: %v", err)
+	}
+	if _, err := storage.UpsertStatusGate(statuses[0].ID, []string{slug}, []string{}); err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+
+	unused, err := CreateProject(ctx, 1, "Legacy Unused", "")
+	if err != nil {
+		t.Fatalf("create unused: %v", err)
+	}
+
+	before := map[string]bool{}
+	for _, p := range storage.AllProjectPerms() {
+		before[p] = storage.HasProjectPerm(standalone.ID, slug, p)
+	}
+
+	for i := 0; i < 2; i++ { // the migration runs on every start, so it must be safe to repeat
+		if err := storage.MigrateLegacySiteRoles(); err != nil {
+			t.Fatalf("migrate (run %d): %v", i+1, err)
+		}
+	}
+
+	site, err := storage.ListSiteProjectRoles()
+	if err != nil {
+		t.Fatalf("list site: %v", err)
+	}
+	for _, d := range site {
+		if d.Slug != storage.RoleOwner {
+			t.Fatalf("site role %q should be gone", d.Slug)
+		}
+	}
+
+	orgRole, err := storage.GetOrganizationRoleBySlug(usedOrg.ID, slug)
+	if err != nil || orgRole == nil || orgRole.Name != "Legacy Tester" || orgRole.IsSystem {
+		t.Fatalf("org copy: %+v err=%v", orgRole, err)
+	}
+	if strings.Join(orgRole.Permissions, ",") != strings.Join(legacyPerms, ",") {
+		t.Fatalf("org copy perms: %v", orgRole.Permissions)
+	}
+	if !storage.HasProjectPerm(locked.ID, slug, storage.PermTasksEdit) || !storage.HasOrgPerm(usedOrg.ID, slug, storage.PermTasksStatus) {
+		t.Fatal("org members should keep their permissions")
+	}
+
+	kept, err := storage.GetOrganizationRoleBySlug(customOrg.ID, slug)
+	if err != nil || kept == nil || kept.ID != custom.ID || strings.Join(kept.Permissions, ",") != storage.PermTasksClaim {
+		t.Fatalf("customized org role should be untouched: %+v err=%v", kept, err)
+	}
+
+	projRoles, err := storage.ListProjectCustomRoles(standalone.ID)
+	if err != nil || len(projRoles) != 1 || projRoles[0].Slug != slug || projRoles[0].Name != "Checker" {
+		t.Fatalf("standalone copy should take the project's rename: %+v err=%v", projRoles, err)
+	}
+	for p, had := range before {
+		if storage.HasProjectPerm(standalone.ID, slug, p) != had {
+			t.Fatalf("standalone permission %s changed", p)
+		}
+	}
+	if labels, _ := storage.ListProjectRoleLabels(standalone.ID); labels[slug] != "" {
+		t.Fatal("label should be cleared once the project owns the role")
+	}
+
+	if gatedRoles, _ := storage.ListProjectCustomRoles(gated.ID); len(gatedRoles) != 1 || gatedRoles[0].Slug != slug {
+		t.Fatalf("status gate should keep its role: %+v", gatedRoles)
+	}
+	if unusedRoles, _ := storage.ListProjectCustomRoles(unused.ID); len(unusedRoles) != 0 {
+		t.Fatalf("unused project should get no roles: %+v", unusedRoles)
+	}
+}
+
+func TestOrgOwnersBecomeProjectOwners(t *testing.T) {
+	ctx := context.Background()
+	org, err := CreateOrganizationForUser(ctx, 1, "Co-owner Org", "")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if err := storage.UpsertOrganizationMember(org.ID, 2, storage.RoleOwner); err != nil {
+		t.Fatalf("org co-owner: %v", err)
+	}
+	if err := upsertTestOrgMember(t, org.ID, 3, testRoleEditor); err != nil {
+		t.Fatalf("org editor: %v", err)
+	}
+
+	locked, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name: "Co-owner Locked", OrganizationID: &org.ID, ImportMode: storage.OrgImportLock,
+	})
+	if err != nil {
+		t.Fatalf("create locked: %v", err)
+	}
+	copied, err := CreateProjectForUser(ctx, 1, CreateProjectInput{
+		Name: "Co-owner Copy", OrganizationID: &org.ID, ImportMode: storage.OrgImportCopy,
+	})
+	if err != nil {
+		t.Fatalf("create copy: %v", err)
+	}
+	for _, pid := range []int{locked.ID, copied.ID} {
+		role, err := storage.GetProjectRole(pid, 2)
+		if err != nil || role != storage.RoleOwner {
+			t.Fatalf("org owner in project %d: role=%q err=%v", pid, role, err)
+		}
+	}
+
+	members, err := storage.ListProjectMembers(locked.ID)
+	if err != nil {
+		t.Fatalf("members: %v", err)
+	}
+	for _, m := range members {
+		if m.UserID == 1 && m.Inherited {
+			t.Fatal("project creator is not inherited from the org")
+		}
+		if m.UserID == 2 && !m.Inherited {
+			t.Fatal("org owner on a locked project comes from the org")
+		}
+	}
+
+	// On the copied project, only an owner may change another owner, and nobody may change the creator.
+	if err := storage.UpsertProjectMember(copied.ID, 3, testRoleEditor); err != nil {
+		t.Fatalf("copy editor: %v", err)
+	}
+	mgr, err := CreateProjectCustomRoleForUser(ctx, 1, copied.ID, CreateSiteProjectRoleInput{
+		Slug: "manager", Name: "Manager", Permissions: []string{storage.PermProjectManage},
+	})
+	if err != nil {
+		t.Fatalf("manager role: %v", err)
+	}
+	if err := storage.UpsertProjectMember(copied.ID, 3, mgr.Slug); err != nil {
+		t.Fatalf("make manager: %v", err)
+	}
+	if err := UpdateProjectMemberRole(ctx, 3, copied.ID, 2, testRoleEditor); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("manager changing an owner: err=%v want forbidden", err)
+	}
+	if err := RemoveProjectMember(ctx, 3, copied.ID, 2); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("manager removing an owner: err=%v want forbidden", err)
+	}
+	if err := UpdateProjectMemberRole(ctx, 3, copied.ID, 1, testRoleEditor); !errors.Is(err, ErrValidation) {
+		t.Fatalf("changing the creator: err=%v want validation", err)
+	}
+	if err := UpdateProjectMemberRole(ctx, 1, copied.ID, 2, testRoleEditor); err != nil {
+		t.Fatalf("owner changing a co-owner: %v", err)
+	}
+	if role, _ := storage.GetProjectRole(copied.ID, 2); role != testRoleEditor {
+		t.Fatalf("co-owner role after change: %q", role)
 	}
 }

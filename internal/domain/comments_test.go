@@ -27,7 +27,7 @@ func TestCommentsViewerCanPostNonMemberCannot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 	pid := proj.ID
@@ -63,10 +63,10 @@ func TestCommentsSoftDeleteAuthorAndOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 	pid := proj.ID
@@ -145,10 +145,10 @@ func TestCommentsNotifyOtherMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 	pid := proj.ID
@@ -233,10 +233,10 @@ func TestCommentsMentionNotifiesMemberOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 	pid := proj.ID
@@ -312,7 +312,7 @@ func TestCommentsMentionIgnoresNonMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 	pid := proj.ID
@@ -353,7 +353,7 @@ func TestSearchUsernamesProjectMembersOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 
@@ -410,7 +410,7 @@ func TestCommentTaskLinksRespectAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 	pid := proj.ID
@@ -469,10 +469,10 @@ func TestCommentsEditAuthorAndOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 	pid := proj.ID

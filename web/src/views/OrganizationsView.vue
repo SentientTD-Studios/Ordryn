@@ -32,7 +32,7 @@ const newDescription = ref('')
 const editName = ref('')
 const editDescription = ref('')
 const inviteUsername = ref('')
-const inviteRole = ref('editor')
+const inviteRole = ref('')
 const editingId = ref<number | null>(null)
 const formName = ref('')
 const formSlug = ref('')
@@ -124,8 +124,9 @@ async function loadDetail() {
     renamingOwner.value = false
     const idx = orgs.value.findIndex((o) => o.id === fresh.id)
     if (idx >= 0) orgs.value[idx] = fresh
-    if (!inviteRole.value && assignableRoles.value.length) {
-      inviteRole.value = assignableRoles.value.find((r) => r.slug === 'editor')?.slug || assignableRoles.value[0].slug
+    // No default role: there is no site-wide Editor anymore, so the manager picks one.
+    if (inviteRole.value && !assignableRoles.value.some((r) => r.slug === inviteRole.value)) {
+      inviteRole.value = ''
     }
     editName.value = fresh.name
     editDescription.value = fresh.description || ''
@@ -279,6 +280,10 @@ async function deleteOrg() {
 
 async function inviteMember() {
   if (!selectedId.value || !inviteUsername.value.trim()) return
+  if (!inviteRole.value) {
+    toast.push('Choose a role for the invite', 'error')
+    return
+  }
   try {
     await api.createOrganizationInvite(selectedId.value, inviteUsername.value.trim(), inviteRole.value)
     inviteUsername.value = ''
@@ -681,6 +686,9 @@ onBeforeUnmount(destroySortable)
                 </template>
               </li>
             </ul>
+            <p v-if="canManage && !assignableRoles.length" class="small text-muted mb-2">
+              This organization has no roles yet. Create one under Roles below, then invite people with it.
+            </p>
             <form v-if="canManage" class="row g-2 align-items-end mb-3" @submit.prevent="inviteMember">
               <div class="col-sm-6">
                 <label class="form-label small mb-0">Username</label>
@@ -688,12 +696,13 @@ onBeforeUnmount(destroySortable)
               </div>
               <div class="col-sm-3">
                 <label class="form-label small mb-0">Role</label>
-                <select v-model="inviteRole" class="form-select form-select-sm">
+                <select v-model="inviteRole" class="form-select form-select-sm" required>
+                  <option value="" disabled>Choose a role</option>
                   <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
                 </select>
               </div>
               <div class="col-sm-3">
-                <button class="btn btn-sm btn-primary w-100" type="submit">Invite</button>
+                <button class="btn btn-sm btn-primary w-100" type="submit" :disabled="!inviteRole">Invite</button>
               </div>
             </form>
             <div v-if="invites.length">
@@ -760,10 +769,11 @@ onBeforeUnmount(destroySortable)
           <div class="card-body">
             <h2 class="h6">Roles</h2>
             <p class="small text-muted">
-              Customize a site default to change its name and permissions for this organization only.
-              Owner always has every permission; you can only rename it, and locked projects use that name. Reset a customized role to
-              restore the site template; members keep the same slug. Drag organization roles to
-              change their order. Copy a role to start from its permissions under a new slug.
+              Owner is the only built-in role. It always has every permission; you can only rename it,
+              and locked projects use that name. Create every other role here. Organization owners
+              become owners of the organization's projects when members are imported. Drag
+              organization roles to change their order. Copy a role to start from its permissions
+              under a new slug.
             </p>
             <h3 class="h6">Site roles</h3>
             <ul class="list-unstyled mb-3">

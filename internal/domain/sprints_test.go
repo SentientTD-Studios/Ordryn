@@ -411,7 +411,7 @@ func TestSprintLockBlocksNonOwnerAdds(t *testing.T) {
 	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
 		t.Fatalf("enable kanban: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 
@@ -1294,7 +1294,7 @@ func TestAutoCreateNextSprintSettingsValidation(t *testing.T) {
 		t.Fatalf("lock >= length err=%v", err)
 	}
 
-	if err := storage.UpsertProjectMember(kanban.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, kanban.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 	_, err = UpdateProject(ctx, 2, kanban.ID, nil, nil, nil, nil, nil, &AutoSprintPatch{

@@ -238,10 +238,11 @@ onBeforeUnmount(destroySortable)
       Organization roles stay available to assign, and you can still create roles just for this project.
     </div>
 
-    <h4 class="h6">Site roles</h4>
+    <h4 class="h6">Built-in role</h4>
     <p class="small text-muted mb-2">
-      Built-in and site-wide roles are defined by admins and can be assigned on this project.
-      <template v-if="canEditProjectRoles">You can rename them for this project; permissions stay with the site.</template>
+      Owner always has every permission.
+      <template v-if="canEditProjectRoles">You can rename it for this project.</template>
+      Create every other role below, or use your organization's roles.
     </p>
     <ul class="list-unstyled mb-3">
       <li v-for="role in siteRoles" :key="role.id" class="mb-2">

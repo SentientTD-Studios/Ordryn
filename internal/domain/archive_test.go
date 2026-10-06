@@ -264,10 +264,10 @@ func TestArchiveForbiddenForViewer(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 	pid := proj.ID
-	if err := storage.UpsertProjectMember(pid, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, pid, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
-	if err := storage.UpsertProjectMember(pid, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, pid, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Viewer archive", ProjectID: &pid})
@@ -473,4 +473,3 @@ func TestRemovedTaskCountsAndChildExclusion(t *testing.T) {
 
 	_ = child1ID
 }
-

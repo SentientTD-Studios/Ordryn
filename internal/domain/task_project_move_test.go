@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	"GoTodo/internal/storage"
 )
 
 func TestSharedProjectMoveRequiresOwner(t *testing.T) {
@@ -14,14 +12,14 @@ func TestSharedProjectMoveRequiresOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create shared project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(shared.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, shared.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 	dest, err := CreateProject(ctx, 1, "Owner Dest Board", "")
 	if err != nil {
 		t.Fatalf("create dest project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(dest.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, dest.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor to dest: %v", err)
 	}
 

@@ -524,17 +524,14 @@ func orgAutoImportSQL() string {
 }
 
 func normalizeImportRole(role string) string {
-	role = strings.TrimSpace(strings.ToLower(role))
-	if role == RoleOwner {
-		return RoleEditor
-	}
-	return role
+	return strings.TrimSpace(strings.ToLower(role))
 }
 
+// Organization members keep their organization role in imported projects; organization
+// owners become project owners.
 const importOrganizationMembersSQL = `
 		INSERT INTO project_members (project_id, user_id, role)
-		SELECT $1, om.user_id,
-			CASE WHEN om.role = $4 THEN $5 ELSE om.role END
+		SELECT $1, om.user_id, om.role
 		FROM organization_members om
 		WHERE om.organization_id = $2
 		  AND om.user_id <> $3
@@ -542,7 +539,7 @@ const importOrganizationMembersSQL = `
 
 func importOrganizationMembersTx(tx pgx.Tx, projectID, ownerUserID, orgID int) error {
 	_, err := tx.Exec(context.Background(), importOrganizationMembersSQL,
-		projectID, orgID, ownerUserID, RoleOwner, RoleEditor)
+		projectID, orgID, ownerUserID)
 	if err != nil {
 		return fmt.Errorf("failed to import organization members: %v", err)
 	}
@@ -596,7 +593,7 @@ func ImportOrganizationMembersToProject(projectID, ownerUserID, orgID int) error
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(), importOrganizationMembersSQL,
-		projectID, orgID, ownerUserID, RoleOwner, RoleEditor)
+		projectID, orgID, ownerUserID)
 	if err != nil {
 		return fmt.Errorf("failed to import organization members: %v", err)
 	}
@@ -643,7 +640,7 @@ func ListOrganizationProjectRosters(orgID int) ([]OrgProjectRoster, error) {
 		SELECT p.id, p.name, COALESCE(p.org_managed, false),
 		       COALESCE(NULLIF(p.org_import, ''), CASE WHEN COALESCE(p.org_managed, false) THEN 'lock' ELSE 'copy' END),
 		       pm.user_id, COALESCE(u.email, ''), COALESCE(u.user_name, ''),
-		       COALESCE(pm.role, ''), pm.created_at
+		       COALESCE(pm.role, ''), pm.created_at, COALESCE(pm.user_id = p.user_id, false)
 		FROM projects p
 		LEFT JOIN project_members pm ON pm.project_id = p.id
 		LEFT JOIN users u ON u.id = pm.user_id
@@ -668,8 +665,9 @@ func ListOrganizationProjectRosters(orgID int) ([]OrgProjectRoster, error) {
 			userName   string
 			role       string
 			createdAt  *time.Time
+			creator    bool
 		)
-		if err := rows.Scan(&id, &name, &orgManaged, &orgImport, &userID, &email, &userName, &role, &createdAt); err != nil {
+		if err := rows.Scan(&id, &name, &orgManaged, &orgImport, &userID, &email, &userName, &role, &createdAt, &creator); err != nil {
 			return nil, err
 		}
 		r, ok := byID[id]
@@ -681,7 +679,7 @@ func ListOrganizationProjectRosters(orgID int) ([]OrgProjectRoster, error) {
 		if userID == nil || *userID <= 0 {
 			continue
 		}
-		m := ProjectMember{UserID: *userID, Email: email, UserName: userName, Role: role, Inherited: orgManaged && role != RoleOwner}
+		m := ProjectMember{UserID: *userID, Email: email, UserName: userName, Role: role, Inherited: orgManaged && !creator}
 		if createdAt != nil {
 			m.CreatedAt = *createdAt
 		}
@@ -750,7 +748,7 @@ func UpdateLockedOrgProjectMemberRole(orgID, userID int, role string) ([]int, er
 		  AND p.organization_id = $1
 		  AND COALESCE(p.org_managed, false)
 		  AND pm.user_id = $2
-		  AND pm.role <> 'owner'
+		  AND pm.user_id <> p.user_id
 		RETURNING p.id`, orgID, userID, role)
 	if err != nil {
 		return nil, err
@@ -801,9 +799,9 @@ func AttachProjectOrganization(projectID, ownerUserID int, spec OrgImportSpec) (
 
 	rows, err := tx.Query(context.Background(),
 		`DELETE FROM project_members
-		 WHERE project_id = $1 AND role <> 'owner'
+		 WHERE project_id = $1 AND user_id <> $2
 		   AND user_id NOT IN (SELECT id FROM users WHERE is_agent)
-		 RETURNING user_id`, projectID)
+		 RETURNING user_id`, projectID, owner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove project members: %v", err)
 	}
@@ -1134,15 +1132,14 @@ func SyncOrganizationMembersToAutoImportProjects(orgID int) (*OrgProjectSyncResu
 
 	rows, err := tx.Query(context.Background(), `
 		INSERT INTO project_members (project_id, user_id, role)
-		SELECT p.id, om.user_id,
-			CASE WHEN om.role = $2 THEN $3 ELSE om.role END
+		SELECT p.id, om.user_id, om.role
 		FROM projects p
 		JOIN organization_members om ON om.organization_id = p.organization_id
 		WHERE p.organization_id = $1
 		  AND om.user_id <> p.user_id
 		  AND `+orgAutoImportSQL()+`
 		ON CONFLICT (project_id, user_id) DO NOTHING
-		RETURNING project_id`, orgID, RoleOwner, RoleEditor)
+		RETURNING project_id`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync organization members: %v", err)
 	}
@@ -1169,16 +1166,16 @@ func SyncOrganizationMembersToAutoImportProjects(orgID int) (*OrgProjectSyncResu
 
 	lockRows, err := tx.Query(context.Background(), `
 		UPDATE project_members pm
-		SET role = CASE WHEN om.role = $2 THEN $3 ELSE om.role END
+		SET role = om.role
 		FROM projects p, organization_members om
 		WHERE pm.project_id = p.id
 		  AND om.organization_id = p.organization_id
 		  AND om.user_id = pm.user_id
 		  AND p.organization_id = $1
 		  AND COALESCE(p.org_import, CASE WHEN COALESCE(p.org_managed, false) THEN 'lock' ELSE 'copy' END) = 'lock'
-		  AND pm.role <> 'owner'
-		  AND pm.role <> CASE WHEN om.role = $2 THEN $3 ELSE om.role END
-		RETURNING p.id`, orgID, RoleOwner, RoleEditor)
+		  AND pm.user_id <> p.user_id
+		  AND pm.role <> om.role
+		RETURNING p.id`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync locked project roles: %v", err)
 	}

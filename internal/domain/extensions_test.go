@@ -14,7 +14,7 @@ func TestRequireProjectExtensionOwnerVsEditor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 	if _, err := RequireProjectExtensionOwner(1, proj.ID); err != nil {

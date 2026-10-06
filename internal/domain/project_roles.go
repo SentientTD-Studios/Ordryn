@@ -210,35 +210,15 @@ type CreateSiteProjectRoleInput struct {
 	CopyFromID  int
 }
 
-// CreateSiteProjectRoleForAdmin adds a site-level assignable role.
+// CreateSiteProjectRoleForAdmin is retired: Owner is the only site role, and organizations
+// and projects create every other role. Kept so the admin API returns a clear error.
 func CreateSiteProjectRoleForAdmin(ctx context.Context, userID int, in CreateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
 	_ = ctx
+	_ = in
 	if !storage.UserHasPermission(userID, "admin") {
 		return nil, ErrForbidden
 	}
-	if err := applyRoleCopy(&in, isSiteRoleDef); err != nil {
-		return nil, err
-	}
-	slug, err := normalizeRoleSlug(in.Slug)
-	if err != nil {
-		return nil, err
-	}
-	name, err := normalizeRoleName(in.Name)
-	if err != nil {
-		return nil, err
-	}
-	desc, err := normalizeRoleDescription(in.Description)
-	if err != nil {
-		return nil, err
-	}
-	taken, err := storage.SiteRoleSlugTaken(slug, 0)
-	if err != nil {
-		return nil, err
-	}
-	if taken {
-		return nil, fmt.Errorf("%w: role slug already exists", ErrConflict)
-	}
-	return storage.CreateProjectRoleDef(nil, slug, name, desc, in.Permissions, false, in.SortOrder)
+	return nil, fmt.Errorf("%w: Owner is the only site role; create other roles in an organization or project", ErrValidation)
 }
 
 // UpdateSiteProjectRoleInput is a partial admin patch.
