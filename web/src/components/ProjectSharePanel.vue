@@ -18,13 +18,14 @@
         <span v-if="m.is_agent" class="badge text-bg-dark" title="Managed on the AI agents tab">
           <i class="bi bi-robot me-1" />AI agent
         </span>
-        <span v-else-if="m.inherited || (orgManaged && m.role !== 'owner')" class="badge text-bg-info">from org</span>
-        <template v-if="canEditMembers && m.role !== 'owner' && !m.is_agent">
+        <span v-else-if="m.inherited" class="badge text-bg-info">from org</span>
+        <template v-if="canEditMembers && canEditMember(m)">
           <select
             class="form-select form-select-sm w-auto"
             :value="m.role"
             @change="onRoleChange(m.user_id, ($event.target as HTMLSelectElement).value)"
           >
+            <option v-if="m.role === 'owner'" value="owner" disabled>{{ m.role_name || 'Owner' }}</option>
             <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
           </select>
           <button class="btn btn-sm btn-outline-danger" type="button" @click="removeMember(m.user_id)">
@@ -37,6 +38,9 @@
 
     <template v-if="canEditMembers">
       <h4 class="h6">Invite</h4>
+      <p v-if="!assignableRoles.length" class="small text-muted mb-2">
+        This project has no roles yet. Create one on the Roles tab, then invite people with it.
+      </p>
       <form class="row g-2 align-items-end mb-3" @submit.prevent="sendInvite">
         <div class="col-sm-6">
           <label class="form-label small mb-0" for="invite-username">Username</label>
@@ -44,12 +48,13 @@
         </div>
         <div class="col-sm-3">
           <label class="form-label small mb-0">Role</label>
-          <select v-model="inviteRole" class="form-select form-select-sm">
+          <select v-model="inviteRole" class="form-select form-select-sm" required>
+            <option value="" disabled>Choose a role</option>
             <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
           </select>
         </div>
         <div class="col-sm-3">
-          <button class="btn btn-sm btn-primary w-100" type="submit">Invite</button>
+          <button class="btn btn-sm btn-primary w-100" type="submit" :disabled="!inviteRole">Invite</button>
         </div>
       </form>
     </template>
@@ -165,6 +170,13 @@ const { askConfirm } = useConfirm()
 const isOwner = computed(() => canManageProject(props.project))
 const orgManaged = computed(() => !!props.project.org_managed && !!props.project.organization_id)
 const canEditMembers = computed(() => isOwner.value && !orgManaged.value)
+// Only an owner may change or remove another owner, and the project creator is never editable.
+const actorIsOwner = computed(() => (props.project.role || 'owner') === 'owner')
+
+function canEditMember(m: ProjectMember) {
+  if (m.is_agent || m.user_id === props.project.owner_user_id) return false
+  return m.role !== 'owner' || actorIsOwner.value
+}
 
 const excludeUsernames = computed(() => {
   const names: string[] = []
@@ -195,9 +207,9 @@ async function loadPanel() {
     links.value = ln
     events.value = ev
     assignableRoles.value = roles.roles || []
-    if (!inviteRole.value && assignableRoles.value.length) {
-      const editor = assignableRoles.value.find((r) => r.slug === 'editor')
-      inviteRole.value = editor?.slug || assignableRoles.value[0].slug
+    // No default role: there is no site-wide Editor anymore, so the manager picks one.
+    if (inviteRole.value && !assignableRoles.value.some((r) => r.slug === inviteRole.value)) {
+      inviteRole.value = ''
     }
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load sharing', 'error')
@@ -205,6 +217,10 @@ async function loadPanel() {
 }
 
 async function sendInvite() {
+  if (!inviteRole.value) {
+    toast.push('Choose a role for the invite', 'error')
+    return
+  }
   try {
     await api.createProjectInvite(props.project.id, inviteUsername.value.trim(), inviteRole.value)
     inviteUsername.value = ''

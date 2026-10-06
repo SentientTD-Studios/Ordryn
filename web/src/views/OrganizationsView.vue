@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
 import type { Organization, OrganizationInvite, OrganizationMember, OrganizationProjectRoster, OrgMemberProjectImpact, OrgMemberRoleImpact, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
 import RolePermissionFields from '@/components/RolePermissionFields.vue'
-import ProjectMemberRoster from '@/components/ProjectMemberRoster.vue'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -23,13 +23,16 @@ const invites = ref<OrganizationInvite[]>([])
 const myInvites = ref<OrganizationInvite[]>([])
 const catalog = ref<ProjectPermInfo[]>([])
 const roles = ref<ProjectRoleDef[]>([])
+const ownerRole = ref<ProjectRoleDef | null>(null)
+const renamingOwner = ref(false)
+const ownerNameValue = ref('')
 const saving = ref(false)
 const newName = ref('')
 const newDescription = ref('')
 const editName = ref('')
 const editDescription = ref('')
 const inviteUsername = ref('')
-const inviteRole = ref('editor')
+const inviteRole = ref('')
 const editingId = ref<number | null>(null)
 const formName = ref('')
 const formSlug = ref('')
@@ -45,7 +48,6 @@ const roleChangeMember = ref<OrganizationMember | null>(null)
 const roleChangeNext = ref('')
 const roleImpact = ref<OrgMemberRoleImpact | null>(null)
 const roleImpactError = ref('')
-const projectRoleOptions = ref<Record<number, ProjectRoleDef[]>>({})
 const syncing = ref(false)
 
 const canManage = computed(() => !!org.value?.can_manage)
@@ -98,9 +100,9 @@ async function loadDetail() {
   if (!selectedId.value) {
     members.value = []
     orgProjects.value = []
-    projectRoleOptions.value = {}
     invites.value = []
     roles.value = []
+    ownerRole.value = null
     return
   }
   try {
@@ -116,66 +118,18 @@ async function loadDetail() {
     invites.value = inv
     catalog.value = roleData.catalog || []
     roles.value = roleData.roles || []
+    ownerRole.value = roleData.owner_role || null
+    renamingOwner.value = false
     const idx = orgs.value.findIndex((o) => o.id === fresh.id)
     if (idx >= 0) orgs.value[idx] = fresh
-    if (!inviteRole.value && assignableRoles.value.length) {
-      inviteRole.value = assignableRoles.value.find((r) => r.slug === 'editor')?.slug || assignableRoles.value[0].slug
+    // No default role: there is no site-wide Editor anymore, so the manager picks one.
+    if (inviteRole.value && !assignableRoles.value.some((r) => r.slug === inviteRole.value)) {
+      inviteRole.value = ''
     }
     editName.value = fresh.name
     editDescription.value = fresh.description || ''
-    await loadProjectRoleOptions(projects)
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load organization', 'error')
-  }
-}
-
-async function loadProjectRoleOptions(projects: OrganizationProjectRoster[]) {
-  const next: Record<number, ProjectRoleDef[]> = {}
-  await Promise.all(
-    projects
-      .filter((p) => p.can_manage && !p.org_managed)
-      .map(async (p) => {
-        try {
-          const data = await api.listProjectRoles(p.id)
-          next[p.id] = (data.roles || []).filter((r) => r.slug !== 'owner')
-        } catch {
-          next[p.id] = assignableRoles.value.filter((r) => r.slug !== 'owner')
-        }
-      }),
-  )
-  projectRoleOptions.value = next
-}
-
-function rolesForProject(projectId: number) {
-  return projectRoleOptions.value[projectId] || assignableRoles.value.filter((r) => r.slug !== 'owner')
-}
-
-async function onProjectRosterRoleChange(projectId: number, userId: number, role: string) {
-  if (!role || role === 'owner') return
-  try {
-    await api.updateProjectMember(projectId, userId, role)
-    toast.push('Project role updated', 'success')
-    await loadDetail()
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not update project role', 'error')
-    await loadDetail()
-  }
-}
-
-async function onProjectRosterRemove(projectId: number, userId: number) {
-  const ok = await askConfirm({
-    title: 'Remove member?',
-    message: 'Remove this person from the project? They stay in the organization.',
-    confirmLabel: 'Remove',
-    danger: true,
-  })
-  if (!ok) return
-  try {
-    await api.removeProjectMember(projectId, userId)
-    toast.push('Removed from project', 'info')
-    await loadDetail()
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not remove from project', 'error')
   }
 }
 
@@ -273,6 +227,10 @@ async function deleteOrg() {
 
 async function inviteMember() {
   if (!selectedId.value || !inviteUsername.value.trim()) return
+  if (!inviteRole.value) {
+    toast.push('Choose a role for the invite', 'error')
+    return
+  }
   try {
     await api.createOrganizationInvite(selectedId.value, inviteUsername.value.trim(), inviteRole.value)
     inviteUsername.value = ''
@@ -471,6 +429,28 @@ async function deleteRole(role: ProjectRoleDef) {
   }
 }
 
+function startRenameOwner() {
+  if (!ownerRole.value) return
+  ownerNameValue.value = ownerRole.value.name
+  renamingOwner.value = true
+}
+
+async function saveOwnerName(name = ownerNameValue.value.trim()) {
+  const owner = ownerRole.value
+  if (!selectedId.value || !canManage.value || !owner || !name) return
+  saving.value = true
+  try {
+    await api.updateOrganizationRole(selectedId.value, owner.id, { name })
+    toast.push(name === owner.default_name ? 'Owner name reset' : 'Owner renamed', 'success')
+    renamingOwner.value = false
+    await loadDetail()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not rename owner', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
 async function resetOverride(role: ProjectRoleDef) {
   if (!selectedId.value) return
   const ok = await askConfirm({
@@ -653,6 +633,9 @@ onBeforeUnmount(destroySortable)
                 </template>
               </li>
             </ul>
+            <p v-if="canManage && !assignableRoles.length" class="small text-muted mb-2">
+              This organization has no roles yet. Create one under Roles below, then invite people with it.
+            </p>
             <form v-if="canManage" class="row g-2 align-items-end mb-3" @submit.prevent="inviteMember">
               <div class="col-sm-6">
                 <label class="form-label small mb-0">Username</label>
@@ -660,12 +643,13 @@ onBeforeUnmount(destroySortable)
               </div>
               <div class="col-sm-3">
                 <label class="form-label small mb-0">Role</label>
-                <select v-model="inviteRole" class="form-select form-select-sm">
+                <select v-model="inviteRole" class="form-select form-select-sm" required>
+                  <option value="" disabled>Choose a role</option>
                   <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
                 </select>
               </div>
               <div class="col-sm-3">
-                <button class="btn btn-sm btn-primary w-100" type="submit">Invite</button>
+                <button class="btn btn-sm btn-primary w-100" type="submit" :disabled="!inviteRole">Invite</button>
               </div>
             </form>
             <div v-if="invites.length">
@@ -691,9 +675,9 @@ onBeforeUnmount(destroySortable)
               <div>
                 <h2 class="h6 mb-1">Attached projects</h2>
                 <p class="small text-muted mb-0">
-                  People currently on each imported project. New organization members are added automatically
-                  after they accept, except on boards where members were chosen manually. On unlocked boards
-                  you can change a member's project role here. Locked boards stay in sync with the organization role.
+                  Projects that belong to this organization. Open a project to see or change its members.
+                  New organization members are added automatically after they accept, except on boards where
+                  members were chosen manually. Locked boards stay in sync with organization roles.
                 </p>
               </div>
               <button
@@ -706,24 +690,14 @@ onBeforeUnmount(destroySortable)
                 {{ syncing ? 'Syncing…' : 'Sync members' }}
               </button>
             </div>
-            <div v-if="orgProjects.length">
-              <div v-for="p in orgProjects" :key="p.id" class="mb-3">
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-                  <strong>{{ p.name }}</strong>
-                  <span v-if="p.org_managed" class="badge text-bg-info">roles locked</span>
-                  <span v-else class="badge text-bg-secondary">roles editable</span>
-                  <span class="badge text-bg-light text-muted">{{ importLabel(p.org_import) }}</span>
-                </div>
-                <ProjectMemberRoster
-                  :members="p.members"
-                  :locked="p.org_managed"
-                  :editable="!!p.can_manage && !p.org_managed"
-                  :roles="rolesForProject(p.id)"
-                  @role-change="(userId, role) => onProjectRosterRoleChange(p.id, userId, role)"
-                  @remove="(userId) => onProjectRosterRemove(p.id, userId)"
-                />
-              </div>
-            </div>
+            <ul v-if="orgProjects.length" class="list-unstyled mb-0">
+              <li v-for="p in orgProjects" :key="p.id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <RouterLink :to="{ path: '/', query: { project: p.id } }" class="fw-semibold">{{ p.name }}</RouterLink>
+                <span v-if="p.org_managed" class="badge text-bg-info">roles locked</span>
+                <span v-else class="badge text-bg-secondary">roles editable</span>
+                <span class="badge text-bg-light text-muted">{{ importLabel(p.org_import) }}</span>
+              </li>
+            </ul>
             <p v-else class="small text-muted mb-0">No projects are attached to this organization yet.</p>
           </div>
         </div>
@@ -732,10 +706,11 @@ onBeforeUnmount(destroySortable)
           <div class="card-body">
             <h2 class="h6">Roles</h2>
             <p class="small text-muted">
-              Customize a site default to change its name and permissions for this organization only.
-              Owner always has every permission and cannot be changed. Reset a customized role to
-              restore the site template; members keep the same slug. Drag organization roles to
-              change their order. Copy a role to start from its permissions under a new slug.
+              Owner is the only built-in role. It always has every permission; you can only rename it,
+              and locked projects use that name. Create every other role here. Organization owners
+              become owners of the organization's projects when members are imported. Drag
+              organization roles to change their order. Copy a role to start from its permissions
+              under a new slug.
             </p>
             <h3 class="h6">Site roles</h3>
             <ul class="list-unstyled mb-3">
@@ -748,9 +723,42 @@ onBeforeUnmount(destroySortable)
                 <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
               </li>
               <li class="mb-2">
-                <strong>Owner</strong>
-                <span class="badge text-bg-secondary ms-1">built-in</span>
-                <div class="small text-muted">All permissions. The owner role cannot be customized for this organization.</div>
+                <form
+                  v-if="renamingOwner"
+                  class="d-flex flex-wrap gap-1 align-items-center"
+                  @submit.prevent="saveOwnerName()"
+                >
+                  <input
+                    v-model="ownerNameValue"
+                    type="text"
+                    class="form-control form-control-sm w-auto"
+                    maxlength="80"
+                    required
+                    aria-label="New name for the owner role"
+                  />
+                  <button class="btn btn-sm btn-primary" type="submit" :disabled="saving || !ownerNameValue.trim()">Save</button>
+                  <button class="btn btn-sm btn-outline-secondary" type="button" @click="renamingOwner = false">Cancel</button>
+                </form>
+                <template v-else>
+                  <strong>{{ ownerRole?.name || 'Owner' }}</strong>
+                  <span class="badge text-bg-secondary ms-1">built-in</span>
+                  <span v-if="ownerRole?.default_name" class="badge text-bg-light border ms-1">
+                    renamed from {{ ownerRole.default_name }}
+                  </span>
+                  <template v-if="canManage && ownerRole">
+                    <button class="btn btn-sm btn-link py-0" type="button" @click="startRenameOwner">Rename</button>
+                    <button
+                      v-if="ownerRole.default_name"
+                      class="btn btn-sm btn-link py-0"
+                      type="button"
+                      :disabled="saving"
+                      @click="saveOwnerName(ownerRole.default_name)"
+                    >
+                      Reset name
+                    </button>
+                  </template>
+                </template>
+                <div class="small text-muted">All permissions. Only the name can be changed for this organization.</div>
               </li>
             </ul>
             <h3 class="h6">Organization roles</h3>

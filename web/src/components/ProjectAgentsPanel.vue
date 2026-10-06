@@ -39,7 +39,7 @@ const creating = ref(false)
 const newName = ref('')
 const newHandle = ref('')
 const handleTouched = ref(false)
-const newRole = ref('editor')
+const newRole = ref('')
 const recipeId = ref('triage')
 const repoLinked = ref(false)
 const recipe = computed(() => AGENT_RECIPES.find((r) => r.id === recipeId.value) || null)
@@ -52,7 +52,12 @@ const isKanban = computed(() => (props.project.workflow_mode || 'classic') === '
 const selected = computed(() => agents.value.find((a) => a.id === selectedId.value) || null)
 const newHandleError = computed(() => (handleTouched.value || newHandle.value ? handleError(newHandle.value) : ''))
 const canCreate = computed(
-  () => !creating.value && !!newName.value.trim() && !handleError(newHandle.value) && agents.value.length < MAX_AGENTS,
+  () =>
+    !creating.value &&
+    !!newName.value.trim() &&
+    !!newRole.value &&
+    !handleError(newHandle.value) &&
+    agents.value.length < MAX_AGENTS,
 )
 
 /** Roles an agent may hold: anything except owner and roles that manage the project. */
@@ -115,7 +120,8 @@ function resetCreate() {
   newHandle.value = ''
   handleTouched.value = false
   recipeId.value = 'triage'
-  newRole.value = agentRoles.value.some((r) => r.slug === 'editor') ? 'editor' : agentRoles.value[0]?.slug || 'editor'
+  // No default role: there is no site-wide Editor anymore, so the manager picks one.
+  newRole.value = ''
 }
 
 function openCreate() {
@@ -352,9 +358,13 @@ function openRunCount(agentId: number) {
         </div>
         <div class="mb-2">
           <label class="form-label small mb-1" for="agent-new-role">Project role</label>
-          <select id="agent-new-role" v-model="newRole" class="form-select form-select-sm">
+          <select id="agent-new-role" v-model="newRole" class="form-select form-select-sm" required>
+            <option value="" disabled>Choose a role</option>
             <option v-for="r in agentRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
           </select>
+          <div v-if="!agentRoles.length" class="form-text text-warning">
+            No role an agent can hold yet. Create a role without "Manage project" on the Roles tab first.
+          </div>
           <div class="form-text">
             The role sets the agent's base permissions and status gates. Guardrails on the next screen narrow it further.
           </div>

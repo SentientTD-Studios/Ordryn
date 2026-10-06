@@ -92,7 +92,8 @@ onUnmounted(() => {
             they must accept before they join. After they accept they are added to attached projects
             that imported everyone (copy or lock). Boards where members were chosen manually are
             skipped. Use Sync members on the organization page to catch up existing copy and lock
-            projects. When you attach an organization you choose how to
+            projects. The organization page lists its projects; open a project to see or change its
+            members. When you attach an organization you choose how to
             import: copy everyone and keep roles editable, copy everyone and lock roles to the
             organization, or pick specific members and a role for each. People who are not imported
             are removed from the project. Organization role changes update imported-and-locked
@@ -106,7 +107,7 @@ onUnmounted(() => {
           </li>
           <li>
             Create and edit tags in project settings. Members with the manage-tags permission
-            (owners, editors, and custom roles that include it) can rename a tag and pick
+            (owners and any role that includes it) can rename a tag and pick
             its color; chips on lists, boards, and the task sidebar use that color. Personal (inbox)
             tags are managed on your profile. System tags such as <strong>removed</strong> and
             <strong>archived</strong> cannot be edited.
@@ -119,26 +120,46 @@ onUnmounted(() => {
 
         <h2 id="roles-permissions" class="h4 mt-4">Roles and status gates</h2>
         <p>
-          Project membership uses site-wide roles (Owner, Editor, Viewer, plus extras such as
-          Developer and QA) with a catalog of permissions: create, edit, delete, archive, restore,
-          complete, claim, reorder, change status, assign sprints, manage tags, log time, configure
-          extensions, moderate comments, and manage the project. Site admins maintain those templates
-          under Admin → Roles. Copy a role to start from an existing permission set, and drag to
-          reorder the list. Organizations can customize the name and permissions of those site
-          defaults for their own members (except Owner, which always has every permission) without
-          changing the site-wide templates. Reset a customized role to restore the site default;
-          members keep the same role slug. Organizations can also define extra roles for imported
-          projects. If you import and lock roles, those boards stay tied to the organization and
-          cannot add their own roles. Unlocked imports can still add project-only roles.
+          <strong>Owner</strong> is the only built-in role. It always has every permission. Every
+          other role is one you create, in an organization or a project, from a catalog of
+          permissions: create, edit, delete, archive, restore, complete, claim, reorder, change
+          status, assign sprints, manage tags, log time, configure extensions, moderate comments,
+          and manage the project. Copy a role to start from an existing permission set, and drag to
+          reorder the list.
+        </p>
+        <p>
+          A project can use its organization's roles plus roles of its own. If you import and lock
+          roles, the board stays tied to the organization: it uses only the organization's roles and
+          names and follows changes made there. Unlocked imports can still add project-only roles.
         </p>
         <ul>
+          <li>
+            There is no default role. When you invite someone, add an AI agent, or pick members to
+            import, choose their role. A new project or organization needs at least one role before
+            you can invite anyone; create it on the Roles tab (or under Roles on the organization).
+          </li>
+          <li>
+            Rename any role for your project from project settings → Roles, including Owner (for
+            example to <em>Project Manager</em>). Organizations can rename Owner for all their
+            projects. Renaming never changes permissions.
+          </li>
+          <li>
+            Organization owners become owners of the organization's projects when members are
+            imported. The project creator can't be changed or removed, and only an owner can change
+            or remove another owner.
+          </li>
+          <li>
+            Upgrading from an earlier release: the old site roles (Editor, Viewer, Developer, QA)
+            become organization or project roles wherever they were in use, with the same
+            permissions, so nobody loses access.
+          </li>
           <li>
             Assign roles from project settings → Sharing. Discussion posts show the author’s project
             role next to their name (for example <em>Ryan - Owner</em> or <em>Dev - Developer II</em>).
           </li>
           <li>
-            QA typically cannot create or delete tasks, but can claim cards and move them across
-            statuses while testing.
+            A QA role, for example, might leave out create and delete but allow claiming cards and
+            moving them across statuses while testing.
           </li>
           <li>
             On a kanban board, each status can restrict which roles may move tasks in or out.
@@ -295,7 +316,7 @@ onUnmounted(() => {
             session.
           </li>
           <li>
-            Owners, editors, and viewers can discuss a project task in the sidebar.
+            Project members can discuss a project task in the sidebar.
             You do not have to hit Post before Save: saving the task posts any comment still in the box.
             Closing the sidebar with unposted comment text (or unsaved task edits) asks Save / Discard / Stay.
             You can edit your own comments; members with moderate-comments (project owners by default)

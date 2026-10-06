@@ -14,10 +14,10 @@ func TestArchiveProjectOwnerOnlyAndTagsTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 
@@ -124,7 +124,7 @@ func TestRestoreProjectAllowsNewTasksAndClearsTag(t *testing.T) {
 	if _, err := ArchiveProject(ctx, 1, pid); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	if err := storage.UpsertProjectMember(pid, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, pid, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
 	if _, err := RestoreProject(ctx, 2, pid); !errors.Is(err, ErrForbidden) {

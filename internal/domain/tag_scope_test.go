@@ -15,10 +15,10 @@ func TestProjectTagsAreSharedAndScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatalf("add editor: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 
@@ -418,7 +418,7 @@ func TestUpdateTagRecolorPreservesNameAndRenamePreservesColor(t *testing.T) {
 		t.Fatalf("rename wiped color: got %q want %q", renamed.Color, newColor)
 	}
 
-	if err := storage.UpsertProjectMember(pid, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, pid, 3, testRoleViewer); err != nil {
 		t.Fatalf("add viewer: %v", err)
 	}
 	_, err = UpdateTag(ctx, 3, tag.ID, nil, &newColor)

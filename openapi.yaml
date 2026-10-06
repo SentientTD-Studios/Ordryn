@@ -2297,6 +2297,10 @@ paths:
     patch:
       tags: [Organizations]
       summary: Update an organization role or customize a site default
+      description: |
+        For the owner role, only `name` is accepted. It renames Owner for the organization and every
+        project in it (locked projects always follow it); Owner keeps every permission. Sending the
+        site name clears the rename.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -3146,7 +3150,7 @@ paths:
       summary: Add an AI agent member (project:manage)
       description: |
         Creates a bot account with the given @handle, adds it to the project with
-        `role` (default `editor`; roles with project:manage are refused), and stores
+        `role` (required: there is no default role; roles with project:manage are refused), and stores
         its triggers and guardrails. Defaults are conservative: triggered by
         @mention from managers, may edit only `status`, may comment, may not
         complete or create tasks, 20 runs per hour. At most 10 agents per project.
@@ -3161,7 +3165,7 @@ paths:
               allOf:
                 - $ref: "#/components/schemas/AgentInput"
                 - type: object
-                  required: [handle]
+                  required: [handle, role]
                   properties:
                     handle:
                       type: string
@@ -4886,7 +4890,11 @@ paths:
           type: integer
     patch:
       tags: [Projects]
-      summary: Update a project-created role (owner)
+      summary: Update a project-created role, or rename a site/organization role for this project (owner)
+      description: |
+        For project-created roles, any field may be patched. For site and organization roles
+        (including owner), only `name` is accepted; it sets a project-only display name and
+        permissions continue to follow the template. Sending the inherited name clears the rename.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -6167,6 +6175,7 @@ paths:
     get:
       tags: [Admin]
       summary: List site-level project roles and the permission catalog
+      description: Owner is the only site role, so the list holds just Owner.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -6179,7 +6188,10 @@ paths:
                 $ref: "#/components/schemas/ProjectRolesList"
     post:
       tags: [Admin]
-      summary: Create a site-level project role
+      summary: Create a site-level project role (retired)
+      description: |
+        Always refused with a `validation` error. Owner is the only site role; create other
+        roles on an organization or project instead.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7818,6 +7830,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectRoleDef"
+        owner_role:
+          $ref: "#/components/schemas/ProjectRoleDef"
+          description: The owner role is not assignable but can be renamed per organization or project; it always has every permission
 
     ProjectPerm:
       type: object
@@ -7861,7 +7876,10 @@ components:
           format: date-time
         overrides_site:
           type: boolean
-          description: True when an organization role replaces a site template with the same slug
+          description: True when an organization role shares a slug with a site role. Owner is the only site role and cannot be overridden, so this is false for roles created after the upgrade
+        default_name:
+          type: string
+          description: Inherited site or organization name when this project has renamed the role
 
     ProjectRoleWrite:
       type: object

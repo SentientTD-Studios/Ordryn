@@ -113,7 +113,6 @@ func CreateProjectAgent(userID, projectID int, in AgentInput) (*storage.ProjectA
 		ProjectID:        projectID,
 		Handle:           handle,
 		Enabled:          true,
-		Role:             storage.RoleEditor,
 		CreatedBy:        userID,
 		TriggerOnMention: true,
 		TriggerStatusIDs: []int{},
@@ -129,6 +128,10 @@ func CreateProjectAgent(userID, projectID int, in AgentInput) (*storage.ProjectA
 	}
 	if err := applyAgentInput(&a, in); err != nil {
 		return nil, err
+	}
+	// There is no site-wide default role to fall back on, so the manager must pick one.
+	if a.Role == "" {
+		return nil, fmt.Errorf("%w: choose a role for the agent", ErrValidation)
 	}
 	created, err := storage.CreateProjectAgent(a)
 	if errors.Is(err, storage.ErrUsernameTaken) {

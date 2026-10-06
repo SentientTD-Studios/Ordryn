@@ -56,10 +56,10 @@ func TestExtensionStoreGetPutConflictAndViewer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 3, storage.RoleViewer); err != nil {
+	if err := upsertTestMember(t, proj.ID, 3, testRoleViewer); err != nil {
 		t.Fatal(err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatal(err)
 	}
 

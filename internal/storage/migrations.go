@@ -399,6 +399,12 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	// Last, so every table that can reference a role slug exists.
+	if err := MigrateLegacySiteRoles(); err != nil {
+		fmt.Printf("migration: MigrateLegacySiteRoles failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

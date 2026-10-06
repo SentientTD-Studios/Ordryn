@@ -17,6 +17,7 @@ const toast = useToast()
 const { askConfirm } = useConfirm()
 const catalog = ref<ProjectPermInfo[]>([])
 const roles = ref<ProjectRoleDef[]>([])
+const ownerRole = ref<ProjectRoleDef | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const editingId = ref<number | null>(null)
@@ -26,16 +27,24 @@ const formDescription = ref('')
 const formPermissions = ref<string[]>([])
 const formCopyFromId = ref<number | null>(null)
 const slugTouched = ref(false)
+const renamingId = ref<number | null>(null)
+const renameValue = ref('')
 const roleListEl = ref<HTMLElement | null>(null)
 let sortable: Sortable | null = null
 
 const canManage = computed(() => canManageProject(props.project))
 const orgManaged = computed(() => !!props.project.org_managed && !!props.project.organization_id)
-const orgRoles = computed(() => roles.value.filter((r) => !!r.organization_id && !r.project_id))
+const orgRoles = computed(() => {
+  const list = roles.value.filter((r) => !!r.organization_id && !r.project_id)
+  const owner = ownerRole.value
+  return owner?.organization_id ? [owner, ...list] : list
+})
 const overriddenSlugs = computed(() => new Set(orgRoles.value.map((r) => r.slug)))
-const siteRoles = computed(() =>
-  roles.value.filter((r) => !r.project_id && !r.organization_id && !overriddenSlugs.value.has(r.slug)),
-)
+const siteRoles = computed(() => {
+  const list = roles.value.filter((r) => !r.project_id && !r.organization_id && !overriddenSlugs.value.has(r.slug))
+  const owner = ownerRole.value
+  return owner && !owner.organization_id ? [owner, ...list] : list
+})
 const customRoles = computed(() => roles.value.filter((r) => r.project_id === props.project.id))
 const editing = computed(() => customRoles.value.find((r) => r.id === editingId.value) || null)
 const canEditProjectRoles = computed(() => canManage.value && !orgManaged.value)
@@ -46,6 +55,7 @@ async function load() {
     const data = await api.listProjectRoles(props.project.id)
     catalog.value = data.catalog || []
     roles.value = data.roles || []
+    ownerRole.value = data.owner_role || null
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load roles', 'error')
   } finally {
@@ -116,6 +126,32 @@ async function saveRole() {
     emit('changed')
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not save role', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+function startRename(role: ProjectRoleDef) {
+  renamingId.value = role.id
+  renameValue.value = role.name
+}
+
+function cancelRename() {
+  renamingId.value = null
+  renameValue.value = ''
+}
+
+async function saveRename(role: ProjectRoleDef, name = renameValue.value.trim()) {
+  if (!canEditProjectRoles.value || !name) return
+  saving.value = true
+  try {
+    await api.updateProjectRole(props.project.id, role.id, { name })
+    toast.push(name === role.default_name ? 'Role name reset' : 'Role renamed', 'success')
+    cancelRename()
+    await load()
+    emit('changed')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not rename role', 'error')
   } finally {
     saving.value = false
   }
@@ -202,22 +238,52 @@ onBeforeUnmount(destroySortable)
       Organization roles stay available to assign, and you can still create roles just for this project.
     </div>
 
-    <h4 class="h6">Site roles</h4>
+    <h4 class="h6">Built-in role</h4>
     <p class="small text-muted mb-2">
-      Built-in and site-wide roles are defined by admins and can be assigned on this project.
+      Owner always has every permission.
+      <template v-if="canEditProjectRoles">You can rename it for this project.</template>
+      Create every other role below, or use your organization's roles.
     </p>
     <ul class="list-unstyled mb-3">
       <li v-for="role in siteRoles" :key="role.id" class="mb-2">
-        <strong>{{ role.name }}</strong>
-        <span v-if="role.is_system" class="badge text-bg-secondary ms-1">built-in</span>
-        <button
-          v-if="canEditProjectRoles"
-          class="btn btn-sm btn-link py-0"
-          type="button"
-          @click="startCopy(role)"
+        <form
+          v-if="renamingId === role.id"
+          class="d-flex flex-wrap gap-1 align-items-center"
+          @submit.prevent="saveRename(role)"
         >
-          Copy
-        </button>
+          <input
+            v-model="renameValue"
+            type="text"
+            class="form-control form-control-sm w-auto"
+            maxlength="80"
+            required
+            :aria-label="`New name for ${role.name}`"
+          />
+          <button class="btn btn-sm btn-primary" type="submit" :disabled="saving || !renameValue.trim()">Save</button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" @click="cancelRename">Cancel</button>
+        </form>
+        <template v-else>
+          <strong>{{ role.name }}</strong>
+          <span v-if="role.is_system" class="badge text-bg-secondary ms-1">built-in</span>
+          <span v-if="role.default_name" class="badge text-bg-light border ms-1" :title="`Site name: ${role.default_name}`">
+            renamed from {{ role.default_name }}
+          </span>
+          <template v-if="canEditProjectRoles">
+            <button class="btn btn-sm btn-link py-0" type="button" @click="startRename(role)">Rename</button>
+            <button
+              v-if="role.default_name"
+              class="btn btn-sm btn-link py-0"
+              type="button"
+              :disabled="saving"
+              @click="saveRename(role, role.default_name)"
+            >
+              Reset name
+            </button>
+            <button v-if="role.slug !== 'owner'" class="btn btn-sm btn-link py-0" type="button" @click="startCopy(role)">
+              Copy
+            </button>
+          </template>
+        </template>
         <div class="small text-muted">{{ role.description || role.slug }}</div>
         <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
       </li>
@@ -228,17 +294,45 @@ onBeforeUnmount(destroySortable)
       <h4 class="h6">Organization roles</h4>
       <ul class="list-unstyled mb-3">
         <li v-for="role in orgRoles" :key="role.id" class="mb-2">
-          <strong>{{ role.name }}</strong>
-          <span class="badge text-bg-info ms-1">organization</span>
-          <span v-if="role.overrides_site" class="badge text-bg-warning ms-1">customized</span>
-          <button
-            v-if="canEditProjectRoles"
-            class="btn btn-sm btn-link py-0"
-            type="button"
-            @click="startCopy(role)"
+          <form
+            v-if="renamingId === role.id"
+            class="d-flex flex-wrap gap-1 align-items-center"
+            @submit.prevent="saveRename(role)"
           >
-            Copy
-          </button>
+            <input
+              v-model="renameValue"
+              type="text"
+              class="form-control form-control-sm w-auto"
+              maxlength="80"
+              required
+              :aria-label="`New name for ${role.name}`"
+            />
+            <button class="btn btn-sm btn-primary" type="submit" :disabled="saving || !renameValue.trim()">Save</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" @click="cancelRename">Cancel</button>
+          </form>
+          <template v-else>
+            <strong>{{ role.name }}</strong>
+            <span class="badge text-bg-info ms-1">organization</span>
+            <span v-if="role.overrides_site" class="badge text-bg-warning ms-1">customized</span>
+            <span v-if="role.default_name" class="badge text-bg-light border ms-1" :title="`Organization name: ${role.default_name}`">
+              renamed from {{ role.default_name }}
+            </span>
+            <template v-if="canEditProjectRoles">
+              <button class="btn btn-sm btn-link py-0" type="button" @click="startRename(role)">Rename</button>
+              <button
+                v-if="role.default_name"
+                class="btn btn-sm btn-link py-0"
+                type="button"
+                :disabled="saving"
+                @click="saveRename(role, role.default_name)"
+              >
+                Reset name
+              </button>
+              <button v-if="role.slug !== 'owner'" class="btn btn-sm btn-link py-0" type="button" @click="startCopy(role)">
+                Copy
+              </button>
+            </template>
+          </template>
           <div class="small text-muted">{{ role.description || role.slug }}</div>
           <div class="small text-muted">{{ (role.permissions || []).join(', ') || 'no write permissions' }}</div>
         </li>

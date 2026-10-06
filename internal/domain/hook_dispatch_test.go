@@ -36,7 +36,7 @@ func TestCommentMentionHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := storage.UpsertProjectMember(proj.ID, 2, storage.RoleEditor); err != nil {
+	if err := upsertTestMember(t, proj.ID, 2, testRoleEditor); err != nil {
 		t.Fatal(err)
 	}
 	pid := proj.ID
@@ -182,7 +182,7 @@ func TestProjectMemberJoinLeaveHooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv, err := storage.CreateProjectInvite(proj.ID, "editor@example.com", storage.RoleEditor, 1, time.Now().Add(24*time.Hour))
+	inv, err := storage.CreateProjectInvite(proj.ID, "editor@example.com", testRoleEditor, 1, time.Now().Add(24*time.Hour))
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}

@@ -49,14 +49,12 @@ watch(
       ])
       members.value = m
       roles.value = roleData.roles || []
-      const fallback =
-        assignableRoles.value.find((r) => r.slug === 'editor')?.slug ||
-        assignableRoles.value[0]?.slug ||
-        'editor'
+      // Members start with their organization role. There is no fallback role: anyone without
+      // one must be given a role before they are imported.
       const next: Record<number, { on: boolean; role: string }> = {}
       for (const mem of m) {
         if (mem.role === 'owner') continue
-        next[mem.user_id] = { on: false, role: mem.role && mem.role !== 'owner' ? mem.role : fallback }
+        next[mem.user_id] = { on: false, role: mem.role || '' }
       }
       selected.value = next
     } finally {

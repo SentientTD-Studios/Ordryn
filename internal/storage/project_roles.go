@@ -29,16 +29,13 @@ const (
 	PermExtensionsWrite  = "extensions:write"
 	PermCommentsModerate = "comments:moderate"
 
-	RoleDeveloper = "developer"
-	RoleQA        = "qa"
-
 	MaxProjectRoleSlugLen = 40
 	MaxProjectRoleNameLen = 80
 	MaxProjectRoleDescLen = 200
 	MaxProjectCustomRoles = 20
 )
 
-// RoleOwner, RoleEditor, and RoleViewer remain the built-in slugs.
+// RoleOwner is the only site-level role. Every other role is created by an organization or project.
 
 // ProjectPermInfo describes one assignable permission in the catalog.
 type ProjectPermInfo struct {
@@ -62,6 +59,8 @@ type ProjectRoleDef struct {
 	CreatedAt      time.Time
 	// OverridesSite is true when an organization role replaces a site template with the same slug.
 	OverridesSite bool
+	// DefaultName is the inherited name when a project has renamed a site or organization role.
+	DefaultName string
 }
 
 // ProjectStatusGate restricts which roles may enter or leave a status.
@@ -125,24 +124,6 @@ func ValidProjectPerm(id string) bool {
 		}
 	}
 	return false
-}
-
-func editorDefaultPerms() []string {
-	return []string{
-		PermTasksCreate, PermTasksEdit, PermTasksDelete, PermTasksArchive, PermTasksRestore,
-		PermTasksComplete, PermTasksClaim, PermTasksReorder, PermTasksStatus, PermTasksSprint,
-		PermProjectTags, PermTimeWrite, PermExtensionsWrite,
-	}
-}
-
-func developerDefaultPerms() []string {
-	return editorDefaultPerms()
-}
-
-func qaDefaultPerms() []string {
-	return []string{
-		PermTasksComplete, PermTasksClaim, PermTasksReorder, PermTasksStatus, PermTimeWrite,
-	}
 }
 
 func normalizePermList(perms []string) ([]string, error) {
@@ -247,6 +228,18 @@ func CreateProjectRoleTables() error {
 			status_id INTEGER PRIMARY KEY REFERENCES project_statuses(id) ON DELETE CASCADE,
 			enter_role_slugs TEXT[] NOT NULL DEFAULT '{}',
 			leave_role_slugs TEXT[] NOT NULL DEFAULT '{}'
+		)`,
+		`CREATE TABLE IF NOT EXISTS project_role_labels (
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			slug VARCHAR(40) NOT NULL,
+			name VARCHAR(80) NOT NULL,
+			PRIMARY KEY (project_id, slug)
+		)`,
+		`CREATE TABLE IF NOT EXISTS organization_role_labels (
+			organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+			slug VARCHAR(40) NOT NULL,
+			name VARCHAR(80) NOT NULL,
+			PRIMARY KEY (organization_id, slug)
 		)`,
 	}
 	for _, s := range stmts {
@@ -361,24 +354,112 @@ func seedSiteRole(slug, name, description string, perms []string, system bool, s
 	return err
 }
 
-// SeedDefaultProjectRoles inserts built-in site roles if they are missing.
+// SeedDefaultProjectRoles inserts the Owner site role if it is missing. Owner is the
+// only site role; organizations and projects create every other role themselves.
 func SeedDefaultProjectRoles() error {
-	seeds := []struct {
-		slug, name, description string
-		perms                   []string
-		system                  bool
-		order                   int
-	}{
-		{RoleOwner, "Owner", "Full control of the project, members, and workflow", AllProjectPerms(), true, 0},
-		{RoleEditor, "Editor", "Create and edit work; cannot manage members or project settings", editorDefaultPerms(), true, 1},
-		{RoleViewer, "Viewer", "Read the project and join discussion", []string{}, true, 2},
-		{RoleDeveloper, "Developer", "Implement work across the board, including creating and deleting tasks", developerDefaultPerms(), false, 3},
-		{RoleQA, "QA", "Move and complete tasks during testing; cannot create or delete tasks", qaDefaultPerms(), false, 4},
+	if err := seedSiteRole(RoleOwner, "Owner", "Full control of the project, members, and workflow", AllProjectPerms(), true, 0); err != nil {
+		return fmt.Errorf("seed role %s: %w", RoleOwner, err)
 	}
-	for _, s := range seeds {
-		if err := seedSiteRole(s.slug, s.name, s.description, s.perms, s.system, s.order); err != nil {
-			return fmt.Errorf("seed role %s: %w", s.slug, err)
+	InvalidateSiteRoleCache()
+	return nil
+}
+
+// legacyRoleUsedInProjectSQL matches projects ($1 = slug) whose members, pending invites,
+// or status gates still reference a slug.
+const legacyRoleUsedInProjectSQL = `(
+		EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.role = $1::text)
+		OR EXISTS (SELECT 1 FROM project_invites pi WHERE pi.project_id = p.id AND pi.role = $1::text AND pi.accepted_at IS NULL)
+		OR EXISTS (
+			SELECT 1 FROM project_status_gates g
+			JOIN project_statuses s ON s.id = g.status_id
+			WHERE s.project_id = p.id AND ($1::text = ANY(g.enter_role_slugs) OR $1::text = ANY(g.leave_role_slugs))
+		)
+	)`
+
+// MigrateLegacySiteRoles retires every site role except Owner. Earlier releases seeded Editor,
+// Viewer, Developer, and QA (and admins could add more) as site-wide roles. Each one is copied,
+// with its current name and permissions, into every organization and standalone project that
+// still uses it, then the site role is deleted. Members keep the same slug, so nobody's access
+// changes. Organizations that already customized a role keep their version. Safe to re-run.
+func MigrateLegacySiteRoles() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx,
+		projectRoleSelect+` WHERE `+siteRoleWhere()+` AND slug <> $1::text ORDER BY sort_order ASC, id ASC`, RoleOwner)
+	if err != nil {
+		return err
+	}
+	var legacy []ProjectRoleDef
+	for rows.Next() {
+		var d ProjectRoleDef
+		if err := scanProjectRoleDef(rows, &d); err != nil {
+			rows.Close()
+			return err
 		}
+		legacy = append(legacy, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, d := range legacy {
+		// Organizations whose members, invites, or projects use the slug get an org role.
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO project_role_defs (project_id, organization_id, slug, name, description, permissions, is_system, sort_order)
+			SELECT NULL, o.id, $1::text, $2, $3, $4, FALSE, $5
+			FROM organizations o
+			WHERE NOT EXISTS (
+				SELECT 1 FROM project_role_defs r
+				WHERE r.organization_id = o.id AND r.project_id IS NULL AND r.slug = $1::text
+			)
+			AND (
+				EXISTS (SELECT 1 FROM organization_members om WHERE om.organization_id = o.id AND om.role = $1::text)
+				OR EXISTS (SELECT 1 FROM organization_invites oi WHERE oi.organization_id = o.id AND oi.role = $1::text AND oi.accepted_at IS NULL)
+				OR EXISTS (SELECT 1 FROM projects p WHERE p.organization_id = o.id AND `+legacyRoleUsedInProjectSQL+`)
+			)`,
+			d.Slug, d.Name, d.Description, d.Permissions, d.SortOrder); err != nil {
+			return fmt.Errorf("copy role %s to organizations: %w", d.Slug, err)
+		}
+		// Other projects get a project role, keeping any project rename as its name.
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO project_role_defs (project_id, organization_id, slug, name, description, permissions, is_system, sort_order)
+			SELECT p.id, NULL, $1::text, COALESCE(l.name, $2), $3, $4, FALSE, $5
+			FROM projects p
+			LEFT JOIN project_role_labels l ON l.project_id = p.id AND l.slug = $1::text
+			WHERE NOT EXISTS (SELECT 1 FROM project_role_defs r WHERE r.project_id = p.id AND r.slug = $1::text)
+			AND NOT EXISTS (
+				SELECT 1 FROM project_role_defs r
+				WHERE r.organization_id = p.organization_id AND r.project_id IS NULL AND r.slug = $1::text
+			)
+			AND `+legacyRoleUsedInProjectSQL,
+			d.Slug, d.Name, d.Description, d.Permissions, d.SortOrder); err != nil {
+			return fmt.Errorf("copy role %s to projects: %w", d.Slug, err)
+		}
+		// A project label only renames inherited roles; drop it once the project owns the role.
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM project_role_labels l
+			USING project_role_defs r
+			WHERE r.project_id = l.project_id AND r.slug = l.slug AND l.slug = $1::text`, d.Slug); err != nil {
+			return fmt.Errorf("clear labels for %s: %w", d.Slug, err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM project_role_defs WHERE id = $1`, d.ID); err != nil {
+			return fmt.Errorf("delete site role %s: %w", d.Slug, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 	InvalidateSiteRoleCache()
 	return nil
@@ -523,6 +604,9 @@ func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
 		out = append(out, d)
 	}
 	out = append(out, orgRoles...)
+	if err := applyProjectRoleLabels(projectID, out); err != nil {
+		return nil, err
+	}
 	if bind != nil && bind.OrgManaged {
 		return out, nil
 	}
@@ -532,6 +616,194 @@ func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
 	}
 	out = append(out, custom...)
 	return out, nil
+}
+
+// ProjectOwnerRoleDef returns the owner role as seen by one project, including organization and project renames.
+func ProjectOwnerRoleDef(projectID int) (*ProjectRoleDef, error) {
+	def := InheritedRoleDef(projectID, RoleOwner)
+	if def == nil {
+		return nil, nil
+	}
+	one := []ProjectRoleDef{*def}
+	if err := applyProjectRoleLabels(projectID, one); err != nil {
+		return nil, err
+	}
+	return &one[0], nil
+}
+
+// InheritedRoleDef resolves a role for a project before project renames: a site role
+// picks up its organization's name when the project belongs to one.
+func InheritedRoleDef(projectID int, slug string) *ProjectRoleDef {
+	def := ResolveRoleDef(projectID, slug)
+	if def == nil {
+		return nil
+	}
+	cp := *def
+	if cp.ProjectID == nil && cp.OrganizationID == nil && projectID > 0 {
+		if bind, err := GetProjectOrgBinding(projectID); err == nil && bind != nil && bind.OrganizationID != nil {
+			if name := organizationRoleLabel(*bind.OrganizationID, cp.Slug); name != "" {
+				cp.DefaultName = cp.Name
+				cp.Name = name
+			}
+		}
+	}
+	return &cp
+}
+
+// OrganizationOwnerRoleDef returns the owner role as seen by one organization, including its rename.
+func OrganizationOwnerRoleDef(orgID int) *ProjectRoleDef {
+	def := ResolveOrgRoleDef(orgID, RoleOwner)
+	if def == nil {
+		return nil
+	}
+	cp := *def
+	if name := organizationRoleLabel(orgID, cp.Slug); name != "" {
+		cp.DefaultName = cp.Name
+		cp.Name = name
+	}
+	return &cp
+}
+
+func organizationRoleLabel(orgID int, slug string) string {
+	if orgID <= 0 || slug == "" {
+		return ""
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return ""
+	}
+	defer CloseDatabase(pool)
+
+	var name string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT name FROM organization_role_labels WHERE organization_id = $1 AND slug = $2`, orgID, slug).Scan(&name); err != nil {
+		return ""
+	}
+	return name
+}
+
+// SetOrganizationRoleLabel renames a site role for one organization and its projects.
+// Labels never carry permissions, so site permission changes keep applying.
+func SetOrganizationRoleLabel(orgID int, slug, name string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO organization_role_labels (organization_id, slug, name)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (organization_id, slug) DO UPDATE SET name = EXCLUDED.name`,
+		orgID, slug, name)
+	return err
+}
+
+// DeleteOrganizationRoleLabel restores the site name of a role for one organization.
+func DeleteOrganizationRoleLabel(orgID int, slug string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(),
+		`DELETE FROM organization_role_labels WHERE organization_id = $1 AND slug = $2`, orgID, slug)
+	return err
+}
+
+// projectRoleLabelsActive skips labels on org-managed projects, whose roles are locked to the organization.
+const projectRoleLabelsActive = `
+	FROM project_role_labels l
+	JOIN projects p ON p.id = l.project_id
+	WHERE l.project_id = $1 AND NOT (p.organization_id IS NOT NULL AND COALESCE(p.org_managed, false))`
+
+// ListProjectRoleLabels returns project-specific names for inherited roles, keyed by slug.
+func ListProjectRoleLabels(projectID int) (map[string]string, error) {
+	out := map[string]string{}
+	if projectID <= 0 {
+		return out, nil
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `SELECT l.slug, l.name`+projectRoleLabelsActive, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var slug, name string
+		if err := rows.Scan(&slug, &name); err != nil {
+			return nil, err
+		}
+		out[slug] = name
+	}
+	return out, rows.Err()
+}
+
+func projectRoleLabel(projectID int, slug string) string {
+	if projectID <= 0 || slug == "" {
+		return ""
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return ""
+	}
+	defer CloseDatabase(pool)
+
+	var name string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT l.name`+projectRoleLabelsActive+` AND l.slug = $2`, projectID, slug).Scan(&name); err != nil {
+		return ""
+	}
+	return name
+}
+
+// applyProjectRoleLabels renames inherited site and organization roles in place.
+func applyProjectRoleLabels(projectID int, defs []ProjectRoleDef) error {
+	labels, err := ListProjectRoleLabels(projectID)
+	if err != nil || len(labels) == 0 {
+		return err
+	}
+	for i := range defs {
+		if defs[i].ProjectID != nil {
+			continue
+		}
+		if name, ok := labels[defs[i].Slug]; ok {
+			defs[i].DefaultName = defs[i].Name
+			defs[i].Name = name
+		}
+	}
+	return nil
+}
+
+// SetProjectRoleLabel renames an inherited role for one project.
+func SetProjectRoleLabel(projectID int, slug, name string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO project_role_labels (project_id, slug, name)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (project_id, slug) DO UPDATE SET name = EXCLUDED.name`,
+		projectID, slug, name)
+	return err
+}
+
+// DeleteProjectRoleLabel restores the inherited name of a role for one project.
+func DeleteProjectRoleLabel(projectID int, slug string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(),
+		`DELETE FROM project_role_labels WHERE project_id = $1 AND slug = $2`, projectID, slug)
+	return err
 }
 
 // GetProjectRoleDef loads a role by id.
@@ -610,16 +882,10 @@ func ResolveOrgRoleDef(orgID int, slug string) *ProjectRoleDef {
 }
 
 func builtinRoleFallback(slug string) *ProjectRoleDef {
-	switch slug {
-	case RoleOwner:
+	if slug == RoleOwner {
 		return &ProjectRoleDef{Slug: RoleOwner, Name: "Owner", Permissions: AllProjectPerms(), IsSystem: true}
-	case RoleEditor:
-		return &ProjectRoleDef{Slug: RoleEditor, Name: "Editor", Permissions: editorDefaultPerms(), IsSystem: true}
-	case RoleViewer:
-		return &ProjectRoleDef{Slug: RoleViewer, Name: "Viewer", Permissions: []string{}, IsSystem: true}
-	default:
-		return nil
 	}
+	return nil
 }
 
 func getRoleDefBySlug(projectID int, slug string, siteOnly bool) (*ProjectRoleDef, error) {
@@ -709,8 +975,16 @@ func RolePermissionList(projectID int, role string) []string {
 
 // RoleDisplayName returns the human label for a membership slug.
 func RoleDisplayName(projectID int, role string) string {
-	def := ResolveRoleDef(projectID, role)
-	if def == nil || strings.TrimSpace(def.Name) == "" {
+	def := InheritedRoleDef(projectID, role)
+	if def == nil {
+		return role
+	}
+	if def.ProjectID == nil {
+		if label := projectRoleLabel(projectID, def.Slug); label != "" {
+			return label
+		}
+	}
+	if strings.TrimSpace(def.Name) == "" {
 		return role
 	}
 	return def.Name
@@ -734,10 +1008,10 @@ func HasProjectPerm(projectID int, role, perm string) bool {
 
 // RoleCanWriteTask is the project-aware write check. Personal tasks use projectID 0.
 func RoleCanWriteTask(projectID int, role string) bool {
-	if role == RoleOwner || role == RoleEditor || role == RoleAutomation {
+	if role == RoleOwner || role == RoleAutomation {
 		return true
 	}
-	if role == "" || role == RoleViewer {
+	if role == "" {
 		return false
 	}
 	return hasAnyWritePerm(RolePermissionList(projectID, role))
@@ -1211,19 +1485,6 @@ func StatusMoveAllowedByGate(fromGate, toGate *ProjectStatusGate, role string) (
 	return leaveOK, enterOK
 }
 
-// ValidInviteRole reports whether a slug can be used on an invite without a project context.
-func ValidInviteRole(role string) bool {
-	role = strings.TrimSpace(strings.ToLower(role))
-	if role == "" || role == RoleOwner {
-		return false
-	}
-	if role == RoleEditor || role == RoleViewer {
-		return true
-	}
-	def := ResolveRoleDef(0, role)
-	return def != nil && def.Slug != RoleOwner
-}
-
 // ValidInviteRoleForProject reports whether a project can assign slug to a member.
 func ValidInviteRoleForProject(projectID int, role string) bool {
 	role = strings.TrimSpace(strings.ToLower(role))
@@ -1231,15 +1492,6 @@ func ValidInviteRoleForProject(projectID int, role string) bool {
 		return false
 	}
 	return ResolveRoleDef(projectID, role) != nil
-}
-
-// ValidMemberRole reports whether a slug is a known membership role.
-func ValidMemberRole(role string) bool {
-	role = strings.TrimSpace(strings.ToLower(role))
-	if role == RoleOwner || role == RoleEditor || role == RoleViewer {
-		return true
-	}
-	return ResolveRoleDef(0, role) != nil
 }
 
 // RoleCanWrite reports coarse write access. Prefer RoleCanWriteTask when a project id is known.
@@ -1297,6 +1549,11 @@ func ValidInviteRoleForOrg(orgID int, role string) bool {
 // OrgRoleDisplayName returns the human label for an org membership slug.
 func OrgRoleDisplayName(orgID int, role string) string {
 	def := ResolveOrgRoleDef(orgID, role)
+	if def != nil && def.OrganizationID == nil {
+		if name := organizationRoleLabel(orgID, def.Slug); name != "" {
+			return name
+		}
+	}
 	if def == nil || strings.TrimSpace(def.Name) == "" {
 		return role
 	}

@@ -16,9 +16,7 @@ import (
 )
 
 const (
-	RoleOwner  = "owner"
-	RoleEditor = "editor"
-	RoleViewer = "viewer"
+	RoleOwner = "owner"
 
 	ShareScopeProject = "project"
 )
@@ -422,9 +420,10 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, FALSE, COALESCE(u.is_agent, FALSE), pm.created_at
+		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, pm.user_id <> p.user_id, COALESCE(u.is_agent, FALSE), pm.created_at
 		FROM project_members pm
 		JOIN users u ON u.id = pm.user_id
+		JOIN projects p ON p.id = pm.project_id
 		WHERE pm.project_id = $1
 		ORDER BY CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, u.email`,
 		projectID)
@@ -437,13 +436,13 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	var out []ProjectMember
 	for rows.Next() {
 		var m ProjectMember
-		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &m.Inherited, &m.IsAgent, &m.CreatedAt); err != nil {
+		var notCreator bool
+		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &notCreator, &m.IsAgent, &m.CreatedAt); err != nil {
 			return nil, err
 		}
-		// Agents belong to the project itself, never to the organization roster.
-		if locked && m.Role != RoleOwner && !m.IsAgent {
-			m.Inherited = true
-		}
+		// Everyone except the project creator comes from the organization roster on a locked
+		// project, including organization owners. Agents belong to the project itself.
+		m.Inherited = locked && notCreator && !m.IsAgent
 		out = append(out, m)
 	}
 	return out, nil

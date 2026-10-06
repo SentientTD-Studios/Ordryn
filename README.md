@@ -27,6 +27,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Dashboard with overdue/today counts, completion charts, and streak tracking
 - Keyboard shortcuts for power users (`?` for help)
 - Invite-only registration and role-based permissions (admin, create invites)
+- Project and organization **roles** built from a permission catalog. Owner is the only built-in role; everything else is created by each organization or project (see [Roles](#roles))
 - Admin panel: site settings, user management, global announcements, configurable image hosting (S3-compatible or local uploads)
 - Dark and light themes
 - Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v2` (session cookie auth)
@@ -111,6 +112,18 @@ Host API 2 adds `surfaces` so a panel can also sit on the kanban board (`at: "ka
 
 `delivery.type`: `discord.webhook`, `slack.webhook`, `teams.webhook`, `googlechat.webhook`, `ntfy.webhook`, `http.webhook`. `delivery.url_from` must be a `secret` setting key. Optional `format` for HTTP: `text`, `content`, or `json`. Optional HMAC signing via `controls`: `rotate_signing`.
 
+## Roles
+
+**Owner** is the only site-wide role. It always has every permission, including permissions added in later releases, and site admins can only change its name and description (Admin → Roles). Organizations can rename Owner for their members, and projects can rename it for theirs. A rename never changes permissions.
+
+Every other role is created by an organization or a project from the permission catalog. A project can use its organization's roles plus its own. A project locked to its organization (`org_import: "lock"`) uses only the organization's roles and names, and follows organization changes automatically.
+
+**No default role.** Since there is no site-wide Editor, inviting someone to a project or organization, adding an AI agent, and choosing members to import all require picking a role. A project or organization with no roles yet must create one first; the invite forms say so. The API refuses a missing role with a `validation` error, and `POST /api/v2/admin/project-roles` now refuses to create site roles.
+
+**Organization owners** become project **Owners** when organization members are imported into a project (copy or lock). The project creator can never be changed or removed. Other owners can be changed or removed only by an owner, or leave on their own.
+
+**Upgrading.** Earlier releases seeded Editor, Viewer, Developer, and QA as site roles (and admins could add more). On first start after upgrading, `MigrateLegacySiteRoles` copies each of those roles, with its current name and permissions, into every organization and standalone project that still uses it for members, pending invites, or status gates. The site copies are then deleted. Members keep the same role slug, so nobody's access changes. An organization that had already customized a role keeps its version, and a project that had renamed a role keeps that name. Projects and organizations that never used a role don't get a copy. The migration runs on every start and does nothing once the site roles are gone.
+
 ## AI agents
 
 Project managers can add AI agents from **project settings → AI agents**. Each agent is a project member backed by a bot account (`users.is_agent`), so its comments, claims, status changes, and activity are attributed to it and badged as an agent. Agent accounts cannot sign in, receive no notifications, and are managed only from that tab. The agent itself runs outside Ordryn (Claude Code, a CI job, your own service). Ordryn tells it when there is work, hands it the task, and enforces what it may change.
@@ -135,7 +148,7 @@ To try it locally for free, see [`examples/agents/ollama`](examples/agents/ollam
 
 | Setting | Default | Effect |
 | --- | --- | --- |
-| Role | `editor` | Base permissions; roles with `project:manage` are refused |
+| Role | none (required) | Base permissions; pick one when adding the agent. Roles with `project:manage` are refused |
 | Editable fields | `status` | Which task fields it may PATCH (status, title, description, priority, due date, tags, estimate, sprint, custom fields). Unknown fields are refused |
 | Allowed columns | any non-done | Columns it may move cards into |
 | Complete tasks | off | Needed for `completed` and done columns. Leave off to keep a human sign-off |

@@ -72,6 +72,11 @@ func newTestAgent(t *testing.T, projectID int, in AgentInput) *storage.ProjectAg
 	if in.Handle == "" {
 		in.Handle = uniqueHandle("bot")
 	}
+	if in.Role == nil {
+		role := testRoleEditor
+		ensureTestProjectRole(t, projectID, role)
+		in.Role = &role
+	}
 	a, err := CreateProjectAgent(1, projectID, in)
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
@@ -128,6 +133,9 @@ func TestCreateAgentRequiresManagerAndValidInput(t *testing.T) {
 	taken := newTestAgent(t, f.projectID, AgentInput{})
 	if _, err := CreateProjectAgent(1, f.projectID, AgentInput{Handle: taken.Handle}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate handle: err=%v want conflict", err)
+	}
+	if _, err := CreateProjectAgent(1, f.projectID, AgentInput{Handle: uniqueHandle("norole")}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("missing role: err=%v want validation", err)
 	}
 	owner := "owner"
 	if _, err := CreateProjectAgent(1, f.projectID, AgentInput{Handle: uniqueHandle("own"), Role: &owner}); !errors.Is(err, ErrValidation) {
@@ -431,7 +439,7 @@ func TestAgentRunPayloadCarriesTaskAndGuardrailsButNoKey(t *testing.T) {
 func TestAgentSelectedCallersOnly(t *testing.T) {
 	f := kanbanAgentProject(t) // user 1 owner (manager), user 2 editor
 	ctx := context.Background()
-	if err := storage.UpsertProjectMember(f.projectID, 3, "viewer"); err != nil {
+	if err := upsertTestMember(t, f.projectID, 3, testRoleViewer); err != nil {
 		t.Fatal(err)
 	}
 	selected := storage.AgentTriggerBySelected

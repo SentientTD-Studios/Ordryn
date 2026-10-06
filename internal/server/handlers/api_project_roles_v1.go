@@ -31,11 +31,13 @@ type apiProjectRoleDefJSON struct {
 	SortOrder      int      `json:"sort_order"`
 	CreatedAt      string   `json:"created_at"`
 	OverridesSite  bool     `json:"overrides_site,omitempty"`
+	DefaultName    string   `json:"default_name,omitempty"`
 }
 
 type apiProjectRolesListJSON struct {
-	Catalog []apiProjectPermJSON    `json:"catalog"`
-	Roles   []apiProjectRoleDefJSON `json:"roles"`
+	Catalog   []apiProjectPermJSON    `json:"catalog"`
+	Roles     []apiProjectRoleDefJSON `json:"roles"`
+	OwnerRole *apiProjectRoleDefJSON  `json:"owner_role,omitempty"`
 }
 
 type apiProjectRoleWriteRequest struct {
@@ -94,6 +96,7 @@ func roleDefToJSON(d storage.ProjectRoleDef) apiProjectRoleDefJSON {
 		SortOrder:      d.SortOrder,
 		CreatedAt:      formatRFC3339(d.CreatedAt),
 		OverridesSite:  d.OverridesSite,
+		DefaultName:    d.DefaultName,
 	}
 }
 
@@ -277,11 +280,21 @@ func handleProjectRolesResource(w http.ResponseWriter, r *http.Request, projectI
 				writeProjectRoleDomainError(w, err)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_ = json.NewEncoder(w).Encode(apiProjectRolesListJSON{
+			resp := apiProjectRolesListJSON{
 				Catalog: permCatalogToJSON(catalog),
 				Roles:   roleDefsToJSON(roles),
-			})
+			}
+			owner, err := domain.GetProjectOwnerRoleForUser(r.Context(), userID, projectID)
+			if err != nil {
+				writeProjectRoleDomainError(w, err)
+				return
+			}
+			if owner != nil {
+				ownerJSON := roleDefToJSON(*owner)
+				resp.OwnerRole = &ownerJSON
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_ = json.NewEncoder(w).Encode(resp)
 		case http.MethodPost:
 			var req apiProjectRoleWriteRequest
 			if err := decodeJSONBody(r, &req); err != nil {
