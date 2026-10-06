@@ -89,6 +89,7 @@ func StartServer() error {
 	hooks.StartOverdueHookWorker()
 	hooks.StartDeliveryWorker()
 	domain.StartAgentDispatcher()
+	domain.StartAutomation()
 
 	registerAPIV1Routes()
 

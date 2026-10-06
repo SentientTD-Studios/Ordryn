@@ -15,6 +15,7 @@ import ProjectTagsPanel from '@/components/ProjectTagsPanel.vue'
 import ProjectRolesPanel from '@/components/ProjectRolesPanel.vue'
 import ProjectApiKeysPanel from '@/components/ProjectApiKeysPanel.vue'
 import ProjectAgentsPanel from '@/components/ProjectAgentsPanel.vue'
+import ProjectAutomationPanel from '@/components/ProjectAutomationPanel.vue'
 import OrgImportFields from '@/components/OrgImportFields.vue'
 import ProjectMemberRoster from '@/components/ProjectMemberRoster.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
@@ -29,6 +30,7 @@ type SettingsTab =
   | 'extensions'
   | 'api-keys'
   | 'agents'
+  | 'rules'
   | 'sharing'
   | 'roles'
 
@@ -78,7 +80,9 @@ const tabs = computed(() => {
   if (isKanban.value) items.push({ id: 'sprints', label: 'Sprints' })
   items.push({ id: 'tags', label: 'Tags' }, { id: 'github', label: 'GitHub' })
   items.push({ id: 'extensions', label: 'Extensions' })
-  if (canManage.value) items.push({ id: 'api-keys', label: 'API keys' }, { id: 'agents', label: 'AI agents' })
+  if (canManage.value) {
+    items.push({ id: 'rules', label: 'Rules' }, { id: 'api-keys', label: 'API keys' }, { id: 'agents', label: 'AI agents' })
+  }
   items.push({ id: 'sharing', label: 'Sharing' })
   if (canManage.value) items.push({ id: 'roles', label: 'Roles' })
   return items
@@ -426,6 +430,12 @@ async function archiveOrRestore() {
           <ProjectExtensionsPanel
             v-else-if="tab === 'extensions'"
             :project="project"
+          />
+
+          <ProjectAutomationPanel
+            v-else-if="tab === 'rules' && canManage"
+            :project="project"
+            @changed="onPanelChanged"
           />
 
           <ProjectApiKeysPanel

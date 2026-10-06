@@ -684,6 +684,9 @@ defineExpose({ reload, isDirty, flushUnsaved })
                 class="task-post-avatar-img"
                 aria-hidden="true"
               />
+              <div v-else-if="c.author_is_system" class="task-post-avatar task-post-avatar--agent" aria-hidden="true">
+                <i class="bi bi-gear-wide-connected" />
+              </div>
               <div v-else-if="c.author_is_agent" class="task-post-avatar task-post-avatar--agent" aria-hidden="true">
                 <i class="bi bi-robot" />
               </div>
@@ -692,7 +695,12 @@ defineExpose({ reload, isDirty, flushUnsaved })
                 <div class="task-post-author d-flex align-items-center gap-1" style="min-width: 0">
                   <span class="text-truncate">{{ authorLabel(c) }}</span>
                   <span
-                    v-if="c.author_is_agent"
+                    v-if="c.author_is_system"
+                    class="badge task-post-agent-badge flex-shrink-0"
+                    title="Posted by a project automation rule"
+                  ><i class="bi bi-gear-wide-connected me-1" aria-hidden="true" />Rule</span>
+                  <span
+                    v-else-if="c.author_is_agent"
                     class="badge task-post-agent-badge flex-shrink-0"
                     title="Written by an AI agent, not a person"
                   ><i class="bi bi-robot me-1" aria-hidden="true" />AI agent</span>

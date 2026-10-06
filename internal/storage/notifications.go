@@ -67,8 +67,13 @@ func CreateUserNotificationsTable() error {
 	return nil
 }
 
+// NotificationAutomation is the opt-out key for anything the automation
+// account causes; it is never stored as a notification's own type.
+const NotificationAutomation = "automation"
+
 // insertUserNotificationSQL inserts one notification unless the recipient is an
-// AI agent (no inbox) or opted out of its type.
+// AI agent (no inbox), opted out of its type, or opted out of automation
+// notices and the actor is the automation account.
 const insertUserNotificationSQL = `INSERT INTO user_notifications
 		(user_id, actor_user_id, type, project_id, task_id, title, body)
 	 SELECT $1, $2, $3, $4, $5, $6, $7
@@ -76,6 +81,11 @@ const insertUserNotificationSQL = `INSERT INTO user_notifications
 	   AND NOT EXISTS (
 		SELECT 1 FROM user_notification_optouts
 		WHERE user_id = $1 AND notification_type = $3
+	 )
+	   AND NOT (
+		EXISTS (SELECT 1 FROM users WHERE id = $2::int AND is_system)
+		AND EXISTS (SELECT 1 FROM user_notification_optouts
+			WHERE user_id = $1 AND notification_type = '` + NotificationAutomation + `')
 	 )`
 
 // CreateUserNotification inserts a single notification.

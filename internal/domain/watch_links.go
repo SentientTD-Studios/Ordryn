@@ -100,7 +100,7 @@ func IsWatchingProject(ctx context.Context, userID, projectID int) (bool, error)
 // autoWatchTask subscribes a user who created, commented on, or claimed a task.
 // Only project tasks have other people to hear from, so personal tasks are skipped.
 func autoWatchTask(userID, taskID int) {
-	if userID <= 0 || taskID <= 0 {
+	if userID <= 0 || taskID <= 0 || storage.IsSystemUser(userID) {
 		return
 	}
 	pid, err := storage.GetTaskProjectID(taskID)
@@ -183,6 +183,7 @@ func notifyWatchersCompletion(actorID, taskID int, completed bool) {
 		}
 		notifyTaskWatchers(actorID, id, NotificationTaskUnblocked, "Unblocked: "+taskTitleOrID(id), "Blocker completed: "+title)
 		live.AfterTaskChangeLive(actorID, id, live.TypeTaskUpdated)
+		triggerAutomationUnblocked(actorID, id)
 	}
 }
 

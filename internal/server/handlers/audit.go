@@ -209,8 +209,15 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 			return "Sent to " + name + " · @mention"
 		case "status":
 			return "Sent to " + name + " · column move"
+		case "automation":
+			return "Sent to " + name + " · automation rule"
 		}
 		return "Sent to " + name
+	case "automation_rule":
+		if name, ok := meta["rule_name"].(string); ok && name != "" {
+			return "Automation rule ran · " + name
+		}
+		return "Automation rule ran"
 	case "agent_run_finished":
 		if s, ok := meta["status"].(string); ok && s == "failed" {
 			return agentEventName(meta) + " could not finish"

@@ -146,6 +146,8 @@ export type TaskComment = {
   author_role_name?: string
   /** True when an AI agent wrote the comment. */
   author_is_agent?: boolean
+  /** True when a project automation rule wrote the comment (author_is_agent is also set). */
+  author_is_system?: boolean
   deleted: boolean
   deleted_at?: string | null
   deleted_by_user_id?: number
@@ -1003,7 +1005,7 @@ export type AgentRun = {
   project_id: number
   task_id: number
   task_title: string
-  trigger: 'manual' | 'mention' | 'status'
+  trigger: 'manual' | 'mention' | 'status' | 'automation'
   triggered_by_id: number
   triggered_by: string
   note: string
@@ -1019,6 +1021,140 @@ export type AgentRun = {
 export type TaskAgentRuns = {
   runs: AgentRun[]
   agents: { id: number; name: string; handle: string }[]
+}
+
+export type AutomationEventTrigger =
+  | 'task.created'
+  | 'task.status_changed'
+  | 'task.completed'
+  | 'task.reopened'
+  | 'task.claimed'
+  | 'task.unclaimed'
+  | 'task.due_changed'
+  | 'task.tagged'
+  | 'task.sprint_changed'
+  | 'task.commented'
+  | 'task.unblocked'
+
+export type AutomationTimedTrigger =
+  | 'time.overdue'
+  | 'time.due_soon'
+  | 'time.completed_ago'
+  | 'time.in_status'
+  | 'time.inactive'
+  | 'time.sprint_ended'
+
+export type AutomationTriggerType = AutomationEventTrigger | AutomationTimedTrigger
+
+export type AutomationTriggerConfig = {
+  days?: number
+  from_status_ids?: number[]
+  to_status_ids?: number[]
+  tag_ids?: number[]
+}
+
+export type AutomationConditions = {
+  status_ids?: number[]
+  exclude_status_ids?: number[]
+  min_priority?: number
+  tags_any?: number[]
+  tags_none?: number[]
+  sprint?: '' | 'none' | 'current' | 'any' | 'specific'
+  sprint_id?: number
+  assignee?: '' | 'unassigned' | 'assigned' | 'user'
+  assignee_id?: number
+  field_key?: string
+  field_value?: string
+  has_due?: '' | 'yes' | 'no'
+  completion?: '' | 'open' | 'done'
+  task_kind?: '' | 'root' | 'subtask'
+}
+
+export type AutomationActionType =
+  | 'set_status'
+  | 'set_priority'
+  | 'add_tag'
+  | 'remove_tag'
+  | 'assign'
+  | 'unassign'
+  | 'set_sprint'
+  | 'set_due'
+  | 'complete'
+  | 'reopen'
+  | 'archive'
+  | 'comment'
+  | 'notify'
+  | 'queue_agent'
+
+export type AutomationAction = {
+  type: AutomationActionType
+  status_id?: number
+  priority?: number
+  tag_id?: number
+  user_id?: number
+  sprint?: 'current' | 'next' | 'backlog' | 'specific'
+  sprint_id?: number
+  days?: number
+  body?: string
+  target?: 'watchers' | 'assignee'
+  agent_id?: number
+}
+
+/** Create / PATCH body; omitted fields keep their value. */
+export type AutomationRuleInput = {
+  name?: string
+  enabled?: boolean
+  trigger_type?: AutomationTriggerType
+  trigger_config?: AutomationTriggerConfig
+  conditions?: AutomationConditions
+  actions?: AutomationAction[]
+  recipe_id?: string
+}
+
+export type AutomationRule = {
+  id: number
+  project_id: number
+  name: string
+  enabled: boolean
+  position: number
+  trigger_type: AutomationTriggerType
+  trigger_config: AutomationTriggerConfig
+  conditions: AutomationConditions
+  actions: AutomationAction[]
+  recipe_id: string
+  created_by_id: number
+  updated_by_id: number
+  created_at: string
+  updated_at: string
+  run_count: number
+  error_count: number
+  consecutive_errors: number
+  last_run_at: string | null
+  last_error: string
+  /** Set when the system paused the rule (error streak or hourly limit). */
+  paused_reason: string
+}
+
+export type AutomationChange = {
+  action: AutomationActionType
+  field?: string
+  from?: string
+  to?: string
+  error?: string
+}
+
+export type AutomationRun = {
+  id: number
+  rule_id: number
+  rule_name: string
+  project_id: number
+  task_id: number
+  task_title: string
+  trigger: AutomationTriggerType
+  outcome: 'applied' | 'error'
+  changes: AutomationChange[]
+  error: string
+  created_at: string
 }
 
 export type DeviceStatus = {

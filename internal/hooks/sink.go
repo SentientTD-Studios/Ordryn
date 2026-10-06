@@ -84,3 +84,8 @@ func PostAgentWebhook(webhookURL, signingSecret, eventType, eventID string, body
 	})
 	return err
 }
+
+// PublicTaskURL is a task's absolute URL, or a relative one when PUBLIC_URL is unset.
+func PublicTaskURL(taskID int) string {
+	return publicTaskURL(taskID)
+}

@@ -726,12 +726,15 @@ func HasProjectPerm(projectID int, role, perm string) bool {
 	if role == RoleOwner {
 		return ValidProjectPerm(perm)
 	}
+	if role == RoleAutomation {
+		return automationPerms[perm]
+	}
 	return permListContains(RolePermissionList(projectID, role), perm)
 }
 
 // RoleCanWriteTask is the project-aware write check. Personal tasks use projectID 0.
 func RoleCanWriteTask(projectID int, role string) bool {
-	if role == RoleOwner || role == RoleEditor {
+	if role == RoleOwner || role == RoleEditor || role == RoleAutomation {
 		return true
 	}
 	if role == "" || role == RoleViewer {
@@ -1195,6 +1198,10 @@ func slugInList(slugs []string, slug string) bool {
 func StatusMoveAllowedByGate(fromGate, toGate *ProjectStatusGate, role string) (leaveOK, enterOK bool) {
 	leaveOK = true
 	enterOK = true
+	// Rules are written by project managers, who bypass gates themselves.
+	if role == RoleAutomation {
+		return true, true
+	}
 	if fromGate != nil && len(fromGate.LeaveRoleSlugs) > 0 {
 		leaveOK = slugInList(fromGate.LeaveRoleSlugs, role)
 	}

@@ -105,6 +105,10 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#ai-agents"><code>/api/v2/agent</code></a>, <code>/api/v2/agent/runs</code></td><td>Agent keys: who am I, my queue</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/agent/runs/{runId}/start|finish</code></a></td><td>Agent keys: start or finish a run</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#ai-agents"><code>/api/v2/mcp</code></a></td><td>Agent keys: Model Context Protocol endpoint</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#automation"><code>/api/v2/projects/{id}/automations</code></a></td><td>List / create automation rules (managers)</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span> <span class="badge bg-danger">DELETE</span></td><td><a href="#automation"><code>/api/v2/projects/{id}/automations/{ruleId}</code></a></td><td>Get, edit, or delete a rule</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#automation"><code>/api/v2/projects/{id}/automations/preview|reorder</code></a></td><td>Dry-run a rule / set rule order</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#automation"><code>/api/v2/projects/{id}/automations/runs</code></a></td><td>Rule run history</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks</code></a></td><td>List tasks (with filters and pagination)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks</code></a></td><td>Create a task</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}</code></a></td><td>Get one task</td></tr>
@@ -256,6 +260,26 @@ POST {{ basePath }}/api/v2/agent/runs/41/finish        { "status": "succeeded", 
                     </p>
                     <pre class="api-docs-pre"><code>claude mcp add --transport http gotodo-release_bot https://todo.example.com{{ basePath }}/api/v2/mcp \
   --header "Authorization: Bearer gotodo_…"</code></pre>
+
+                    <h2 id="automation" class="h4 mt-4">Automation rules</h2>
+                    <p>
+                        Project managers manage rules at <code>/api/v2/projects/{id}/automations</code> (project settings →
+                        <strong>Rules</strong> in the app). A rule is <code>{ name, enabled, trigger_type, trigger_config,
+                        conditions, actions }</code>: up to 25 per project and 5 actions per rule. Event triggers are
+                        <code>task.*</code> names (plus <code>task.unblocked</code>). Timed triggers (<code>time.overdue</code>,
+                        <code>time.due_soon</code>, <code>time.completed_ago</code>, <code>time.in_status</code>,
+                        <code>time.inactive</code>, <code>time.sprint_ended</code>) take <code>trigger_config.days</code>, are
+                        checked every 15 minutes, and act once per task per episode.
+                    </p>
+                    <p>
+                        Actions run as the protected site account <code>@automation</code>, which holds a built-in role on every
+                        project (edit, status, sprint, claim, complete, archive; never delete or manage). Its changes show as
+                        <em>Automation</em> in history and never trigger other rules. Each change is logged at
+                        <code>GET …/automations/runs</code>. <code>POST …/automations/preview</code> takes the same body and
+                        returns the tasks the rule would match, without changing anything. Rules pause themselves after 10
+                        failed runs in a row or 200 runs in an hour (<code>paused_reason</code>), and turning a rule back on clears
+                        the streak. Project-scoped API keys can't reach these endpoints.
+                    </p>
 
                     <h2 id="session-auth" class="h4 mt-4">Session auth (SPA)</h2>
                     <p>

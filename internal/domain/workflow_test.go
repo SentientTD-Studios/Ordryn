@@ -296,6 +296,15 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "seed: %v\n", err)
 		os.Exit(1)
 	}
+	// After the fixed-id seed users so the automation account gets its own id.
+	if err := storage.CreateAutomationTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "automation: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := storage.EnsureSystemUser(); err != nil {
+		fmt.Fprintf(os.Stderr, "automation user: %v\n", err)
+		os.Exit(1)
+	}
 
 	code := m.Run()
 	_ = db.Stop()
