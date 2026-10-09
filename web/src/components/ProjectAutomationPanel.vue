@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import Sortable from 'sortablejs'
 import { api } from '@/api/client'
 import type {
   AutomationRule,
@@ -54,6 +55,9 @@ const addingRecipe = ref<string | null>(null)
 const editing = ref<'new' | number | null>(null)
 const editorInitial = ref<RuleDraft | null>(null)
 const runFilter = ref(0)
+const ruleListEl = ref<HTMLElement | null>(null)
+const reordering = ref(false)
+let sortable: Sortable | null = null
 
 const kanban = computed(() => (props.project.workflow_mode || 'classic') === 'kanban')
 const archived = computed(() => !!props.project.archived)
@@ -195,18 +199,62 @@ async function removeRule(rule: AutomationRule) {
   }
 }
 
-async function move(rule: AutomationRule, delta: number) {
-  const ids = rules.value.map((r) => r.id)
-  const i = ids.indexOf(rule.id)
-  const j = i + delta
-  if (i < 0 || j < 0 || j >= ids.length) return
-  ;[ids[i], ids[j]] = [ids[j], ids[i]]
+async function persistOrder(ids: number[]) {
+  const previous = rules.value
+  const byId = new Map(previous.map((r) => [r.id, r]))
+  rules.value = ids.map((id) => byId.get(id)!).filter(Boolean)
+  reordering.value = true
   try {
     rules.value = await api.reorderAutomationRules(props.project.id, ids)
   } catch (err) {
+    rules.value = previous
     toast.push(errMsg(err, 'Could not reorder rules'), 'error')
+  } finally {
+    reordering.value = false
   }
 }
+
+function destroySortable() {
+  sortable?.destroy()
+  sortable = null
+}
+
+/** The rule list unmounts while the editor is open, so (re)attach whenever the element changes. */
+watch(ruleListEl, (el) => {
+  destroySortable()
+  if (!el) return
+  sortable = Sortable.create(el, {
+    handle: '.rule-drag-handle',
+    draggable: '.rule-reorder-item',
+    animation: 150,
+    onEnd(evt) {
+      const from = evt.oldDraggableIndex
+      const to = evt.newDraggableIndex
+      if (from === undefined || to === undefined || from === to) return
+      // Put the node back where Vue rendered it; the reactive reorder below moves it for real.
+      const parent = evt.from
+      parent.removeChild(evt.item)
+      parent.insertBefore(evt.item, parent.children[from] ?? null)
+      const ids = rules.value.map((r) => r.id)
+      const [id] = ids.splice(from, 1)
+      ids.splice(to, 0, id)
+      void persistOrder(ids)
+    },
+  })
+})
+
+function move(index: number, delta: number) {
+  const next = index + delta
+  if (reordering.value || next < 0 || next >= rules.value.length) return
+  const ids = rules.value.map((r) => r.id)
+  const [id] = ids.splice(index, 1)
+  ids.splice(next, 0, id)
+  void persistOrder(ids)
+}
+
+watch(reordering,(busy) => sortable?.option('disabled', busy))
+
+onBeforeUnmount(destroySortable)
 
 /** Creates any tags the recipe needs, then its rules (or opens the editor when it needs a choice). */
 async function addRecipe(recipe: Recipe) {
@@ -286,14 +334,22 @@ function lastRunLabel(rule: AutomationRule) {
       </div>
 
       <p v-if="loading && !rules.length" class="small text-muted">Loading rules…</p>
-      <ul v-else class="list-group mb-3">
+      <ul v-else ref="ruleListEl" class="list-group mb-3">
         <li
           v-for="(r, i) in rules"
           :key="r.id"
-          class="list-group-item"
+          class="list-group-item rule-reorder-item"
           :class="{ 'automation-rule--off': !r.enabled }"
         >
           <div class="d-flex flex-wrap align-items-start gap-2">
+            <span
+              v-if="rules.length > 1"
+              class="rule-drag-handle text-muted pt-1"
+              title="Drag to reorder"
+              aria-label="Drag to reorder rule"
+            >
+              <i class="bi bi-grip-vertical" />
+            </span>
             <div class="form-check form-switch mb-0 pt-1">
               <input
                 :id="`rule-on-${r.id}`"
@@ -326,16 +382,22 @@ function lastRunLabel(rule: AutomationRule) {
               </div>
             </div>
             <div class="d-flex gap-1 flex-shrink-0">
-              <div class="btn-group btn-group-sm">
-                <button type="button" class="btn btn-outline-secondary" :disabled="i === 0" aria-label="Move up" @click="move(r, -1)">
+              <div v-if="rules.length > 1" class="btn-group btn-group-sm">
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="i === 0 || reordering"
+                  :aria-label="`Move ${r.name} up`"
+                  @click="move(i, -1)"
+                >
                   <i class="bi bi-arrow-up" />
                 </button>
                 <button
                   type="button"
                   class="btn btn-outline-secondary"
-                  :disabled="i === rules.length - 1"
-                  aria-label="Move down"
-                  @click="move(r, 1)"
+                  :disabled="i === rules.length - 1 || reordering"
+                  :aria-label="`Move ${r.name} down`"
+                  @click="move(i, 1)"
                 >
                   <i class="bi bi-arrow-down" />
                 </button>
@@ -363,7 +425,7 @@ function lastRunLabel(rule: AutomationRule) {
           <i class="bi bi-plus-lg me-1" />New rule
         </button>
         <span v-if="atLimit" class="small text-muted">A project can have up to {{ MAX_RULES }} rules.</span>
-        <span v-else-if="rules.length > 1" class="small text-muted">Rules run top to bottom; later rules see earlier changes.</span>
+        <span v-else-if="rules.length > 1" class="small text-muted">Rules run top to bottom; later rules see earlier changes. Drag to reorder.</span>
       </div>
 
       <details class="mb-4" :open="!rules.length">
@@ -434,6 +496,12 @@ function lastRunLabel(rule: AutomationRule) {
 </template>
 
 <style scoped>
+.rule-drag-handle {
+  cursor: grab;
+}
+.rule-drag-handle:active {
+  cursor: grabbing;
+}
 .automation-rule--off {
   opacity: 0.7;
 }
