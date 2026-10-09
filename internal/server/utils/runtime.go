@@ -2,7 +2,6 @@ package utils
 
 import (
 	"net/url"
-	"os"
 	"strings"
 
 	"GoTodo/internal/config"
@@ -70,7 +69,7 @@ func GetRuntimeMode() string {
 	return activeMode
 }
 
-// ResolveMode returns the runtime mode from --mode / GOTODO_MODE (default: full).
+// ResolveMode returns the runtime mode from --mode / ORDRYN_MODE (or legacy GOTODO_MODE), default full.
 func ResolveMode(args []string) string {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -81,7 +80,7 @@ func ResolveMode(args []string) string {
 			return normalizeMode(args[i+1])
 		}
 	}
-	if v := os.Getenv("GOTODO_MODE"); v != "" {
+	if v := config.BrandEnv("MODE"); v != "" {
 		return normalizeMode(v)
 	}
 	return ModeFull

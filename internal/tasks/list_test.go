@@ -784,6 +784,101 @@ func TestSprintFilterTotalIncludesOrphanSubtasksAndSearch(t *testing.T) {
 	}
 }
 
+func TestClaimFilter(t *testing.T) {
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer storage.CloseDatabase(pool)
+
+	ctx := context.Background()
+	const projectID = 90
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO projects (id, user_id, name, workflow_mode) VALUES ($1, 1, 'Claim board', 'kanban')`, projectID); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO project_members (project_id, user_id, role) VALUES ($1, 1, 'owner'), ($1, 2, 'editor')`, projectID); err != nil {
+		t.Fatalf("insert members: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM tasks WHERE project_id = $1", projectID)
+		_, _ = pool.Exec(ctx, "DELETE FROM projects WHERE id = $1", projectID)
+	})
+
+	insert := func(title string, claimedBy *int, parentID *int, position int) int {
+		t.Helper()
+		var id int
+		if err := pool.QueryRow(ctx,
+			`INSERT INTO tasks (title, description, user_id, project_id, claimed_by, parent_id, position)
+			 VALUES ($1, '', 1, $2, $3, $4, $5) RETURNING id`,
+			title, projectID, claimedBy, parentID, position).Scan(&id); err != nil {
+			t.Fatalf("insert %q: %v", title, err)
+		}
+		return id
+	}
+	me, other := 1, 2
+	mineID := insert("Claim mine", &me, nil, 1)
+	otherID := insert("Claim other", &other, nil, 2)
+	unclaimedID := insert("Claim nobody", nil, nil, 3)
+	childID := insert("Claim mine child", &me, &unclaimedID, 4)
+
+	userID := 1
+	pid := projectID
+	ids := func(list []tasks.Task) map[int]bool {
+		out := make(map[int]bool, len(list))
+		for _, task := range list {
+			out[task.ID] = true
+		}
+		return out
+	}
+
+	mine, total, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &userID, "UTC", tasks.ListFilters{
+		ProjectFilter: &pid,
+		ClaimFilter:   "me",
+	})
+	if err != nil {
+		t.Fatalf("claimed=me: %v", err)
+	}
+	got := ids(mine)
+	if !got[mineID] || !got[childID] || got[otherID] || got[unclaimedID] || total != 2 {
+		t.Fatalf("claimed=me: want mine root + orphan child (total 2), got %v total=%d", titles(mine), total)
+	}
+
+	none, total, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &userID, "UTC", tasks.ListFilters{
+		ProjectFilter: &pid,
+		ClaimFilter:   "none",
+	})
+	if err != nil {
+		t.Fatalf("claimed=none: %v", err)
+	}
+	got = ids(none)
+	if !got[unclaimedID] || got[mineID] || got[otherID] || total != 1 {
+		t.Fatalf("claimed=none: want only the unclaimed root, got %v total=%d", titles(none), total)
+	}
+
+	searched, total, err := tasks.SearchTasksForUserWithFilters(1, 50, "Claim", &userID, "UTC", tasks.ListFilters{
+		ProjectFilter: &pid,
+		ClaimFilter:   "me",
+	})
+	if err != nil {
+		t.Fatalf("search claimed=me: %v", err)
+	}
+	got = ids(searched)
+	if !got[mineID] || got[otherID] || got[unclaimedID] || total != 2 {
+		t.Fatalf("search claimed=me: got %v total=%d", titles(searched), total)
+	}
+}
+
+func TestNormalizeClaimFilter(t *testing.T) {
+	cases := map[string]string{"": "", "me": "me", " Mine ": "me", "none": "none", "unclaimed": "none", "bogus": ""}
+	for in, want := range cases {
+		if got := tasks.NormalizeClaimFilter(in); got != want {
+			t.Errorf("NormalizeClaimFilter(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func titles(list []tasks.Task) []string {
 	out := make([]string, len(list))
 	for i, task := range list {

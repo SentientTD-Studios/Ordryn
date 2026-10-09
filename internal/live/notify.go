@@ -4,10 +4,12 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"GoTodo/internal/hooks"
 	"GoTodo/internal/storage"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -200,6 +202,33 @@ func DispatchProjectHook(actorID, projectID int, typ string, meta *TaskHookMeta)
 		ev.Snapshot = snap
 	}
 	emitHook(ev)
+}
+
+// PrepareProjectHook resolves a project-level outbound event now, while the
+// project's destination settings still exist, and returns a func that emits
+// it. Use it when the change deletes those settings (project.deleted): call
+// the returned func only after the change commits, and drop it on failure.
+func PrepareProjectHook(actorID, projectID int, typ string, meta *TaskHookMeta) (fire func()) {
+	if projectID <= 0 || !wantOutboundHooks() {
+		return func() {}
+	}
+	ev := hookEvent(actorID, 0, projectID, typ, meta)
+	ev.EventID = uuid.NewString()
+	ev.OccurredAt = time.Now().UTC()
+	if snap, err := storage.GetHookProjectSnapshot(projectID); err == nil {
+		ev.Snapshot = snap
+	}
+	var prepared *hooks.Prepared
+	if hooks.HasWork() {
+		prepared = hooks.Prepare(ev)
+	}
+	return func() {
+		notifyHookListeners(ev)
+		if prepared.Len() > 0 {
+			go prepared.Send()
+		}
+		hooks.RunSinks(ev)
+	}
 }
 
 // AfterTaskChange notifies everyone who can currently see the task.

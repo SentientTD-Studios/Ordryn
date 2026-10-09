@@ -16,6 +16,8 @@ type ListFilters struct {
 	TagNameFilter      string
 	Sort               string
 	WorkflowClaimScope string // "mine" | "all" | ""
+	// ClaimFilter narrows to tasks claimed by the caller ("me") or nobody ("none").
+	ClaimFilter string
 	// SprintFilter: nil = no filter; &0 = backlog (no sprint); &n = sprint n.
 	SprintFilter *int
 	// IncludeSubtasks flattens matching children into the top-level list
@@ -86,6 +88,33 @@ func (f ListFilters) sprintCondition(tablePrefix string) string {
 		return fmt.Sprintf(" AND (%ssprint_id IS NULL)", prefix)
 	}
 	return fmt.Sprintf(" AND (%ssprint_id = %d)", prefix, *f.SprintFilter)
+}
+
+// NormalizeClaimFilter maps a claimed query value to "me", "none", or "".
+func NormalizeClaimFilter(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "me", "mine":
+		return "me"
+	case "none", "unclaimed":
+		return "none"
+	default:
+		return ""
+	}
+}
+
+func appendClaimCondition(where string, args []interface{}, f ListFilters, userID int, tablePrefix string) (string, []interface{}) {
+	prefix := ""
+	if tablePrefix != "" {
+		prefix = tablePrefix + "."
+	}
+	switch NormalizeClaimFilter(f.ClaimFilter) {
+	case "me":
+		args = append(args, userID)
+		where += fmt.Sprintf(" AND (%sclaimed_by = $%d)", prefix, len(args))
+	case "none":
+		where += fmt.Sprintf(" AND (%sclaimed_by IS NULL)", prefix)
+	}
+	return where, args
 }
 
 func matchesSprintFilter(sprintID int, filter *int) bool {
@@ -166,6 +195,9 @@ func (f ListFilters) shouldAppendOrphanSubtasks() bool {
 		return false
 	}
 	if f.SprintFilter != nil {
+		return true
+	}
+	if NormalizeClaimFilter(f.ClaimFilter) != "" {
 		return true
 	}
 	if normalizeListStatusFilter(f.StatusFilter) != "" {

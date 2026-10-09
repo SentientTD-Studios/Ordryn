@@ -212,6 +212,12 @@ const isKanbanProjectView = computed(() => {
   )
 })
 
+// The claim filter belongs to kanban boards; drop it when leaving one so it
+// doesn't linger as an invisible active filter on Home or classic projects.
+watch(isKanbanProjectView, (now, before) => {
+  if (before && !now && filters.claimed) setFilter('claimed', '')
+})
+
 const kanbanSurfaceTabs = computed(() => {
   const tabs: { viewKey: string; label: string; icon?: string }[] = []
   for (const ext of projectExtensions.value) {
@@ -355,6 +361,10 @@ function listApiParams(page: number, perPage: number) {
   // List defaults to incomplete; board still needs done-column cards.
   if (onKanbanBoard && params.status === 'incomplete') {
     delete params.status
+  }
+  // Claims only exist on kanban tasks; elsewhere the filter would hide personal work.
+  if (!inKanbanProject) {
+    delete params.claimed
   }
   const sprintId = kanbanSprintQueryValue(inKanbanProject, boardSprintKey.value)
   if (sprintId !== undefined) {
@@ -531,6 +541,11 @@ function taskMatchesCurrentFilters(task: Task): boolean {
     if (!Number.isNaN(pid) && task.project_id !== pid) return false
   }
   if (filters.priority && String(task.priority) !== filters.priority) return false
+  if (filters.claimed && isKanbanProjectView.value) {
+    const claimedBy = task.claimed_by ?? null
+    if (filters.claimed === 'me' && claimedBy !== user.value?.id) return false
+    if (filters.claimed === 'none' && claimedBy !== null) return false
+  }
   if (filters.tag) {
     const q = filters.tag.toLowerCase()
     const byId = String(parseInt(filters.tag, 10)) === filters.tag
@@ -585,6 +600,15 @@ function registerTaskAdded(task: Task) {
   if (!taskMatchesCurrentFilters(task) || tasks.value.some((t) => t.id === task.id)) return
   const withChildren = { ...task, children: task.children || [] }
   tasks.value = [...tasks.value, withChildren]
+}
+
+async function onBoardTaskCreated(task: Task) {
+  registerTaskAdded(task)
+  if (!taskMatchesCurrentFilters(task)) {
+    toast.push(`Added "${task.title}" (hidden by current filters)`, 'info')
+  }
+  await nextTick()
+  refreshSortable()
 }
 
 function removeTaskLocally(task: Task) {
@@ -1215,6 +1239,7 @@ async function saveCurrentView() {
         tag: filters.tag || undefined,
         sort: filters.sort || undefined,
         search: filters.search || undefined,
+        claimed: (isKanbanProjectView.value && filters.claimed) || undefined,
       },
     })
     toast.push('View saved successfully!', 'success')
@@ -1446,7 +1471,7 @@ onUnmounted(() => {
         <!-- Single Compact Header Toolbar: Stats Pills, Import/Export, Add Task -->
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
           <!-- Compact Inline Task Counts -->
-          <div class="d-flex align-items-center gap-1 flex-wrap text-muted small oryryn-task-stats">
+          <div class="d-flex align-items-center gap-1 flex-wrap text-muted small ordryn-task-stats">
             <span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-20 px-2 py-1">
               {{ total }} <span class="d-none d-sm-inline">tasks</span>
             </span>
@@ -1555,6 +1580,8 @@ onUnmounted(() => {
           :status="filters.status"
           :tag="filters.tag"
           :priority="filters.priority"
+          :claimed="filters.claimed"
+          :show-claim-filter="isKanbanProjectView"
           :due-date-preset="filters.due"
           :sort="filters.sort"
           :search="search"
@@ -1568,6 +1595,7 @@ onUnmounted(() => {
           @update:status="setFilterAndReload('status', $event)"
           @update:tag="setFilterAndReload('tag', $event)"
           @update:priority="setFilterAndReload('priority', $event)"
+          @update:claimed="setFilterAndReload('claimed', $event)"
           @update:due-date-preset="setFilterAndReload('due', $event)"
           @update:sort="setFilterAndReload('sort', $event)"
           @update:search="search = $event; setFilter('search', $event); reloadInitial()"
@@ -1819,6 +1847,7 @@ onUnmounted(() => {
             @task-updated="applyTaskUpdate"
             @board-reorder="applyBoardReorder"
             @toggle-select="toggleSelect"
+            @task-created="onBoardTaskCreated"
           />
           <div v-if="loadingMore" class="text-center py-2 text-muted small">
             <span class="spinner-border spinner-border-sm me-2" />Loading more tasks…

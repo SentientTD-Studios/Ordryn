@@ -14,6 +14,8 @@ const props = withDefaults(
     status: string
     tag: string
     priority: string
+    claimed?: string
+    showClaimFilter?: boolean
     dueDatePreset: string
     sort: string
     search: string
@@ -26,6 +28,8 @@ const props = withDefaults(
     hideTaskFilters?: boolean
   }>(),
   {
+    claimed: '',
+    showClaimFilter: false,
     showViewMode: false,
     viewMode: 'list',
     tagByName: false,
@@ -38,6 +42,7 @@ const emit = defineEmits<{
   'update:status': [val: string]
   'update:tag': [val: string]
   'update:priority': [val: string]
+  'update:claimed': [val: string]
   'update:dueDatePreset': [val: string]
   'update:sort': [val: string]
   'update:search': [val: string]
@@ -80,7 +85,7 @@ function getDueDateLabel(preset: string) {
   <div class="ordryn-filter-bar mb-2">
     <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
       <!-- Search Input & Filter Fold Toggle Button -->
-        <div v-if="!hideTaskFilters" class="d-flex align-items-center gap-2 flex-grow-1 oryryn-filter-search">
+        <div v-if="!hideTaskFilters" class="d-flex align-items-center gap-2 flex-grow-1 ordryn-filter-search">
         <div class="position-relative flex-grow-1">
           <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted" />
           <input
@@ -265,6 +270,23 @@ function getDueDateLabel(preset: string) {
           <li><button class="dropdown-item small text-danger" @click="emit('update:priority', '3')">High Priority</button></li>
           <li><button class="dropdown-item small text-warning" @click="emit('update:priority', '2')">Medium Priority</button></li>
           <li><button class="dropdown-item small text-secondary" @click="emit('update:priority', '1')">Low Priority</button></li>
+        </ul>
+      </div>
+
+      <!-- Claimed Dropdown Pill (kanban projects) -->
+      <div v-if="showClaimFilter" class="dropdown d-inline-block">
+        <button
+          class="filter-pill-btn dropdown-toggle"
+          :class="{ active: claimed !== '' }"
+          type="button"
+          data-bs-toggle="dropdown"
+        >
+          <span class="d-none d-sm-inline">CLAIMED: </span><span class="fw-bold">{{ claimed === 'me' ? 'ME' : claimed === 'none' ? 'NOBODY' : 'ANYONE' }}</span>
+        </button>
+        <ul class="dropdown-menu shadow-sm border-0">
+          <li><button class="dropdown-item small" @click="emit('update:claimed', '')">Anyone</button></li>
+          <li><button class="dropdown-item small" @click="emit('update:claimed', 'me')">Claimed by me</button></li>
+          <li><button class="dropdown-item small" @click="emit('update:claimed', 'none')">Unclaimed</button></li>
         </ul>
       </div>
 

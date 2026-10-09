@@ -239,6 +239,35 @@
           </div>
         </div>
         </div>
+
+        <div v-if="canAddToColumn(col)" class="kanban-add-card mt-2">
+          <form
+            v-if="addingStatusId === col.id"
+            @submit.prevent="createCard(col)"
+          >
+            <input
+              :ref="(el) => setAddInputEl(col.id, el)"
+              v-model="newCardTitle"
+              type="text"
+              class="form-control form-control-sm"
+              :placeholder="`New task in ${col.name}`"
+              :aria-label="`New task title for ${col.name}`"
+              maxlength="500"
+              :disabled="creatingCard"
+              @keydown.esc.stop.prevent="cancelAddCard"
+              @blur="onAddCardBlur"
+            />
+            <div class="small text-muted mt-1">Enter to add · Esc to close</div>
+          </form>
+          <button
+            v-else
+            type="button"
+            class="btn btn-sm btn-link text-decoration-none text-muted w-100 text-start px-1 kanban-add-card-btn"
+            @click="startAddCard(col.id)"
+          >
+            <i class="bi bi-plus-lg me-1" />Add card
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -286,6 +315,7 @@ const emit = defineEmits<{
   'task-updated': [task: Task]
   'board-reorder': [payload: { statusId: number; taskIds: number[] }]
   'toggle-select': [id: number, checked: boolean]
+  'task-created': [task: Task]
 }>()
 
 const toast = useToast()
@@ -322,6 +352,71 @@ const canDrag = computed(
 )
 const canClaim = computed(() => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_CLAIM))
 const canReorder = computed(() => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_REORDER))
+const canCreate = computed(
+  () => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_CREATE) && !boardProject.value?.archived,
+)
+
+const addingStatusId = ref<number | null>(null)
+const newCardTitle = ref('')
+const creatingCard = ref(false)
+const addInputEls = new Map<number, HTMLInputElement>()
+
+/** Same rule as the task sidebar: new tasks may land in the default column or any column the member could move a task into. */
+function canAddToColumn(col: ProjectStatus): boolean {
+  if (!canCreate.value) return false
+  return !!col.is_default || canMoveTaskStatus(boardProject.value, null, col, user.value)
+}
+
+function setAddInputEl(statusId: number, el: unknown) {
+  if (el instanceof HTMLInputElement) addInputEls.set(statusId, el)
+  else addInputEls.delete(statusId)
+}
+
+async function startAddCard(statusId: number) {
+  addingStatusId.value = statusId
+  newCardTitle.value = ''
+  await nextTick()
+  addInputEls.get(statusId)?.focus()
+}
+
+function cancelAddCard() {
+  addingStatusId.value = null
+  newCardTitle.value = ''
+}
+
+function onAddCardBlur() {
+  // Keep the input open while a create is in flight or a title is half-typed.
+  if (creatingCard.value || newCardTitle.value.trim()) return
+  cancelAddCard()
+}
+
+async function createCard(col: ProjectStatus) {
+  const title = newCardTitle.value.trim()
+  if (!title || creatingCard.value) return
+  const sprintKey = props.sprintFilter
+  const boardSprintId = sprintKey && sprintKey !== 'backlog' ? parseInt(sprintKey, 10) : null
+  const canSetSprint = hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_SPRINT)
+  creatingCard.value = true
+  try {
+    const task = await api.createTask({
+      title,
+      project_id: props.projectId,
+      status_id: col.is_default ? undefined : col.id,
+      sprint_id: boardSprintId && canSetSprint ? boardSprintId : undefined,
+    })
+    newCardTitle.value = ''
+    emit('task-created', task)
+    if (boardSprintId && !canSetSprint) {
+      toast.push('Task added to the backlog (you cannot assign sprints)', 'info')
+    }
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not add task', 'error')
+  } finally {
+    creatingCard.value = false
+    await nextTick()
+    if (addingStatusId.value === col.id) addInputEls.get(col.id)?.focus()
+  }
+}
 
 const parentTitleById = computed(() => {
   const titles = new Map<number, string>()
@@ -706,6 +801,12 @@ onBeforeUnmount(destroySortables)
   overflow-y: auto;
   position: relative;
   z-index: 1;
+}
+
+.kanban-add-card-btn:hover,
+.kanban-add-card-btn:focus-visible {
+  color: var(--ordryn-text) !important;
+  background: var(--ordryn-muted-bg);
 }
 
 .kanban-column-empty {

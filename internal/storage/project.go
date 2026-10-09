@@ -261,8 +261,45 @@ func DeleteProject(id int, userID int) error {
 			JOIN projects p ON p.id = pa.project_id
 			WHERE p.id = $1 AND p.user_id = $2)`, id, userID)
 
-	_, err = pool.Exec(context.Background(), "DELETE FROM projects WHERE id = $1 AND user_id = $2", id, userID)
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("failed to delete project: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Tasks outlive their project (project_id is SET NULL), but status_id is
+	// RESTRICT so a status can't vanish under live tasks. Detach them from the
+	// board first, the same as moving a task out of a kanban project.
+	_, err = tx.Exec(ctx, `
+		UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL,
+			date_modified = NOW() AT TIME ZONE 'UTC'
+		WHERE project_id = $1
+		  AND EXISTS (SELECT 1 FROM projects WHERE id = $1 AND user_id = $2)`, id, userID)
+	if err != nil {
+		return fmt.Errorf("failed to detach project tasks: %v", err)
+	}
+	tag, err := tx.Exec(ctx, "DELETE FROM projects WHERE id = $1 AND user_id = $2", id, userID)
+	if err != nil {
+		return fmt.Errorf("failed to delete project: %v", err)
+	}
+	if tag.RowsAffected() > 0 {
+		// These extension tables use project_id 0 for site/personal rows, so they
+		// can't carry a foreign key; clear the project's rows by hand. That
+		// includes webhook secrets and inbound callback tokens.
+		for _, table := range []string{
+			"extension_secrets",
+			"extension_callback_tokens",
+			"extension_member_settings",
+			"extension_deliveries",
+			"hook_task_messages",
+		} {
+			if _, err = tx.Exec(ctx, "DELETE FROM "+table+" WHERE project_id = $1", id); err != nil {
+				return fmt.Errorf("failed to clear %s for project: %v", table, err)
+			}
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
 		return fmt.Errorf("failed to delete project: %v", err)
 	}
 	return nil

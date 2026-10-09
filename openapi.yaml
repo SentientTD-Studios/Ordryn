@@ -2,8 +2,8 @@ openapi: 3.0.3
 info:
   title: Ordryn / GoTodo API
   description: |
-    JSON API for Ordryn (GoTodo). Self-host with `GOTODO_MODE=full` (UI + API) or
-    `GOTODO_MODE=api` (API only). Redis is required for `/api/v2` authentication,
+    JSON API for Ordryn (GoTodo). Self-host with `ORDRYN_MODE=full` (UI + API) or
+    `ORDRYN_MODE=api` (API only). Redis is required for `/api/v2` authentication,
     rate limiting, and live SSE fan-out.
 
     Auth: session cookie (SPA login/register) or `Authorization: Bearer <api_key>`.
@@ -1428,6 +1428,15 @@ paths:
           description: >
             When mine, hide unclaimed kanban-project tasks (classic tasks unchanged).
             Use all for the kanban board backlog. Default is no claim filter when omitted.
+        - name: claimed
+          in: query
+          schema:
+            type: string
+            enum: [me, none]
+          description: >
+            Only tasks claimed by the caller (me) or by nobody (none). Claims exist on
+            kanban-project tasks only. Matching subtasks whose parent does not match are
+            returned as their own rows. Omit for no claim filter.
         - name: include_subtasks
           in: query
           schema:
@@ -8910,6 +8919,9 @@ components:
           type: string
         search:
           type: string
+        claimed:
+          type: string
+          enum: [me, none]
 
     SavedView:
       type: object
