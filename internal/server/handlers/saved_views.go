@@ -12,6 +12,7 @@ import (
 
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/tasks"
 )
 
 const (
@@ -261,6 +262,12 @@ func validateSavedViewFilter(filter *storage.SavedViewFilter) (storage.SavedView
 	normalized.Sort = normalizeSortFilter(rawSort)
 	if rawSort != "" && normalized.Sort == "" {
 		return storage.SavedViewFilter{}, errors.New("filter.sort must be \"priority\".")
+	}
+
+	rawClaimed := strings.TrimSpace(filter.Claimed)
+	normalized.Claimed = tasks.NormalizeClaimFilter(rawClaimed)
+	if rawClaimed != "" && normalized.Claimed == "" {
+		return storage.SavedViewFilter{}, errors.New("filter.claimed must be \"me\" or \"none\".")
 	}
 	return normalized, nil
 }

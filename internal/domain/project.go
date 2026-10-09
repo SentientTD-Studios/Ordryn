@@ -323,9 +323,17 @@ func DeleteProject(ctx context.Context, userID, projectID int) error {
 	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
 	}
-	live.DispatchProjectHook(userID, projectID, live.TypeProjectDeleted, nil)
-	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectDeleted)
-	return storage.DeleteProject(projectID, proj.OwnerUserID)
+	// Membership cascades with the project, so capture the live audience first.
+	members, _ := storage.ProjectMemberUserIDs(projectID)
+	// Destination settings and secrets are deleted with the project, so resolve
+	// the outbound hook first and fire it only once the delete has committed.
+	fireDeleted := live.PrepareProjectHook(userID, projectID, live.TypeProjectDeleted, nil)
+	if err := storage.DeleteProject(projectID, proj.OwnerUserID); err != nil {
+		return err
+	}
+	fireDeleted()
+	live.AfterProjectChangeLive(userID, projectID, live.TypeProjectDeleted, members...)
+	return nil
 }
 
 // ArchiveProject marks a project archived (owner only), tags its tasks, and blocks new work.

@@ -230,6 +230,7 @@ func appendFilterSQL(where string, args []interface{}, filters ListFilters, time
 	where += filters.priorityCondition(tablePrefix)
 	where += filters.sprintCondition(tablePrefix)
 	where, args = appendTagCondition(where, args, filters, userID, tablePrefix)
+	where, args = appendClaimCondition(where, args, filters, userID, tablePrefix)
 	where = appendArchivedExclusion(where, filters, tablePrefix)
 	if strings.ToLower(strings.TrimSpace(filters.WorkflowClaimScope)) == "mine" {
 		args = append(args, userID)

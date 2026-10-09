@@ -141,7 +141,7 @@ async function onLogout() {
       <div class="d-flex align-items-center gap-2 gap-sm-3 min-w-0">
         <button
           type="button"
-          class="btn btn-link text-decoration-none p-1 d-md-none oryryn-header-menu-btn"
+          class="btn btn-link text-decoration-none p-1 d-md-none ordryn-header-menu-btn"
           :aria-label="props.mobileNavOpen ? 'Close menu' : 'Open menu'"
           :aria-expanded="!!props.mobileNavOpen"
           aria-controls="ordryn-mobile-nav"
@@ -154,7 +154,7 @@ async function onLogout() {
           <div class="brand-logo-icon d-flex align-items-center justify-content-center rounded-3 px-2 py-1 flex-shrink-0" style="background: var(--ordryn-accent-light); color: var(--ordryn-accent); font-weight: 800;">
             <i class="bi bi-layers-half" style="font-size: 1.2rem;" />
           </div>
-          <span class="fw-bold fs-5 tracking-tight text-truncate oryryn-brand-name">{{ siteName }}</span>
+          <span class="fw-bold fs-5 tracking-tight text-truncate ordryn-brand-name">{{ siteName }}</span>
         </RouterLink>
 
         <!-- Top Navigation Links (Desktop) -->

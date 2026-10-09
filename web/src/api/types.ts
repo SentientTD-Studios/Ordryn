@@ -473,6 +473,8 @@ export type SavedViewFilter = {
   tag?: string
   sort?: string
   search?: string
+  /** Kanban projects only: `me` (claimed by caller) or `none` (unclaimed). */
+  claimed?: string
 }
 
 export type SavedView = {

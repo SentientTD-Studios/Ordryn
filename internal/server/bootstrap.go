@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"GoTodo/internal/config"
@@ -15,14 +14,14 @@ const bootstrapAPIKeyName = "bootstrap"
 
 // RunBootstrap applies optional first-boot env configuration (idempotent).
 //
-//	GOTODO_BOOTSTRAP_ADMIN_EMAIL / GOTODO_BOOTSTRAP_ADMIN_PASSWORD — create admin if missing
-//	GOTODO_BOOTSTRAP_ENABLE_API=true — set site_settings.enable_api
-//	GOTODO_BOOTSTRAP_CREATE_API_KEY=true — mint a named "bootstrap" API key (once) for that admin
+//	ORDRYN_BOOTSTRAP_ADMIN_EMAIL / ORDRYN_BOOTSTRAP_ADMIN_PASSWORD — create admin if missing
+//	ORDRYN_BOOTSTRAP_ENABLE_API=true — set site_settings.enable_api
+//	ORDRYN_BOOTSTRAP_CREATE_API_KEY=true — mint a named "bootstrap" API key (once) for that admin
 func RunBootstrap() error {
-	email := strings.TrimSpace(os.Getenv("GOTODO_BOOTSTRAP_ADMIN_EMAIL"))
-	password := os.Getenv("GOTODO_BOOTSTRAP_ADMIN_PASSWORD")
-	enableAPI := strings.EqualFold(strings.TrimSpace(os.Getenv("GOTODO_BOOTSTRAP_ENABLE_API")), "true")
-	createKey := strings.EqualFold(strings.TrimSpace(os.Getenv("GOTODO_BOOTSTRAP_CREATE_API_KEY")), "true")
+	email := strings.TrimSpace(config.BrandEnv("BOOTSTRAP_ADMIN_EMAIL"))
+	password := config.BrandEnv("BOOTSTRAP_ADMIN_PASSWORD")
+	enableAPI := strings.EqualFold(strings.TrimSpace(config.BrandEnv("BOOTSTRAP_ENABLE_API")), "true")
+	createKey := strings.EqualFold(strings.TrimSpace(config.BrandEnv("BOOTSTRAP_CREATE_API_KEY")), "true")
 
 	if email == "" && !enableAPI && !createKey {
 		return nil
@@ -31,7 +30,7 @@ func RunBootstrap() error {
 	var adminID int
 	if email != "" {
 		if password == "" {
-			return fmt.Errorf("GOTODO_BOOTSTRAP_ADMIN_PASSWORD is required when GOTODO_BOOTSTRAP_ADMIN_EMAIL is set")
+			return fmt.Errorf("ORDRYN_BOOTSTRAP_ADMIN_PASSWORD is required when ORDRYN_BOOTSTRAP_ADMIN_EMAIL is set")
 		}
 		exists, err := storage.UserExistsByEmail(email)
 		if err != nil {
@@ -74,7 +73,7 @@ func RunBootstrap() error {
 	if createKey {
 		if adminID == 0 {
 			if email == "" {
-				return fmt.Errorf("GOTODO_BOOTSTRAP_CREATE_API_KEY requires GOTODO_BOOTSTRAP_ADMIN_EMAIL")
+				return fmt.Errorf("ORDRYN_BOOTSTRAP_CREATE_API_KEY requires ORDRYN_BOOTSTRAP_ADMIN_EMAIL")
 			}
 			var err error
 			adminID, err = storage.GetUserIDByEmail(email)

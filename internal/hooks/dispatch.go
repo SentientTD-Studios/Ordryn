@@ -35,11 +35,15 @@ func Dispatch(ev Event) {
 		ev.OccurredAt = time.Now().UTC()
 	}
 	for _, entry := range extensions.LoadedEntries() {
-		deliverToExtension(entry, ev)
+		deliverToExtension(entry, ev, sendDestination)
 	}
 }
 
-func deliverToExtension(entry extensions.Entry, ev Event) {
+// sendFunc hands a resolved delivery onward: sendDestination for live events,
+// or a collector when preparing deliveries ahead of a project delete.
+type sendFunc func(entry extensions.Entry, ctx destContext)
+
+func deliverToExtension(entry extensions.Entry, ev Event, send sendFunc) {
 	if !entry.Loaded || entry.Manifest.Delivery == nil {
 		return
 	}
@@ -49,7 +53,7 @@ func deliverToExtension(entry extensions.Entry, ev Event) {
 		return
 	}
 	if ev.isSiteEvent() {
-		deliverSite(entry, site, ev)
+		deliverSite(entry, site, ev, send)
 		return
 	}
 	snap, err := snapshotFor(ev)
@@ -68,11 +72,11 @@ func deliverToExtension(entry extensions.Entry, ev Event) {
 		ev.OwnerID = snap.OwnerID
 	}
 	if ev.ProjectID <= 0 {
-		deliverPersonal(entry, site, ev, snap)
+		deliverPersonal(entry, site, ev, snap, send)
 		return
 	}
-	deliverProjectTeam(entry, site, ev, snap)
-	deliverProjectMembers(entry, site, ev, snap)
+	deliverProjectTeam(entry, site, ev, snap, send)
+	deliverProjectMembers(entry, site, ev, snap, send)
 }
 
 func snapshotFor(ev Event) (*storage.HookTaskSnapshot, error) {
@@ -106,7 +110,7 @@ func MemberDestinationsAllowed(projectID int, workflowMode string) bool {
 	return mode != storage.WorkflowKanban
 }
 
-func deliverSite(entry extensions.Entry, site storage.ExtensionSettings, ev Event) {
+func deliverSite(entry extensions.Entry, site storage.ExtensionSettings, ev Event, send sendFunc) {
 	if !shouldDeliverSite(entry.Manifest, site, ev) {
 		return
 	}
@@ -127,7 +131,7 @@ func deliverSite(entry extensions.Entry, site storage.ExtensionSettings, ev Even
 	actor := resolveActor(ev)
 	vars := eventVars(ev, ev.Snapshot, actor)
 	msg := Interpolate(tmpl, vars)
-	sendDestination(entry, destContext{
+	send(entry, destContext{
 		ProjectID: 0,
 		UserID:    0,
 		Event:     ev,
@@ -137,7 +141,7 @@ func deliverSite(entry extensions.Entry, site storage.ExtensionSettings, ev Even
 	})
 }
 
-func deliverProjectTeam(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot) {
+func deliverProjectTeam(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot, send sendFunc) {
 	project, err := storage.GetExtensionProjectSettings(entry.ID, ev.ProjectID)
 	if err != nil {
 		log.Printf("hooks: load project settings %s project=%d: %v", entry.ID, ev.ProjectID, err)
@@ -154,7 +158,7 @@ func deliverProjectTeam(entry extensions.Entry, site storage.ExtensionSettings, 
 	actor := applyMentions(resolveActor(ev), dest.MentionMap)
 	vars := eventVars(ev, snap, actor)
 	msg := Interpolate(tmpl, vars)
-	sendDestination(entry, destContext{
+	send(entry, destContext{
 		ProjectID: ev.ProjectID,
 		UserID:    0,
 		Event:     ev,
@@ -166,7 +170,7 @@ func deliverProjectTeam(entry extensions.Entry, site storage.ExtensionSettings, 
 	})
 }
 
-func deliverProjectMembers(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot) {
+func deliverProjectMembers(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot, send sendFunc) {
 	if !entry.Manifest.HasMemberSettings() {
 		return
 	}
@@ -199,7 +203,7 @@ func deliverProjectMembers(entry extensions.Entry, site storage.ExtensionSetting
 		actor := applyMentions(resolveActor(ev), dest.MentionMap)
 		vars := eventVars(ev, snap, actor)
 		msg := Interpolate(tmpl, vars)
-		sendDestination(entry, destContext{
+		send(entry, destContext{
 			ProjectID: ev.ProjectID,
 			UserID:    mem.UserID,
 			Event:     ev,
@@ -212,7 +216,7 @@ func deliverProjectMembers(entry extensions.Entry, site storage.ExtensionSetting
 	}
 }
 
-func deliverPersonal(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot) {
+func deliverPersonal(entry extensions.Entry, site storage.ExtensionSettings, ev Event, snap *storage.HookTaskSnapshot, send sendFunc) {
 	if !entry.Manifest.HasMemberSettings() {
 		return
 	}
@@ -238,7 +242,7 @@ func deliverPersonal(entry extensions.Entry, site storage.ExtensionSettings, ev 
 	actor := resolveActor(ev)
 	vars := eventVars(ev, snap, actor)
 	msg := Interpolate(tmpl, vars)
-	sendDestination(entry, destContext{
+	send(entry, destContext{
 		ProjectID: 0,
 		UserID:    ownerID,
 		Event:     ev,
@@ -273,6 +277,30 @@ type destContext struct {
 	Immediate  bool
 	Timezone   string
 	DeliveryID int64
+	// Secrets is set on deliveries prepared before their project is deleted:
+	// the stored URL and secrets are gone by send time, and nothing may be
+	// written back against the deleted project.
+	Secrets *destSecrets
+}
+
+// destSecrets are the stored values a delivery needs to reach its destination.
+type destSecrets struct {
+	URL      string
+	Signing  string
+	NtfyAuth string
+}
+
+func loadDestSecrets(m extensions.Manifest, projectID, userID int) (*destSecrets, error) {
+	url, err := storage.GetExtensionSecretForUser(m.ID, projectID, userID, m.Delivery.DestinationKey())
+	if err != nil {
+		return nil, err
+	}
+	s := &destSecrets{URL: url}
+	s.Signing, _ = storage.GetExtensionSecretForUser(m.ID, projectID, userID, storage.SigningSecretKey)
+	if strings.TrimSpace(m.Delivery.Type) == extensions.DeliveryNtfyWebhook {
+		s.NtfyAuth, _ = storage.GetExtensionSecretForUser(m.ID, projectID, userID, "ntfy_auth")
+	}
+	return s, nil
 }
 
 func sendDestination(entry extensions.Entry, ctx destContext) {
@@ -345,8 +373,21 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 		return "", nil
 	}
 	typ := strings.TrimSpace(m.Delivery.Type)
-	key := m.Delivery.DestinationKey()
-	signing, _ := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, storage.SigningSecretKey)
+	switch typ {
+	case extensions.DeliveryNtfyWebhook, extensions.DeliveryDiscordWebhook, extensions.DeliverySlackWebhook,
+		extensions.DeliveryTeamsWebhook, extensions.DeliveryGoogleChatWebhook, extensions.DeliveryHTTPWebhook:
+	default:
+		return "", fmt.Errorf("unsupported delivery %q", typ)
+	}
+	prepared := ctx.Secrets != nil
+	secrets := ctx.Secrets
+	if !prepared {
+		var err error
+		if secrets, err = loadDestSecrets(m, ctx.ProjectID, ctx.UserID); err != nil {
+			return "", err
+		}
+	}
+	signing := secrets.Signing
 	vars := ctx.Vars
 	if len(ctx.Dest.Values) > 0 || m.HasCallbackPermissions() {
 		vars = cloneVars(ctx.Vars)
@@ -356,7 +397,8 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 			vars["config_json"] = string(raw)
 		}
 	}
-	if m.HasCallbackPermissions() {
+	// A prepared delivery's project is gone, so don't mint a callback token for it.
+	if m.HasCallbackPermissions() && !prepared {
 		if tok, err := storage.EnsureCallbackToken(m.ID, ctx.ProjectID, ctx.UserID); err == nil && tok != "" {
 			vars["callback_token"] = tok
 			vars["callback_url"] = publicCallbackURL()
@@ -370,24 +412,17 @@ func deliverNow(entry extensions.Entry, ctx destContext) (string, error) {
 
 	switch typ {
 	case extensions.DeliveryNtfyWebhook:
-		u, err := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, key)
-		if err != nil {
-			return "", err
-		}
+		u := secrets.URL
 		if strings.TrimSpace(u) == "" {
 			return "", fmt.Errorf("webhook URL is not set")
 		}
-		auth, _ := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, "ntfy_auth")
-		return "", sendNtfy(u, auth, ctx.Message, vars, sendOpts{
+		return "", sendNtfy(u, secrets.NtfyAuth, ctx.Message, vars, sendOpts{
 			SigningSecret: signing,
 			EventID:       ctx.Event.EventID,
 			DeliveryID:    ctx.DeliveryID,
 		})
 	case extensions.DeliveryDiscordWebhook, extensions.DeliverySlackWebhook, extensions.DeliveryTeamsWebhook, extensions.DeliveryGoogleChatWebhook, extensions.DeliveryHTTPWebhook:
-		u, err := storage.GetExtensionSecretForUser(m.ID, ctx.ProjectID, ctx.UserID, key)
-		if err != nil {
-			return "", err
-		}
+		u := secrets.URL
 		if strings.TrimSpace(u) == "" {
 			return "", fmt.Errorf("webhook URL is not set")
 		}

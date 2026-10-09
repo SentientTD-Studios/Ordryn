@@ -96,6 +96,25 @@ describe('hasActiveFilters', () => {
   })
 })
 
+describe('claimed filter', () => {
+  it('is sent to the API, counts as active, and is reset by Clear', () => {
+    setFilter('project', '5')
+    setFilter('claimed', 'me')
+
+    assert.equal(hasActiveFilters.value, true)
+    assert.equal(toApiParams(1, 50).claimed, 'me')
+
+    clearFilters()
+    assert.equal(filters.claimed, '')
+    assert.equal(toApiParams(1, 50).claimed, undefined)
+  })
+
+  it('is restored from a saved view', () => {
+    applySavedView({ project: '5', claimed: 'none' })
+    assert.equal(filters.claimed, 'none')
+  })
+})
+
 describe('applySavedView', () => {
   it('replaces the current project with the saved view project', () => {
     setFilter('project', '42')

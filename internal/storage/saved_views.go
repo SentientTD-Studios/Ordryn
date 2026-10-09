@@ -29,6 +29,7 @@ type SavedViewFilter struct {
 	Tag       string `json:"tag"`
 	Sort      string `json:"sort"`
 	Search    string `json:"search"`
+	Claimed   string `json:"claimed"`
 }
 
 // SavedView is a per-user named filter preset.

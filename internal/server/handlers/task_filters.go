@@ -23,6 +23,7 @@ type FilterContext struct {
 	Search             string
 	Page               int
 	WorkflowClaimScope string
+	Claimed            string
 	Sprint             string
 	IncludeSubtasks    bool
 }
@@ -119,6 +120,7 @@ func filterContextFromRequest(r *http.Request) FilterContext {
 		Search:             strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("search"), r.FormValue("search"))),
 		WorkflowClaimScope: normalizeWorkflowClaimScope(firstNonEmpty(r.URL.Query().Get("workflow_claim_scope"), r.FormValue("workflow_claim_scope"))),
 		Sprint:             firstNonEmpty(r.URL.Query().Get("sprint_id"), r.FormValue("sprint_id")),
+		Claimed:            tasks.NormalizeClaimFilter(firstNonEmpty(r.URL.Query().Get("claimed"), r.FormValue("claimed"))),
 		IncludeSubtasks:    parseIncludeSubtasks(firstNonEmpty(r.URL.Query().Get("include_subtasks"), r.FormValue("include_subtasks"))),
 	}
 	if pageParam := firstNonEmpty(r.URL.Query().Get("page"), r.FormValue("page"), r.FormValue("currentPage")); pageParam != "" {
@@ -137,6 +139,7 @@ func (fc FilterContext) ToListFilters() tasks.ListFilters {
 		CompletedFilter:    fc.Completed,
 		Sort:               fc.Sort,
 		WorkflowClaimScope: fc.WorkflowClaimScope,
+		ClaimFilter:        fc.Claimed,
 		IncludeSubtasks:    fc.IncludeSubtasks,
 	}
 	if sid := parseSprintFilter(fc.Sprint); sid != nil {

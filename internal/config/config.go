@@ -133,6 +133,14 @@ func ValidateRequired() error {
 	return nil
 }
 
+// BrandEnv reads ORDRYN_<name>, falling back to the legacy GOTODO_<name>.
+func BrandEnv(name string) string {
+	if v := os.Getenv("ORDRYN_" + name); v != "" {
+		return v
+	}
+	return os.Getenv("GOTODO_" + name)
+}
+
 // envIsSet reports whether a non-empty value is present in the environment.
 func envIsSet(key string) bool {
 	return strings.TrimSpace(os.Getenv(key)) != ""

@@ -388,7 +388,7 @@ function formatMinutes(total: number) {
           <button
             v-if="!isSubtask()"
             type="button"
-            class="btn btn-sm btn-outline-secondary oryryn-icon-btn"
+            class="btn btn-sm btn-outline-secondary ordryn-icon-btn"
             title="Add subtask"
             aria-label="Add subtask"
             @click="emit('add-subtask')"
@@ -397,7 +397,7 @@ function formatMinutes(total: number) {
           </button>
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary oryryn-icon-btn"
+            class="btn btn-sm btn-outline-secondary ordryn-icon-btn"
             title="Open task details"
             aria-label="Open task details"
             @click="emit('edit')"

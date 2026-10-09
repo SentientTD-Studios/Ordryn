@@ -164,6 +164,9 @@ function filterBadges(view: SavedView) {
   if (f.project) badges.push({ text: projectLabel(f.project), class: 'bg-secondary' })
   if (f.priority) badges.push({ text: priorityLabel(f.priority), class: 'bg-warning text-dark' })
   if (f.tag) badges.push({ text: tagLabel(f.tag), class: 'bg-primary' })
+  if (f.claimed) {
+    badges.push({ text: f.claimed === 'me' ? 'Claimed by me' : 'Unclaimed', class: 'bg-success' })
+  }
   if (f.sort === 'priority') badges.push({ text: 'Sort: Priority', class: 'bg-light text-dark' })
   if (f.search) badges.push({ text: `Search: ${f.search}`, class: 'bg-light text-dark' })
   return badges
