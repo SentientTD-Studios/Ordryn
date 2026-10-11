@@ -21,8 +21,10 @@ const (
 	MaxStatusDescriptionLen = 50
 	MaxTimeEntryNote        = 200
 	MaxTimeEntryMinutes     = 24 * 60
+	// MaxWIPLimit caps a column's soft work-in-progress limit.
+	MaxWIPLimit = 999
 
-	projectStatusSelectCols = `id, project_id, name, description, position, is_done, is_default, created_at`
+	projectStatusSelectCols = `id, project_id, name, description, position, is_done, is_default, created_at, wip_limit`
 )
 
 // ProjectStatus is a kanban column within a project.
@@ -37,6 +39,8 @@ type ProjectStatus struct {
 	CreatedAt      time.Time
 	EnterRoleSlugs []string
 	LeaveRoleSlugs []string
+	// WIPLimit is a soft cap on cards in the column (nil = none). Done columns have none.
+	WIPLimit *int
 }
 
 type projectStatusScanner interface {
@@ -44,7 +48,7 @@ type projectStatusScanner interface {
 }
 
 func scanProjectStatus(row projectStatusScanner, s *ProjectStatus) error {
-	return row.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &s.Position, &s.IsDone, &s.IsDefault, &s.CreatedAt)
+	return row.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &s.Position, &s.IsDone, &s.IsDefault, &s.CreatedAt, &s.WIPLimit)
 }
 
 // TaskTimeEntry is a time log against a kanban task.
@@ -93,6 +97,7 @@ func CreateProjectWorkflowTables() error {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_statuses_project_lower_name
 			ON project_statuses (project_id, lower(name))`,
+		`ALTER TABLE project_statuses ADD COLUMN IF NOT EXISTS wip_limit INTEGER`,
 		`CREATE INDEX IF NOT EXISTS idx_project_statuses_project_position
 			ON project_statuses (project_id, position)`,
 		`CREATE TABLE IF NOT EXISTS task_time_entries (
@@ -424,7 +429,7 @@ func GetTaskProjectStatus(taskID int) (*ProjectStatus, error) {
 
 	var s ProjectStatus
 	err = scanProjectStatus(pool.QueryRow(context.Background(),
-		`SELECT s.id, s.project_id, s.name, s.description, s.position, s.is_done, s.is_default, s.created_at
+		`SELECT s.id, s.project_id, s.name, s.description, s.position, s.is_done, s.is_default, s.created_at, s.wip_limit
 		 FROM project_statuses s
 		 INNER JOIN tasks t ON t.status_id = s.id
 		 WHERE t.id = $1`, taskID), &s)
@@ -553,12 +558,27 @@ func UpdateProjectStatus(projectID, statusID int, name *string, isDone, isDefaul
 	}
 
 	_, err = pool.Exec(context.Background(),
-		`UPDATE project_statuses SET name = $1, description = $2, is_done = $3, is_default = $4 WHERE id = $5 AND project_id = $6`,
+		`UPDATE project_statuses SET name = $1, description = $2, is_done = $3, is_default = $4,
+			wip_limit = CASE WHEN $3 THEN NULL ELSE wip_limit END
+		 WHERE id = $5 AND project_id = $6`,
 		newName, newDescription, newDone, newDefault, statusID, projectID)
 	if err != nil {
 		return nil, err
 	}
 	return GetProjectStatus(projectID, statusID)
+}
+
+// SetProjectStatusWIPLimit sets (or with nil clears) a column's WIP limit.
+func SetProjectStatusWIPLimit(projectID, statusID int, limit *int) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(),
+		`UPDATE project_statuses SET wip_limit = $1 WHERE id = $2 AND project_id = $3`,
+		limit, statusID, projectID)
+	return err
 }
 
 // CountTasksWithStatus returns tasks currently in a status column.

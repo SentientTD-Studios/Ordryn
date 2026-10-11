@@ -185,6 +185,8 @@ type UpdateProjectStatusInput struct {
 	Description *string
 	IsDone      *bool
 	IsDefault   *bool
+	// WIPLimit: nil = leave; non-nil with nil = clear; non-nil with n = set (1-999).
+	WIPLimit **int
 }
 
 // UpdateProjectStatusForUser updates a status column (owner only).
@@ -215,6 +217,19 @@ func UpdateProjectStatusForUser(ctx context.Context, userID, projectID, statusID
 	if err != nil {
 		return nil, ErrNotFound
 	}
+	if in.WIPLimit != nil && *in.WIPLimit != nil {
+		n := **in.WIPLimit
+		if n < 1 || n > storage.MaxWIPLimit {
+			return nil, fmt.Errorf("%w: WIP limit must be between 1 and %d", ErrValidation, storage.MaxWIPLimit)
+		}
+		becomesDone := cur.IsDone
+		if in.IsDone != nil {
+			becomesDone = *in.IsDone
+		}
+		if becomesDone {
+			return nil, fmt.Errorf("%w: done columns cannot have a WIP limit", ErrValidation)
+		}
+	}
 
 	// Prevent clearing the only default / only done flag.
 	if in.IsDefault != nil && !*in.IsDefault && cur.IsDefault {
@@ -242,6 +257,15 @@ func UpdateProjectStatusForUser(ctx context.Context, userID, projectID, statusID
 			return nil, fmt.Errorf("%w: a status with this name already exists", ErrConflict)
 		}
 		return nil, err
+	}
+
+	if in.WIPLimit != nil {
+		if err := storage.SetProjectStatusWIPLimit(projectID, statusID, *in.WIPLimit); err != nil {
+			return nil, err
+		}
+		if s, err = storage.GetProjectStatus(projectID, statusID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Sync completed for tasks in this column when is_done changes.

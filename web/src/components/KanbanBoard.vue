@@ -23,10 +23,24 @@
         v-for="col in statuses"
         :key="col.id"
         class="kanban-column flex-shrink-0"
+        :class="{ 'is-collapsed': isCollapsed(col.id), 'is-over-wip': isOverWip(col) }"
         role="region"
         :aria-label="columnAriaLabel(col)"
       >
-        <div class="kanban-column-header mb-2 px-1">
+        <button
+          v-if="isCollapsed(col.id)"
+          type="button"
+          class="kanban-collapsed-strip"
+          :title="`Expand ${col.name}`"
+          :aria-label="`Expand column ${col.name}`"
+          aria-expanded="false"
+          @click="toggleCollapsed(col.id)"
+        >
+          <i class="bi bi-chevron-bar-right" aria-hidden="true" />
+          <span class="kanban-column-count" :class="{ 'is-over': isOverWip(col) }">{{ countLabel(col) }}</span>
+          <span class="kanban-collapsed-title">{{ col.name }}</span>
+        </button>
+        <div v-show="!isCollapsed(col.id)" class="kanban-column-header mb-2 px-1">
           <div class="d-flex align-items-center justify-content-between gap-2">
             <div class="d-flex align-items-center gap-1 min-w-0">
               <strong class="kanban-column-title text-truncate">{{ col.name }}</strong>
@@ -46,7 +60,23 @@
                 done
               </span>
             </div>
-            <span class="kanban-column-count">{{ tasksForStatus(col.id).length }}</span>
+            <div class="d-flex align-items-center gap-1 flex-shrink-0">
+              <span
+                class="kanban-column-count"
+                :class="{ 'is-over': isOverWip(col) }"
+                :title="wipTitle(col)"
+              >{{ countLabel(col) }}</span>
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0 text-muted kanban-collapse-btn"
+                :title="`Collapse ${col.name}`"
+                :aria-label="`Collapse column ${col.name}`"
+                aria-expanded="true"
+                @click="toggleCollapsed(col.id)"
+              >
+                <i class="bi bi-chevron-bar-left" aria-hidden="true" />
+              </button>
+            </div>
             </div>
           <p
             v-if="col.description || statusHasGates(col)"
@@ -58,7 +88,7 @@
           </p>
         </div>
 
-        <div class="kanban-column-body-wrap">
+        <div v-show="!isCollapsed(col.id)" class="kanban-column-body-wrap">
           <div
             v-if="!tasksForStatus(col.id).length"
             class="kanban-column-empty"
@@ -240,7 +270,7 @@
         </div>
         </div>
 
-        <div v-if="canAddToColumn(col)" class="kanban-add-card mt-2">
+        <div v-if="canAddToColumn(col)" v-show="!isCollapsed(col.id)" class="kanban-add-card mt-2">
           <form
             v-if="addingStatusId === col.id"
             @submit.prevent="createCard(col)"
@@ -561,9 +591,77 @@ function tasksForStatus(statusId: number): Task[] {
 function columnAriaLabel(col: ProjectStatus): string {
   const count = tasksForStatus(col.id).length
   const desc = (col.description || '').trim()
-  if (desc) return `${col.name}: ${desc}, ${count} tasks`
-  return `${col.name}, ${count} tasks`
+  const limit = col.wip_limit ? ` of ${col.wip_limit} allowed` : ''
+  const collapsed = isCollapsed(col.id) ? ', collapsed' : ''
+  if (desc) return `${col.name}: ${desc}, ${count} tasks${limit}${collapsed}`
+  return `${col.name}, ${count} tasks${limit}${collapsed}`
 }
+
+// WIP limits are soft: the board flags a column over its limit but never
+// blocks a move, so an overloaded column can always be fixed by dragging.
+function isOverWip(col: ProjectStatus): boolean {
+  return !col.is_done && !!col.wip_limit && tasksForStatus(col.id).length > col.wip_limit
+}
+
+function countLabel(col: ProjectStatus): string {
+  const count = tasksForStatus(col.id).length
+  return !col.is_done && col.wip_limit ? `${count} / ${col.wip_limit}` : String(count)
+}
+
+function wipTitle(col: ProjectStatus): string {
+  if (col.is_done || !col.wip_limit) return ''
+  const count = tasksForStatus(col.id).length
+  const base = `WIP limit ${col.wip_limit} (counts the cards shown on this board)`
+  return count > col.wip_limit ? `Over the WIP limit: ${count} cards, limit ${col.wip_limit}. ${base}` : base
+}
+
+// Collapsed columns are a per-person view preference, kept in this browser.
+const collapsedIds = ref<Set<number>>(new Set())
+
+function collapsedStorageKey(projectId: number) {
+  return `ordryn.kanbanCollapsed.${projectId}`
+}
+
+function loadCollapsed() {
+  try {
+    const raw = localStorage.getItem(collapsedStorageKey(props.projectId))
+    const ids = raw ? (JSON.parse(raw) as unknown) : []
+    collapsedIds.value = new Set(Array.isArray(ids) ? ids.filter((n): n is number => typeof n === 'number') : [])
+  } catch {
+    collapsedIds.value = new Set()
+  }
+}
+
+function saveCollapsed() {
+  try {
+    // Drop ids of columns that no longer exist.
+    const live = new Set(statuses.value.map((s) => s.id))
+    const ids = [...collapsedIds.value].filter((id) => live.size === 0 || live.has(id))
+    if (ids.length) localStorage.setItem(collapsedStorageKey(props.projectId), JSON.stringify(ids))
+    else localStorage.removeItem(collapsedStorageKey(props.projectId))
+  } catch {
+    // Storage can be unavailable (private mode); collapsing still works for the session.
+  }
+}
+
+function isCollapsed(statusId: number): boolean {
+  return collapsedIds.value.has(statusId)
+}
+
+function toggleCollapsed(statusId: number) {
+  const next = new Set(collapsedIds.value)
+  if (next.has(statusId)) next.delete(statusId)
+  else next.add(statusId)
+  collapsedIds.value = next
+  if (addingStatusId.value === statusId) cancelAddCard()
+  saveCollapsed()
+}
+
+loadCollapsed()
+watch(
+  () => props.projectId,
+  () => loadCollapsed(),
+)
 
 async function loadStatuses(quiet = false) {
   if (!quiet) loading.value = true
@@ -743,6 +841,58 @@ onBeforeUnmount(destroySortables)
   max-height: min(70vh, 42rem);
 }
 
+.kanban-column.is-over-wip {
+  border-color: var(--bs-danger, #dc3545);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bs-danger, #dc3545) 35%, transparent);
+}
+
+.kanban-column.is-collapsed {
+  width: 2.75rem;
+  min-height: 12rem;
+  padding: 0.25rem;
+}
+
+.kanban-collapsed-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.35rem 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ordryn-muted, #6c757d);
+  cursor: pointer;
+}
+
+.kanban-collapsed-strip:hover,
+.kanban-collapsed-strip:focus-visible {
+  background: var(--ordryn-card-bg, #fff);
+  color: var(--ordryn-text, inherit);
+}
+
+.kanban-collapsed-title {
+  writing-mode: vertical-rl;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ordryn-text, inherit);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 14rem;
+}
+
+.kanban-collapse-btn {
+  line-height: 1;
+}
+
+.kanban-collapse-btn:hover,
+.kanban-collapse-btn:focus-visible {
+  color: var(--ordryn-text, inherit) !important;
+}
+
 .kanban-column-header {
   position: sticky;
   top: 0;
@@ -785,6 +935,12 @@ onBeforeUnmount(destroySortables)
   color: var(--ordryn-muted, #6c757d);
   background: var(--ordryn-card-bg, #fff);
   border: 1px solid var(--ordryn-card-border, #dee2e6);
+}
+
+.kanban-column-count.is-over {
+  color: #fff;
+  background: var(--bs-danger, #dc3545);
+  border-color: var(--bs-danger, #dc3545);
 }
 
 .kanban-column-body-wrap {
