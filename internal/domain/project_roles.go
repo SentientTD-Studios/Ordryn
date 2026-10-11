@@ -89,6 +89,8 @@ func permActionLabel(perm string) string {
 		return "configure extensions"
 	case storage.PermCommentsModerate:
 		return "moderate comments"
+	case storage.PermInsightsPeople:
+		return "view team workload"
 	case storage.PermProjectManage:
 		return "manage this project"
 	default:

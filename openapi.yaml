@@ -5205,6 +5205,42 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/{id}/insights:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Team dashboard metrics
+      description: |
+        Open/done/overdue counts, weekly throughput for the last 8 weeks, each member's claimed
+        work and completions in the last 30 days, and (kanban projects) a burndown for a dated sprint.
+        Any project member can read it. Without `sprint_id` the burndown uses the sprint running today,
+        else the one that ended most recently, else the next to start. The burndown replays completed
+        and reopened events over the sprint's current tasks, so work added mid-sprint counts from day one.
+        Days after today have `null` remaining values.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: sprint_id
+          in: query
+          description: Dated sprint to chart.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project insights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectInsights"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/project-invites:
     get:
       tags: [Projects]
@@ -8267,6 +8303,79 @@ components:
           type: array
           items:
             type: string
+
+    InsightsSprint:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+
+    ProjectInsights:
+      type: object
+      properties:
+        project_id: { type: integer }
+        project_name: { type: string }
+        workflow_mode: { type: string, enum: [classic, kanban] }
+        summary:
+          type: object
+          properties:
+            open: { type: integer }
+            done: { type: integer }
+            overdue: { type: integer }
+            unclaimed: { type: integer }
+            open_points: { type: integer }
+        throughput:
+          type: array
+          description: Oldest week first; weeks start on Monday in the viewer's timezone.
+          items:
+            type: object
+            properties:
+              week_start: { type: string, format: date }
+              tasks: { type: integer }
+              points: { type: integer }
+        completed_days:
+          type: integer
+          description: Window in days for each member's `completed` count.
+        can_view_members:
+          type: boolean
+          description: False when the caller's role lacks `insights:people`; `members` is then empty.
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id: { type: integer }
+              name: { type: string }
+              is_agent: { type: boolean }
+              is_member: { type: boolean, description: False for people who have left but still hold claims or recent completions. }
+              claimed_open: { type: integer }
+              claimed_points: { type: integer }
+              completed: { type: integer }
+        sprints:
+          type: array
+          description: Dated sprints that can be charted.
+          items:
+            $ref: "#/components/schemas/InsightsSprint"
+        burndown:
+          type: object
+          nullable: true
+          properties:
+            sprint:
+              $ref: "#/components/schemas/InsightsSprint"
+            total_tasks: { type: integer }
+            total_points: { type: integer }
+            days:
+              type: array
+              items:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  remaining_tasks: { type: integer, nullable: true }
+                  remaining_points: { type: integer, nullable: true }
+                  ideal_tasks: { type: number }
+                  ideal_points: { type: number }
 
     ProjectEvent:
       type: object

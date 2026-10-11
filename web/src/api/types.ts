@@ -546,6 +546,45 @@ export type DashboardStats = {
   completions_last_7_days: { date: string; count: number }[]
 }
 
+export type InsightsSprint = {
+  id: number
+  name: string
+  start_date: string
+  end_date: string
+}
+
+export type ProjectInsights = {
+  project_id: number
+  project_name: string
+  workflow_mode: WorkflowMode | string
+  summary: { open: number; done: number; overdue: number; unclaimed: number; open_points: number }
+  throughput: { week_start: string; tasks: number; points: number }[]
+  completed_days: number
+  can_view_members: boolean
+  members: {
+    user_id: number
+    name: string
+    is_agent: boolean
+    is_member: boolean
+    claimed_open: number
+    claimed_points: number
+    completed: number
+  }[]
+  sprints: InsightsSprint[]
+  burndown: {
+    sprint: InsightsSprint
+    total_tasks: number
+    total_points: number
+    days: {
+      date: string
+      remaining_tasks: number | null
+      remaining_points: number | null
+      ideal_tasks: number
+      ideal_points: number
+    }[]
+  } | null
+}
+
 export type CalendarMonthTask = {
   id: number
   title: string

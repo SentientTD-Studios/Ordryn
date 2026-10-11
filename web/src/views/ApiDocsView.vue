@@ -137,6 +137,7 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-info text-dark">PUT</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/statuses/{statusId}/gates</code></a></td><td>Status enter/leave role gates</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects</code></a></td><td>Create a project</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#projects"><code>/api/v2/projects/{id}</code></a></td><td>Rename a project</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/insights</code></a></td><td>Team dashboard: counts, weekly throughput, per-person workload (needs <code>insights:people</code>), sprint burndown (<code>?sprint_id=</code>)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/archive</code></a></td><td>Archive a project (owner only)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/restore</code></a></td><td>Restore an archived project (owner only)</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#projects"><code>/api/v2/projects/{id}</code></a></td><td>Delete a project</td></tr>

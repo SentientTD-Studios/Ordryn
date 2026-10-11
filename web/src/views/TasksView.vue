@@ -8,6 +8,7 @@ import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
 import ModernTaskCard from '@/components/modern/ModernTaskCard.vue'
 import KanbanBoard from '@/components/KanbanBoard.vue'
+import QuickAddBar from '@/components/QuickAddBar.vue'
 import ExtensionSurfaceFrame from '@/components/ExtensionSurfaceFrame.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -532,14 +533,19 @@ function taskMatchesBoardSprint(task: Task): boolean {
   return assigned === parseInt(boardSprintKey.value, 10)
 }
 
-function taskMatchesCurrentFilters(task: Task): boolean {
-  if (!taskMatchesStatusFilter(task)) return false
+function taskMatchesProjectScope(task: Task): boolean {
   if (!taskMatchesBoardSprint(task)) return false
   if (filters.project === '0' && task.project_id != null) return false
   if (filters.project && filters.project !== '0') {
     const pid = parseInt(filters.project, 10)
     if (!Number.isNaN(pid) && task.project_id !== pid) return false
   }
+  return true
+}
+
+function taskMatchesCurrentFilters(task: Task): boolean {
+  if (!taskMatchesStatusFilter(task)) return false
+  if (!taskMatchesProjectScope(task)) return false
   if (filters.priority && String(task.priority) !== filters.priority) return false
   if (filters.claimed && isKanbanProjectView.value) {
     const claimedBy = task.claimed_by ?? null
@@ -594,10 +600,14 @@ function registerTaskAdded(task: Task) {
     else incompleteCount.value += 1
     return
   }
+  if (tasks.value.some((t) => t.id === task.id)) return
+  // Done/open counts cover the project and sprint; the total follows every filter.
+  if (taskMatchesProjectScope(task)) {
+    if (task.completed) completedCount.value += 1
+    else incompleteCount.value += 1
+  }
+  if (!taskMatchesCurrentFilters(task)) return
   total.value += 1
-  if (task.completed) completedCount.value += 1
-  else incompleteCount.value += 1
-  if (!taskMatchesCurrentFilters(task) || tasks.value.some((t) => t.id === task.id)) return
   const withChildren = { ...task, children: task.children || [] }
   tasks.value = [...tasks.value, withChildren]
 }
@@ -1867,6 +1877,13 @@ onUnmounted(() => {
 
         <!-- Task Lists Container -->
         <div v-if="!showBoardView && !showExtensionSurface" id="task-container" aria-live="polite">
+          <QuickAddBar
+            v-if="canAddTasks"
+            :projects="projects"
+            :default-project-id="activeProjectObj?.id ?? null"
+            :sprint-id="currentBoardSprintId() ?? null"
+            @created="onBoardTaskCreated"
+          />
           <div v-if="loading && !tasks.length" class="text-center py-5 text-muted">
             <div class="spinner-border spinner-border-sm me-2" role="status" />Loading tasks…
           </div>

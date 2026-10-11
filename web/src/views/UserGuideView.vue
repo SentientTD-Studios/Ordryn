@@ -81,6 +81,28 @@ onUnmounted(() => {
             the trash. <strong>Delete forever</strong> and <strong>Empty trash</strong> can't be undone.
           </li>
         </ul>
+        <h3 class="h6 fw-bold mt-3">Quick add</h3>
+        <p>
+          The quick-add box above the task list, and <strong>Add card</strong> on kanban columns, create a task
+          straight from one line. Type the title and add any of these anywhere in the line:
+        </p>
+        <ul>
+          <li><code>#bug</code>: add an existing tag (tags from the project the task goes to).</li>
+          <li><code>!low</code>, <code>!med</code>, <code>!high</code> (or <code>!</code>, <code>!!</code>, <code>!!!</code>): set the priority.</li>
+          <li>
+            A due date: <code>today</code>, <code>tomorrow</code>, <code>friday</code>, <code>next friday</code>,
+            <code>next week</code>, <code>next month</code>, <code>in 3 days</code>, <code>in 2 weeks</code>,
+            <code>oct 20</code>, <code>20 oct</code>, or <code>2026-10-20</code>. Short day names such as
+            <code>fri</code> need a word in front (<code>on fri</code>, <code>by fri</code>, <code>due fri</code>).
+          </li>
+          <li><code>+website</code> (quick-add box only): put the task in a project by name. The start of the name is enough if only one project matches.</li>
+          <li><code>@me</code> (kanban projects): claim the task once it's created.</li>
+        </ul>
+        <p>
+          Chips under the box show what was picked up before you press <kbd>Enter</kbd>. Anything that
+          doesn't match, like an unknown tag, stays in the title. Only the first date counts. A title that is
+          only a keyword, such as <code>Today</code>, is kept as written.
+        </p>
 
         <h2 id="projects-views" class="h4 mt-4">Projects, tags, filters, and saved views</h2>
         <p>
@@ -310,10 +332,29 @@ onUnmounted(() => {
         <h2 id="calendar-dashboard" class="h4 mt-4">Calendar and dashboard</h2>
         <p>
           <RouterLink to="/calendar">Calendar</RouterLink>
-          shows tasks by due date so you can plan the month at a glance.
+          shows tasks by due date so you can plan the month at a glance. Drag a task onto another day
+          to change its due date. If you can't edit the task, it snaps back and Ordryn tells you why.
           <RouterLink to="/dashboard">Dashboard</RouterLink>
           summarizes progress, overdue items, and other quick stats.
         </p>
+        <p>
+          <RouterLink to="/team">Team</RouterLink> shows one project at a time to anyone in it:
+        </p>
+        <ul>
+          <li>Open, done, overdue, and (on kanban boards) unclaimed counts.</li>
+          <li>Tasks or points completed per week over the last 8 weeks.</li>
+          <li>
+            What each person has claimed now and has finished in the last 30 days. Only roles with the
+            <strong>View team workload</strong> permission see this part; project managers choose which
+            roles get it.
+          </li>
+          <li>
+            On kanban projects, a burndown for a sprint with start and end dates. It picks the
+            sprint running today unless you choose another. The burndown uses the sprint's current tasks,
+            so work added partway through counts from the first day.
+          </li>
+        </ul>
+        <p>Switch between <strong>Tasks</strong> and <strong>Points</strong> to count by estimate instead.</p>
 
         <h2 id="collaboration" class="h4 mt-4">Live collaboration</h2>
         <p>

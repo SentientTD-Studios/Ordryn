@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { inject, onMounted, ref, type Ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { DashboardStats, Project, SavedView, Task } from '@/api/types'
 import { APIError } from '@/api/types'
@@ -176,7 +176,12 @@ useLiveUpdates((event, batch) => {
 
     <div class="flex-grow-1 p-3 p-md-4 overflow-auto d-flex flex-column justify-content-between">
       <div>
-        <h1 class="h3 fw-bold mb-3">Dashboard</h1>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <h1 class="h3 fw-bold mb-0">Dashboard</h1>
+          <RouterLink to="/team" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-people me-1" aria-hidden="true" />Team dashboard
+          </RouterLink>
+        </div>
         <p v-if="loading" class="text-muted">Loading…</p>
         <template v-else-if="stats">
           <div class="row g-3 mb-4">

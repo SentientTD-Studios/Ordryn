@@ -82,6 +82,8 @@ const router = createRouter({
       path: '/',
       name: 'tasks',
       component: () => import('@/views/IndexView.vue'),
+      // Views that use the sidebar layout render AppFooter themselves.
+      meta: { ownFooter: true },
     },
     {
       path: '/tasks/:id',
@@ -105,7 +107,13 @@ const router = createRouter({
       path: '/dashboard',
       name: 'dashboard',
       component: () => import('@/views/DashboardView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, ownFooter: true },
+    },
+    {
+      path: '/team',
+      name: 'team',
+      component: () => import('@/views/TeamDashboardView.vue'),
+      meta: { requiresAuth: true, ownFooter: true },
     },
     {
       path: '/views',
@@ -117,7 +125,7 @@ const router = createRouter({
       path: '/calendar',
       name: 'calendar',
       component: () => import('@/views/CalendarView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, ownFooter: true },
     },
     {
       path: '/trash',
