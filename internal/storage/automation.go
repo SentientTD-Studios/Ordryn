@@ -672,7 +672,7 @@ func ListAutomationCandidates(q AutomationTimedQuery) ([]AutomationCandidate, er
 			SELECT COALESCE(MAX(e.created_at), t.time_stamp) AS at FROM task_events e
 			WHERE e.task_id = t.id AND e.event_type = 'status_changed') entered ON TRUE
 		LEFT JOIN LATERAL (SELECT ` + automationLastActivitySQL + ` AS at) act ON TRUE
-		WHERE t.project_id = $1
+		WHERE t.project_id = $1 AND t.deleted_at IS NULL
 		  AND ` + where + `
 		  AND NOT EXISTS (
 			SELECT 1 FROM task_tags tt JOIN tags tg ON tg.id = tt.tag_id
@@ -750,7 +750,7 @@ func ListProjectTaskIDs(projectID, limit int) ([]int, error) {
 	}
 	defer CloseDatabase(pool)
 	rows, err := pool.Query(context.Background(),
-		`SELECT id FROM tasks WHERE project_id = $1 ORDER BY id DESC LIMIT $2`, projectID, limit)
+		`SELECT id FROM tasks WHERE project_id = $1 AND deleted_at IS NULL ORDER BY id DESC LIMIT $2`, projectID, limit)
 	if err != nil {
 		return nil, err
 	}

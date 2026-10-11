@@ -21,7 +21,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Markdown task descriptions with truncated list view and expand-in-place
 - Task discussion comments with @-mentions of project members (notifies them) and #task links; authors and project owners can edit comments, with posted/edited timestamps and an admin restore log
 - Bulk actions: complete, delete, move project, add/remove tag, set/clear due date, set priority, set kanban status, move sprint
-- Undo delete (toast with up to 120 seconds to restore, preserves task IDs when possible)
+- Trash: deleted tasks (with their subtasks) go to Trash, restorable with comments, links, fields, and history intact until purged after an admin-set retention (default 30 days); an Undo toast appears right after deleting
 - ICS calendar feed for due tasks; in-app calendar view; ICS import to sync due dates
 - CSV import with preview/confirm; CSV/JSON export (auto-creates projects and tags on import)
 - Task activity timeline in the edit sidebar

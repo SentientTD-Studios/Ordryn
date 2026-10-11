@@ -381,7 +381,7 @@ func ListReminderTasks(from, to time.Time, limit int) ([]ReminderTask, error) {
 		FROM tasks t
 		LEFT JOIN projects p ON p.id = t.project_id
 		WHERE t.due_date BETWEEN $1::date AND $2::date
-		  AND COALESCE(t.completed, FALSE) = FALSE
+		  AND COALESCE(t.completed, FALSE) = FALSE AND t.deleted_at IS NULL
 		  AND NOT `+ArchivedTaskExistsSQL("t.id")+`
 		ORDER BY t.due_date, t.id
 		LIMIT $3`,

@@ -84,7 +84,9 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 	case "reopened":
 		return "Reopened"
 	case "deleted":
-		return "Deleted"
+		return "Moved to trash"
+	case "restored_from_trash":
+		return "Restored from trash"
 	case "moved_project":
 		if name, ok := meta["project"].(string); ok && name != "" {
 			return "Moved to · " + name

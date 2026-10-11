@@ -271,7 +271,7 @@ func OpenBlockerCounts(taskIDs []int) (map[int]int, error) {
 	rows, err := pool.Query(context.Background(), `
 		SELECT l.to_task_id, COUNT(*)
 		FROM task_links l JOIN tasks b ON b.id = l.from_task_id
-		WHERE l.link_type = 'blocks' AND l.to_task_id = ANY($1) AND NOT COALESCE(b.completed, false)
+		WHERE l.link_type = 'blocks' AND l.to_task_id = ANY($1) AND NOT COALESCE(b.completed, false) AND b.deleted_at IS NULL
 		GROUP BY l.to_task_id`, taskIDs)
 	if err != nil {
 		return nil, err

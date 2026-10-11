@@ -262,7 +262,7 @@ func ListProjectSprints(projectID int) ([]ProjectSprint, error) {
 
 	rows, err := pool.Query(context.Background(),
 		`SELECT s.id, s.project_id, s.name, s.description, s.start_date, s.end_date, s.lock_date, s.created_at,
-		        COALESCE((SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = s.id AND NOT `+ArchivedTaskExistsSQL("t.id")+`), 0)
+		        COALESCE((SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = s.id AND t.deleted_at IS NULL AND NOT `+ArchivedTaskExistsSQL("t.id")+`), 0)
 		 FROM project_sprints s
 		 WHERE s.project_id = $1
 		 ORDER BY (s.start_date IS NULL) DESC, s.start_date DESC, s.id DESC`, projectID)
@@ -394,7 +394,7 @@ func CountActiveTasksWithSprint(sprintID int) (int, error) {
 	defer CloseDatabase(pool)
 	var n int
 	err = pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = $1 AND NOT `+ArchivedTaskExistsSQL("t.id"),
+		`SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = $1 AND t.deleted_at IS NULL AND NOT `+ArchivedTaskExistsSQL("t.id"),
 		sprintID).Scan(&n)
 	return n, err
 }
@@ -434,7 +434,7 @@ func CountTasksInBacklog(projectID int) (int, error) {
 	defer CloseDatabase(pool)
 	var n int
 	err = pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM tasks t WHERE t.project_id = $1 AND t.sprint_id IS NULL AND NOT `+ArchivedTaskExistsSQL("t.id"),
+		`SELECT COUNT(*) FROM tasks t WHERE t.project_id = $1 AND t.sprint_id IS NULL AND t.deleted_at IS NULL AND NOT `+ArchivedTaskExistsSQL("t.id"),
 		projectID).Scan(&n)
 	return n, err
 }

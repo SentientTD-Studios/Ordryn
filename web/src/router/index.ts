@@ -120,6 +120,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/trash',
+      name: 'trash',
+      component: () => import('@/views/TrashView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/calendar/:month(\\d{4}-\\d{2})',
       redirect: (to) => ({ name: 'calendar', query: { month: String(to.params.month) } }),
     },

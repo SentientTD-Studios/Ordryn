@@ -34,6 +34,7 @@ const settings = reactive<AdminSettings>({
   invite_expiration_days: 7,
   max_description_length: 20000,
   max_comment_length: 20000,
+  trash_retention_days: 30,
   meta_description: '',
   enable_global_announcement: false,
   global_announcement_text: '',
@@ -95,6 +96,7 @@ async function saveSettings() {
       invite_expiration_days: settings.invite_expiration_days,
       max_description_length: settings.max_description_length,
       max_comment_length: settings.max_comment_length,
+      trash_retention_days: settings.trash_retention_days,
       meta_description: settings.meta_description,
       enable_global_announcement: settings.enable_global_announcement,
       global_announcement_text: settings.global_announcement_text,
@@ -320,6 +322,21 @@ onMounted(load)
               />
             </div>
             <div class="form-text mt-1">Character limits for task descriptions and discussion comments (500–100,000, default 20,000).</div>
+          </div>
+          <div class="mb-3">
+            <label for="admin-trash-retention" class="form-label">Keep deleted tasks in the trash for (days)</label>
+            <input
+              id="admin-trash-retention"
+              v-model.number="settings.trash_retention_days"
+              type="number"
+              class="form-control"
+              style="max-width: 8rem"
+              min="1"
+              max="365"
+            />
+            <div class="form-text">
+              Deleted tasks can be restored from Trash until then, and are permanently deleted afterwards (1–365, default 30).
+            </div>
           </div>
           <div class="form-check mb-2">
             <input id="admin-changelog" v-model="settings.show_changelog" class="form-check-input" type="checkbox" />

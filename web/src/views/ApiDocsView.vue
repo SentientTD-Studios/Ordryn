@@ -113,12 +113,16 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks</code></a></td><td>Create a task</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}</code></a></td><td>Get one task</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}</code></a></td><td>Update a task</td></tr>
-                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}</code></a></td><td>Delete a task (permanent; may return undo_token)</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}</code></a></td><td>Move a task to the trash (returns undo_token)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}/archive</code></a></td><td>Archive a task (applies protected archived tag)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}/restore</code></a></td><td>Restore an archived task</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks/reorder</code></a></td><td>Reorder tasks</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks/bulk</code></a></td><td>Bulk actions</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/tasks/undo</code></a></td><td>Restore deleted tasks via undo_token</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/trash</code></a></td><td>List the trash</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#tasks"><code>/api/v2/trash/{id}/restore</code></a></td><td>Restore a trashed task</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#tasks"><code>/api/v2/trash/{id}</code></a></td><td>Permanently delete a trashed task</td></tr>
+                            <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#tasks"><code>/api/v2/trash</code></a></td><td>Empty the trash</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#tasks"><code>/api/v2/tasks/{id}/events</code></a></td><td>Task activity timeline</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#saved-views"><code>/api/v2/saved-views</code></a></td><td>List saved views</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#saved-views"><code>/api/v2/saved-views</code></a></td><td>Create a saved view</td></tr>
@@ -527,7 +531,7 @@ Content-Type: application/json
 
                     <h3 class="h5 mt-3">Delete task</h3>
                     <p><span class="badge bg-danger">DELETE</span> <code>/api/v2/tasks/{id}</code></p>
-                    <p>Permanently deletes the task. Returns JSON with a short-lived <code>undo_token</code> (valid ~120 seconds) as a safety net:</p>
+                    <p>Moves the task (and its subtasks) to the trash. Returns JSON with a short-lived <code>undo_token</code> (valid ~120 seconds) for the undo toast; after that the task can still be restored from the trash until it is purged (30 days by default):</p>
                     <pre class="api-docs-pre"><code>{ "ok": true, "undo_token": "…", "expires_in": 120 }</code></pre>
 
                     <h3 class="h5 mt-3">Bulk actions</h3>
@@ -547,7 +551,12 @@ Content-Type: application/json
                     <h3 class="h5 mt-3">Undo delete</h3>
                     <p><span class="badge bg-primary">POST</span> <code>/api/v2/tasks/undo</code></p>
                     <pre class="api-docs-pre"><code>{ "undo_token": "…" }</code></pre>
-                    <p>Restores tasks from the token (or from the session cookie undo buffer if no token is sent).</p>
+                    <p>Restores tasks from the token (or from the session cookie undo buffer if no token is sent). Restores are lossless: comments, links, fields, history, and subtasks come back.</p>
+
+                    <h3 class="h5 mt-3">Trash</h3>
+                    <p><span class="badge bg-success">GET</span> <code>/api/v2/trash</code> lists trashed tasks you can restore (your own, and project tasks where your role can delete tasks), newest first. Each entry has <code>subtask_count</code> (subtasks trashed with it) and <code>purge_at</code> (when it is permanently deleted).</p>
+                    <p><span class="badge bg-primary">POST</span> <code>/api/v2/trash/{id}/restore</code> restores a task with the subtasks trashed alongside it. A subtask whose parent is still in the trash returns <code>409</code>; restore the parent first.</p>
+                    <p><span class="badge bg-danger">DELETE</span> <code>/api/v2/trash/{id}</code> permanently deletes one trashed task; <span class="badge bg-danger">DELETE</span> <code>/api/v2/trash</code> empties your trash. Neither can be undone.</p>
 
                     <h3 class="h5 mt-3">Task events</h3>
                     <p><span class="badge bg-success">GET</span> <code>/api/v1/tasks/{id}/events</code></p>

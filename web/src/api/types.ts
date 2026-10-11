@@ -506,6 +506,23 @@ export type SavedViewFilter = {
   claimed?: string
 }
 
+/** A trashed task the caller can restore or delete for good. */
+export type TrashEntry = {
+  id: number
+  title: string
+  project_id: number | null
+  project_name: string
+  /** Set when a subtask was trashed on its own; its parent is still live. */
+  parent_id: number | null
+  parent_title: string
+  /** Subtasks trashed with this task (restored with it). */
+  subtask_count: number
+  deleted_at: string
+  deleted_by: string
+  /** When the task is permanently deleted. */
+  purge_at: string
+}
+
 export type SavedView = {
   id: number
   name: string
@@ -598,6 +615,7 @@ export type AdminSettings = {
   enable_api: boolean
   enable_inbound_webhooks: boolean
   notification_emails_enabled: boolean
+  trash_retention_days: number
   allow_user_invites: boolean
   user_invite_limit: number
   invite_expiration_days: number

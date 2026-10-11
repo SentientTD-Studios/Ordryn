@@ -279,6 +279,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateUserNotificationOptOutsTable failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateTasksAddTrash(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddTrash failed: %v\n", err)
+		errCount++
+	}
 	if err := CreateNotificationEmailTables(); err != nil {
 		fmt.Printf("migration: CreateNotificationEmailTables failed: %v\n", err)
 		errCount++

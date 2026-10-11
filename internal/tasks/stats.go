@@ -49,7 +49,7 @@ func GetOverdueCount(userID int, timezone string) (int, error) {
 	}
 	defer storage.CloseDatabase(pool)
 
-	where, args := appendDueDateCondition("user_id = $1", []interface{}{userID}, "overdue", timezone, "")
+	where, args := appendDueDateCondition("user_id = $1 AND deleted_at IS NULL", []interface{}{userID}, "overdue", timezone, "")
 	where += " AND NOT " + storage.ArchivedTaskExistsSQL("id")
 	var count int
 	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE "+where, args...).Scan(&count); err != nil {
@@ -75,7 +75,7 @@ func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
 		CompletionsLast7Days: []DayCount{},
 	}
 
-	where := "user_id = $1"
+	where := "user_id = $1 AND deleted_at IS NULL"
 	args := []interface{}{userID}
 
 	overdueWhere, overdueArgs := appendDueDateCondition(where, args, "overdue", timezone, "")
@@ -145,7 +145,7 @@ func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
 		SELECT COALESCE(p.name, 'No project') AS name, COUNT(*) AS cnt
 		FROM tasks t
 		LEFT JOIN projects p ON t.project_id = p.id
-		WHERE t.user_id = $1 AND (t.completed IS NULL OR t.completed = false)
+		WHERE t.user_id = $1 AND t.deleted_at IS NULL AND (t.completed IS NULL OR t.completed = false)
 		  AND NOT `+storage.ArchivedTaskExistsSQL("t.id")+`
 		GROUP BY COALESCE(p.name, 'No project')
 		ORDER BY cnt DESC`, userID)
@@ -165,7 +165,7 @@ func GetDashboardStats(userID int, timezone string) (*DashboardStats, error) {
 	priRows, err := pool.Query(ctx, `
 		SELECT COALESCE(priority, 0), COUNT(*)
 		FROM tasks
-		WHERE user_id = $1 AND (completed IS NULL OR completed = false)
+		WHERE user_id = $1 AND deleted_at IS NULL AND (completed IS NULL OR completed = false)
 		  AND NOT `+storage.ArchivedTaskExistsSQL("id")+`
 		GROUP BY COALESCE(priority, 0)
 		ORDER BY COALESCE(priority, 0) DESC`, userID)

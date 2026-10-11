@@ -1055,37 +1055,6 @@ func sprintChangeMetadata(projectID, oldSprintID, newSprintID int) map[string]in
 	return meta
 }
 
-// DeleteTask removes a task the user can write. Returns ErrNotFound if missing.
-func DeleteTask(ctx context.Context, userID, taskID int) error {
-	pool, err := storage.OpenDatabase()
-	if err != nil {
-		return err
-	}
-	defer storage.CloseDatabase(pool)
-
-	canRead, writeRole, projectID, accessErr := storage.CanUserAccessTask(taskID, userID)
-	if accessErr != nil {
-		return accessErr
-	}
-	if !canRead {
-		return ErrNotFound
-	}
-	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTasksDelete); err != nil {
-		return err
-	}
-
-	_ = storage.LogTaskEvent(taskID, userID, "deleted", nil)
-	live.AfterTaskChange(userID, taskID, live.TypeTaskDeleted)
-	tag, err := pool.Exec(ctx, `DELETE FROM tasks WHERE id = $1`, taskID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 func descendantTaskIDs(ctx context.Context, rootID int) ([]int, error) {
 	ids := []int{rootID}
 	frontier := []int{rootID}

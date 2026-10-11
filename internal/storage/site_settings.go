@@ -53,6 +53,9 @@ type SiteSettings struct {
 	// AuditRetentionDays bounds task/project/comment/admin audit history; 0 keeps it forever.
 	AuditRetentionDays int
 
+	// TrashRetentionDays is how long deleted tasks stay restorable (1-365).
+	TrashRetentionDays int
+
 	GitHubOAuthClientID        string
 	GitHubOAuthClientSecretEnc string
 
@@ -144,7 +147,8 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(max_description_length, 20000),
 			COALESCE(max_comment_length, 20000),
 			COALESCE(audit_retention_days, 0),
-			COALESCE(notification_emails_enabled, FALSE)
+			COALESCE(notification_emails_enabled, FALSE),
+			COALESCE(trash_retention_days, 30)
 		FROM site_settings WHERE id = 1`)
 	if err := row.Scan(
 		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
@@ -165,11 +169,13 @@ func GetSiteSettings() (*SiteSettings, error) {
 		&s.MaxDescriptionLength, &s.MaxCommentLength,
 		&s.AuditRetentionDays,
 		&s.NotificationEmailsEnabled,
+		&s.TrashRetentionDays,
 	); err != nil {
 		return nil, err
 	}
 	s.EmailAuditRetentionDays = ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays)
 	s.AuditRetentionDays = ClampAuditRetentionDays(s.AuditRetentionDays)
+	s.TrashRetentionDays = ClampTrashRetentionDays(s.TrashRetentionDays)
 	s.Image.MaxBytes = imagehost.ClampMaxBytes(s.Image.MaxBytes)
 	s.MaxDescriptionLength = ClampTaskTextLength(s.MaxDescriptionLength)
 	s.MaxCommentLength = ClampTaskTextLength(s.MaxCommentLength)
@@ -190,6 +196,7 @@ func UpsertSiteSettings(s SiteSettings) error {
 	}
 	s.EmailAuditRetentionDays = ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays)
 	s.AuditRetentionDays = ClampAuditRetentionDays(s.AuditRetentionDays)
+	s.TrashRetentionDays = ClampTrashRetentionDays(s.TrashRetentionDays)
 	s.Image.MaxBytes = imagehost.ClampMaxBytes(s.Image.MaxBytes)
 	s.Image.Provider = imagehost.NormalizeProvider(s.Image.Provider)
 	if s.Image.LocalPath == "" {
@@ -222,9 +229,10 @@ func UpsertSiteSettings(s SiteSettings) error {
 			enable_inbound_webhooks,
 			max_description_length, max_comment_length,
 			audit_retention_days,
-			notification_emails_enabled, notification_emails_enabled_at
+			notification_emails_enabled, notification_emails_enabled_at,
+			trash_retention_days
 		)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CASE WHEN $41 THEN NOW() END)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CASE WHEN $41 THEN NOW() END, $42)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
@@ -269,7 +277,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 			notification_emails_enabled = EXCLUDED.notification_emails_enabled,
 			notification_emails_enabled_at = CASE
 				WHEN EXCLUDED.notification_emails_enabled AND NOT COALESCE(site_settings.notification_emails_enabled, FALSE) THEN NOW()
-				ELSE site_settings.notification_emails_enabled_at END
+				ELSE site_settings.notification_emails_enabled_at END,
+			trash_retention_days = EXCLUDED.trash_retention_days
     `, s.SiteName, s.DefaultTimezone, s.ShowChangelog,
 		s.EnableRegistration, s.InviteOnly, s.EnableJoinRequests, s.MetaDescription,
 		s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI,
@@ -287,7 +296,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 		s.EnableInboundWebhooks,
 		s.MaxDescriptionLength, s.MaxCommentLength,
 		s.AuditRetentionDays,
-		s.NotificationEmailsEnabled)
+		s.NotificationEmailsEnabled,
+		s.TrashRetentionDays)
 	if err != nil {
 		return fmt.Errorf("failed to upsert site_settings: %v", err)
 	}
