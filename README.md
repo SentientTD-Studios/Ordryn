@@ -12,9 +12,10 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Projects with rename, archive, and delete; tags with create-on-type, rename, recolor, and delete
 - Kanban boards with custom statuses, estimates, claims, and named sprints (descriptions, date ranges, lock dates, and a board sprint switcher)
 - Priority levels (None / Low / Medium / High) with optional sort-by-priority view
-- Due dates with smart filters (today, overdue, this week, no date) and relative labels
+- Due dates with smart filters (today, overdue, this week, no date) and relative labels, plus due-date reminders at 08:00 local the day before and the morning of (for your own tasks, tasks you claimed, and tasks in projects you own)
 - Recurring tasks: daily / weekly (chosen weekdays) / monthly / yearly or every N units, scheduled from the due date or from completion, with optional end date or occurrence count. Completing a task creates the next occurrence (title, description, priority, tags, custom fields, estimate, claim, and subtasks carry over) and keeps a linked series history; reopening within 15 minutes undoes an untouched next occurrence
 - Watchers: watch a task or a whole project to get in-app notifications when tasks are completed or reopened, change status or due date, are claimed, or become blocked or unblocked; creating, commenting on, or claiming a project task watches it automatically
+- Optional email notifications: once an admin allows them, each user opts in per notification type, as they happen (unread notifications batched into at most one email per 10 minutes, skipping anything already seen in the app) or as a daily summary; notification email has its own rate limit separate from account mail
 - Task links: blocks / blocked by, relates to, and duplicates, with cycle prevention, a blocked badge on list and board cards, and an unblocked notification when the last open blocker is completed
 - Search with status, tag, due-date, and priority filters; clearing those filters keeps you in the current project
 - Markdown task descriptions with truncated list view and expand-in-place

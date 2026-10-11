@@ -14,6 +14,8 @@ const (
 	TriggerJoinRequest        = "join_request"
 	TriggerProjectInvite      = "project_invite"
 	TriggerOrganizationInvite = "organization_invite"
+	TriggerNotification       = "notification"
+	TriggerNotificationDigest = "notification_digest"
 
 	StatusSent          = "sent"
 	StatusFailed        = "failed"
@@ -51,7 +53,8 @@ func SetAuditor(a Auditor) {
 func KnownTrigger(t string) bool {
 	switch strings.TrimSpace(t) {
 	case TriggerPasswordReset, TriggerPasswordChanged, TriggerSiteInvite,
-		TriggerJoinRequest, TriggerProjectInvite, TriggerOrganizationInvite:
+		TriggerJoinRequest, TriggerProjectInvite, TriggerOrganizationInvite,
+		TriggerNotification, TriggerNotificationDigest:
 		return true
 	default:
 		return false

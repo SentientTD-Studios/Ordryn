@@ -650,8 +650,9 @@ paths:
       tags: [Profile]
       summary: List notification preferences
       description: |
-        Returns the optional notification types visible to the caller and whether each is
-        enabled. Security emails (password reset, password changed) and invites are always
+        Returns the optional notification types visible to the caller, whether each is
+        enabled in-app and by email, and the caller's email delivery and due-date reminder
+        settings. Security emails (password reset, password changed) and invites are always
         sent and are not listed. Admin-only types appear only for admins.
       security:
         - SessionCookie: []
@@ -668,7 +669,10 @@ paths:
     patch:
       tags: [Profile]
       summary: Update notification preferences
-      description: Turns optional notification types on or off. Omitted types are unchanged.
+      description: |
+        Updates in-app and email notification settings. Every field is optional; omitted
+        fields and types are unchanged. All changes are validated before any is applied.
+        Turning email on (email_mode from off) only affects notifications created afterwards.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -678,15 +682,35 @@ paths:
           application/json:
             schema:
               type: object
-              required: [preferences]
               properties:
                 preferences:
                   type: object
-                  description: Map of notification type to enabled.
+                  description: Map of notification type to enabled in-app.
                   additionalProperties:
                     type: boolean
                   example:
                     task_created: false
+                email_types:
+                  type: object
+                  description: |
+                    Map of notification type to emailed. Only types with email_available
+                    are accepted. A type is emailed only while it is also enabled in-app.
+                  additionalProperties:
+                    type: boolean
+                  example:
+                    task_mentioned: true
+                    due_reminder: true
+                email_mode:
+                  type: string
+                  enum: [off, instant, digest]
+                digest_hour:
+                  type: integer
+                  minimum: 0
+                  maximum: 23
+                  description: Local hour (in the user's timezone) the daily digest goes out.
+                reminder_timing:
+                  type: string
+                  enum: [off, day_before, morning, both]
       responses:
         "200":
           description: Updated notification preferences
@@ -6737,17 +6761,43 @@ components:
           type: array
           items:
             type: object
-            required: [type, label, description, enabled]
+            required: [type, label, description, enabled, email, email_available]
             properties:
               type:
                 type: string
-                enum: [task_created, task_commented, task_mentioned, task_activity, task_unblocked, join_request]
+                enum: [task_created, task_commented, task_mentioned, task_activity, task_unblocked, due_reminder, automation, join_request]
               label:
                 type: string
               description:
                 type: string
               enabled:
                 type: boolean
+                description: Delivered in-app.
+              email:
+                type: boolean
+                description: Also emailed (needs enabled, email_mode other than off, and email.available).
+              email_available:
+                type: boolean
+                description: False for types that cannot be emailed on their own (automation, join_request).
+        email:
+          type: object
+          required: [available, mode, digest_hour, reminder_timing]
+          properties:
+            available:
+              type: boolean
+              description: True when an admin enabled notification email and outbound mail is configured.
+            mode:
+              type: string
+              enum: [off, instant, digest]
+              description: |
+                instant batches unread notifications into at most one email per 10 minutes,
+                skipping any read in-app first; digest sends one email a day at digest_hour.
+            digest_hour:
+              type: integer
+            reminder_timing:
+              type: string
+              enum: [off, day_before, morning, both]
+              description: When due-date reminders arrive, at 08:00 in the user's timezone.
 
     User:
       type: object
@@ -9524,6 +9574,9 @@ components:
         enable_inbound_webhooks:
           type: boolean
           description: When true, project owners can expose POST /api/v2/webhooks/inbound.
+        notification_emails_enabled:
+          type: boolean
+          description: When true, users can opt into notification email and email due-date reminders. Off by default.
         allow_user_invites:
           type: boolean
         user_invite_limit:
@@ -9627,6 +9680,9 @@ components:
         enable_inbound_webhooks:
           type: boolean
           description: When true, project owners can expose POST /api/v2/webhooks/inbound.
+        notification_emails_enabled:
+          type: boolean
+          description: When true, users can opt into notification email and email due-date reminders. Off by default.
         allow_user_invites:
           type: boolean
         user_invite_limit:

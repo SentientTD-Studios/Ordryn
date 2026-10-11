@@ -170,6 +170,18 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "notification opt-outs: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateSiteSettingsTable(); err != nil {
+		fmt.Fprintf(os.Stderr, "site settings: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateNotificationEmailTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "notification email: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateUsersAddTimezone(); err != nil {
+		fmt.Fprintf(os.Stderr, "users timezone: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateTaskCommentsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "task comments: %v\n", err)
 		os.Exit(1)

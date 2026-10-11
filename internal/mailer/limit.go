@@ -30,6 +30,29 @@ type coreSendLimiter struct {
 
 var coreLimiter = newCoreSendLimiter()
 
+// Notification mail has its own budget, separate from core (account) mail.
+// Instant emails are already batched to at most one per user per few minutes;
+// these caps only stop a runaway loop or a very busy site.
+const (
+	notificationRecipientLimit  = 12
+	notificationRecipientWindow = time.Hour
+	notificationGlobalLimit     = 300
+	notificationGlobalWindow    = 15 * time.Minute
+)
+
+var notificationLimiter = &coreSendLimiter{
+	byRecipient: map[string][]time.Time{},
+	now:         time.Now,
+	recipientN:  notificationRecipientLimit,
+	recipientW:  notificationRecipientWindow,
+	globalN:     notificationGlobalLimit,
+	globalW:     notificationGlobalWindow,
+}
+
+func allowNotificationSend(toEmail string) error {
+	return notificationLimiter.allow(toEmail)
+}
+
 func newCoreSendLimiter() *coreSendLimiter {
 	return &coreSendLimiter{
 		byRecipient: map[string][]time.Time{},

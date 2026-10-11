@@ -66,7 +66,8 @@ import type {
   SiteInfo,
   Tag,
   NotificationList,
-  NotificationPreference,
+  NotificationPreferencesResponse,
+  NotificationPreferencesUpdate,
   Task,
   TaskRecurrenceDetail,
   TaskLink,
@@ -1187,13 +1188,13 @@ export const api = {
   },
 
   getNotificationPreferences() {
-    return request<{ preferences: NotificationPreference[] }>('/api/v2/me/notification-preferences')
+    return request<NotificationPreferencesResponse>('/api/v2/me/notification-preferences')
   },
 
-  updateNotificationPreferences(preferences: Record<string, boolean>) {
-    return request<{ preferences: NotificationPreference[] }>('/api/v2/me/notification-preferences', {
+  updateNotificationPreferences(update: NotificationPreferencesUpdate) {
+    return request<NotificationPreferencesResponse>('/api/v2/me/notification-preferences', {
       method: 'PATCH',
-      body: JSON.stringify({ preferences }),
+      body: JSON.stringify(update),
     })
   },
 

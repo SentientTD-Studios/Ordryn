@@ -36,6 +36,8 @@ type adminSettingsJSON struct {
 	MaxDescriptionLength     int    `json:"max_description_length"`
 	MaxCommentLength         int    `json:"max_comment_length"`
 
+	NotificationEmailsEnabled bool `json:"notification_emails_enabled"`
+
 	EmailProvider           string `json:"email_provider"`
 	EmailFromAddress        string `json:"email_from_address"`
 	EmailFromName           string `json:"email_from_name"`
@@ -82,6 +84,8 @@ type adminSettingsPatch struct {
 	InviteExpirationDays     *int    `json:"invite_expiration_days"`
 	MaxDescriptionLength     *int    `json:"max_description_length"`
 	MaxCommentLength         *int    `json:"max_comment_length"`
+
+	NotificationEmailsEnabled *bool `json:"notification_emails_enabled"`
 
 	EmailProvider           *string `json:"email_provider"`
 	EmailFromAddress        *string `json:"email_from_address"`
@@ -177,6 +181,9 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.EnableInboundWebhooks != nil {
 		next.EnableInboundWebhooks = *req.EnableInboundWebhooks
+	}
+	if req.NotificationEmailsEnabled != nil {
+		next.NotificationEmailsEnabled = *req.NotificationEmailsEnabled
 	}
 	if req.AllowUserInvites != nil {
 		next.AllowUserInvites = *req.AllowUserInvites
@@ -503,6 +510,7 @@ func adminSettingsView(s *storage.SiteSettings) adminSettingsJSON {
 		InviteExpirationDays:       s.InviteExpirationDays,
 		MaxDescriptionLength:       storage.ClampTaskTextLength(s.MaxDescriptionLength),
 		MaxCommentLength:           storage.ClampTaskTextLength(s.MaxCommentLength),
+		NotificationEmailsEnabled:  s.NotificationEmailsEnabled,
 		EmailProvider:              s.Email.Provider,
 		EmailFromAddress:           s.Email.FromAddress,
 		EmailFromName:              s.Email.FromName,

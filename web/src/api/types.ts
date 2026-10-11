@@ -409,7 +409,36 @@ export type NotificationPreference = {
   type: string
   label: string
   description: string
+  /** Delivered in-app. */
   enabled: boolean
+  /** Also emailed (needs enabled, an email mode other than off, and email.available). */
+  email: boolean
+  /** False for types that cannot be emailed on their own (automation, join requests). */
+  email_available: boolean
+}
+
+export type EmailMode = 'off' | 'instant' | 'digest'
+export type ReminderTiming = 'off' | 'day_before' | 'morning' | 'both'
+
+export type NotificationEmailSettings = {
+  /** An admin enabled notification email and outbound mail is configured. */
+  available: boolean
+  mode: EmailMode
+  digest_hour: number
+  reminder_timing: ReminderTiming
+}
+
+export type NotificationPreferencesResponse = {
+  preferences: NotificationPreference[]
+  email: NotificationEmailSettings
+}
+
+export type NotificationPreferencesUpdate = {
+  preferences?: Record<string, boolean>
+  email_types?: Record<string, boolean>
+  email_mode?: EmailMode
+  digest_hour?: number
+  reminder_timing?: ReminderTiming
 }
 
 export type TaskEvent = {
@@ -568,6 +597,7 @@ export type AdminSettings = {
   global_announcement_text: string
   enable_api: boolean
   enable_inbound_webhooks: boolean
+  notification_emails_enabled: boolean
   allow_user_invites: boolean
   user_invite_limit: number
   invite_expiration_days: number

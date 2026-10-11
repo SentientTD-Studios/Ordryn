@@ -34,9 +34,12 @@ type SiteSettings struct {
 	GlobalAnnouncementText   string
 	EnableAPI                bool
 	EnableInboundWebhooks    bool
-	AllowUserInvites         bool
-	UserInviteLimit          int
-	InviteExpirationDays     int
+	// NotificationEmailsEnabled lets users opt into notification email and
+	// reminders by email. Off by default; turning it on never sends a backlog.
+	NotificationEmailsEnabled bool
+	AllowUserInvites          bool
+	UserInviteLimit           int
+	InviteExpirationDays      int
 
 	// MaxDescriptionLength and MaxCommentLength cap task text in characters.
 	// Zero means "use DefaultTaskTextLength".
@@ -140,7 +143,8 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(enable_inbound_webhooks, FALSE),
 			COALESCE(max_description_length, 20000),
 			COALESCE(max_comment_length, 20000),
-			COALESCE(audit_retention_days, 0)
+			COALESCE(audit_retention_days, 0),
+			COALESCE(notification_emails_enabled, FALSE)
 		FROM site_settings WHERE id = 1`)
 	if err := row.Scan(
 		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
@@ -160,6 +164,7 @@ func GetSiteSettings() (*SiteSettings, error) {
 		&s.EnableInboundWebhooks,
 		&s.MaxDescriptionLength, &s.MaxCommentLength,
 		&s.AuditRetentionDays,
+		&s.NotificationEmailsEnabled,
 	); err != nil {
 		return nil, err
 	}
@@ -216,9 +221,10 @@ func UpsertSiteSettings(s SiteSettings) error {
 			image_s3_public_url, image_s3_force_path_style, image_local_path,
 			enable_inbound_webhooks,
 			max_description_length, max_comment_length,
-			audit_retention_days
+			audit_retention_days,
+			notification_emails_enabled, notification_emails_enabled_at
 		)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CASE WHEN $41 THEN NOW() END)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
@@ -259,7 +265,11 @@ func UpsertSiteSettings(s SiteSettings) error {
 			enable_inbound_webhooks = EXCLUDED.enable_inbound_webhooks,
 			max_description_length = EXCLUDED.max_description_length,
 			max_comment_length = EXCLUDED.max_comment_length,
-			audit_retention_days = EXCLUDED.audit_retention_days
+			audit_retention_days = EXCLUDED.audit_retention_days,
+			notification_emails_enabled = EXCLUDED.notification_emails_enabled,
+			notification_emails_enabled_at = CASE
+				WHEN EXCLUDED.notification_emails_enabled AND NOT COALESCE(site_settings.notification_emails_enabled, FALSE) THEN NOW()
+				ELSE site_settings.notification_emails_enabled_at END
     `, s.SiteName, s.DefaultTimezone, s.ShowChangelog,
 		s.EnableRegistration, s.InviteOnly, s.EnableJoinRequests, s.MetaDescription,
 		s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI,
@@ -276,7 +286,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 		s.Image.S3ForcePathStyle, s.Image.LocalPath,
 		s.EnableInboundWebhooks,
 		s.MaxDescriptionLength, s.MaxCommentLength,
-		s.AuditRetentionDays)
+		s.AuditRetentionDays,
+		s.NotificationEmailsEnabled)
 	if err != nil {
 		return fmt.Errorf("failed to upsert site_settings: %v", err)
 	}

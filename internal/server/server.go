@@ -90,6 +90,8 @@ func StartServer() error {
 	hooks.StartDeliveryWorker()
 	domain.StartAgentDispatcher()
 	domain.StartAutomation()
+	domain.StartDueReminderWorker()
+	domain.StartNotificationEmailWorker()
 
 	registerAPIV1Routes()
 

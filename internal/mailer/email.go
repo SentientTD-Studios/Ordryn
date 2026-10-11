@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"html"
+	"mime"
 	"net"
 	"net/smtp"
 	"strings"
@@ -91,6 +93,44 @@ func deliverConfigured(cfg Config, subject, message, toEmail, from, fromAddr str
 	}
 }
 
+// plainToHTML renders a plain-text body as HTML. Bodies can carry user text
+// (task titles, comments, join messages), so it is escaped before line breaks
+// become <br/>.
+func plainToHTML(message string) string {
+	return strings.ReplaceAll(html.EscapeString(message), "\n", "<br/>")
+}
+
+// cleanHeader folds CR/LF out of a header value so user text (a task title in a
+// subject) cannot inject extra headers.
+func cleanHeader(v string) string {
+	return strings.TrimSpace(strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(v))
+}
+
+// Configured reports whether cfg has a usable provider, sender, and credentials.
+func Configured(cfg Config) bool {
+	_, _, err := checkConfigured(cfg)
+	return err == nil
+}
+
+// SendNotificationEmail sends a notification or digest email. It is metered by
+// its own limiter so a busy site can never starve password resets or invites.
+func SendNotificationEmail(cfg Config, trigger, subject, message, toEmail string) error {
+	err := sendNotificationEmail(cfg, subject, message, toEmail)
+	recordAudit(cfg, trigger, toEmail, err)
+	return err
+}
+
+func sendNotificationEmail(cfg Config, subject, message, toEmail string) error {
+	fromAddr, from, err := checkConfigured(cfg)
+	if err != nil {
+		return err
+	}
+	if err := allowNotificationSend(toEmail); err != nil {
+		return err
+	}
+	return deliverConfigured(cfg, subject, message, toEmail, from, fromAddr)
+}
+
 // testDeliver, when set, replaces SMTP/Mailgun so tests can exercise rate limits.
 var testDeliver func(cfg Config, subject, message, toEmail, from, fromAddr string) error
 
@@ -113,9 +153,8 @@ func sendViaMailgun(cfg Config, subject, message, toEmail, from, fromAddr string
 	}
 
 	mg := mailgun.NewMailgun(apiKey)
-	m := mailgun.NewMessage(domain, from, subject, message, toEmail)
-	htmlBody := strings.ReplaceAll(message, "\n", "<br/>")
-	m.SetHTML(htmlBody)
+	m := mailgun.NewMessage(domain, from, cleanHeader(subject), message, toEmail)
+	m.SetHTML(plainToHTML(message))
 	m.SetReplyTo(fromAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -140,16 +179,15 @@ func sendViaSMTP(cfg Config, subject, message, toEmail, from, fromAddr string) e
 		return fmt.Errorf("decrypt smtp password: %w", err)
 	}
 
-	htmlBody := strings.ReplaceAll(message, "\n", "<br/>")
 	msg := strings.Join([]string{
-		"From: " + from,
-		"To: " + toEmail,
-		"Reply-To: " + fromAddr,
-		"Subject: " + subject,
+		"From: " + cleanHeader(from),
+		"To: " + cleanHeader(toEmail),
+		"Reply-To: " + cleanHeader(fromAddr),
+		"Subject: " + mime.QEncoding.Encode("utf-8", cleanHeader(subject)),
 		"MIME-Version: 1.0",
 		"Content-Type: text/html; charset=UTF-8",
 		"",
-		htmlBody,
+		plainToHTML(message),
 	}, "\r\n")
 
 	addr := fmt.Sprintf("%s:%d", host, port)

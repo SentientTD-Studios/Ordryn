@@ -245,3 +245,64 @@ func TestSendEmailUnconfiguredDoesNotConsumeQuota(t *testing.T) {
 		t.Fatalf("configured send after unconfigured attempts: %v", err)
 	}
 }
+
+func TestPlainToHTMLEscapesUserText(t *testing.T) {
+	got := plainToHTML("Hi <b>there</b> & \"you\"\n<script>alert(1)</script>")
+	want := "Hi &lt;b&gt;there&lt;/b&gt; &amp; &#34;you&#34;<br/>&lt;script&gt;alert(1)&lt;/script&gt;"
+	if got != want {
+		t.Fatalf("plainToHTML = %q, want %q", got, want)
+	}
+}
+
+func TestCleanHeaderStripsLineBreaks(t *testing.T) {
+	got := cleanHeader("Task title\r\nBcc: victim@example.com\nX: y")
+	if strings.ContainsAny(got, "\r\n") {
+		t.Fatalf("header still has a line break: %q", got)
+	}
+	if got != "Task title Bcc: victim@example.com X: y" {
+		t.Fatalf("cleanHeader = %q", got)
+	}
+}
+
+func TestNotificationEmailHasItsOwnBudget(t *testing.T) {
+	t.Cleanup(func() {
+		testDeliver = nil
+		coreLimiter.reset()
+		notificationLimiter.reset()
+		SetAuditor(nil)
+	})
+	coreLimiter.reset()
+	notificationLimiter.reset()
+	testDeliver = func(Config, string, string, string, string, string) error { return nil }
+	var last AuditEntry
+	SetAuditor(func(entry AuditEntry) { last = entry })
+
+	origN := notificationLimiter.recipientN
+	notificationLimiter.recipientN = 1
+	t.Cleanup(func() { notificationLimiter.recipientN = origN })
+
+	cfg := readySMTPConfig()
+	to := "user@example.com"
+	if err := SendNotificationEmail(cfg, TriggerNotification, "s", "b", to); err != nil {
+		t.Fatalf("first notification: %v", err)
+	}
+	if last.Trigger != TriggerNotification {
+		t.Fatalf("audit trigger = %q", last.Trigger)
+	}
+	if err := SendNotificationEmail(cfg, TriggerNotification, "s", "b", to); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("second notification err = %v, want ErrRateLimited", err)
+	}
+	// Exhausting the notification budget must not block account mail.
+	if err := SendEmail(cfg, TriggerPasswordReset, "s", "b", to); err != nil {
+		t.Fatalf("password reset after notification cap: %v", err)
+	}
+}
+
+func TestConfigured(t *testing.T) {
+	if Configured(Config{}) {
+		t.Fatal("empty config should not be configured")
+	}
+	if !Configured(readySMTPConfig()) {
+		t.Fatal("ready SMTP config should be configured")
+	}
+}

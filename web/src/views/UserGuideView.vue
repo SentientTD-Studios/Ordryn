@@ -335,6 +335,18 @@ onUnmounted(() => {
             get a notification; other members still see the usual new-comment notice.
           </li>
           <li>
+            <strong>Due date reminders</strong> arrive in the notification bell at 08:00 in your timezone, the day
+            before a task is due and on the morning it's due. You get them for your own tasks, tasks you've claimed,
+            and tasks in projects you own. Change the timing (or turn them off) under profile → notifications.
+          </li>
+          <li>
+            <strong>Email notifications</strong> are off until a site admin allows them, and then each person opts
+            in under profile → notifications. Pick <em>As they happen</em> (unread notifications grouped into at most
+            one email every 10 minutes; anything you've already seen in the app isn't emailed) or a
+            <em>Daily summary</em> at an hour you choose, then switch on email for the types you want. Turning email
+            on never sends older notifications.
+          </li>
+          <li>
             Paste <code>#123</code> in a comment to link another task you can access (including tasks
             only you can see). Click <strong>Insert link</strong>, and it renders as
             <em>Task #123 - Title</em> for anyone who can open that task.

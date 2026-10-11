@@ -50,6 +50,7 @@ const settings = reactive<AdminSettings>({
   email_smtp_password_set: false,
   email_smtp_tls: true,
   email_audit_retention_days: 7,
+  notification_emails_enabled: false,
   audit_retention_days: 0,
   github_oauth_client_id: '',
   github_oauth_client_secret_set: false,
@@ -123,6 +124,7 @@ async function saveEmailSettings() {
       email_smtp_username: settings.email_smtp_username,
       email_smtp_tls: settings.email_smtp_tls,
       email_audit_retention_days: settings.email_audit_retention_days,
+      notification_emails_enabled: settings.notification_emails_enabled,
     }
     if (mailgunApiKeyInput.value !== '') {
       payload.email_mailgun_api_key = mailgunApiKeyInput.value
@@ -403,8 +405,9 @@ onMounted(load)
       <div class="card-header"><h2 class="h5 mb-0">Email</h2></div>
       <div class="card-body">
 		<p class="text-muted small">
-          System mail only: password resets, site invites, project invites, and join-request alerts.
-          Sends are rate-limited per recipient and site-wide.
+          System mail: password resets, site invites, project invites, and join-request alerts, plus notification
+          email when you allow it below. Sends are rate-limited per recipient and site-wide, and notification
+          email has its own limit so it never delays account mail.
           Extensions and project members cannot send through this mailer — use an email relay, ntfy, or a chat webhook instead.
         </p>
         <form @submit.prevent="saveEmailSettings">
@@ -498,6 +501,21 @@ onMounted(load)
           <p v-if="!settings.email_provider" class="text-muted small">
             Outbound email is disabled. Password resets, invites, and join-request alerts will not send until a provider is configured.
           </p>
+
+          <div class="form-check mb-3">
+            <input
+              id="email-notifications-enabled"
+              v-model="settings.notification_emails_enabled"
+              class="form-check-input"
+              type="checkbox"
+            />
+            <label class="form-check-label" for="email-notifications-enabled">Allow notification email</label>
+            <div class="form-text">
+              Lets users choose to get notifications and due-date reminders by email, as they happen or as a daily
+              summary. Everyone starts with email off; each user opts in from Profile → Notifications. Turning this on
+              never sends older notifications. Links in these emails need <code>PUBLIC_URL</code> to be set.
+            </div>
+          </div>
 
           <div class="mb-3">
             <label class="form-label" for="email-audit-retention">Audit log retention (days)</label>
