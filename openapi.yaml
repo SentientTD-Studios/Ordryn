@@ -3587,6 +3587,12 @@ paths:
                   type: boolean
                 is_default:
                   type: boolean
+                wip_limit:
+                  type: integer
+                  nullable: true
+                  minimum: 1
+                  maximum: 999
+                  description: Soft card limit for the column; null clears it. Rejected on done columns, and cleared when a column becomes done.
       responses:
         "200":
           description: Updated
@@ -7646,6 +7652,10 @@ components:
           items:
             type: string
           description: If non-empty, only these roles (plus owner/admin) may move a task out of this status
+        wip_limit:
+          type: integer
+          nullable: true
+          description: Soft limit on cards in the column (1-999). Null means no limit; done columns never have one. The board highlights a column over its limit but never blocks moves.
       type: object
       properties:
         id:

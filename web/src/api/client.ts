@@ -858,7 +858,7 @@ export const api = {
   updateProjectStatus(
     projectId: number,
     statusId: number,
-    payload: Partial<{ name: string; description: string; is_done: boolean; is_default: boolean }>,
+    payload: Partial<{ name: string; description: string; is_done: boolean; is_default: boolean; wip_limit: number | null }>,
   ) {
     return request<ProjectStatus>(`/api/v2/projects/${projectId}/statuses/${statusId}`, {
       method: 'PATCH',

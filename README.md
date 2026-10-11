@@ -10,7 +10,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Editable profile (display name, timezone, tasks-per-page preference)
 - Per-user tasks: add, edit, duplicate, complete, delete, drag-and-drop reorder
 - Projects with rename, archive, and delete; tags with create-on-type, rename, recolor, and delete
-- Kanban boards with custom statuses, estimates, claims, and named sprints (descriptions, date ranges, lock dates, and a board sprint switcher)
+- Kanban boards with custom statuses, estimates, claims, named sprints (descriptions, date ranges, lock dates, and a board sprint switcher), soft per-column WIP limits, and collapsible columns
 - Priority levels (None / Low / Medium / High) with optional sort-by-priority view
 - Due dates with smart filters (today, overdue, this week, no date) and relative labels, plus due-date reminders at 08:00 local the day before and the morning of (for your own tasks, tasks you claimed, and tasks in projects you own)
 - Recurring tasks: daily / weekly (chosen weekdays) / monthly / yearly or every N units, scheduled from the due date or from completion, with optional end date or occurrence count. Completing a task creates the next occurrence (title, description, priority, tags, custom fields, estimate, claim, and subtasks carry over) and keeps a linked series history; reopening within 15 minutes undoes an untouched next occurrence

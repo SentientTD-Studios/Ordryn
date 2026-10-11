@@ -106,6 +106,15 @@ onUnmounted(() => {
             sprint or backlog.
           </li>
           <li>
+            Project owners can give any non-done column a <strong>WIP limit</strong> in project settings
+            (Board tab). When a column holds more cards than its limit, its count turns red, for example
+            <em>5 / 3</em>. The limit is a warning only and never blocks a move; it counts the cards shown on the
+            board, so a sprint or filter changes what is counted. Use the
+            <i class="bi bi-chevron-bar-left" aria-label="collapse" /> button on a column to
+            <strong>collapse</strong> it to a narrow strip; your collapsed columns are remembered for each board in this
+            browser.
+          </li>
+          <li>
             Create and edit tags in project settings. Members with the manage-tags permission
             (owners and any role that includes it) can rename a tag and pick
             its color; chips on lists, boards, and the task sidebar use that color. Personal (inbox)

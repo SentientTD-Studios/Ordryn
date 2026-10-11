@@ -99,6 +99,8 @@ export type ProjectStatus = {
   created_at: string
   enter_role_slugs?: string[]
   leave_role_slugs?: string[]
+  /** Soft limit on cards in the column; null or absent means none. */
+  wip_limit?: number | null
 }
 
 export type ProjectSprint = {

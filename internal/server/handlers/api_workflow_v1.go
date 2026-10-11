@@ -25,6 +25,8 @@ type apiProjectStatusJSON struct {
 	CreatedAt      string   `json:"created_at"`
 	EnterRoleSlugs []string `json:"enter_role_slugs,omitempty"`
 	LeaveRoleSlugs []string `json:"leave_role_slugs,omitempty"`
+	// WIPLimit is a soft cap on cards in the column; null means no limit.
+	WIPLimit *int `json:"wip_limit"`
 }
 
 type apiStatusCreateRequest struct {
@@ -39,6 +41,8 @@ type apiStatusPatchRequest struct {
 	Description *string `json:"description"`
 	IsDone      *bool   `json:"is_done"`
 	IsDefault   *bool   `json:"is_default"`
+	// WIPLimit sets a soft card limit (1-999); null clears it.
+	WIPLimit optionalInt `json:"wip_limit"`
 }
 
 type apiStatusReorderRequest struct {
@@ -85,6 +89,7 @@ func statusToAPIJSON(s storage.ProjectStatus) apiProjectStatusJSON {
 		CreatedAt:      s.CreatedAt.UTC().Format(time.RFC3339),
 		EnterRoleSlugs: enter,
 		LeaveRoleSlugs: leave,
+		WIPLimit:       s.WIPLimit,
 	}
 }
 
@@ -270,6 +275,7 @@ func handleProjectStatusesResource(w http.ResponseWriter, r *http.Request, proje
 			Description: req.Description,
 			IsDone:      req.IsDone,
 			IsDefault:   req.IsDefault,
+			WIPLimit:    req.WIPLimit.toPatchInt(false),
 		})
 		if err != nil {
 			writeWorkflowDomainError(w, err)

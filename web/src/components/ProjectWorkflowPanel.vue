@@ -90,6 +90,7 @@
                 <strong class="me-1">{{ s.name }}</strong>
                 <span v-if="s.is_default" class="badge text-bg-info">default</span>
                 <span v-if="s.is_done" class="badge text-bg-success">done</span>
+                <span v-if="!isOwner && s.wip_limit" class="badge text-bg-secondary">WIP {{ s.wip_limit }}</span>
                 <span
                   v-if="(s.enter_role_slugs && s.enter_role_slugs.length) || (s.leave_role_slugs && s.leave_role_slugs.length)"
                   class="badge text-bg-warning"
@@ -151,6 +152,20 @@
                 @change="toggleDone(s, ($event.target as HTMLInputElement).checked)"
               />
               <label class="form-check-label small" :for="`done-${s.id}`">Done</label>
+            </div>
+            <div v-if="!s.is_done" class="d-flex align-items-center gap-1" title="Soft limit on cards in this column. Leave blank for none.">
+              <label class="small text-muted mb-0" :for="`wip-${s.id}`">WIP</label>
+              <input
+                :id="`wip-${s.id}`"
+                type="number"
+                class="form-control form-control-sm wip-input"
+                min="1"
+                max="999"
+                placeholder="–"
+                :value="s.wip_limit ?? ''"
+                :aria-label="`WIP limit for ${s.name}`"
+                @change="setWipLimit(s, ($event.target as HTMLInputElement).value)"
+              />
             </div>
             <button
               class="btn btn-sm btn-outline-secondary"
@@ -521,6 +536,26 @@ async function toggleDone(s: ProjectStatus, isDone: boolean) {
   }
 }
 
+async function setWipLimit(s: ProjectStatus, raw: string) {
+  const trimmed = raw.trim()
+  const next = trimmed === '' ? null : Number(trimmed)
+  if (next !== null && (!Number.isInteger(next) || next < 1 || next > 999)) {
+    toast.push('WIP limit must be a whole number from 1 to 999', 'error')
+    await loadStatuses()
+    return
+  }
+  if (next === (s.wip_limit ?? null)) return
+  try {
+    const updated = await api.updateProjectStatus(props.project.id, s.id, { wip_limit: next })
+    statuses.value = statuses.value.map((row) => (row.id === updated.id ? updated : row))
+    toast.push(next === null ? 'WIP limit removed' : `WIP limit set to ${next}`, 'success')
+    emit('columns-changed')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
+    await loadStatuses()
+  }
+}
+
 async function addStatus() {
   const name = newStatusName.value.trim()
   if (!name) return
@@ -601,6 +636,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.wip-input {
+  width: 4.25rem;
+}
 .status-drag-handle {
   cursor: grab;
   display: inline-flex;
