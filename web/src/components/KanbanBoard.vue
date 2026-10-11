@@ -287,7 +287,8 @@
               @keydown.esc.stop.prevent="cancelAddCard"
               @blur="onAddCardBlur"
             />
-            <div class="small text-muted mt-1">Enter to add · Esc to close</div>
+            <QuickAddChips v-if="cardParse.chips.length" class="mt-1" :chips="cardParse.chips" />
+            <div class="small text-muted mt-1">Enter to add · Esc to close · <code>#tag</code> <code>!high</code> <code>friday</code><template v-if="canClaim"> <code>@me</code></template></div>
           </form>
           <button
             v-else
@@ -309,6 +310,8 @@ import Sortable from 'sortablejs'
 import { api } from '@/api/client'
 import type { Project, ProjectStatus, Task } from '@/api/types'
 import TaskFieldBadges from '@/components/TaskFieldBadges.vue'
+import QuickAddChips from '@/components/QuickAddChips.vue'
+import { parseQuickAdd } from '@/utils/quickAdd'
 import { APIError } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
@@ -402,9 +405,26 @@ function setAddInputEl(statusId: number, el: unknown) {
   else addInputEls.delete(statusId)
 }
 
+const boardTags = ref<{ id: number; name: string }[] | null>(null)
+
+async function loadBoardTags() {
+  if (boardTags.value) return
+  try {
+    const list = await api.listTags({ project_id: props.projectId })
+    boardTags.value = list.filter((t) => !t.protected)
+  } catch {
+    // "#name" just stays in the title.
+  }
+}
+
+const cardParse = computed(() =>
+  parseQuickAdd(newCardTitle.value, { tags: boardTags.value ?? [], allowClaim: canClaim.value }),
+)
+
 async function startAddCard(statusId: number) {
   addingStatusId.value = statusId
   newCardTitle.value = ''
+  void loadBoardTags()
   await nextTick()
   addInputEls.get(statusId)?.focus()
 }
@@ -421,19 +441,30 @@ function onAddCardBlur() {
 }
 
 async function createCard(col: ProjectStatus) {
-  const title = newCardTitle.value.trim()
-  if (!title || creatingCard.value) return
+  if (!newCardTitle.value.trim() || creatingCard.value) return
   const sprintKey = props.sprintFilter
   const boardSprintId = sprintKey && sprintKey !== 'backlog' ? parseInt(sprintKey, 10) : null
   const canSetSprint = hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_SPRINT)
   creatingCard.value = true
   try {
-    const task = await api.createTask({
-      title,
+    if (newCardTitle.value.includes('#')) await loadBoardTags()
+    const parsed = cardParse.value
+    let task = await api.createTask({
+      title: parsed.title,
       project_id: props.projectId,
       status_id: col.is_default ? undefined : col.id,
       sprint_id: boardSprintId && canSetSprint ? boardSprintId : undefined,
+      due_date: parsed.dueDate,
+      priority: parsed.priority,
+      tag_ids: parsed.tagIds.length ? parsed.tagIds : undefined,
     })
+    if (parsed.claim) {
+      try {
+        task = await api.claimTask(task.id)
+      } catch (err) {
+        toast.push(err instanceof APIError ? `Added, but could not claim: ${err.message}` : 'Added, but could not claim', 'info')
+      }
+    }
     newCardTitle.value = ''
     emit('task-created', task)
     if (boardSprintId && !canSetSprint) {

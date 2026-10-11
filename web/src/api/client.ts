@@ -27,6 +27,7 @@ import type {
   CalendarMonth,
   ChangelogEntry,
   DashboardStats,
+  ProjectInsights,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -1333,6 +1334,11 @@ export const api = {
 
   dashboard() {
     return request<DashboardStats>('/api/v2/dashboard')
+  },
+
+  projectInsights(projectId: number, sprintId?: number) {
+    const qs = sprintId ? `?sprint_id=${sprintId}` : ''
+    return request<ProjectInsights>(`/api/v2/projects/${projectId}/insights${qs}`)
   },
 
   getCalendar() {

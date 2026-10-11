@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { CalendarMonth, Project, SavedView } from '@/api/types'
+import type { CalendarMonth, CalendarMonthCell, CalendarMonthTask, Project, SavedView } from '@/api/types'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -107,6 +107,82 @@ async function toggleComplete(id: number, completed: boolean) {
   }
 }
 
+// Drag a task onto another day to change its due date.
+const draggingId = ref<number | null>(null)
+const dropDate = ref<string | null>(null)
+const TASK_MIME = 'application/x-ordryn-task'
+
+function onTaskDragStart(e: DragEvent, task: CalendarMonthTask) {
+  if (!e.dataTransfer) return
+  draggingId.value = task.id
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData(TASK_MIME, String(task.id))
+  e.dataTransfer.setData('text/plain', task.title)
+}
+
+function onTaskDragEnd() {
+  draggingId.value = null
+  dropDate.value = null
+}
+
+function onCellDragOver(e: DragEvent, date: string) {
+  if (draggingId.value == null) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+  dropDate.value = date
+}
+
+function onCellDragLeave(e: DragEvent, date: string) {
+  const to = e.relatedTarget as Node | null
+  if (to && (e.currentTarget as HTMLElement).contains(to)) return
+  if (dropDate.value === date) dropDate.value = null
+}
+
+function findCalendarTask(id: number): { cell: CalendarMonthCell; task: CalendarMonthTask } | null {
+  for (const week of view.value?.weeks ?? []) {
+    for (const cell of week) {
+      const task = cell.tasks.find((t) => t.id === id)
+      if (task) return { cell, task }
+    }
+  }
+  return null
+}
+
+function findCell(date: string): CalendarMonthCell | null {
+  for (const week of view.value?.weeks ?? []) {
+    const cell = week.find((c) => c.date === date)
+    if (cell) return cell
+  }
+  return null
+}
+
+function friendlyDay(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+async function onCellDrop(e: DragEvent, date: string) {
+  e.preventDefault()
+  const id = Number(e.dataTransfer?.getData(TASK_MIME) || draggingId.value)
+  draggingId.value = null
+  dropDate.value = null
+  if (!id) return
+  const found = findCalendarTask(id)
+  if (!found || found.task.due === date) return
+  // Move it right away; the reload below (or on error) settles ordering.
+  const { cell: from, task } = found
+  from.tasks = from.tasks.filter((t) => t.id !== id)
+  const target = findCell(date)
+  if (target) target.tasks = [...target.tasks, { ...task, due: date }]
+  try {
+    await api.patchTask(id, { due_date: date })
+    push(`Moved "${task.title}" to ${friendlyDay(date)}`, 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Could not move task', 'error')
+  }
+  await loadMonth(month.value)
+}
+
 onMounted(() => {
   const q = typeof route.query.month === 'string' ? route.query.month : undefined
   void loadMonth(q)
@@ -152,7 +228,7 @@ useLiveUpdates((event, batch) => {
         <div class="calendar-toolbar d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
           <div>
             <h1 class="h3 fw-bold mb-1">Task calendar</h1>
-            <p class="text-muted mb-0 small">Tasks with due dates — open and completed</p>
+            <p class="text-muted mb-0 small">Tasks with due dates — open and completed. Drag a task to another day to reschedule it.</p>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
             <div v-if="view" class="btn-group btn-group-sm" role="group" aria-label="Month navigation">
@@ -266,10 +342,14 @@ useLiveUpdates((event, batch) => {
                 :class="{
                   'calendar-cell--muted': !cell.in_month,
                   'calendar-cell--today': cell.is_today,
+                  'calendar-cell--drop': dropDate === cell.date,
                 }"
                 role="gridcell"
                 :data-date="cell.date"
                 :aria-label="cell.date"
+                @dragover="onCellDragOver($event, cell.date)"
+                @dragleave="onCellDragLeave($event, cell.date)"
+                @drop="onCellDrop($event, cell.date)"
               >
                 <div class="calendar-cell-header">
                   <span class="calendar-day-num">{{ cell.day }}</span>
@@ -294,7 +374,11 @@ useLiveUpdates((event, batch) => {
                       task.completed ? 'calendar-task--completed' : '',
                       !task.completed && task.priority === 3 ? 'calendar-task--high' : '',
                       !task.completed && task.priority === 2 ? 'calendar-task--med' : '',
+                      draggingId === task.id ? 'calendar-task--dragging' : '',
                     ]"
+                    draggable="true"
+                    @dragstart="onTaskDragStart($event, task)"
+                    @dragend="onTaskDragEnd"
                   >
                     <button
                       type="button"

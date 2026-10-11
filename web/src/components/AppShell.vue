@@ -166,8 +166,8 @@ onUnmounted(() => {
       <RouterView />
     </main>
 
-    <!-- Global Footer on all pages EXCEPT sidebar layout pages (/, /dashboard, /calendar) -->
-    <AppFooter v-if="!['/', '/dashboard', '/calendar'].includes(route.path)" class="container" />
+    <!-- Global Footer on all pages EXCEPT sidebar layout pages, which render their own (route meta ownFooter) -->
+    <AppFooter v-if="!route.meta.ownFooter" class="container" />
 
     <ToastHost />
     <GoToTopButton />

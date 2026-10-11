@@ -16,6 +16,7 @@ export const PROJECT_PERMS = {
   TIME_WRITE: 'time:write',
   EXTENSIONS_WRITE: 'extensions:write',
   COMMENTS_MODERATE: 'comments:moderate',
+  INSIGHTS_PEOPLE: 'insights:people',
 } as const
 
 export const WRITE_TASK_PERMS = [
