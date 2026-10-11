@@ -95,7 +95,7 @@ func GetCompletedTasksCount(userID *int) int {
 
 	var count int
 	err = pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true AND NOT "+storage.ArchivedTaskExistsSQL("id"),
+		"SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND deleted_at IS NULL AND completed = true AND NOT "+storage.ArchivedTaskExistsSQL("id"),
 		*userID,
 	).Scan(&count)
 	if err != nil {
@@ -117,7 +117,7 @@ func GetIncompleteTasksCount(userID *int) int {
 
 	var count int
 	err = pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false) AND NOT "+storage.ArchivedTaskExistsSQL("id"),
+		"SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND deleted_at IS NULL AND (completed IS NULL OR completed = false) AND NOT "+storage.ArchivedTaskExistsSQL("id"),
 		*userID,
 	).Scan(&count)
 	if err != nil {

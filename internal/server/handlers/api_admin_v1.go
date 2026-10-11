@@ -37,6 +37,7 @@ type adminSettingsJSON struct {
 	MaxCommentLength         int    `json:"max_comment_length"`
 
 	NotificationEmailsEnabled bool `json:"notification_emails_enabled"`
+	TrashRetentionDays        int  `json:"trash_retention_days"`
 
 	EmailProvider           string `json:"email_provider"`
 	EmailFromAddress        string `json:"email_from_address"`
@@ -86,6 +87,7 @@ type adminSettingsPatch struct {
 	MaxCommentLength         *int    `json:"max_comment_length"`
 
 	NotificationEmailsEnabled *bool `json:"notification_emails_enabled"`
+	TrashRetentionDays        *int  `json:"trash_retention_days"`
 
 	EmailProvider           *string `json:"email_provider"`
 	EmailFromAddress        *string `json:"email_from_address"`
@@ -184,6 +186,9 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NotificationEmailsEnabled != nil {
 		next.NotificationEmailsEnabled = *req.NotificationEmailsEnabled
+	}
+	if req.TrashRetentionDays != nil {
+		next.TrashRetentionDays = storage.ClampTrashRetentionDays(*req.TrashRetentionDays)
 	}
 	if req.AllowUserInvites != nil {
 		next.AllowUserInvites = *req.AllowUserInvites
@@ -511,6 +516,7 @@ func adminSettingsView(s *storage.SiteSettings) adminSettingsJSON {
 		MaxDescriptionLength:       storage.ClampTaskTextLength(s.MaxDescriptionLength),
 		MaxCommentLength:           storage.ClampTaskTextLength(s.MaxCommentLength),
 		NotificationEmailsEnabled:  s.NotificationEmailsEnabled,
+		TrashRetentionDays:         storage.ClampTrashRetentionDays(s.TrashRetentionDays),
 		EmailProvider:              s.Email.Provider,
 		EmailFromAddress:           s.Email.FromAddress,
 		EmailFromName:              s.Email.FromName,

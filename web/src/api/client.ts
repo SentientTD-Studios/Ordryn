@@ -68,6 +68,7 @@ import type {
   NotificationList,
   NotificationPreferencesResponse,
   NotificationPreferencesUpdate,
+  TrashEntry,
   Task,
   TaskRecurrenceDetail,
   TaskLink,
@@ -581,6 +582,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ undo_token }),
     })
+  },
+
+  listTrash() {
+    return request<{ tasks: TrashEntry[] }>('/api/v2/trash')
+  },
+
+  restoreTrashedTask(id: number) {
+    return request<{ ok: boolean; restored: number[] }>(`/api/v2/trash/${id}/restore`, { method: 'POST' })
+  },
+
+  purgeTrashedTask(id: number) {
+    return request<{ ok: boolean }>(`/api/v2/trash/${id}`, { method: 'DELETE' })
+  },
+
+  emptyTrash() {
+    return request<{ ok: boolean; deleted: number }>('/api/v2/trash', { method: 'DELETE' })
   },
 
   bulkTasks(payload: {

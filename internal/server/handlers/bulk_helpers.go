@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -73,98 +72,22 @@ func verifyTasksHavePerm(ctx context.Context, db *pgxpool.Pool, ids []int, userI
 	return nil
 }
 
-func deleteTasksForUser(ctx context.Context, db *pgxpool.Pool, r *http.Request, w http.ResponseWriter, ids []int, userID int) error {
-	snapshots, err := snapshotTasksForUndo(ctx, db, ids, userID)
-	if err != nil {
-		return err
-	}
-	if err := savePendingUndo(r, w, snapshots); err != nil {
-		return err
-	}
-	return deleteTaskRows(ctx, db, ids, userID)
-}
-
-func deleteTaskRows(ctx context.Context, db *pgxpool.Pool, ids []int, userID int) error {
-	for _, id := range ids {
-		logTaskEvent(id, userID, "deleted", nil)
-		live.AfterTaskChange(userID, id, live.TypeTaskDeleted)
-		tag, err := db.Exec(ctx, "DELETE FROM tasks WHERE id = $1", id)
-		if err != nil {
-			return err
+// deleteTasksForAPI moves tasks (and their subtasks) to the trash and returns
+// a Redis undo token; the session also keeps the undo when possible. Undo and
+// the Trash view restore them with nothing lost.
+func deleteTasksForAPI(ctx context.Context, r *http.Request, w http.ResponseWriter, ids []int, userID int) (string, error) {
+	if _, err := domain.TrashTasksForUser(ctx, userID, ids); err != nil {
+		if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrForbidden) {
+			return "", fmt.Errorf("task not found or not authorized")
 		}
-		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("task not found or not authorized")
-		}
-	}
-	return nil
-}
-
-// deleteTasksForAPI deletes tasks and returns a Redis undo token (session undo saved when possible).
-// Children of deleted parents are snapshotted for undo; FK CASCADE removes them with the parent.
-func deleteTasksForAPI(ctx context.Context, db *pgxpool.Pool, r *http.Request, w http.ResponseWriter, ids []int, userID int) (string, error) {
-	childIDs, err := domain.ChildIDsOf(ctx, ids)
-	if err != nil {
 		return "", err
 	}
-	snapshotIDs := uniqueInts(append(append([]int{}, ids...), childIDs...))
-	snapshots, err := snapshotTasksForUndo(ctx, db, snapshotIDs, userID)
-	if err != nil {
-		return "", err
-	}
-	// Delete parents first when both parent and child are selected; CASCADE removes children.
-	// Also delete orphan selected leaves (not children of another selected id).
-	childSet := make(map[int]struct{}, len(childIDs))
-	for _, id := range childIDs {
-		childSet[id] = struct{}{}
-	}
-	idSet := make(map[int]struct{}, len(ids))
+	snapshots := make([]DeletedTaskSnapshot, 0, len(ids))
 	for _, id := range ids {
-		idSet[id] = struct{}{}
-	}
-	deleteIDs := make([]int, 0, len(ids))
-	for _, id := range ids {
-		if _, isChildOfSelected := childSet[id]; isChildOfSelected {
-			// Will be removed via parent CASCADE if parent is also selected.
-			if parentAlsoSelected(ctx, db, id, idSet) {
-				continue
-			}
-		}
-		deleteIDs = append(deleteIDs, id)
-	}
-	if err := deleteTaskRows(ctx, db, deleteIDs, userID); err != nil {
-		return "", err
+		snapshots = append(snapshots, DeletedTaskSnapshot{ID: id})
 	}
 	_ = savePendingUndo(r, w, snapshots)
-	token, err := utils.SaveUndoToken(ctx, userID, toRedisUndoSnapshots(snapshots))
-	if err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
-func uniqueInts(ids []int) []int {
-	seen := make(map[int]struct{}, len(ids))
-	out := make([]int, 0, len(ids))
-	for _, id := range ids {
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-	return out
-}
-
-func parentAlsoSelected(ctx context.Context, db *pgxpool.Pool, childID int, selected map[int]struct{}) bool {
-	var parentID sql.NullInt64
-	if err := db.QueryRow(ctx, `SELECT parent_id FROM tasks WHERE id = $1`, childID).Scan(&parentID); err != nil {
-		return false
-	}
-	if !parentID.Valid {
-		return false
-	}
-	_, ok := selected[int(parentID.Int64)]
-	return ok
+	return utils.SaveUndoToken(ctx, userID, toRedisUndoSnapshots(snapshots))
 }
 
 func bulkSetCompleted(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, completed bool) error {

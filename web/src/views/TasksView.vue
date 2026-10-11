@@ -1028,7 +1028,7 @@ async function removeTask(task: Task) {
   }
   const ok = await askConfirm({
     title: 'Delete task?',
-    message: `Permanently delete “${task.title}”? This cannot be undone.`,
+    message: `Move “${task.title}” to the trash? You can restore it from Trash.`,
     confirmLabel: 'Delete',
     danger: true,
   })
@@ -1051,7 +1051,7 @@ async function performDelete(
     } else {
       removeTaskLocally(task)
     }
-    toast.push(undoToken.value ? 'Task deleted — undo available' : 'Task deleted', 'info')
+    toast.push(undoToken.value ? 'Moved to trash — undo available' : 'Moved to trash', 'info')
     await nextTick()
     refreshSortable()
   } catch (err) {

@@ -1268,7 +1268,7 @@ async function deleteCurrentTask() {
   }
   const ok = await askConfirm({
     title: 'Delete task?',
-    message: `Permanently delete “${currentTask.value.title}”? This cannot be undone.`,
+    message: `Move “${currentTask.value.title}” to the trash? You can restore it from Trash.`,
     confirmLabel: 'Delete',
     danger: true,
   })
@@ -1281,7 +1281,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
   const deletedId = taskId.value
   try {
     await api.deleteTask(deletedId, opts)
-    toast.push('Task deleted', 'info')
+    toast.push('Moved to trash', 'info')
     deleteDialogOpen.value = false
     notifyDeleted(deletedId, opts.mode)
   } catch (err) {

@@ -1560,6 +1560,10 @@ paths:
     post:
       tags: [Tasks]
       summary: Restore deleted tasks via undo_token (or session undo buffer)
+      description: |
+        Deleted tasks go to the trash; undo restores them from it with comments, links,
+        custom fields, history, and subtasks intact. The token expires after expires_in
+        seconds, but the tasks stay restorable from /api/v2/trash until the trash is purged.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1585,6 +1589,114 @@ paths:
                     type: integer
         "400":
           $ref: "#/components/responses/BadRequest"
+
+  /api/v2/trash:
+    get:
+      tags: [Tasks]
+      summary: List the trash
+      description: |
+        Trashed tasks the caller can restore: their own personal tasks, and project tasks
+        where their role has tasks:delete. A task trashed together with its parent is not
+        listed on its own; it is counted in the parent's subtask_count and restored with it.
+        Tasks are permanently deleted at purge_at (an admin sets the retention, default 30 days).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Trashed tasks, most recently deleted first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TrashEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Tasks]
+      summary: Empty the trash
+      description: Permanently deletes every task in the caller's trash listing.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  deleted:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v2/trash/{id}:
+    delete:
+      tags: [Tasks]
+      summary: Permanently delete a trashed task
+      description: Deletes the task and its subtasks for good. Only tasks already in the trash.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/trash/{id}/restore:
+    post:
+      tags: [Tasks]
+      summary: Restore a trashed task
+      description: |
+        Restores the task and the subtasks trashed with it. A subtask whose parent is still
+        in the trash returns 409; restore the parent first.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  restored:
+                    type: array
+                    description: Ids of every task restored (the task and its subtasks).
+                    items:
+                      type: integer
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v2/tasks/{id}:
     parameters:
@@ -1629,11 +1741,12 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       tags: [Tasks]
-      summary: Delete a task (returns undo_token)
+      summary: Move a task to the trash (returns undo_token)
       description: |
-        When the task has subtasks, pass mode=cascade (default) to delete them too,
-        or mode=reparent with new_parent_id (0 or omit to promote to root) to move
-        children before deleting the parent.
+        Moves the task to the trash, where it can be restored (POST /api/v2/trash/{id}/restore)
+        until the trash is purged. When the task has subtasks, pass mode=cascade (default) to
+        trash them too, or mode=reparent with new_parent_id (0 or omit to promote to root) to
+        move children before trashing the parent.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -8950,6 +9063,38 @@ components:
           type: string
           format: date-time
 
+    TrashEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        project_id:
+          type: integer
+          nullable: true
+        project_name:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+          description: Set when a subtask was trashed on its own; its parent is still live.
+        parent_title:
+          type: string
+        subtask_count:
+          type: integer
+          description: Subtasks trashed with this task (restored with it).
+        deleted_at:
+          type: string
+          format: date-time
+        deleted_by:
+          type: string
+          description: Username or email of whoever deleted it.
+        purge_at:
+          type: string
+          format: date-time
+          description: When the task is permanently deleted.
+
     SavedViewFilter:
       type: object
       properties:
@@ -9577,6 +9722,11 @@ components:
         notification_emails_enabled:
           type: boolean
           description: When true, users can opt into notification email and email due-date reminders. Off by default.
+        trash_retention_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Days a deleted task stays in the trash before it is permanently deleted (default 30).
         allow_user_invites:
           type: boolean
         user_invite_limit:
@@ -9683,6 +9833,11 @@ components:
         notification_emails_enabled:
           type: boolean
           description: When true, users can opt into notification email and email due-date reminders. Off by default.
+        trash_retention_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Days a deleted task stays in the trash before it is permanently deleted (default 30).
         allow_user_invites:
           type: boolean
         user_invite_limit:

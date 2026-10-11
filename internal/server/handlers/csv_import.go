@@ -328,7 +328,7 @@ func importRowIsDuplicate(ctx context.Context, pool interface {
 }, userID int, title, dueDate string) (bool, error) {
 	var exists bool
 	dupArgs := []interface{}{userID, title}
-	dupQuery := "SELECT EXISTS(SELECT 1 FROM tasks WHERE user_id = $1 AND title = $2"
+	dupQuery := "SELECT EXISTS(SELECT 1 FROM tasks WHERE user_id = $1 AND title = $2 AND deleted_at IS NULL"
 	if dueDate != "" {
 		dupQuery += " AND due_date = $3::date"
 		dupArgs = append(dupArgs, dueDate)

@@ -34,7 +34,7 @@ func ReturnTaskListForUser(userID *int) []Task {
 		return tasks
 	}
 
-	rows, err := pool.Query(context.Background(), "SELECT id, title, description, completed FROM tasks WHERE user_id = $1 ORDER BY id", *userID)
+	rows, err := pool.Query(context.Background(), "SELECT id, title, description, completed FROM tasks WHERE user_id = $1 AND deleted_at IS NULL ORDER BY id", *userID)
 	if err != nil {
 		return tasks
 	}
@@ -232,6 +232,7 @@ func appendFilterSQL(where string, args []interface{}, filters ListFilters, time
 	where, args = appendTagCondition(where, args, filters, userID, tablePrefix)
 	where, args = appendClaimCondition(where, args, filters, userID, tablePrefix)
 	where = appendArchivedExclusion(where, filters, tablePrefix)
+	where += " AND " + storage.TaskNotTrashedSQL(tablePrefix)
 	if strings.ToLower(strings.TrimSpace(filters.WorkflowClaimScope)) == "mine" {
 		args = append(args, userID)
 		where += filters.workflowClaimCondition(tablePrefix, len(args))
@@ -277,10 +278,11 @@ func childSearchClause(idArgIndex int) string {
 	clause := `(c.title ILIKE $1 OR c.description ILIKE $1 OR EXISTS (
 		SELECT 1 FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id
 		WHERE tt.task_id = c.id AND tg.name ILIKE $1))`
-	if idArgIndex <= 0 {
-		return clause
+	if idArgIndex > 0 {
+		clause = fmt.Sprintf(`(%s OR c.id = $%d)`, clause, idArgIndex)
 	}
-	return fmt.Sprintf(`(%s OR c.id = $%d)`, clause, idArgIndex)
+	// Trashed subtasks never make their parent match a search.
+	return "c.deleted_at IS NULL AND " + clause
 }
 
 func appendTagCondition(where string, args []interface{}, filters ListFilters, userID int, tablePrefix string) (string, []interface{}) {
@@ -672,7 +674,7 @@ func attachChildrenToRoots(roots []Task, timezone string, sprintFilter *int, inc
 			COALESCE(TO_CHAR((t.date_modified AT TIME ZONE 'UTC') AT TIME ZONE $2, 'YYYY/MM/DD HH:MI AM'), '') AS date_modified,
 			COALESCE(t.is_favorite,false), COALESCE(t.position,0), COALESCE(t.priority,0), t.project_id, COALESCE(p.name,''), t.parent_id
 		 FROM tasks t LEFT JOIN projects p ON t.project_id = p.id
-		 WHERE t.parent_id = ANY($1)`+notArchived+`
+		 WHERE t.parent_id = ANY($1) AND t.deleted_at IS NULL`+notArchived+`
 		 ORDER BY t.position ASC, t.id ASC`,
 		ids, timezone)
 	if err != nil {

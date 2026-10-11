@@ -975,16 +975,28 @@ func taskVisibleCondition(alias, userParam string, writeRolesOnly bool) string {
 	if writeRolesOnly {
 		memberRoleFilter = " AND pm.role <> 'viewer'"
 	}
-	return fmt.Sprintf(`(%suser_id = %s OR (%sproject_id IS NOT NULL AND EXISTS (
+	// Trashed tasks are invisible everywhere except the trash itself.
+	return fmt.Sprintf(`(%sdeleted_at IS NULL AND (%suser_id = %s OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM project_members pm WHERE pm.project_id = %sproject_id AND pm.user_id = %s%s
 	)) OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM projects p_own WHERE p_own.id = %sproject_id AND p_own.user_id = %s
-	)))`, prefix, userParam, prefix, prefix, userParam, memberRoleFilter, prefix, prefix, userParam)
+	))))`, prefix, prefix, userParam, prefix, prefix, userParam, memberRoleFilter, prefix, prefix, userParam)
 }
 
 // CanUserAccessTask reports whether userID can read the task and their effective write role.
 // writeRole is owner/editor when writes are allowed, viewer when read-only, or empty if no access.
+// A trashed task reports no access; see CanUserAccessTrashedTask.
 func CanUserAccessTask(taskID, userID int) (canRead bool, writeRole string, projectID int, err error) {
+	return canUserAccessTask(taskID, userID, false)
+}
+
+// CanUserAccessTrashedTask is CanUserAccessTask for a task in the trash; it
+// reports no access for a live task. Only trash actions use it.
+func CanUserAccessTrashedTask(taskID, userID int) (canRead bool, writeRole string, projectID int, err error) {
+	return canUserAccessTask(taskID, userID, true)
+}
+
+func canUserAccessTask(taskID, userID int, trashed bool) (canRead bool, writeRole string, projectID int, err error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return false, "", 0, err
@@ -993,13 +1005,17 @@ func CanUserAccessTask(taskID, userID int) (canRead bool, writeRole string, proj
 
 	var ownerID int
 	var proj sql.NullInt64
+	var isTrashed bool
 	err = pool.QueryRow(context.Background(),
-		`SELECT user_id, project_id FROM tasks WHERE id = $1`, taskID).Scan(&ownerID, &proj)
+		`SELECT user_id, project_id, deleted_at IS NOT NULL FROM tasks WHERE id = $1`, taskID).Scan(&ownerID, &proj, &isTrashed)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return false, "", 0, nil
 		}
 		return false, "", 0, err
+	}
+	if isTrashed != trashed {
+		return false, "", 0, nil
 	}
 	if !proj.Valid {
 		if ownerID == userID {
@@ -1036,7 +1052,7 @@ func ListTasksForShareLink(scopeType string, scopeID, createdBy int) ([]map[stri
 			FROM tasks t
 			LEFT JOIN projects p ON p.id = t.project_id
 			LEFT JOIN project_statuses s ON s.id = t.status_id
-			WHERE t.project_id = $1
+			WHERE t.project_id = $1 AND t.deleted_at IS NULL
 			ORDER BY t.completed ASC, t.position ASC, t.id ASC`, scopeID)
 	if err != nil {
 		return nil, err

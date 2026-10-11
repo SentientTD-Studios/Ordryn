@@ -70,10 +70,16 @@ onUnmounted(() => {
           </li>
           <li>
             Archive a task to hide it from boards and lists. Filter by the <strong>archived</strong> tag
-            to find archived work and restore it. Delete is permanent and cannot be undone (a short
-            undo token may still appear after delete as a safety net).
+            to find archived work and restore it.
           </li>
-          <li>Deleting a task may offer undo for a short time when the server returns an undo token.</li>
+          <li>
+            Deleting a task moves it (and its subtasks) to <strong>Trash</strong> in the sidebar. An
+            <strong>Undo</strong> button appears right after, and you can restore from Trash any time
+            before it's permanently deleted (30 days by default; your admin may change this). Restoring
+            brings back everything: comments, links, custom fields, history, and subtasks. A subtask
+            deleted on its own comes back under its parent, so restore the parent first if it's also in
+            the trash. <strong>Delete forever</strong> and <strong>Empty trash</strong> can't be undone.
+          </li>
         </ul>
 
         <h2 id="projects-views" class="h4 mt-4">Projects, tags, filters, and saved views</h2>

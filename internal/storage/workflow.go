@@ -232,7 +232,9 @@ func MigrateTasksAddClaimedBy() error {
 	return nil
 }
 
-// CountProjectTasks returns the number of tasks in a project (including subtasks).
+// CountProjectTasks returns the number of live tasks in a project (including
+// subtasks). Trashed tasks are not counted; callers that drop statuses clear
+// them from trashed tasks too.
 func CountProjectTasks(projectID int) (int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -242,7 +244,7 @@ func CountProjectTasks(projectID int) (int, error) {
 
 	var n int
 	err = pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM tasks WHERE project_id = $1`, projectID).Scan(&n)
+		`SELECT COUNT(*) FROM tasks WHERE project_id = $1 AND deleted_at IS NULL`, projectID).Scan(&n)
 	return n, err
 }
 

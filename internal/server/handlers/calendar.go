@@ -44,7 +44,7 @@ func CalendarFeedHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, title, COALESCE(description, ''), CAST(due_date AS TEXT)
 		FROM tasks
-		WHERE user_id = $1 AND completed = false AND due_date IS NOT NULL
+		WHERE user_id = $1 AND completed = false AND due_date IS NOT NULL AND deleted_at IS NULL
 		  AND NOT ` + storage.ArchivedTaskExistsSQL("id") + `
 		ORDER BY due_date ASC, id ASC`, userID)
 	if err != nil {

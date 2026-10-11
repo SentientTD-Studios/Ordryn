@@ -178,7 +178,7 @@ func ListOverdueHookTasks(limit int) ([]int, error) {
 	defer CloseDatabase(pool)
 	rows, err := pool.Query(context.Background(), `
 		SELECT t.id FROM tasks t
-		WHERE t.project_id IS NOT NULL
+		WHERE t.project_id IS NOT NULL AND t.deleted_at IS NULL
 		  AND t.due_date IS NOT NULL
 		  AND t.due_date < CURRENT_DATE
 		  AND COALESCE(t.completed, false) = false
@@ -231,7 +231,7 @@ func ListDueSoonHookTasks(limit int) ([]int, error) {
 	defer CloseDatabase(pool)
 	rows, err := pool.Query(context.Background(), `
 		SELECT t.id FROM tasks t
-		WHERE t.project_id IS NOT NULL
+		WHERE t.project_id IS NOT NULL AND t.deleted_at IS NULL
 		  AND t.due_date IS NOT NULL
 		  AND t.due_date = CURRENT_DATE + 1
 		  AND COALESCE(t.completed, false) = false

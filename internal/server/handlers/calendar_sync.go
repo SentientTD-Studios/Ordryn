@@ -92,7 +92,7 @@ func apiV1CalendarSync(w http.ResponseWriter, r *http.Request) {
 		}
 		due := fmt.Sprintf("%s-%s-%s", ev.StartDate[0:4], ev.StartDate[4:6], ev.StartDate[6:8])
 		var current sql.NullString
-		if err := pool.QueryRow(ctx, `SELECT CAST(due_date AS TEXT) FROM tasks WHERE id = $1 AND user_id = $2 AND completed = false`, taskID, userID).Scan(&current); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT CAST(due_date AS TEXT) FROM tasks WHERE id = $1 AND user_id = $2 AND completed = false AND deleted_at IS NULL`, taskID, userID).Scan(&current); err != nil {
 			continue
 		}
 		oldDue := ""

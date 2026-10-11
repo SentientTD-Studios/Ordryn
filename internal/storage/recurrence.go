@@ -397,7 +397,7 @@ func ListRecurrenceChildSources(parentID int) ([]TaskRecurrenceSource, error) {
 	defer CloseDatabase(pool)
 	rows, err := pool.Query(context.Background(), `
 		SELECT id, user_id, title, COALESCE(description, ''), COALESCE(priority, 0)
-		FROM tasks WHERE parent_id = $1 AND NOT `+ArchivedTaskExistsSQL("id")+`
+		FROM tasks WHERE parent_id = $1 AND deleted_at IS NULL AND NOT `+ArchivedTaskExistsSQL("id")+`
 		ORDER BY COALESCE(position, 0), id`, parentID)
 	if err != nil {
 		return nil, err

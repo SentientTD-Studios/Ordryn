@@ -252,10 +252,10 @@ func completedIncompleteCounts(userID *int, projectFilter *int, sprintFilter *in
 	if !incRemoved {
 		notArchived = " AND NOT " + storage.ArchivedTaskExistsSQL("id")
 	}
-	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND completed = true"+filterCond+notArchived, args...).Scan(&completedCount); err != nil {
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND deleted_at IS NULL AND completed = true"+filterCond+notArchived, args...).Scan(&completedCount); err != nil {
 		completedCount = 0
 	}
-	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND (completed IS NULL OR completed = false)"+filterCond+notArchived, args...).Scan(&incompleteCount); err != nil {
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND deleted_at IS NULL AND (completed IS NULL OR completed = false)"+filterCond+notArchived, args...).Scan(&incompleteCount); err != nil {
 		incompleteCount = 0
 	}
 	return completedCount, incompleteCount

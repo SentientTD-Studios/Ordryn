@@ -810,7 +810,7 @@ func apiV1DeleteTask(w http.ResponseWriter, r *http.Request, taskID int) {
 		}
 	}
 
-	token, err := deleteTasksForAPI(r.Context(), db, r, w, []int{taskID}, userID)
+	token, err := deleteTasksForAPI(r.Context(), r, w, []int{taskID}, userID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Task not found.")
@@ -972,7 +972,7 @@ func apiV1BulkTasks(w http.ResponseWriter, r *http.Request) {
 	case "set_sprint":
 		err = bulkSetSprint(ctx, db, req.TaskIDs, userID, req.SprintID)
 	case "delete":
-		undoToken, err = deleteTasksForAPI(ctx, db, r, w, req.TaskIDs, userID)
+		undoToken, err = deleteTasksForAPI(ctx, r, w, req.TaskIDs, userID)
 	default:
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Unknown bulk action.")
 		return
@@ -1022,14 +1022,7 @@ func apiV1UndoTasks(w http.ResponseWriter, r *http.Request) {
 		snaps = pu.Tasks
 	}
 
-	db, err := storage.OpenDatabase()
-	if err != nil {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Database error.")
-		return
-	}
-	defer storage.CloseDatabase(db)
-
-	if err := restoreDeletedTasks(r.Context(), db, userID, snaps); err != nil {
+	if err := restoreDeletedTasks(r.Context(), userID, snaps); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to restore tasks.")
 		return
 	}

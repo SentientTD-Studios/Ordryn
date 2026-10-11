@@ -1,19 +1,16 @@
 package handlers
 
 import (
-	"GoTodo/internal/live"
-	"GoTodo/internal/server/utils"
-	"GoTodo/internal/sessionstore"
-	"GoTodo/internal/storage"
 	"context"
-	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"GoTodo/internal/domain"
+	"GoTodo/internal/server/utils"
+	"GoTodo/internal/sessionstore"
 )
 
 func toRedisUndoSnapshots(tasks []DeletedTaskSnapshot) []utils.UndoTaskSnapshot {
@@ -81,50 +78,6 @@ type pendingUndo struct {
 	Tasks     []DeletedTaskSnapshot
 }
 
-func snapshotTasksForUndo(ctx context.Context, db *pgxpool.Pool, ids []int, userID int) ([]DeletedTaskSnapshot, error) {
-	out := make([]DeletedTaskSnapshot, 0, len(ids))
-	for _, id := range ids {
-		var snap DeletedTaskSnapshot
-		var projectID, parentID sql.NullInt64
-		var dueDate sql.NullString
-		err := db.QueryRow(ctx, `
-			SELECT id, title, COALESCE(description, ''), COALESCE(completed, false),
-			       COALESCE(is_favorite, false), COALESCE(priority, 0), COALESCE(position, 0),
-			       project_id, parent_id, COALESCE(CAST(due_date AS TEXT), '')
-			FROM tasks WHERE id = $1`,
-			id).Scan(
-			&snap.ID, &snap.Title, &snap.Description, &snap.Completed, &snap.IsFavorite,
-			&snap.Priority, &snap.Position, &projectID, &parentID, &dueDate,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("task not found")
-		}
-		_ = userID
-		if projectID.Valid {
-			pid := int(projectID.Int64)
-			snap.ProjectID = &pid
-		}
-		if parentID.Valid {
-			pid := int(parentID.Int64)
-			snap.ParentID = &pid
-		}
-		if dueDate.Valid {
-			snap.DueDate = dueDate.String
-		}
-		tags, err := storage.GetTagsForTask(id)
-		if err != nil {
-			return nil, err
-		}
-		snap.TagIDs = make([]int, 0, len(tags))
-		for _, t := range tags {
-			snap.TagIDs = append(snap.TagIDs, t.ID)
-		}
-		snap.Recurrence = snapshotRecurrenceForUndo(id)
-		out = append(out, snap)
-	}
-	return out, nil
-}
-
 func savePendingUndo(r *http.Request, w http.ResponseWriter, tasks []DeletedTaskSnapshot) error {
 	if len(tasks) == 0 {
 		return nil
@@ -182,155 +135,30 @@ func clearPendingUndo(r *http.Request, w http.ResponseWriter) error {
 	return sess.Save(r, w)
 }
 
-func restoreDeletedTasks(ctx context.Context, db *pgxpool.Pool, userID int, tasks []DeletedTaskSnapshot) error {
-	var nextPos int
-	if err := db.QueryRow(ctx,
-		"SELECT COALESCE(MAX(position),0) + 1 FROM tasks WHERE user_id = $1 AND parent_id IS NULL",
-		userID).Scan(&nextPos); err != nil {
-		return err
+// restoreDeletedTasks undoes a delete by restoring the tasks from the trash,
+// with every comment, link, field, and history entry intact. A subtask listed
+// alongside its parent comes back with the parent; one tried before its parent
+// is retried once the parent is restored.
+func restoreDeletedTasks(ctx context.Context, userID int, tasks []DeletedTaskSnapshot) error {
+	pending := make([]int, 0, len(tasks))
+	for _, t := range tasks {
+		pending = append(pending, t.ID)
 	}
-
-	// Restore roots before children so parent_id FK succeeds.
-	sort.SliceStable(tasks, func(i, j int) bool {
-		iChild := tasks[i].ParentID != nil && *tasks[i].ParentID > 0
-		jChild := tasks[j].ParentID != nil && *tasks[j].ParentID > 0
-		if iChild != jChild {
-			return !iChild
-		}
-		return false
-	})
-
-	restoredIDs := make([]int, 0, len(tasks))
-	for _, snap := range tasks {
-		position := snap.Position
-		if snap.ParentID == nil && !snap.IsFavorite {
-			position = nextPos
-			nextPos++
-		}
-
-		newID, err := insertRestoredTask(ctx, db, userID, snap, position)
-		if err != nil {
-			return err
-		}
-		if len(snap.TagIDs) > 0 {
-			if err := storage.SetTaskTags(newID, userID, snap.TagIDs); err != nil {
+	for pass := 0; pass < 2 && len(pending) > 0; pass++ {
+		var retry []int
+		for _, id := range pending {
+			_, err := domain.RestoreTrashedTaskForUser(ctx, userID, id)
+			switch {
+			case err == nil:
+			case errors.Is(err, domain.ErrConflict):
+				retry = append(retry, id)
+			case errors.Is(err, domain.ErrNotFound):
+				// Already restored with its parent, or permanently deleted.
+			default:
 				return err
 			}
 		}
-		restoreRecurrenceFromUndo(newID, snap.Recurrence)
-		logTaskEvent(newID, userID, "created", map[string]interface{}{"restored": true, "original_id": snap.ID})
-		restoredIDs = append(restoredIDs, newID)
+		pending = retry
 	}
-
-	_, _ = db.Exec(ctx, `SELECT setval(pg_get_serial_sequence('tasks', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM tasks), 1))`)
-	live.AfterTasksChange(userID, live.TypeTaskCreated, restoredIDs)
 	return nil
-}
-
-func insertRestoredTask(ctx context.Context, db *pgxpool.Pool, userID int, snap DeletedTaskSnapshot, position int) (int, error) {
-	if snap.ID > 0 {
-		var exists bool
-		_ = db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)", snap.ID).Scan(&exists)
-		if !exists {
-			var newID int
-			err := insertTaskWithID(ctx, db, snap.ID, userID, snap, position, &newID)
-			if err == nil {
-				return newID, nil
-			}
-		}
-	}
-	var newID int
-	err := insertTaskWithID(ctx, db, 0, userID, snap, position, &newID)
-	return newID, err
-}
-
-func insertTaskWithID(ctx context.Context, db *pgxpool.Pool, explicitID, userID int, snap DeletedTaskSnapshot, position int, outID *int) error {
-	var projectArg interface{}
-	if snap.ProjectID != nil {
-		projectArg = *snap.ProjectID
-	}
-	var parentArg interface{}
-	if snap.ParentID != nil && *snap.ParentID > 0 {
-		parentArg = *snap.ParentID
-	}
-	var dueArg interface{}
-	if snap.DueDate != "" {
-		dueArg = snap.DueDate
-	}
-	if explicitID > 0 {
-		return db.QueryRow(ctx,
-			`INSERT INTO tasks (id, title, description, completed, user_id, time_stamp, position, priority, project_id, due_date, is_favorite, parent_id)
-			 VALUES ($1,$2,$3,$4,$5,NOW() AT TIME ZONE 'UTC',$6,$7,$8,$9,$10,$11) RETURNING id`,
-			explicitID, snap.Title, snap.Description, snap.Completed, userID, position, snap.Priority, projectArg, dueArg, snap.IsFavorite, parentArg).Scan(outID)
-	}
-	return db.QueryRow(ctx,
-		`INSERT INTO tasks (title, description, completed, user_id, time_stamp, position, priority, project_id, due_date, is_favorite, parent_id)
-		 VALUES ($1,$2,$3,$4,NOW() AT TIME ZONE 'UTC',$5,$6,$7,$8,$9,$10) RETURNING id`,
-		snap.Title, snap.Description, snap.Completed, userID, position, snap.Priority, projectArg, dueArg, snap.IsFavorite, parentArg).Scan(outID)
-}
-
-// snapshotRecurrenceForUndo captures a task's repeat rule and series links (nil when neither exists).
-func snapshotRecurrenceForUndo(taskID int) *utils.UndoRecurrence {
-	seriesID, prevID, err := storage.GetTaskRecurrenceLinks(taskID)
-	if err != nil {
-		return nil
-	}
-	rec, err := storage.GetTaskRecurrence(taskID)
-	if err != nil {
-		return nil
-	}
-	if rec == nil && seriesID == 0 {
-		return nil
-	}
-	out := &utils.UndoRecurrence{SeriesID: seriesID, PrevID: prevID}
-	if rec != nil {
-		out.HasRule = true
-		out.Frequency = rec.Frequency
-		out.Interval = rec.Interval
-		out.WeekdaysMask = rec.WeekdaysMask
-		out.MonthDay = rec.MonthDay
-		out.Basis = rec.Basis
-		out.EndsOn = rec.EndsOn
-		out.EndAfter = rec.EndAfter
-		out.Occurrence = rec.Occurrence
-		out.SeriesID = rec.SeriesID
-		out.CreatedBy = rec.CreatedBy
-	}
-	return out
-}
-
-// restoreRecurrenceFromUndo re-attaches a snapshotted rule and series links to a restored task.
-func restoreRecurrenceFromUndo(taskID int, snap *utils.UndoRecurrence) {
-	if snap == nil {
-		return
-	}
-	prevID := snap.PrevID
-	if prevID > 0 {
-		if _, _, err := storage.GetTaskRecurrenceLinks(prevID); err != nil {
-			prevID = 0 // previous occurrence no longer exists
-		}
-	}
-	if snap.SeriesID > 0 {
-		if err := storage.LinkRecurrenceTask(taskID, snap.SeriesID, prevID); err != nil {
-			fmt.Printf("undo: restore recurrence links for task %d: %v\n", taskID, err)
-		}
-	}
-	if !snap.HasRule {
-		return
-	}
-	if err := storage.SaveTaskRecurrence(storage.TaskRecurrence{
-		TaskID:       taskID,
-		Frequency:    snap.Frequency,
-		Interval:     snap.Interval,
-		WeekdaysMask: snap.WeekdaysMask,
-		MonthDay:     snap.MonthDay,
-		Basis:        snap.Basis,
-		EndsOn:       snap.EndsOn,
-		EndAfter:     snap.EndAfter,
-		Occurrence:   snap.Occurrence,
-		SeriesID:     snap.SeriesID,
-		CreatedBy:    snap.CreatedBy,
-	}); err != nil {
-		fmt.Printf("undo: restore recurrence for task %d: %v\n", taskID, err)
-	}
 }
