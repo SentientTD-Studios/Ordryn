@@ -177,3 +177,34 @@ func TestCompletedIncompleteCountsNilUserID(t *testing.T) {
 		t.Fatalf("expected (0, 0) for nil user with includeRemoved, got (%d, %d)", c, inc)
 	}
 }
+
+func TestMultiValueFilterParsing(t *testing.T) {
+	if got := normalizePriorityFilter(" 3, 1,3 "); got != "1,3" {
+		t.Fatalf("normalizePriorityFilter = %q", got)
+	}
+	if got := normalizePriorityFilter("1,9"); got != "" {
+		t.Fatalf("an invalid entry should reject the filter, got %q", got)
+	}
+	if got := normalizeTagFilter("work, Work ,urgent"); got != "work,urgent" {
+		t.Fatalf("normalizeTagFilter = %q", got)
+	}
+	if got := normalizeTagFilter("a,b,c,d,e,f,g,h,i,j,k"); got != "" {
+		t.Fatalf("more than 10 tags should be rejected, got %q", got)
+	}
+	if normalizeDateFilter("2026-02-30") != "" || normalizeDateFilter("2026-02-28") != "2026-02-28" {
+		t.Fatal("normalizeDateFilter accepted an impossible date or rejected a real one")
+	}
+
+	lf := FilterContext{Priority: "1,3", Tag: "work,urgent", DueFrom: "2026-01-01"}.ToListFilters()
+	if lf.PriorityFilter != nil || len(lf.PriorityIn) != 2 {
+		t.Fatalf("priorities = %v / %v", lf.PriorityFilter, lf.PriorityIn)
+	}
+	if len(lf.TagNamesIn) != 2 || lf.DueFrom != "2026-01-01" {
+		t.Fatalf("tags/due = %v / %q", lf.TagNamesIn, lf.DueFrom)
+	}
+	project := "4"
+	lf = FilterContext{Project: project, Tag: "7,8"}.ToListFilters()
+	if len(lf.TagIDsIn) != 2 || len(lf.TagNamesIn) != 0 {
+		t.Fatalf("in-project tag ids = %v / %v", lf.TagIDsIn, lf.TagNamesIn)
+	}
+}

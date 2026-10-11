@@ -129,6 +129,11 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Get one saved view</td></tr>
                             <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Replace or update a saved view</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Delete a saved view</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><code>/api/v2/task-templates</code></td><td>List your templates (plus a project's with <code>?project_id=</code>) or create one</td></tr>
+                            <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-danger">DELETE</span></td><td><code>/api/v2/task-templates/{id}</code></td><td>Replace or delete a template</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/task-templates/{id}/apply</code></td><td>Create a task and its subtasks from a template</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><code>/api/v2/tasks/{id}/attachments</code></td><td>List or upload (multipart <code>file</code>) task files, when the admin allows attachments</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-danger">DELETE</span></td><td><code>/api/v2/tasks/{id}/attachments/{attachmentId}</code></td><td>Download (<code>?download=1</code> forces a download) or remove a file</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/project-roles</code></a></td><td>Site project-role catalog</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#organizations"><code>/api/v2/organizations</code></a></td><td>List / create organizations</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><a href="#organizations"><code>/api/v2/organization-invites</code></a></td><td>Pending organization invites / accept</td></tr>
@@ -138,6 +143,7 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects</code></a></td><td>Create a project</td></tr>
                             <tr><td><span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#projects"><code>/api/v2/projects/{id}</code></a></td><td>Rename a project</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/insights</code></a></td><td>Team dashboard: counts, weekly throughput, per-person workload (needs <code>insights:people</code>), sprint burndown (<code>?sprint_id=</code>)</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/status-counts</code></a></td><td>Task count per board column for a sprint (<code>?sprint_id=</code>, default backlog), ignoring list filters</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/archive</code></a></td><td>Archive a project (owner only)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#projects"><code>/api/v2/projects/{id}/restore</code></a></td><td>Restore an archived project (owner only)</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#projects"><code>/api/v2/projects/{id}</code></a></td><td>Delete a project</td></tr>
@@ -470,10 +476,10 @@ Content-Type: application/json
                             <tr><td><code>status</code></td><td><code>incomplete</code>, <code>complete</code></td><td>Completion status</td></tr>
                             <tr><td><code>due</code></td><td><code>overdue</code>, <code>today</code>, <code>week</code>, <code>through_week</code>, <code>none</code></td><td>Due date quick filter</td></tr>
                             <tr><td><code>completed</code></td><td><code>week</code></td><td>Tasks completed in the last 7 days</td></tr>
-                            <tr><td><code>priority</code></td><td><code>0</code>–<code>3</code></td><td>Priority level</td></tr>
-                            <tr><td><code>tag</code></td><td>tag ID or name</td><td>Filter by tag (name matches across accessible namespaces when not in a project view)</td></tr>
+                            <tr><td><code>priority</code></td><td><code>0</code>–<code>3</code>, or a list like <code>2,3</code></td><td>Priority level; a list matches any of them</td></tr>
+                            <tr><td><code>tag</code></td><td>tag ID or name, or up to 10 comma-separated</td><td>Filter by tag (name matches across accessible namespaces when not in a project view); a list matches tasks with any of them</td></tr>
                             <tr><td><code>sort</code></td><td><code>priority</code></td><td>Sort by priority (descending)</td></tr>
-                            <tr><td><code>search</code></td><td>text</td><td>Search title and description</td></tr>
+                            <tr><td><code>search</code></td><td>text</td><td>Search title, description, and tag names; <code>42</code> or <code>#42</code> also finds task 42</td></tr>
                             <tr><td><code>page</code></td><td>integer ≥ 1</td><td>Page number (default 1)</td></tr>
                             <tr><td><code>per_page</code></td><td>1–100</td><td>Results per page (default 50)</td></tr>
                         </tbody>

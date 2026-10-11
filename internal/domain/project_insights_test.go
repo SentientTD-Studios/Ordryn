@@ -234,3 +234,37 @@ func TestMigrateGrantInsightsPeopleToManagers(t *testing.T) {
 		t.Fatal("migration re-granted insights:people after it was removed")
 	}
 }
+
+func TestProjectStatusCountsIgnoreFiltersAndTrash(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "WIP Board", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatal(err)
+	}
+	pid := proj.ID
+	a := mustCreateTask(t, 1, CreateTaskInput{Title: "A", ProjectID: &pid})
+	mustCreateTask(t, 1, CreateTaskInput{Title: "B", ProjectID: &pid, Priority: 3})
+	mustCreateTask(t, 1, CreateTaskInput{Title: "A child", ParentID: &a})
+	gone := mustCreateTask(t, 1, CreateTaskInput{Title: "Trashed", ProjectID: &pid})
+	if err := DeleteTask(ctx, 1, gone); err != nil {
+		t.Fatal(err)
+	}
+
+	counts, err := ProjectStatusCountsForUser(ctx, 1, pid, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+	if total != 3 {
+		t.Fatalf("backlog counts = %v, want 3 live tasks (subtask included, trash excluded)", counts)
+	}
+	if _, err := ProjectStatusCountsForUser(ctx, 3, pid, 0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("non-member: %v", err)
+	}
+}

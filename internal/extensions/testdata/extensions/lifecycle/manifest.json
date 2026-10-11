@@ -1,7 +1,7 @@
 {
   "id": "lifecycle",
   "name": "Project lifecycle",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "host_api": 1,
   "description": "JSON webhook for sprint and membership lifecycle plus archive/restore and the task.moved split (project vs sprint). Use this when a chat channel would be too noisy.",
   "author": "SentientTD Studios",
@@ -36,6 +36,10 @@
     {
       "on": "project.restored",
       "label": "Project restored"
+    },
+    {
+      "on": "project.deleted",
+      "label": "Project deleted"
     },
     {
       "on": "project.member_joined",
@@ -95,6 +99,7 @@
     "task.restored": "{actor} restored {name} in {project} ({url})",
     "project.archived": "Project {project} was archived by {actor}",
     "project.restored": "Project {project} was restored by {actor}",
+    "project.deleted": "Project {project} was deleted by {actor}",
     "project.member_joined": "{member} joined {project}",
     "project.member_left": "{member} left {project}",
     "sprint.created": "Sprint {sprint} created in {project}",

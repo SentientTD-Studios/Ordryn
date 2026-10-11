@@ -237,7 +237,7 @@ func validateSavedViewFilter(filter *storage.SavedViewFilter) (storage.SavedView
 	rawDue := strings.TrimSpace(filter.Due)
 	normalized.Due = normalizeDueFilter(rawDue)
 	if rawDue != "" && normalized.Due == "" {
-		return storage.SavedViewFilter{}, errors.New("filter.due must be \"overdue\", \"today\", \"week\", \"through_week\", or \"none\".")
+		return storage.SavedViewFilter{}, errors.New("filter.due must be \"overdue\", \"today\", \"week\", \"through_week\", \"none\", or \"range\".")
 	}
 
 	rawCompleted := strings.TrimSpace(filter.Completed)
@@ -249,19 +249,32 @@ func validateSavedViewFilter(filter *storage.SavedViewFilter) (storage.SavedView
 	rawPriority := strings.TrimSpace(filter.Priority)
 	normalized.Priority = normalizePriorityFilter(rawPriority)
 	if rawPriority != "" && normalized.Priority == "" {
-		return storage.SavedViewFilter{}, errors.New("filter.priority must be between 0 and 3.")
+		return storage.SavedViewFilter{}, errors.New("filter.priority must be 0-3, or a comma-separated list of them.")
 	}
 
 	rawTag := strings.TrimSpace(filter.Tag)
 	normalized.Tag = normalizeTagFilter(rawTag)
 	if rawTag != "" && normalized.Tag == "" {
-		return storage.SavedViewFilter{}, errors.New("filter.tag must be a positive id or a tag name (max 50 characters).")
+		return storage.SavedViewFilter{}, errors.New("filter.tag must be tag ids or names (max 50 characters each, up to 10, comma-separated).")
 	}
 
 	rawSort := strings.TrimSpace(filter.Sort)
 	normalized.Sort = normalizeSortFilter(rawSort)
 	if rawSort != "" && normalized.Sort == "" {
 		return storage.SavedViewFilter{}, errors.New("filter.sort must be \"priority\".")
+	}
+
+	for _, d := range []struct {
+		raw  string
+		dest *string
+		name string
+	}{{filter.DueFrom, &normalized.DueFrom, "due_from"}, {filter.DueTo, &normalized.DueTo, "due_to"}} {
+		if strings.TrimSpace(d.raw) == "" {
+			continue
+		}
+		if *d.dest = normalizeDateFilter(d.raw); *d.dest == "" {
+			return storage.SavedViewFilter{}, errors.New("filter." + d.name + " must be a date (YYYY-MM-DD).")
+		}
 	}
 
 	rawClaimed := strings.TrimSpace(filter.Claimed)

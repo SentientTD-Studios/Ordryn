@@ -30,6 +30,9 @@ type SavedViewFilter struct {
 	Sort      string `json:"sort"`
 	Search    string `json:"search"`
 	Claimed   string `json:"claimed"`
+	// DueFrom and DueTo bound a custom due-date range (YYYY-MM-DD).
+	DueFrom string `json:"due_from,omitempty"`
+	DueTo   string `json:"due_to,omitempty"`
 }
 
 // SavedView is a per-user named filter preset.

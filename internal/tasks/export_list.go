@@ -37,13 +37,13 @@ func FetchAllTasksForUserWithFilters(userID *int, timezone string, filters ListF
 	}
 
 	if search != "" {
-		searchPattern := "%" + search + "%"
-		args := []interface{}{searchPattern, timezone, *userID}
-		match := `(t.title ILIKE $1 OR t.description ILIKE $1 OR EXISTS (SELECT 1 FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id WHERE tt.task_id = t.id AND tg.name ILIKE $1))`
+		args := []interface{}{searchPattern(search), timezone, *userID}
+		idIdx := 0
 		if searchID, ok := parseSearchTaskID(search); ok {
 			args = append(args, searchID)
-			match = fmt.Sprintf("(%s OR t.id = $%d)", match, len(args))
+			idIdx = len(args)
 		}
+		match := searchMatchSQL("t.id", 1, idIdx)
 		where := "WHERE " + match + " AND t.user_id = $3"
 		where, args = appendFilterSQL(where, args, filters, timezone, "t", *userID)
 		query := taskSelect + where + filters.orderByClause("t") + fmt.Sprintf(" LIMIT %d", ExportMaxTasks)

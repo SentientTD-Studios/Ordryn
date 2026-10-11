@@ -299,3 +299,13 @@ func BuildBurndown(sprint SprintRef, tasks []storage.SprintTaskState, loc *time.
 	}
 	return bd
 }
+
+// ProjectStatusCountsForUser returns live task counts per board column for one
+// sprint (sprintID > 0) or the backlog (0), ignoring list filters, so WIP
+// limits reflect the real column load.
+func ProjectStatusCountsForUser(ctx context.Context, userID, projectID, sprintID int) (map[int]int, error) {
+	if _, err := storage.GetAccessibleProjectByID(projectID, userID); err != nil {
+		return nil, ErrNotFound
+	}
+	return storage.GetProjectStatusCounts(projectID, sprintID)
+}

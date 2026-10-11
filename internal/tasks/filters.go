@@ -2,18 +2,28 @@ package tasks
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 // ListFilters holds query filters for task list and search endpoints.
 type ListFilters struct {
-	ProjectFilter      *int
-	StatusFilter       string
-	DueFilter          string
-	CompletedFilter    string
-	PriorityFilter     *int
-	TagFilter          *int
-	TagNameFilter      string
+	ProjectFilter   *int
+	StatusFilter    string
+	DueFilter       string
+	CompletedFilter string
+	PriorityFilter  *int
+	// PriorityIn matches any of several priorities (used instead of PriorityFilter).
+	PriorityIn    []int
+	TagFilter     *int
+	TagNameFilter string
+	// TagIDsIn and TagNamesIn match tasks with any of several tags (by id inside
+	// a project, by name across projects).
+	TagIDsIn   []int
+	TagNamesIn []string
+	// DueFrom and DueTo bound the due date (YYYY-MM-DD, inclusive); either may be empty.
+	DueFrom            string
+	DueTo              string
 	Sort               string
 	WorkflowClaimScope string // "mine" | "all" | ""
 	// ClaimFilter narrows to tasks claimed by the caller ("me") or nobody ("none").
@@ -69,6 +79,13 @@ func (f ListFilters) priorityCondition(tablePrefix string) string {
 	prefix := ""
 	if tablePrefix != "" {
 		prefix = tablePrefix + "."
+	}
+	if len(f.PriorityIn) > 0 {
+		parts := make([]string, 0, len(f.PriorityIn))
+		for _, p := range f.PriorityIn {
+			parts = append(parts, strconv.Itoa(p))
+		}
+		return fmt.Sprintf(" AND (%spriority IN (%s))", prefix, strings.Join(parts, ", "))
 	}
 	if f.PriorityFilter == nil {
 		return ""
@@ -204,6 +221,9 @@ func (f ListFilters) shouldAppendOrphanSubtasks() bool {
 		return true
 	}
 	if normalizeDueFilter(f.DueFilter) != "" {
+		return true
+	}
+	if f.DueFrom != "" || f.DueTo != "" {
 		return true
 	}
 	return strings.TrimSpace(f.CompletedFilter) != ""

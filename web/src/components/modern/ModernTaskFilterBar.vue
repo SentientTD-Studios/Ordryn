@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import type { Tag } from '@/api/types'
 import type { ViewDensity } from '@/composables/useViewDensity'
+import { dueRangeLabel, filterHas, filterSummary, parseFilterList, priorityFilterLabel, toggleFilterValue } from '@/utils/filterValues'
 
 export type KanbanSurfaceTab = {
   viewKey: string
@@ -17,6 +18,8 @@ const props = withDefaults(
     claimed?: string
     showClaimFilter?: boolean
     dueDatePreset: string
+    dueFrom?: string
+    dueTo?: string
     sort: string
     search: string
     density: ViewDensity
@@ -29,6 +32,8 @@ const props = withDefaults(
   }>(),
   {
     claimed: '',
+    dueFrom: '',
+    dueTo: '',
     showClaimFilter: false,
     showViewMode: false,
     viewMode: 'list',
@@ -44,6 +49,7 @@ const emit = defineEmits<{
   'update:priority': [val: string]
   'update:claimed': [val: string]
   'update:dueDatePreset': [val: string]
+  'update:dueRange': [from: string, to: string]
   'update:sort': [val: string]
   'update:search': [val: string]
   'update:density': [val: ViewDensity]
@@ -64,18 +70,28 @@ function tagFilterValue(t: Tag) {
   return props.tagByName ? t.name : String(t.id)
 }
 
+const PRIORITY_OPTIONS = [
+  { value: '3', label: 'High Priority', className: 'text-danger' },
+  { value: '2', label: 'Medium Priority', className: 'text-warning' },
+  { value: '1', label: 'Low Priority', className: 'text-secondary' },
+  { value: '0', label: 'No Priority', className: 'text-muted' },
+]
+
 function selectedTagLabel() {
-  if (!props.tag) return 'ALL'
-  const match = props.tags.find((t) =>
-    props.tagByName ? t.name.toLowerCase() === props.tag.toLowerCase() : String(t.id) === props.tag,
-  )
-  return match?.name || 'Selected'
+  const names = parseFilterList(props.tag).map((v) => {
+    const match = props.tags.find((t) =>
+      props.tagByName ? t.name.toLowerCase() === v.toLowerCase() : String(t.id) === v,
+    )
+    return match?.name || v
+  })
+  return filterSummary(names)
 }
 
 function getDueDateLabel(preset: string) {
+  if (preset === 'range') return dueRangeLabel(props.dueFrom, props.dueTo)
   if (preset === 'today') return 'TODAY'
   if (preset === 'overdue') return 'OVERDUE'
-  if (preset === 'this_week' || preset === 'week') return 'THIS WEEK'
+  if (preset === 'this_week' || preset === 'week') return 'NEXT 7 DAYS'
   if (preset === 'nodate' || preset === 'none') return 'NO DATE'
   return 'ALL'
 }
@@ -215,23 +231,31 @@ function getDueDateLabel(preset: string) {
         </ul>
       </div>
 
-      <!-- Tag Dropdown Pill -->
+      <!-- Tag Dropdown Pill (pick any number; tasks with any of them match) -->
       <div class="dropdown d-inline-block">
         <button
           class="filter-pill-btn dropdown-toggle"
           :class="{ active: tag !== '' }"
           type="button"
           data-bs-toggle="dropdown"
+          data-bs-auto-close="outside"
         >
           <span class="d-none d-sm-inline">TAGS: </span><span class="fw-bold">{{ selectedTagLabel() }}</span>
         </button>
-        <ul class="dropdown-menu shadow-sm border-0">
-          <li><button class="dropdown-item small" @click="emit('update:tag', '')">All Tags</button></li>
+        <ul class="dropdown-menu shadow-sm border-0 filter-multi-menu">
+          <li><button class="dropdown-item small" :class="{ active: !tag }" @click="emit('update:tag', '')">All Tags</button></li>
+          <li v-if="tags.length"><hr class="dropdown-divider" /></li>
           <li v-for="t in tags" :key="t.id">
-            <button class="dropdown-item small" @click="emit('update:tag', tagFilterValue(t))">
-              <span class="badge rounded-pill me-1" :style="{ backgroundColor: t.color || '#6c757d' }">&nbsp;</span>
+            <label class="dropdown-item small d-flex align-items-center gap-2 mb-0">
+              <input
+                type="checkbox"
+                class="form-check-input m-0"
+                :checked="filterHas(tag, tagFilterValue(t))"
+                @change="emit('update:tag', toggleFilterValue(tag, tagFilterValue(t)))"
+              />
+              <span class="badge rounded-pill" :style="{ backgroundColor: t.color || '#6c757d' }">&nbsp;</span>
               {{ t.name }}
-            </button>
+            </label>
           </li>
         </ul>
       </div>
@@ -250,26 +274,57 @@ function getDueDateLabel(preset: string) {
           <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', '')">ALL</button></li>
           <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', 'today')">TODAY</button></li>
           <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', 'overdue')">OVERDUE</button></li>
-          <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', 'this_week')">THIS WEEK</button></li>
-          <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', 'nodate')">NO DATE</button></li>
+          <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', 'week')">NEXT 7 DAYS</button></li>
+          <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', 'none')">NO DATE</button></li>
+          <li><hr class="dropdown-divider" /></li>
+          <li><button class="dropdown-item small" @click="emit('update:dueDatePreset', 'range')">CUSTOM RANGE…</button></li>
         </ul>
       </div>
+      <div v-if="dueDatePreset === 'range'" class="d-inline-flex align-items-center gap-1 due-range-inputs">
+        <input
+          type="date"
+          class="form-control form-control-sm"
+          aria-label="Due from"
+          :value="dueFrom"
+          :max="dueTo || undefined"
+          @change="emit('update:dueRange', ($event.target as HTMLInputElement).value, dueTo)"
+        />
+        <span class="small text-muted">to</span>
+        <input
+          type="date"
+          class="form-control form-control-sm"
+          aria-label="Due to"
+          :value="dueTo"
+          :min="dueFrom || undefined"
+          @change="emit('update:dueRange', dueFrom, ($event.target as HTMLInputElement).value)"
+        />
+      </div>
 
-      <!-- Priority Dropdown Pill -->
+      <!-- Priority Dropdown Pill (pick any number) -->
       <div class="dropdown d-inline-block">
         <button
           class="filter-pill-btn dropdown-toggle"
           :class="{ active: priority !== '' }"
           type="button"
           data-bs-toggle="dropdown"
+          data-bs-auto-close="outside"
         >
-          <span class="d-none d-sm-inline">PRIORITY: </span><span class="fw-bold">{{ priority ? (priority === '3' ? 'HIGH' : priority === '2' ? 'MED' : 'LOW') : 'ALL' }}</span>
+          <span class="d-none d-sm-inline">PRIORITY: </span><span class="fw-bold">{{ priorityFilterLabel(priority) }}</span>
         </button>
-        <ul class="dropdown-menu shadow-sm border-0">
-          <li><button class="dropdown-item small" @click="emit('update:priority', '')">All Priorities</button></li>
-          <li><button class="dropdown-item small text-danger" @click="emit('update:priority', '3')">High Priority</button></li>
-          <li><button class="dropdown-item small text-warning" @click="emit('update:priority', '2')">Medium Priority</button></li>
-          <li><button class="dropdown-item small text-secondary" @click="emit('update:priority', '1')">Low Priority</button></li>
+        <ul class="dropdown-menu shadow-sm border-0 filter-multi-menu">
+          <li><button class="dropdown-item small" :class="{ active: !priority }" @click="emit('update:priority', '')">All Priorities</button></li>
+          <li><hr class="dropdown-divider" /></li>
+          <li v-for="p in PRIORITY_OPTIONS" :key="p.value">
+            <label class="dropdown-item small d-flex align-items-center gap-2 mb-0" :class="p.className">
+              <input
+                type="checkbox"
+                class="form-check-input m-0"
+                :checked="filterHas(priority, p.value)"
+                @change="emit('update:priority', toggleFilterValue(priority, p.value))"
+              />
+              {{ p.label }}
+            </label>
+          </li>
         </ul>
       </div>
 
@@ -317,3 +372,16 @@ function getDueDateLabel(preset: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.filter-multi-menu {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.filter-multi-menu label.dropdown-item {
+  cursor: pointer;
+}
+.due-range-inputs input {
+  width: 9.5rem;
+}
+</style>

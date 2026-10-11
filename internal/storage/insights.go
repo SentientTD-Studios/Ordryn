@@ -235,3 +235,38 @@ func ListSprintTaskStates(projectID, sprintID int) ([]SprintTaskState, error) {
 	}
 	return tasks, ev.Err()
 }
+
+// GetProjectStatusCounts counts a project's live tasks (subtasks included, as on
+// the board) per status_id, in one sprint (sprintID > 0) or the backlog (0).
+// Tasks with no status are keyed 0.
+func GetProjectStatusCounts(projectID, sprintID int) (map[int]int, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	sprintCond := "t.sprint_id IS NULL"
+	args := []any{projectID}
+	if sprintID > 0 {
+		args = append(args, sprintID)
+		sprintCond = "t.sprint_id = $2"
+	}
+	rows, err := pool.Query(context.Background(), `
+		SELECT COALESCE(t.status_id, 0), COUNT(*)
+		FROM tasks t
+		WHERE `+liveProjectTaskSQL("t")+` AND `+sprintCond+`
+		GROUP BY COALESCE(t.status_id, 0)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int]int{}
+	for rows.Next() {
+		var status, n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
+}

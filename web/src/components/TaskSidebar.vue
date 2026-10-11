@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useTaskTextLimits } from '@/utils/taskText'
-import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskEvent, TaskGitHubIssue, TaskRecurrenceDetail, TaskTimeEntry } from '@/api/types'
+import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskRecurrenceDetail } from '@/api/types'
 import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
@@ -13,6 +13,11 @@ import TaskRecurrenceEditor from '@/components/TaskRecurrenceEditor.vue'
 import TaskWatchButton from '@/components/TaskWatchButton.vue'
 import TaskLinksPanel from '@/components/TaskLinksPanel.vue'
 import TaskAgentsPanel from '@/components/TaskAgentsPanel.vue'
+import TaskTimePanel from '@/components/task/TaskTimePanel.vue'
+import TaskGitHubPanel from '@/components/task/TaskGitHubPanel.vue'
+import TaskActivityLog from '@/components/task/TaskActivityLog.vue'
+import SaveTemplateModal from '@/components/task/SaveTemplateModal.vue'
+import TaskAttachmentsPanel from '@/components/task/TaskAttachmentsPanel.vue'
 import { draftFromRecurrence, emptyRecurrenceDraft, recurrencePayload, sameRecurrenceDraft, type RecurrenceDraft } from '@/utils/recurrence'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
@@ -73,17 +78,9 @@ const projects = ref<Project[]>([])
 const allTags = ref<Tag[]>([])
 const rootTasks = ref<Task[]>([])
 const currentTask = ref<Task | null>(null)
-const events = ref<TaskEvent[]>([])
-const eventsLoaded = ref(false)
-const eventsLoading = ref(false)
 const descriptionError = ref('')
 const statuses = ref<ProjectStatus[]>([])
 const sprints = ref<ProjectSprint[]>([])
-const timeEntries = ref<TaskTimeEntry[]>([])
-const timeSpentMinutes = ref(0)
-const newEntryMinutes = ref<number | ''>('')
-const newEntryNote = ref('')
-const addingTime = ref(false)
 const taskWorkflow = ref('')
 
 const titleInput = ref<HTMLInputElement | null>(null)
@@ -106,10 +103,8 @@ const estimatePoints = ref<number | ''>('')
 const claimedBy = ref<number | null>(null)
 const claimedByName = ref('')
 const claiming = ref(false)
-const githubIssue = ref<TaskGitHubIssue | null>(null)
-const projectHasGitHub = ref(false)
-const githubIssueRef = ref('')
-const githubBusy = ref(false)
+const activityLog = ref<InstanceType<typeof TaskActivityLog> | null>(null)
+const saveTemplateOpen = ref(false)
 const customFieldValues = ref<Record<string, unknown>>({})
 const recurrenceDraft = ref<RecurrenceDraft>(emptyRecurrenceDraft())
 const recurrenceDetail = ref<TaskRecurrenceDetail | null>(null)
@@ -199,6 +194,18 @@ const relatedParent = computed(() => {
   return { id, title: parentTitle.value || rootTasks.value.find((t) => t.id === id)?.title || `Task #${id}` }
 })
 const relatedChildren = computed(() => currentTask.value?.children ?? [])
+/** The form as it stands, for "Save as template". */
+const templateDraft = computed(() => {
+  const byId = new Map([...taskTags.value, ...allTags.value].map((t) => [t.id, t.name]))
+  return {
+    title: title.value.trim(),
+    description: description.value,
+    priority: priority.value,
+    tag_names: selectedTagIds.value.map((id) => byId.get(id)).filter((n): n is string => !!n),
+    estimate_points: estimatePoints.value === '' ? null : Number(estimatePoints.value),
+    subtasks: relatedChildren.value.map((c) => c.title),
+  }
+})
 const isKanbanTask = computed(() => {
   if (taskWorkflow.value === 'kanban') return true
   return (selectedProject.value?.workflow_mode || 'classic') === 'kanban'
@@ -220,7 +227,6 @@ const showDescriptionEditor = computed(() => {
   if (mode.value === 'add' && !description.value.trim()) return true
   return false
 })
-const timeSpentLabel = computed(() => formatMinutes(timeSpentMinutes.value))
 const showDiscussion = computed(
   () => (mode.value === 'edit' || mode.value === 'view') && !!currentTask.value?.project_id,
 )
@@ -238,15 +244,6 @@ const claimerLabel = computed(() => {
   if (user.value?.id && claimedBy.value === user.value.id) return 'You'
   return claimedByName.value || `User #${claimedBy.value}`
 })
-
-function formatMinutes(total: number) {
-  if (total <= 0) return '0m'
-  const h = Math.floor(total / 60)
-  const m = total % 60
-  if (h <= 0) return `${m}m`
-  if (m <= 0) return `${h}h`
-  return `${h}h ${m}m`
-}
 
 function taskInSelectedProject(t: Task): boolean {
   if (projectId.value === '') return t.project_id == null || t.project_id === 0
@@ -379,8 +376,6 @@ function resetForm() {
   newTags.value = ''
   completed.value = false
   descriptionError.value = ''
-  events.value = []
-  eventsLoaded.value = false
   statusId.value = ''
   sprintId.value = ''
   estimatePoints.value = ''
@@ -388,14 +383,7 @@ function resetForm() {
   claimedByName.value = ''
   statuses.value = []
   sprints.value = []
-  timeEntries.value = []
-  timeSpentMinutes.value = 0
-  newEntryMinutes.value = ''
-  newEntryNote.value = ''
   taskWorkflow.value = ''
-  githubIssue.value = null
-  projectHasGitHub.value = false
-  githubIssueRef.value = ''
   customFieldValues.value = {}
   editingDescription.value = true
 }
@@ -492,27 +480,6 @@ async function loadStatusesForProject(pid: number | '') {
   }
 }
 
-async function loadTimeEntries(id: number) {
-  try {
-    const entries = await api.listTimeEntries(id)
-    timeEntries.value = entries
-    timeSpentMinutes.value = entries.reduce((sum, e) => sum + e.minutes, 0)
-  } catch {
-    timeEntries.value = []
-  }
-}
-
-async function refreshProjectGitHub(pid: number | '') {
-  projectHasGitHub.value = false
-  if (pid === '' || pid == null) return
-  try {
-    const link = await api.getProjectGitHub(Number(pid))
-    projectHasGitHub.value = !!link.linked
-  } catch {
-    projectHasGitHub.value = false
-  }
-}
-
 async function resolveParentTitle(parentTaskId: number) {
   const cached = rootTasks.value.find((t) => t.id === parentTaskId)
   if (cached) {
@@ -550,17 +517,12 @@ async function loadTask(id: number) {
   newTags.value = ''
   completed.value = task.completed
   descriptionError.value = ''
-  events.value = []
-  eventsLoaded.value = false
   statusId.value = task.status_id ?? ''
   sprintId.value = formSprintId(task.sprint_id)
   estimatePoints.value = task.estimate_points ?? ''
   claimedBy.value = task.claimed_by ?? null
   claimedByName.value = task.claimed_by_name || ''
-  timeSpentMinutes.value = task.time_spent_minutes ?? 0
   taskWorkflow.value = task.project_workflow || ''
-  githubIssue.value = task.github ?? null
-  githubIssueRef.value = ''
   customFieldValues.value = { ...(task.fields || {}) }
   recurrenceDraft.value = draftFromRecurrence(task.recurrence)
   recurrenceDetail.value = null
@@ -568,12 +530,6 @@ async function loadTask(id: number) {
   await loadStatusesForProject(projectId.value)
   await loadSprintsForProject(projectId.value)
   await loadTagsForProject(projectId.value)
-  await refreshProjectGitHub(projectId.value)
-  if (taskWorkflow.value === 'kanban' || isKanbanTask.value) {
-    await loadTimeEntries(id)
-  } else {
-    timeEntries.value = []
-  }
 }
 
 async function loadRecurrenceDetail(id: number) {
@@ -761,7 +717,7 @@ useLiveUpdates(async (_last: LiveEvent, batch: LiveEvent[]) => {
   try {
     await loadTask(id)
     await linksPanel.value?.reload()
-    if (eventsLoaded.value) await loadEvents(true)
+    await activityLog.value?.refresh()
   } catch {
     toast.push('This task is no longer available', 'info')
     close()
@@ -831,7 +787,7 @@ async function saveStatusOnly(): Promise<boolean> {
     currentTask.value = updated
     notifySaved(updated, false)
     toast.push('Task saved', 'success')
-    if (eventsLoaded.value) await loadEvents(true)
+    await activityLog.value?.refresh()
     const flushed = await flushDiscussion()
     if (!flushed) return false
     close()
@@ -938,7 +894,7 @@ async function save(keepOpen = false): Promise<boolean> {
     notifySaved(updated, false)
     toast.push('Task saved', 'success')
     editingDescription.value = false
-    if (eventsLoaded.value) await loadEvents(true)
+    await activityLog.value?.refresh()
     const flushed = await flushDiscussion()
     if (!flushed) return false
     close()
@@ -1005,20 +961,6 @@ function toggleTag(id: number, checked: boolean) {
   }
 }
 
-async function loadEvents(force = false) {
-  if (!taskId.value || eventsLoading.value) return
-  if (eventsLoaded.value && !force) return
-  eventsLoading.value = true
-  try {
-    events.value = await api.listTaskEvents(taskId.value)
-    eventsLoaded.value = true
-  } catch {
-    events.value = []
-  } finally {
-    eventsLoading.value = false
-  }
-}
-
 watch(description, validateDescription)
 
 watch(isKanbanTask, async () => {
@@ -1042,7 +984,6 @@ async function onProjectChange() {
   if (selectedSprint !== '' && !sprints.value.some((s) => s.id === selectedSprint)) {
     sprintId.value = ''
   }
-  await refreshProjectGitHub(projectId.value)
   await loadTagsForProject(projectId.value)
   customFieldValues.value = {}
   selectedTagIds.value = allTags.value.filter((t) => names.has(t.name.toLowerCase())).map((t) => t.id)
@@ -1101,7 +1042,6 @@ watch(
         await loadStatusesForProject(projectId.value)
         await loadSprintsForProject(projectId.value)
         await loadTagsForProject(projectId.value)
-        await refreshProjectGitHub(projectId.value)
       }
     } catch (err) {
       if (seq !== loadSeq) return
@@ -1142,7 +1082,6 @@ async function onParentChange() {
       sprintId.value = formSprintId(p.sprint_id)
     }
   }
-  await refreshProjectGitHub(projectId.value)
 }
 
 function openRelated(id: number) {
@@ -1179,54 +1118,6 @@ async function unclaimCurrentTask() {
     toast.push(err instanceof APIError ? err.message : 'Could not release task', 'error')
   } finally {
     claiming.value = false
-  }
-}
-
-async function createGitHubIssue() {
-  if (!taskId.value || readOnly.value) return
-  githubBusy.value = true
-  try {
-    githubIssue.value = await api.createTaskGitHubIssue(taskId.value)
-    toast.push(`Created GitHub issue #${githubIssue.value.issue_number}`, 'success')
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not create GitHub issue', 'error')
-  } finally {
-    githubBusy.value = false
-  }
-}
-
-async function linkGitHubIssue() {
-  if (!taskId.value || readOnly.value || !githubIssueRef.value.trim()) return
-  githubBusy.value = true
-  try {
-    githubIssue.value = await api.linkTaskGitHubIssue(taskId.value, githubIssueRef.value.trim())
-    githubIssueRef.value = ''
-    toast.push(`Linked GitHub issue #${githubIssue.value.issue_number}`, 'success')
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not link GitHub issue', 'error')
-  } finally {
-    githubBusy.value = false
-  }
-}
-
-async function unlinkGitHubIssue() {
-  if (!taskId.value || readOnly.value) return
-  const ok = await askConfirm({
-    title: 'Unlink GitHub issue?',
-    message: 'The GitHub issue itself is not deleted.',
-    confirmLabel: 'Unlink',
-    danger: true,
-  })
-  if (!ok) return
-  githubBusy.value = true
-  try {
-    await api.unlinkTaskGitHubIssue(taskId.value)
-    githubIssue.value = null
-    toast.push('GitHub issue unlinked', 'info')
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not unlink GitHub issue', 'error')
-  } finally {
-    githubBusy.value = false
   }
 }
 
@@ -1289,44 +1180,6 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
   }
 }
 
-async function addTimeEntry() {
-  if (!taskId.value || !canLogTime.value) return
-  const minutes = Number(newEntryMinutes.value)
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    toast.push('Enter minutes greater than 0', 'error')
-    return
-  }
-  addingTime.value = true
-  try {
-    await api.addTimeEntry(taskId.value, minutes, newEntryNote.value.trim())
-    newEntryMinutes.value = ''
-    newEntryNote.value = ''
-    toast.push('Time logged', 'success')
-    await loadTimeEntries(taskId.value)
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not add time entry', 'error')
-  } finally {
-    addingTime.value = false
-  }
-}
-
-async function removeTimeEntry(entryId: number) {
-  if (!taskId.value || !canLogTime.value) return
-  const ok = await askConfirm({
-    title: 'Delete time entry?',
-    message: 'Remove this time entry?',
-    confirmLabel: 'Delete',
-    danger: true,
-  })
-  if (!ok) return
-  try {
-    await api.deleteTimeEntry(taskId.value, entryId)
-    toast.push('Time entry deleted', 'info')
-    await loadTimeEntries(taskId.value)
-  } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Could not delete time entry', 'error')
-  }
-}
 </script>
 
 <template>
@@ -1375,6 +1228,15 @@ async function removeTimeEntry(entryId: number) {
                 <i class="bi bi-link-45deg" /> Copy link
               </button>
               <TaskWatchButton v-if="showTaskNumber && taskId" :task-id="taskId" />
+              <button
+                v-if="showTaskNumber && !isSubtask && !loading"
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                title="Save this task as a reusable template"
+                @click="saveTemplateOpen = true"
+              >
+                <i class="bi bi-files" /> Save as template
+              </button>
             </div>
             <div class="task-header-actions">
               <button
@@ -1458,6 +1320,15 @@ async function removeTimeEntry(entryId: number) {
                 <i class="bi bi-link-45deg" /> Copy link
               </button>
               <TaskWatchButton v-if="showTaskNumber && taskId" :task-id="taskId" />
+              <button
+                v-if="showTaskNumber && !isSubtask && !loading"
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                title="Save this task as a reusable template"
+                @click="saveTemplateOpen = true"
+              >
+                <i class="bi bi-files" /> Save as template
+              </button>
             </h5>
             <button type="button" class="btn-close" id="closeSidebar" aria-label="Close" @click="requestClose" />
           </template>
@@ -1680,74 +1551,14 @@ async function removeTimeEntry(entryId: number) {
             placeholder="0–100"
           />
         </div>
-        <div
-          v-if="(mode === 'edit' || mode === 'view') && projectHasGitHub"
-          class="form-group mt-3 kanban-order-github"
-        >
-          <label class="d-block">GitHub issue</label>
-          <div v-if="githubIssue" class="d-flex flex-column gap-2">
-            <div class="d-flex flex-wrap align-items-center gap-2">
-              <a
-                :href="githubIssue.issue_url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="fw-semibold"
-              >
-                #{{ githubIssue.issue_number }}
-                <span v-if="githubIssue.issue_title"> — {{ githubIssue.issue_title }}</span>
-              </a>
-              <span
-                class="badge"
-                :class="githubIssue.issue_state === 'closed' ? 'text-bg-secondary' : 'text-bg-success'"
-              >
-                {{ githubIssue.issue_state }}
-              </span>
-            </div>
-            <p v-if="githubIssue.last_sync_error" class="text-danger small mb-0">
-              Sync error: {{ githubIssue.last_sync_error }}
-            </p>
-            <button
-              v-if="!readOnly"
-              type="button"
-              class="btn btn-sm btn-outline-secondary align-self-start"
-              :disabled="githubBusy"
-              @click="unlinkGitHubIssue"
-            >
-              Unlink
-            </button>
-          </div>
-          <div v-else-if="!readOnly" class="d-flex flex-column gap-2">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary align-self-start"
-              :disabled="githubBusy"
-              @click="createGitHubIssue"
-            >
-              {{ githubBusy ? 'Working…' : 'Create GitHub issue' }}
-            </button>
-            <div class="input-group input-group-sm">
-              <input
-                v-model="githubIssueRef"
-                type="text"
-                class="form-control"
-                placeholder="Issue # or URL"
-                :disabled="githubBusy"
-              />
-              <button
-                type="button"
-                class="btn btn-outline-secondary"
-                :disabled="githubBusy || !githubIssueRef.trim()"
-                @click="linkGitHubIssue"
-              >
-                Link existing
-              </button>
-            </div>
-            <div class="form-hint mb-0">
-              Creates or links an issue in the project’s GitHub repository. Does not import issues as tasks.
-            </div>
-          </div>
-          <p v-else class="text-muted small mb-0">No linked GitHub issue.</p>
-        </div>
+        <TaskGitHubPanel
+          v-if="(mode === 'edit' || mode === 'view') && taskId"
+          class="kanban-order-github"
+          :task-id="taskId"
+          :project-id="projectId === '' ? null : Number(projectId)"
+          :initial-issue="currentTask?.github ?? null"
+          :read-only="readOnly"
+        />
         <div class="form-group mt-2 kanban-order-priority">
           <label for="priority">Priority:</label>
           <select id="priority" v-model.number="priority" class="form-select" :disabled="readOnly">
@@ -1870,68 +1681,20 @@ async function removeTimeEntry(entryId: number) {
           </div>
         </div>
 
-        <div
-          v-if="isKanbanTask && (mode === 'edit' || mode === 'view')"
+        <TaskAttachmentsPanel
+          v-if="(mode === 'edit' || mode === 'view') && taskId"
+          class="kanban-order-time"
+          :task-id="taskId"
+          :can-edit="canEditDetails"
+          :can-manage="projectId === '' || hasProjectPerm(selectedProject, PROJECT_PERMS.PROJECT_MANAGE)"
+        />
+        <TaskTimePanel
+          v-if="isKanbanTask && (mode === 'edit' || mode === 'view') && taskId"
           class="form-group mt-3 border-top pt-3 kanban-order-time"
-        >
-          <label class="d-block">Time tracking</label>
-          <p class="small text-muted mb-2">
-            Total logged: <strong>{{ timeSpentLabel }}</strong>
-            <span v-if="timeSpentMinutes">({{ timeSpentMinutes }} min)</span>
-          </p>
-          <form v-if="canLogTime" class="row g-2 align-items-end mb-2" @submit.prevent="addTimeEntry">
-            <div class="col-4">
-              <label class="form-label small mb-0" for="time_minutes">Minutes</label>
-              <input
-                id="time_minutes"
-                v-model="newEntryMinutes"
-                type="number"
-                class="form-control form-control-sm"
-                min="1"
-                max="1440"
-                required
-              />
-            </div>
-            <div class="col-5">
-              <label class="form-label small mb-0" for="time_note">Note</label>
-              <input
-                id="time_note"
-                v-model="newEntryNote"
-                type="text"
-                class="form-control form-control-sm"
-                maxlength="200"
-                placeholder="Optional"
-              />
-            </div>
-            <div class="col-3">
-              <button class="btn btn-sm btn-outline-primary w-100" type="submit" :disabled="addingTime">
-                Add
-              </button>
-            </div>
-          </form>
-          <ul v-if="timeEntries.length" class="list-unstyled small mb-0">
-            <li
-              v-for="entry in timeEntries"
-              :key="entry.id"
-              class="d-flex justify-content-between align-items-start gap-2 mb-1"
-            >
-              <span>
-                <strong>{{ entry.minutes }}m</strong>
-                <span v-if="entry.note"> — {{ entry.note }}</span>
-                <span class="text-muted"> · {{ entry.user_name || entry.user_email || 'user' }}</span>
-              </span>
-              <button
-                v-if="canLogTime"
-                class="btn btn-sm btn-link text-danger p-0"
-                type="button"
-                @click="removeTimeEntry(entry.id)"
-              >
-                Delete
-              </button>
-            </li>
-          </ul>
-          <p v-else class="small text-muted mb-0">No time entries yet.</p>
-        </div>
+          :task-id="taskId"
+          :initial-minutes="currentTask?.time_spent_minutes ?? 0"
+          :can-log="canLogTime"
+        />
         </div>
 
         <div :class="{ 'kanban-task-rest': isKanbanTask }">
@@ -1979,25 +1742,7 @@ async function removeTimeEntry(entryId: number) {
           </button>
         </div>
 
-        <details
-          v-if="mode === 'edit' || mode === 'view'"
-          class="task-timeline mt-3"
-          @toggle="(e) => { if ((e.target as HTMLDetailsElement).open) void loadEvents() }"
-        >
-          <summary class="mb-2">Activity</summary>
-          <div class="task-timeline-body">
-            <p v-if="eventsLoading" class="text-muted small mb-0">Loading activity…</p>
-            <ul v-else-if="events.length" class="list-unstyled small mb-0">
-              <li v-for="ev in events" :key="ev.id" class="mb-1">
-                <span class="text-muted">{{ ev.created_at }}</span> — {{ ev.label }}
-                <span v-if="ev.actor_user_name || ev.actor_email">
-                  · {{ ev.actor_user_name || ev.actor_email }}
-                </span>
-              </li>
-            </ul>
-            <p v-else class="text-muted small mb-0">No activity recorded.</p>
-          </div>
-        </details>
+        <TaskActivityLog v-if="(mode === 'edit' || mode === 'view') && taskId" ref="activityLog" :task-id="taskId" />
         </div>
       </form>
         </div>
@@ -2011,6 +1756,14 @@ async function removeTimeEntry(entryId: number) {
     @cancel="deleteDialogOpen = false"
     @cascade="runSidebarDelete({ mode: 'cascade' })"
     @reparent="(id) => runSidebarDelete({ mode: 'reparent', new_parent_id: id })"
+  />
+  <SaveTemplateModal
+    :open="saveTemplateOpen"
+    :draft="templateDraft"
+    :due-date="dueDate"
+    :share-project-id="canCreateTask && projectId !== '' ? Number(projectId) : null"
+    :share-project-name="selectedProject?.name || ''"
+    @close="saveTemplateOpen = false"
   />
 </template>
 
