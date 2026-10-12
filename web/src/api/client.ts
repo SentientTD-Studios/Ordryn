@@ -62,6 +62,9 @@ import type {
   StatusGates,
   SavedView,
   SavedViewFilter,
+  TaskAttachment,
+  TaskTemplate,
+  TaskTemplateInput,
   ShareLink,
   ShareLinkView,
   SiteInfo,
@@ -1336,6 +1339,11 @@ export const api = {
     return request<DashboardStats>('/api/v2/dashboard')
   },
 
+  async projectStatusCounts(projectId: number, sprint: string) {
+    const qs = sprint ? `?sprint_id=${encodeURIComponent(sprint)}` : ''
+    return (await request<{ counts: Record<string, number> }>(`/api/v2/projects/${projectId}/status-counts${qs}`)).counts
+  },
+
   projectInsights(projectId: number, sprintId?: number) {
     const qs = sprintId ? `?sprint_id=${sprintId}` : ''
     return request<ProjectInsights>(`/api/v2/projects/${projectId}/insights${qs}`)
@@ -1369,8 +1377,50 @@ export const api = {
     })
   },
 
+  updateSavedView(id: number, payload: { name?: string; filter?: SavedViewFilter }) {
+    return request<SavedView>(`/api/v2/saved-views/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
   deleteSavedView(id: number) {
     return request<void>(`/api/v2/saved-views/${id}`, { method: 'DELETE' })
+  },
+
+  async listTaskTemplates(projectId?: number | null) {
+    const qs = projectId ? `?project_id=${projectId}` : ''
+    return (await request<{ templates: TaskTemplate[] }>(`/api/v2/task-templates${qs}`)).templates
+  },
+
+  createTaskTemplate(payload: TaskTemplateInput & { project_id?: number | null }) {
+    return request<TaskTemplate>('/api/v2/task-templates', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateTaskTemplate(id: number, payload: TaskTemplateInput) {
+    return request<TaskTemplate>(`/api/v2/task-templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteTaskTemplate(id: number) {
+    return request<void>(`/api/v2/task-templates/${id}`, { method: 'DELETE' })
+  },
+
+  async listTaskAttachments(taskId: number) {
+    return (await request<{ attachments: TaskAttachment[] }>(`/api/v2/tasks/${taskId}/attachments`)).attachments
+  },
+
+  uploadTaskAttachment(taskId: number, file: File) {
+    return upload<TaskAttachment>(`/api/v2/tasks/${taskId}/attachments`, 'file', file)
+  },
+
+  deleteTaskAttachment(taskId: number, id: number) {
+    return request<void>(`/api/v2/tasks/${taskId}/attachments/${id}`, { method: 'DELETE' })
+  },
+
+  /** Link to open (images, PDF) or download an attachment; the session cookie authorizes it. */
+  taskAttachmentUrl(taskId: number, id: number, download = false) {
+    return withBase(`/api/v2/tasks/${taskId}/attachments/${id}${download ? '?download=1' : ''}`)
+  },
+
+  applyTaskTemplate(id: number, target: { project_id?: number | null; sprint_id?: number | null } = {}) {
+    return request<Task>(`/api/v2/task-templates/${id}/apply`, { method: 'POST', body: JSON.stringify(target) })
   },
 
   deviceStatus(userCode: string) {

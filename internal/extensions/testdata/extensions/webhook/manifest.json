@@ -1,7 +1,7 @@
 {
   "id": "webhook",
   "name": "Generic webhook",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "host_api": 1,
   "description": "Post task events from this project to any public HTTPS webhook (n8n, Zapier, Mattermost, custom listeners, and similar). For Google Chat, Slack, Discord, or Teams, use those dedicated extensions.",
   "author": "SentientTD Studios",
@@ -100,6 +100,10 @@
     {
       "on": "project.restored",
       "label": "Project restored"
+    },
+    {
+      "on": "project.deleted",
+      "label": "Project deleted"
     },
     {
       "on": "project.member_joined",
@@ -246,6 +250,7 @@
     "task.sprint_changed": "{name} is now in sprint {sprint} ({url})",
     "project.archived": "Project {project} was archived by {actor}",
     "project.restored": "Project {project} was restored by {actor}",
+    "project.deleted": "Project {project} was deleted by {actor}",
     "project.member_joined": "{member} joined {project}",
     "project.member_left": "{member} left {project}",
     "sprint.created": "Sprint {sprint} created in {project}",

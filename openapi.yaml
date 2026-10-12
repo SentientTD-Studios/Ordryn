@@ -1423,15 +1423,30 @@ paths:
             type: string
           description: >
             Tag id when filtering a specific project, or a tag name (or id resolved to name)
-            when listing all tasks / inbox.
+            when listing all tasks / inbox. Up to 10 comma-separated values match tasks with any of them.
         - name: due
           in: query
           schema:
             type: string
+            enum: [overdue, today, week, through_week, none, range]
+          description: Due-date preset. `range` is a marker for clients; the range itself comes from due_from / due_to.
+        - name: due_from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Only tasks due on or after this date (inclusive). Tasks with no due date never match.
+        - name: due_to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Only tasks due on or before this date (inclusive).
         - name: priority
           in: query
           schema:
             type: string
+          description: Priority 0-3, or a comma-separated set (e.g. `2,3`) to match any of them.
         - name: search
           in: query
           schema:
@@ -4177,6 +4192,110 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/tasks/{id}/attachments:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Tasks]
+      summary: List a task's file attachments
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Attachments, oldest first (metadata only)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TaskAttachment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Tasks]
+      summary: Upload a file to a task
+      description: >
+        Multipart upload (field `file`). Needs `tasks:edit` on the task and the site setting
+        `attachments_enabled`. Each file is capped by `attachment_max_bytes` (GET /site); a task holds
+        at most 20 files.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskAttachment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          description: File larger than attachment_max_bytes
+
+  /api/v2/tasks/{id}/attachments/{attachmentId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: attachmentId
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Tasks]
+      summary: Download an attachment
+      description: >
+        Returns the file. PNG, JPEG, GIF, WebP and PDF open inline unless `?download=1` is set; every
+        other type downloads as application/octet-stream.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: download
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: File bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Delete an attachment
+      description: The uploader (with `tasks:edit`) or anyone with `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/tasks/{id}/time-entries:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -5205,6 +5324,38 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/{id}/status-counts:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Task counts per board column
+      description: >
+        Live tasks (subtasks included, archived and trashed excluded) per `status_id` in one sprint, or the
+        backlog when `sprint_id` is omitted, `backlog` or 0. Ignores list filters, so WIP limits can use it.
+        Key `0` counts tasks with no column.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: sprint_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Counts keyed by status id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counts:
+                    type: object
+                    additionalProperties: { type: integer }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/projects/{id}/insights:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -5622,6 +5773,152 @@ paths:
       responses:
         "204":
           description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/task-templates:
+    get:
+      tags: [Task Templates]
+      summary: List task templates
+      description: The caller's personal templates, plus the shared templates of `project_id` when given.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TaskTemplate"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Task Templates]
+      summary: Create a task template
+      description: Omit `project_id` for a personal template. A project template needs `tasks:create` in that project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskTemplateInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/task-templates/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Task Templates]
+      summary: Replace a task template
+      description: Allowed for the template's creator, or anyone with `project:manage` for a project template. `project_id` is ignored.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskTemplateInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTemplate"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Task Templates]
+      summary: Replace a task template (same as PUT)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskTemplateInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTemplate"
+    delete:
+      tags: [Task Templates]
+      summary: Delete a task template
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/task-templates/{id}/apply:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Task Templates]
+      summary: Create a task from a template
+      description: >
+        Creates the task and its subtasks. Project templates always create in their project; personal
+        templates use `project_id` (omit for no project). Tags are matched by name in the target project
+        and skipped when missing. A due offset sets the due date relative to today in the caller's timezone.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project_id: { type: integer }
+                sprint_id: { type: integer }
+      responses:
+        "201":
+          description: The new task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -6907,6 +7204,12 @@ components:
         max_comment_length:
           type: integer
           description: Maximum task comment length in characters (site-configurable, default 20000).
+        attachments_enabled:
+          type: boolean
+          description: Whether members may upload files to tasks.
+        attachment_max_bytes:
+          type: integer
+          description: Largest file a member may attach, in bytes.
 
     NotificationPreferences:
       type: object
@@ -9236,6 +9539,49 @@ components:
         claimed:
           type: string
           enum: [me, none]
+        due_from:
+          type: string
+          format: date
+        due_to:
+          type: string
+          format: date
+
+    TaskAttachment:
+      type: object
+      properties:
+        id: { type: integer }
+        task_id: { type: integer }
+        user_id: { type: integer }
+        user_name: { type: string }
+        file_name: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    TaskTemplateInput:
+      type: object
+      required: [name, title]
+      properties:
+        project_id: { type: integer, description: "Create only; omit for a personal template." }
+        name: { type: string, maxLength: 80 }
+        title: { type: string, maxLength: 500 }
+        description: { type: string }
+        priority: { type: integer, minimum: 0, maximum: 3 }
+        tag_names: { type: array, maxItems: 5, items: { type: string } }
+        estimate_points: { type: integer, nullable: true }
+        due_offset_days: { type: integer, nullable: true, minimum: 0, maximum: 365 }
+        subtasks: { type: array, maxItems: 20, items: { type: string } }
+
+    TaskTemplate:
+      allOf:
+        - $ref: "#/components/schemas/TaskTemplateInput"
+        - type: object
+          properties:
+            id: { type: integer }
+            project_id: { type: integer, nullable: true }
+            owner_id: { type: integer }
+            owner_name: { type: string }
+            can_manage: { type: boolean }
 
     SavedView:
       type: object
@@ -9846,6 +10192,14 @@ components:
           minimum: 1
           maximum: 365
           description: Days a deleted task stays in the trash before it is permanently deleted (default 30).
+        attachments_enabled:
+          type: boolean
+          description: Lets members upload files to tasks they can edit. Off by default; existing files stay downloadable when turned off.
+        attachment_max_bytes:
+          type: integer
+          minimum: 16384
+          maximum: 52428800
+          description: Per-file upload limit in bytes (default 5 MB, at most 50 MB). Files are stored in the database.
         allow_user_invites:
           type: boolean
         user_invite_limit:
@@ -9957,6 +10311,14 @@ components:
           minimum: 1
           maximum: 365
           description: Days a deleted task stays in the trash before it is permanently deleted (default 30).
+        attachments_enabled:
+          type: boolean
+          description: Lets members upload files to tasks they can edit. Off by default; existing files stay downloadable when turned off.
+        attachment_max_bytes:
+          type: integer
+          minimum: 16384
+          maximum: 52428800
+          description: Per-file upload limit in bytes (default 5 MB, at most 50 MB). Files are stored in the database.
         allow_user_invites:
           type: boolean
         user_invite_limit:

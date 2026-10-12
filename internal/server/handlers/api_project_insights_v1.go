@@ -148,3 +148,39 @@ func apiV1ProjectInsights(w http.ResponseWriter, r *http.Request, projectID int)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+// apiV1ProjectStatusCounts handles GET /api/v2/projects/{id}/status-counts?sprint_id=N|backlog.
+func apiV1ProjectStatusCounts(w http.ResponseWriter, r *http.Request, projectID int) {
+	if r.Method != http.MethodGet {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	sprintID := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("sprint_id")); raw != "" && raw != "backlog" && raw != "0" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid sprint_id.")
+			return
+		}
+		sprintID = n
+	}
+	counts, err := domain.ProjectStatusCountsForUser(r.Context(), userID, projectID, sprintID)
+	if errors.Is(err, domain.ErrNotFound) {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
+		return
+	}
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to count tasks.")
+		return
+	}
+	out := make(map[string]int, len(counts))
+	for status, n := range counts {
+		out[strconv.Itoa(status)] = n
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"counts": out})
+}

@@ -11,11 +11,29 @@ func NormalizeDueFilter(due string) string {
 
 func normalizeDueFilter(due string) string {
 	switch strings.ToLower(strings.TrimSpace(due)) {
-	case "overdue", "today", "week", "through_week", "none":
+	case "overdue", "today", "week", "through_week", "none", "range":
 		return strings.ToLower(strings.TrimSpace(due))
 	default:
 		return ""
 	}
+}
+
+// appendDueRangeCondition limits due dates to [from, to] (YYYY-MM-DD, inclusive;
+// either end may be empty). Tasks with no due date never match a range.
+func appendDueRangeCondition(where string, args []interface{}, from, to, tablePrefix string) (string, []interface{}) {
+	prefix := ""
+	if tablePrefix != "" {
+		prefix = tablePrefix + "."
+	}
+	if from != "" {
+		args = append(args, from)
+		where += fmt.Sprintf(" AND %sdue_date >= $%d::date", prefix, len(args))
+	}
+	if to != "" {
+		args = append(args, to)
+		where += fmt.Sprintf(" AND %sdue_date <= $%d::date", prefix, len(args))
+	}
+	return where, args
 }
 
 func appendDueDateCondition(where string, args []interface{}, dueFilter, timezone, tablePrefix string) (string, []interface{}) {

@@ -29,6 +29,8 @@ type apiSiteResponse struct {
 	EnableInboundWebhooks    bool   `json:"enable_inbound_webhooks"`
 	MaxDescriptionLength     int    `json:"max_description_length"`
 	MaxCommentLength         int    `json:"max_comment_length"`
+	AttachmentsEnabled       bool   `json:"attachments_enabled"`
+	AttachmentMaxBytes       int64  `json:"attachment_max_bytes"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -78,5 +80,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		EnableInboundWebhooks:    settings.EnableInboundWebhooks,
 		MaxDescriptionLength:     textLimits.Description,
 		MaxCommentLength:         textLimits.Comment,
+		AttachmentsEnabled:       settings.AttachmentsEnabled,
+		AttachmentMaxBytes:       storage.ClampAttachmentMaxBytes(settings.AttachmentMaxBytes),
 	})
 }

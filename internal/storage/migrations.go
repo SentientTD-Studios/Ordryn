@@ -407,9 +407,22 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := CreateTaskTemplatesTable(); err != nil {
+		fmt.Printf("migration: CreateTaskTemplatesTable failed: %v\n", err)
+		errCount++
+	}
+	if err := CreateTaskAttachmentsTable(); err != nil {
+		fmt.Printf("migration: CreateTaskAttachmentsTable failed: %v\n", err)
+		errCount++
+	}
+
 	// Last, so every table that can reference a role slug exists.
 	if err := MigrateLegacySiteRoles(); err != nil {
 		fmt.Printf("migration: MigrateLegacySiteRoles failed: %v\n", err)
+		errCount++
+	}
+	if err := EnsureSearchIndexes(); err != nil {
+		fmt.Printf("migration: EnsureSearchIndexes failed: %v\n", err)
 		errCount++
 	}
 	if err := MigrateGrantInsightsPeopleToManagers(); err != nil {

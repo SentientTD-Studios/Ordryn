@@ -36,8 +36,10 @@ type adminSettingsJSON struct {
 	MaxDescriptionLength     int    `json:"max_description_length"`
 	MaxCommentLength         int    `json:"max_comment_length"`
 
-	NotificationEmailsEnabled bool `json:"notification_emails_enabled"`
-	TrashRetentionDays        int  `json:"trash_retention_days"`
+	NotificationEmailsEnabled bool  `json:"notification_emails_enabled"`
+	TrashRetentionDays        int   `json:"trash_retention_days"`
+	AttachmentsEnabled        bool  `json:"attachments_enabled"`
+	AttachmentMaxBytes        int64 `json:"attachment_max_bytes"`
 
 	EmailProvider           string `json:"email_provider"`
 	EmailFromAddress        string `json:"email_from_address"`
@@ -86,8 +88,10 @@ type adminSettingsPatch struct {
 	MaxDescriptionLength     *int    `json:"max_description_length"`
 	MaxCommentLength         *int    `json:"max_comment_length"`
 
-	NotificationEmailsEnabled *bool `json:"notification_emails_enabled"`
-	TrashRetentionDays        *int  `json:"trash_retention_days"`
+	NotificationEmailsEnabled *bool  `json:"notification_emails_enabled"`
+	TrashRetentionDays        *int   `json:"trash_retention_days"`
+	AttachmentsEnabled        *bool  `json:"attachments_enabled"`
+	AttachmentMaxBytes        *int64 `json:"attachment_max_bytes"`
 
 	EmailProvider           *string `json:"email_provider"`
 	EmailFromAddress        *string `json:"email_from_address"`
@@ -189,6 +193,12 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.TrashRetentionDays != nil {
 		next.TrashRetentionDays = storage.ClampTrashRetentionDays(*req.TrashRetentionDays)
+	}
+	if req.AttachmentsEnabled != nil {
+		next.AttachmentsEnabled = *req.AttachmentsEnabled
+	}
+	if req.AttachmentMaxBytes != nil {
+		next.AttachmentMaxBytes = storage.ClampAttachmentMaxBytes(*req.AttachmentMaxBytes)
 	}
 	if req.AllowUserInvites != nil {
 		next.AllowUserInvites = *req.AllowUserInvites
@@ -517,6 +527,8 @@ func adminSettingsView(s *storage.SiteSettings) adminSettingsJSON {
 		MaxCommentLength:           storage.ClampTaskTextLength(s.MaxCommentLength),
 		NotificationEmailsEnabled:  s.NotificationEmailsEnabled,
 		TrashRetentionDays:         storage.ClampTrashRetentionDays(s.TrashRetentionDays),
+		AttachmentsEnabled:         s.AttachmentsEnabled,
+		AttachmentMaxBytes:         storage.ClampAttachmentMaxBytes(s.AttachmentMaxBytes),
 		EmailProvider:              s.Email.Provider,
 		EmailFromAddress:           s.Email.FromAddress,
 		EmailFromName:              s.Email.FromName,
@@ -529,7 +541,7 @@ func adminSettingsView(s *storage.SiteSettings) adminSettingsJSON {
 		EmailSMTPTLS:               s.Email.SMTPTLS,
 		EmailAuditRetentionDays:    storage.ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays),
 		AuditRetentionDays:         storage.ClampAuditRetentionDays(s.AuditRetentionDays),
-		GitHubOAuthClientID:       s.GitHubOAuthClientID,
+		GitHubOAuthClientID:        s.GitHubOAuthClientID,
 		GitHubOAuthClientSecretSet: s.GitHubOAuthClientSecretEnc != "",
 		GitHubOAuthConfigured:      strings.TrimSpace(s.GitHubOAuthClientID) != "" && s.GitHubOAuthClientSecretEnc != "",
 		ImageHostingProvider:       imagehost.NormalizeProvider(s.Image.Provider),

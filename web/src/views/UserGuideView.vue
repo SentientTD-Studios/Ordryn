@@ -104,10 +104,28 @@ onUnmounted(() => {
           only a keyword, such as <code>Today</code>, is kept as written.
         </p>
 
+        <h3 class="h6 fw-bold mt-3">Templates</h3>
+        <p>
+          For tasks you create again and again, open one and choose <strong>Save as template</strong>. A template keeps
+          the title, description, priority, tags, estimate, and the titles of its subtasks, and can set the due date a
+          number of days after the day you use it. Tick <strong>Share with everyone in</strong> the project to let the
+          whole project use it; otherwise only you see it. Use a template from <strong>Templates</strong> above the task
+          list: it creates the task with its subtasks and opens it. Tags are matched by name in the project the task
+          lands in and skipped if that project doesn't have them; estimates only apply on kanban boards. The template's
+          creator and project managers can delete a shared template.
+        </p>
+        <h3 class="h6 fw-bold mt-3">Files</h3>
+        <p>
+          When an admin turns on file attachments, the task panel has a <strong>Files</strong> section. Use
+          <strong>Attach</strong> or drop files onto it; anyone who can edit the task can add files, up to the size the
+          admin set and 20 per task. Images and PDFs open in the browser; other files download. You can remove your own
+          files; project managers can remove anyone's. Files go to the trash and come back with their task.
+        </p>
+
         <h2 id="projects-views" class="h4 mt-4">Projects, tags, filters, and saved views</h2>
         <p>
           Organize work with projects and tags. On the home page, the filter bar lets you search,
-          filter by status / tag / priority / due date, and change sort order or list density.
+          filter by status, tag, priority, and due date, and change sort order or list density. Tick several tags or priorities to see tasks that match any of them. Under <strong>Due date</strong>, <strong>Custom range…</strong> shows tasks due between two dates (leave one end empty for "from" or "until"); tasks with no due date are left out.
         </p>
         <ul>
           <li>
@@ -136,8 +154,9 @@ onUnmounted(() => {
           <li>
             Project owners can give any non-done column a <strong>WIP limit</strong> in project settings
             (Board tab). When a column holds more cards than its limit, its count turns red, for example
-            <em>5 / 3</em>. The limit is a warning only and never blocks a move; it counts the cards shown on the
-            board, so a sprint or filter changes what is counted. Use the
+            <em>5 / 3</em>. The limit is a warning only and never blocks a move. It counts every card in the column for the sprint (or
+            backlog) on screen, so search and other filters don't change the number; hover the count to see how many
+            cards the filters hide. Use the
             <i class="bi bi-chevron-bar-left" aria-label="collapse" /> button on a column to
             <strong>collapse</strong> it to a narrow strip; your collapsed columns are remembered for each board in this
             browser.
@@ -151,7 +170,8 @@ onUnmounted(() => {
           </li>
           <li>
             Save the current filter set as a view so you can reopen it later from the sidebar or
-            <RouterLink to="/views">Views</RouterLink>.
+            <RouterLink to="/views">Views</RouterLink>. If a view is limited to a project that was deleted or that you
+            left, opening it shows a notice where you can switch it to all projects or delete it.
           </li>
         </ul>
 

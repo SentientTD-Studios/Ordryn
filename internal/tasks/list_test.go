@@ -893,3 +893,93 @@ func titles(list []tasks.Task) []string {
 func intPtr(n int) *int {
 	return &n
 }
+
+func TestSearchTreatsWildcardsLiterally(t *testing.T) {
+	userID := 1
+	for _, q := range []string{"%", "_", `\`} {
+		_, total, err := tasks.SearchTasksForUserWithFilters(1, 10, q, &userID, "UTC", tasks.ListFilters{})
+		if err != nil {
+			t.Fatalf("search %q: %v", q, err)
+		}
+		if total != 0 {
+			t.Fatalf("search %q matched %d tasks; it should only match the literal character", q, total)
+		}
+	}
+}
+
+func TestEnsureSearchIndexes(t *testing.T) {
+	if err := storage.EnsureSearchIndexes(); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.CloseDatabase(pool)
+	var hasExt bool
+	if err := pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')`).Scan(&hasExt); err != nil {
+		t.Fatal(err)
+	}
+	if !hasExt {
+		t.Skip("pg_trgm not available in this Postgres build")
+	}
+	var n int
+	if err := pool.QueryRow(context.Background(), `SELECT COUNT(*) FROM pg_indexes WHERE indexname IN
+		('idx_tasks_title_trgm', 'idx_tasks_description_trgm', 'idx_tags_name_trgm')`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("expected 3 trigram indexes, found %d", n)
+	}
+	// Search still works with the indexes in place.
+	userID := 1
+	if _, total, err := tasks.SearchTasksForUserWithFilters(1, 10, "work", &userID, "UTC", tasks.ListFilters{}); err != nil || total != 1 {
+		t.Fatalf("tag search after indexing: total=%d err=%v", total, err)
+	}
+}
+
+func TestMultiValueAndDateRangeFilters(t *testing.T) {
+	userID := 1
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var today time.Time
+	err = pool.QueryRow(context.Background(), `SELECT CURRENT_DATE`).Scan(&today)
+	storage.CloseDatabase(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := func(offset int) string { return today.AddDate(0, 0, offset).Format("2006-01-02") }
+
+	titles := func(f tasks.ListFilters) map[string]bool {
+		t.Helper()
+		list, _, err := tasks.ReturnPaginationForUserWithFilters(1, 50, &userID, "UTC", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]bool{}
+		for _, task := range list {
+			out[task.Title] = true
+		}
+		return out
+	}
+	expect := func(name string, got map[string]bool, want ...string) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%s: got %v, want %v", name, got, want)
+		}
+		for _, w := range want {
+			if !got[w] {
+				t.Fatalf("%s: got %v, want %v", name, got, want)
+			}
+		}
+	}
+
+	expect("priority low or medium", titles(tasks.ListFilters{PriorityIn: []int{1, 2}}), "Favorite task", "Open task")
+	expect("either tag", titles(tasks.ListFilters{TagNamesIn: []string{"WORK", "personal"}}), "Tagged task")
+	expect("tag ids", titles(tasks.ListFilters{TagIDsIn: []int{1, 2}}), "Tagged task")
+	expect("due today through tomorrow", titles(tasks.ListFilters{DueFrom: day(0), DueTo: day(1)}), "Favorite task", "Open task")
+	expect("due from yesterday", titles(tasks.ListFilters{DueFrom: day(-1)}), "Favorite task", "Open task", "Done task")
+	expect("due through yesterday", titles(tasks.ListFilters{DueTo: day(-1)}), "Done task")
+}

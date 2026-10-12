@@ -630,21 +630,67 @@ function columnAriaLabel(col: ProjectStatus): string {
 
 // WIP limits are soft: the board flags a column over its limit but never
 // blocks a move, so an overloaded column can always be fixed by dragging.
+// They count every live card in the column for this sprint, from the server,
+// so list filters (search, tags, claimed, …) never change the number.
+const serverCounts = ref<Record<string, number> | null>(null)
+let countsTimer: ReturnType<typeof setTimeout> | null = null
+let countsRequest = 0
+
+async function loadColumnCounts() {
+  const req = ++countsRequest
+  try {
+    const counts = await api.projectStatusCounts(props.projectId, props.sprintFilter || 'backlog')
+    if (req === countsRequest) serverCounts.value = counts
+  } catch {
+    if (req === countsRequest) serverCounts.value = null
+  }
+}
+
+function scheduleColumnCounts() {
+  if (!statuses.value.some((s) => s.wip_limit)) return
+  if (countsTimer) clearTimeout(countsTimer)
+  countsTimer = setTimeout(() => void loadColumnCounts(), 400)
+}
+
+function wipCount(col: ProjectStatus): number {
+  const counts = serverCounts.value
+  if (!counts) return tasksForStatus(col.id).length
+  let n = counts[String(col.id)] ?? 0
+  // Cards with no column (or a deleted one) show in the default column.
+  if (col.id === defaultStatusId.value) {
+    for (const [key, v] of Object.entries(counts)) {
+      if (!statusIdSet.value.has(Number(key))) n += v
+    }
+  }
+  return n
+}
+
 function isOverWip(col: ProjectStatus): boolean {
-  return !col.is_done && !!col.wip_limit && tasksForStatus(col.id).length > col.wip_limit
+  return !col.is_done && !!col.wip_limit && wipCount(col) > col.wip_limit
 }
 
 function countLabel(col: ProjectStatus): string {
-  const count = tasksForStatus(col.id).length
-  return !col.is_done && col.wip_limit ? `${count} / ${col.wip_limit}` : String(count)
+  return !col.is_done && col.wip_limit ? `${wipCount(col)} / ${col.wip_limit}` : String(tasksForStatus(col.id).length)
 }
 
 function wipTitle(col: ProjectStatus): string {
   if (col.is_done || !col.wip_limit) return ''
-  const count = tasksForStatus(col.id).length
-  const base = `WIP limit ${col.wip_limit} (counts the cards shown on this board)`
-  return count > col.wip_limit ? `Over the WIP limit: ${count} cards, limit ${col.wip_limit}. ${base}` : base
+  const count = wipCount(col)
+  const shown = tasksForStatus(col.id).length
+  const hidden = count > shown ? ` ${count - shown} hidden by filters.` : ''
+  const base = `WIP limit ${col.wip_limit}: ${count} card${count === 1 ? '' : 's'} in this column for this sprint.${hidden}`
+  return count > col.wip_limit ? `Over the WIP limit. ${base}` : base
 }
+
+watch(
+  // Re-count when the sprint changes or any card changes column, appears, or goes.
+  () => [props.projectId, props.sprintFilter, statuses.value, boardTasks.value.map((t) => `${t.id}:${t.status_id ?? 0}`).join(',')] as const,
+  scheduleColumnCounts,
+  { immediate: true },
+)
+onBeforeUnmount(() => {
+  if (countsTimer) clearTimeout(countsTimer)
+})
 
 // Collapsed columns are a per-person view preference, kept in this browser.
 const collapsedIds = ref<Set<number>>(new Set())
@@ -831,6 +877,11 @@ watch(
 )
 
 useLiveUpdates((event) => {
+  // Someone else's change may move a card this view's filters hide.
+  if (event.type.startsWith('task.') && (!event.project_id || event.project_id === props.projectId)) {
+    scheduleColumnCounts()
+    return
+  }
   if (event.type !== 'project.updated' && event.type !== 'project.created' && event.type !== 'project.deleted') return
   if (event.project_id && event.project_id !== props.projectId) return
   if (isOwnFocusedLiveEvent(event, user.value?.id)) return

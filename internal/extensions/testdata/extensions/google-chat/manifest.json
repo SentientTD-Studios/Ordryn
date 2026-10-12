@@ -1,7 +1,7 @@
 {
   "id": "google-chat",
   "name": "Google Chat",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "host_api": 1,
   "description": "Post task events from this project to a Google Chat space using an incoming webhook. Sends Chat cards (not generic JSON).",
   "author": "SentientTD Studios",
@@ -96,6 +96,10 @@
     {
       "on": "project.restored",
       "label": "Project restored"
+    },
+    {
+      "on": "project.deleted",
+      "label": "Project deleted"
     },
     {
       "on": "project.member_joined",
@@ -232,6 +236,7 @@
     "task.sprint_changed": "*{name}* is now in sprint {sprint} ({url})",
     "project.archived": "Project *{project}* was archived by {actor}",
     "project.restored": "Project *{project}* was restored by {actor}",
+    "project.deleted": "Project *{project}* was deleted by {actor}",
     "project.member_joined": "{member} joined *{project}*",
     "project.member_left": "{member} left *{project}*",
     "sprint.created": "Sprint {sprint} created in *{project}*",

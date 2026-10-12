@@ -61,6 +61,11 @@ type SiteSettings struct {
 
 	Image               imagehost.Config
 	ImageS3SecretKeyEnc string
+
+	// AttachmentsEnabled lets members upload files to tasks; AttachmentMaxBytes
+	// caps each file. Off by default.
+	AttachmentsEnabled bool
+	AttachmentMaxBytes int64
 }
 
 // CreateSiteSettingsTable ensures the site_settings table exists.
@@ -148,7 +153,9 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(max_comment_length, 20000),
 			COALESCE(audit_retention_days, 0),
 			COALESCE(notification_emails_enabled, FALSE),
-			COALESCE(trash_retention_days, 30)
+			COALESCE(trash_retention_days, 30),
+			COALESCE(attachments_enabled, FALSE),
+			COALESCE(attachment_max_bytes, 0)
 		FROM site_settings WHERE id = 1`)
 	if err := row.Scan(
 		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
@@ -170,12 +177,14 @@ func GetSiteSettings() (*SiteSettings, error) {
 		&s.AuditRetentionDays,
 		&s.NotificationEmailsEnabled,
 		&s.TrashRetentionDays,
+		&s.AttachmentsEnabled, &s.AttachmentMaxBytes,
 	); err != nil {
 		return nil, err
 	}
 	s.EmailAuditRetentionDays = ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays)
 	s.AuditRetentionDays = ClampAuditRetentionDays(s.AuditRetentionDays)
 	s.TrashRetentionDays = ClampTrashRetentionDays(s.TrashRetentionDays)
+	s.AttachmentMaxBytes = ClampAttachmentMaxBytes(s.AttachmentMaxBytes)
 	s.Image.MaxBytes = imagehost.ClampMaxBytes(s.Image.MaxBytes)
 	s.MaxDescriptionLength = ClampTaskTextLength(s.MaxDescriptionLength)
 	s.MaxCommentLength = ClampTaskTextLength(s.MaxCommentLength)
@@ -197,6 +206,7 @@ func UpsertSiteSettings(s SiteSettings) error {
 	s.EmailAuditRetentionDays = ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays)
 	s.AuditRetentionDays = ClampAuditRetentionDays(s.AuditRetentionDays)
 	s.TrashRetentionDays = ClampTrashRetentionDays(s.TrashRetentionDays)
+	s.AttachmentMaxBytes = ClampAttachmentMaxBytes(s.AttachmentMaxBytes)
 	s.Image.MaxBytes = imagehost.ClampMaxBytes(s.Image.MaxBytes)
 	s.Image.Provider = imagehost.NormalizeProvider(s.Image.Provider)
 	if s.Image.LocalPath == "" {
@@ -230,9 +240,10 @@ func UpsertSiteSettings(s SiteSettings) error {
 			max_description_length, max_comment_length,
 			audit_retention_days,
 			notification_emails_enabled, notification_emails_enabled_at,
-			trash_retention_days
+			trash_retention_days,
+			attachments_enabled, attachment_max_bytes
 		)
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CASE WHEN $41 THEN NOW() END, $42)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CASE WHEN $41 THEN NOW() END, $42, $43, $44)
         ON CONFLICT (id) DO UPDATE SET
             site_name = EXCLUDED.site_name,
             default_timezone = EXCLUDED.default_timezone,
@@ -278,7 +289,9 @@ func UpsertSiteSettings(s SiteSettings) error {
 			notification_emails_enabled_at = CASE
 				WHEN EXCLUDED.notification_emails_enabled AND NOT COALESCE(site_settings.notification_emails_enabled, FALSE) THEN NOW()
 				ELSE site_settings.notification_emails_enabled_at END,
-			trash_retention_days = EXCLUDED.trash_retention_days
+			trash_retention_days = EXCLUDED.trash_retention_days,
+			attachments_enabled = EXCLUDED.attachments_enabled,
+			attachment_max_bytes = EXCLUDED.attachment_max_bytes
     `, s.SiteName, s.DefaultTimezone, s.ShowChangelog,
 		s.EnableRegistration, s.InviteOnly, s.EnableJoinRequests, s.MetaDescription,
 		s.EnableGlobalAnnouncement, s.GlobalAnnouncementText, s.EnableAPI,
@@ -297,7 +310,8 @@ func UpsertSiteSettings(s SiteSettings) error {
 		s.MaxDescriptionLength, s.MaxCommentLength,
 		s.AuditRetentionDays,
 		s.NotificationEmailsEnabled,
-		s.TrashRetentionDays)
+		s.TrashRetentionDays,
+		s.AttachmentsEnabled, s.AttachmentMaxBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert site_settings: %v", err)
 	}

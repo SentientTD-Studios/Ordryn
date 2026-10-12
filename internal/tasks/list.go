@@ -151,10 +151,10 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 	}
 
 	offset := (page - 1) * pageSize
-	searchPattern := "%" + searchQuery + "%"
+	pattern := searchPattern(searchQuery)
 	searchID, hasSearchID := parseSearchTaskID(searchQuery)
 
-	countArgs := []interface{}{searchPattern, *userID}
+	countArgs := []interface{}{pattern, *userID}
 	countIDIdx := 0
 	if hasSearchID {
 		countArgs = append(countArgs, searchID)
@@ -171,7 +171,7 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 		return nil, 0, err
 	}
 
-	selectArgs := []interface{}{searchPattern, timezone, pageSize, *userID, offset}
+	selectArgs := []interface{}{pattern, timezone, pageSize, *userID, offset}
 	selectIDIdx := 0
 	if hasSearchID {
 		selectArgs = append(selectArgs, searchID)
@@ -226,6 +226,7 @@ func appendFilterSQL(where string, args []interface{}, filters ListFilters, time
 	where += filters.projectCondition(tablePrefix)
 	where += filters.statusCondition(tablePrefix)
 	where, args = appendDueDateCondition(where, args, filters.DueFilter, timezone, tablePrefix)
+	where, args = appendDueRangeCondition(where, args, filters.DueFrom, filters.DueTo, tablePrefix)
 	where, args = appendCompletedWeekCondition(where, args, filters.CompletedFilter, timezone, tablePrefix)
 	where += filters.priorityCondition(tablePrefix)
 	where += filters.sprintCondition(tablePrefix)
@@ -258,46 +259,67 @@ func parseSearchTaskID(query string) (int, bool) {
 	return id, true
 }
 
+// searchPattern turns a search box query into an ILIKE pattern that matches
+// it literally anywhere in the text: %, _ and \ in the query are escaped.
+func searchPattern(query string) string {
+	escaped := strings.NewReplacer(`\`, `\`, `%`, `\%`, `_`, `\_`).Replace(strings.TrimSpace(query))
+	return "%" + escaped + "%"
+}
+
+// searchIDsSQL selects the ids of tasks whose title, description, or a tag name
+// matches the pattern in argument $patternIdx. Each branch is a plain ILIKE on
+// one column so the trigram indexes from storage.EnsureSearchIndexes apply; an
+// OR across the columns and the tag join could not use them.
+func searchIDsSQL(patternIdx int) string {
+	return fmt.Sprintf(`(SELECT id FROM tasks WHERE title ILIKE $%[1]d
+		UNION SELECT id FROM tasks WHERE description ILIKE $%[1]d
+		UNION SELECT tt.task_id FROM task_tags tt JOIN tags tg ON tg.id = tt.tag_id WHERE tg.name ILIKE $%[1]d)`, patternIdx)
+}
+
+// searchMatchSQL matches idCol against the search pattern in $patternIdx, or
+// against an exact task id in $idArgIndex when the query is a number.
+func searchMatchSQL(idCol string, patternIdx, idArgIndex int) string {
+	clause := fmt.Sprintf("%s IN %s", idCol, searchIDsSQL(patternIdx))
+	if idArgIndex <= 0 {
+		return "(" + clause + ")"
+	}
+	return fmt.Sprintf("(%s OR %s = $%d)", clause, idCol, idArgIndex)
+}
+
 func searchMatchClause(tablePrefix string, idArgIndex int) string {
-	prefix := ""
 	idCol := "id"
 	if tablePrefix != "" {
-		prefix = tablePrefix + "."
 		idCol = tablePrefix + ".id"
 	}
-	clause := fmt.Sprintf(`(%stitle ILIKE $1 OR %sdescription ILIKE $1 OR EXISTS (
-		SELECT 1 FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id
-		WHERE tt.task_id = %s AND tg.name ILIKE $1))`, prefix, prefix, idCol)
-	if idArgIndex <= 0 {
-		return clause
-	}
-	return fmt.Sprintf(`(%s OR %s = $%d)`, clause, idCol, idArgIndex)
+	return searchMatchSQL(idCol, 1, idArgIndex)
 }
 
 func childSearchClause(idArgIndex int) string {
-	clause := `(c.title ILIKE $1 OR c.description ILIKE $1 OR EXISTS (
-		SELECT 1 FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id
-		WHERE tt.task_id = c.id AND tg.name ILIKE $1))`
-	if idArgIndex > 0 {
-		clause = fmt.Sprintf(`(%s OR c.id = $%d)`, clause, idArgIndex)
-	}
 	// Trashed subtasks never make their parent match a search.
-	return "c.deleted_at IS NULL AND " + clause
+	return "c.deleted_at IS NULL AND " + searchMatchSQL("c.id", 1, idArgIndex)
 }
-
 func appendTagCondition(where string, args []interface{}, filters ListFilters, userID int, tablePrefix string) (string, []interface{}) {
 	idCol := "id"
 	if tablePrefix != "" {
 		idCol = tablePrefix + ".id"
 	}
+	names := filters.TagNamesIn
 	if name := strings.TrimSpace(filters.TagNameFilter); name != "" {
-		args = append(args, name, userID)
+		names = append([]string{name}, names...)
+	}
+	if len(names) > 0 {
+		lowered := make([]string, 0, len(names)+2)
+		for _, n := range names {
+			lowered = append(lowered, strings.ToLower(strings.TrimSpace(n)))
+			// The archived tag still answers to its legacy "removed" name.
+			if storage.IsSystemTagName(n) {
+				lowered = append(lowered, "archived", "removed")
+			}
+		}
+		args = append(args, lowered, userID)
 		nameIdx := len(args) - 1
 		userIdx := len(args)
-		tagMatchClause := fmt.Sprintf("LOWER(tg.name) = LOWER($%d)", nameIdx)
-		if storage.IsSystemTagName(name) {
-			tagMatchClause = fmt.Sprintf("(LOWER(tg.name) = LOWER($%d) OR LOWER(tg.name) IN ('archived', 'removed'))", nameIdx)
-		}
+		tagMatchClause := fmt.Sprintf("LOWER(tg.name) = ANY($%d)", nameIdx)
 		where += fmt.Sprintf(` AND %s IN (
 			SELECT tt.task_id FROM task_tags tt
 			JOIN tags tg ON tg.id = tt.tag_id
@@ -311,6 +333,11 @@ func appendTagCondition(where string, args []interface{}, filters ListFilters, u
 				)
 			  )
 		)`, idCol, tagMatchClause, userIdx, userIdx, userIdx)
+		return where, args
+	}
+	if len(filters.TagIDsIn) > 0 {
+		args = append(args, filters.TagIDsIn)
+		where += fmt.Sprintf(" AND %s IN (SELECT task_id FROM task_tags WHERE tag_id = ANY($%d))", idCol, len(args))
 		return where, args
 	}
 	if filters.TagFilter == nil {
@@ -327,6 +354,16 @@ func IsArchivedTagFilter(filters ListFilters) bool {
 	name := strings.TrimSpace(filters.TagNameFilter)
 	if storage.IsArchivedTagName(name) || storage.IsRemovedTagName(name) {
 		return true
+	}
+	for _, n := range filters.TagNamesIn {
+		if storage.IsArchivedTagName(n) || storage.IsRemovedTagName(n) {
+			return true
+		}
+	}
+	for _, id := range filters.TagIDsIn {
+		if tag, err := storage.GetTag(id); err == nil && tag != nil && (storage.IsArchivedTagName(tag.Name) || storage.IsRemovedTagName(tag.Name)) {
+			return true
+		}
 	}
 	if filters.TagFilter == nil {
 		return false
@@ -746,22 +783,15 @@ func appendOrphanMatchingSubtasks(roots []Task, userID int, timezone string, fil
 	where := "WHERE " + storage.TaskListVisibleCondition("t", "$1", filters.ProjectFilter) + " AND t.parent_id IS NOT NULL"
 	where, args = appendFilterSQL(where, args, filters, timezone, "t", userID)
 	if strings.TrimSpace(searchQuery) != "" {
-		searchPattern := "%" + strings.TrimSpace(searchQuery) + "%"
 		searchID, hasSearchID := parseSearchTaskID(searchQuery)
-		args = append(args, searchPattern)
+		args = append(args, searchPattern(searchQuery))
 		searchIdx := len(args)
 		searchIDIdx := 0
 		if hasSearchID {
 			args = append(args, searchID)
 			searchIDIdx = len(args)
 		}
-		matchClause := fmt.Sprintf(`(t.title ILIKE $%d OR t.description ILIKE $%d OR EXISTS (
-			SELECT 1 FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id
-			WHERE tt.task_id = t.id AND tg.name ILIKE $%d))`, searchIdx, searchIdx, searchIdx)
-		if searchIDIdx > 0 {
-			matchClause = fmt.Sprintf(`(%s OR t.id = $%d)`, matchClause, searchIDIdx)
-		}
-		where += " AND " + matchClause
+		where += " AND " + searchMatchSQL("t.id", searchIdx, searchIDIdx)
 	}
 	if len(exclude) > 0 {
 		args = append(args, exclude)
@@ -934,8 +964,7 @@ func TaskMatchesFilters(taskID, userID int, timezone string, filters ListFilters
 	vis := storage.TaskListVisibleCondition("", "$3", filters.ProjectFilter)
 	visNoSearch := storage.TaskListVisibleCondition("", "$2", filters.ProjectFilter)
 	if search != "" {
-		searchPattern := "%" + search + "%"
-		args = []interface{}{searchPattern, taskID, userID}
+		args = []interface{}{searchPattern(search), taskID, userID}
 		idArgIndex := 0
 		if searchID, ok := parseSearchTaskID(search); ok {
 			args = append(args, searchID)

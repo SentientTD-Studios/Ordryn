@@ -4,7 +4,7 @@ import type { SavedViewFilter } from '@/api/types'
 /** Default list filter: incomplete only, so the queue stays uncluttered. */
 export const DEFAULT_TASK_LIST_STATUS = 'incomplete'
 
-const filterKeys = ['status', 'due', 'completed', 'priority', 'tag', 'sort', 'project', 'search', 'claimed'] as const
+const filterKeys = ['status', 'due', 'due_from', 'due_to', 'completed', 'priority', 'tag', 'sort', 'project', 'search', 'claimed'] as const
 type FilterKey = (typeof filterKeys)[number]
 type TaskListFilterState = Record<FilterKey, string>
 
@@ -14,6 +14,8 @@ const listFilterKeys = filterKeys.filter((k): k is Exclude<FilterKey, 'project'>
 const defaultFilters: TaskListFilterState = {
   status: DEFAULT_TASK_LIST_STATUS,
   due: '',
+  due_from: '',
+  due_to: '',
   completed: '',
   priority: '',
   tag: '',

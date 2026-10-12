@@ -35,6 +35,8 @@ const settings = reactive<AdminSettings>({
   max_description_length: 20000,
   max_comment_length: 20000,
   trash_retention_days: 30,
+  attachments_enabled: false,
+  attachment_max_bytes: 5 * 1024 * 1024,
   meta_description: '',
   enable_global_announcement: false,
   global_announcement_text: '',
@@ -68,6 +70,14 @@ const settings = reactive<AdminSettings>({
   image_local_path: 'data/uploads',
 })
 
+// The admin sets the attachment limit in MB; the API stores bytes.
+const attachmentMaxMb = computed({
+  get: () => Math.round((settings.attachment_max_bytes / (1024 * 1024)) * 10) / 10,
+  set: (mb: number) => {
+    settings.attachment_max_bytes = Math.round((Number(mb) || 0) * 1024 * 1024)
+  },
+})
+
 async function load() {
   try {
     const s = await api.getAdminSettings()
@@ -97,6 +107,8 @@ async function saveSettings() {
       max_description_length: settings.max_description_length,
       max_comment_length: settings.max_comment_length,
       trash_retention_days: settings.trash_retention_days,
+      attachments_enabled: settings.attachments_enabled,
+      attachment_max_bytes: settings.attachment_max_bytes,
       meta_description: settings.meta_description,
       enable_global_announcement: settings.enable_global_announcement,
       global_announcement_text: settings.global_announcement_text,
@@ -336,6 +348,31 @@ onMounted(load)
             />
             <div class="form-text">
               Deleted tasks can be restored from Trash until then, and are permanently deleted afterwards (1–365, default 30).
+            </div>
+          </div>
+          <div class="mb-3">
+            <div class="form-check mb-1">
+              <input id="admin-attachments" v-model="settings.attachments_enabled" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-attachments">Allow file attachments on tasks</label>
+            </div>
+            <div class="d-flex align-items-center gap-2 ms-4">
+              <label for="admin-attachment-max" class="form-label mb-0 small">Largest file (MB)</label>
+              <input
+                id="admin-attachment-max"
+                v-model.number="attachmentMaxMb"
+                type="number"
+                class="form-control form-control-sm"
+                style="max-width: 7rem"
+                min="0.1"
+                max="50"
+                step="0.5"
+                :disabled="!settings.attachments_enabled"
+              />
+            </div>
+            <div class="form-text ms-4">
+              Members who can edit a task can attach up to 20 files to it (0.1–50 MB each, default 5). Files are stored in the
+              database, so larger limits grow its size and backups. Turning this off stops new uploads; files already attached
+              stay downloadable. If a reverse proxy sits in front of the app, its upload limit must be at least this large.
             </div>
           </div>
           <div class="form-check mb-2">

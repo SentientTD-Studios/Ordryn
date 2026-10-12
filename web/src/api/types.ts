@@ -484,6 +484,8 @@ export type SiteInfo = {
   enable_inbound_webhooks?: boolean
   max_description_length?: number
   max_comment_length?: number
+  attachments_enabled?: boolean
+  attachment_max_bytes?: number
 }
 
 export type ChangelogEntry = {
@@ -506,6 +508,42 @@ export type SavedViewFilter = {
   search?: string
   /** Kanban projects only: `me` (claimed by caller) or `none` (unclaimed). */
   claimed?: string
+  /** Custom due range (YYYY-MM-DD); used with `due: 'range'`. */
+  due_from?: string
+  due_to?: string
+}
+
+/** A file on a task (metadata only; download with api.taskAttachmentUrl). */
+export type TaskAttachment = {
+  id: number
+  task_id: number
+  user_id: number
+  user_name: string
+  file_name: string
+  content_type: string
+  size_bytes: number
+  created_at: string
+}
+
+export type TaskTemplateInput = {
+  name: string
+  title: string
+  description: string
+  priority: number
+  tag_names: string[]
+  estimate_points: number | null
+  /** New task is due this many days after the day it is created. */
+  due_offset_days: number | null
+  subtasks: string[]
+}
+
+/** A reusable task. `project_id` null means personal (only its owner sees it). */
+export type TaskTemplate = TaskTemplateInput & {
+  id: number
+  project_id: number | null
+  owner_id: number
+  owner_name: string
+  can_manage: boolean
 }
 
 /** A trashed task the caller can restore or delete for good. */
@@ -657,6 +695,8 @@ export type AdminSettings = {
   enable_inbound_webhooks: boolean
   notification_emails_enabled: boolean
   trash_retention_days: number
+  attachments_enabled: boolean
+  attachment_max_bytes: number
   allow_user_invites: boolean
   user_invite_limit: number
   invite_expiration_days: number

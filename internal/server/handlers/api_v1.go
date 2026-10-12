@@ -462,6 +462,9 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 		case "time-entries":
 			handleTaskTimeEntries(w, r, id, parts[2:])
 			return
+		case "attachments":
+			apiV1TaskAttachments(w, r, id, parts[2:])
+			return
 		case "claim":
 			if len(parts) != 2 {
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
