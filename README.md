@@ -138,10 +138,10 @@ Project managers can add AI agents from **project settings → AI agents**. Each
 | Triage & clarify | Rough requests | Rewritten description with "done when" criteria, priority, questions; moved to Review | Any model, including local (Ollama) |
 | Break down into subtasks | Features / epics | 3–10 subtasks and a plan | Any model |
 | Draft & write | Docs, emails, release notes, checklists | The draft as a comment | Any model |
-| Investigate code (read-only) | Bug reports, "how does X work?" | Findings with file:line references and a proposed patch | An agent that can read the code (e.g. the Ollama example with `REPO_DIR`) |
+| Investigate code (read-only) | Bug reports, "how does X work?" | Findings with file:line references and a proposed patch | An agent that can read the code (e.g. the local Ollama script with folder access) |
 | Code changes | Bugs / small features | Branch or PR, tests, summary | An agent with the code checked out (e.g. Claude Code over MCP) |
 
-To try it locally for free, see [`examples/agents/ollama`](examples/agents/ollama/README.md).
+To try it for free with a model on your own computer, open the agent's settings → **Connect the agent** → **Run a local model (Ollama)**. Pick a model, context size, and folder access, and download a single script with those settings (and a fresh key) built in. Run it with `node`. It polls this site over HTTPS, so it works against a hosted instance without ports, tunnels, or server changes. Source and full options: [`tools/ollama-agent`](tools/ollama-agent/README.md). The web build bundles it (`vite.config.ts`, `virtual:ollama-agent`), so the download always matches the server's API.
 
 **Runs.** A run asks one agent to work on one task. A run starts when a permitted member `@mentions` the agent in a comment, moves a card into one of the agent's trigger columns, or clicks **Send to agent** on a task (optionally with a note, such as acceptance criteria). **Who can trigger** is managers only (the default), anyone who can edit tasks, or only the roles and/or specific members the manager selects (`trigger_by: "selected"` with `trigger_role_slugs` / `trigger_user_ids`; managers aren't included unless selected). A mention or column move from anyone else is ignored: no run, no error. "Send to agent" isn't offered to them. Events caused by agents never start runs, so agents can't loop on each other. An agent has at most one open run per task and an hourly limit. On kanban boards it can claim the card while it works, and the claim is released when the run finishes or is cancelled.
 

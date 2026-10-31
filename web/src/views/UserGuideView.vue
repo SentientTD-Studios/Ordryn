@@ -254,7 +254,7 @@ onUnmounted(() => {
             <tr><td>Triage &amp; clarify</td><td>Rough or one-line requests</td><td>A rewritten description with steps and “done when” criteria, a priority, and open questions; card moved to Review</td><td>Any model, including local</td></tr>
             <tr><td>Break down into subtasks</td><td>A feature or epic</td><td>3–10 subtasks plus a plan comment</td><td>Any model</td></tr>
             <tr><td>Draft &amp; write</td><td>“Write the release notes for…”, “Draft an email to…”</td><td>The draft as a comment, with assumptions and questions</td><td>Any model</td></tr>
-            <tr><td>Investigate code (read-only)</td><td>A bug report or “how does this work?”</td><td>Findings with file:line references and a proposed patch to apply yourself</td><td>An agent that can read the code, e.g. the local Ollama example with <code>REPO_DIR</code></td></tr>
+            <tr><td>Investigate code (read-only)</td><td>A bug report or “how does this work?”</td><td>Findings with file:line references and a proposed patch to apply yourself</td><td>An agent that can read the code, e.g. the local Ollama script with folder access</td></tr>
             <tr><td>Code changes</td><td>A bug or small feature, ideally with a linked issue</td><td>A branch or pull request, tests, and a summary comment</td><td>An agent with the code checked out, e.g. Claude Code over MCP</td></tr>
           </tbody>
         </table>
@@ -284,6 +284,14 @@ onUnmounted(() => {
             Under <strong>Connect the agent</strong>, create a key. For Claude Code or another MCP client,
             copy the <code>claude mcp add …</code> command shown there. For your own service, set a webhook
             URL so each new run is POSTed to it, or poll the agent's queue over the API.
+          </li>
+          <li>
+            To use a model on your own computer, open <strong>Run a local model (Ollama)</strong> in the same
+            section. Pick the model, context size, and whether it may read or edit a folder, then download the
+            script. Create the key first and it's built into the file. Install
+            <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> and Node.js 18+, run
+            <code>ollama pull &lt;model&gt;</code>, then <code>node ordryn-agent-&lt;handle&gt;.mjs</code>. The script
+            connects out to this site, so no ports or server changes are needed, and it works only while it's running.
           </li>
         </ol>
         <p>

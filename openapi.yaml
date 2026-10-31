@@ -8314,6 +8314,18 @@ components:
                 type: string
               is_done:
                 type: boolean
+        tags:
+          type: array
+          description: >-
+            Tags that can go on this project's tasks (protected and system tags left out). Use their ids in
+            tag_ids, which replaces a task's whole tag list.
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
         guardrails:
           type: object
           properties:

@@ -12,9 +12,11 @@ endif
 test:
 	go test ./...
 	npm --prefix web test
+	node --test tools/ollama-agent/*.test.mjs
 
 test-web:
 	npm --prefix web test
+	node --test tools/ollama-agent/*.test.mjs
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) .

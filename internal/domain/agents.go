@@ -893,6 +893,17 @@ func GetAgentSelf(agentUserID int) (map[string]any, error) {
 			})
 		}
 	}
+	// Tags the agent can put on its project's tasks, so it can set tag_ids
+	// without a tag-listing endpoint (agent keys can't read /tags).
+	tags := []map[string]any{}
+	if list, err := storage.GetProjectTags(a.ProjectID); err == nil {
+		for _, t := range list {
+			if t.Protected || storage.IsSystemTagName(t.Name) {
+				continue
+			}
+			tags = append(tags, map[string]any{"id": t.ID, "name": t.Name})
+		}
+	}
 	return map[string]any{
 		"id":           a.ID,
 		"user_id":      a.UserID,
@@ -902,6 +913,7 @@ func GetAgentSelf(agentUserID int) (map[string]any, error) {
 		"instructions": a.Instructions,
 		"project":      map[string]any{"id": a.ProjectID, "name": projectName, "github_repo": agentRepoJSON(a.ProjectID)},
 		"statuses":     statuses,
+		"tags":         tags,
 		"guardrails":   agentGuardrailsJSON(a),
 	}, nil
 }
@@ -1022,14 +1034,15 @@ func invalidateAgentCache() {
 	agentCache.Unlock()
 }
 
-// HandleAgentEvent starts runs for mentions and trigger-status moves. Events
-// caused by agents are ignored so agents can never trigger each other.
+// HandleAgentEvent starts runs for mentions, moves into a trigger column, and
+// tasks created in a trigger column. Events caused by agents are ignored so
+// agents can never trigger each other.
 func HandleAgentEvent(ev hooks.Event) {
 	if ev.TaskID <= 0 || ev.ProjectID <= 0 || ev.ActorID <= 0 {
 		return
 	}
 	switch ev.Type {
-	case hooks.EventTaskMentioned, hooks.EventTaskStatusChanged:
+	case hooks.EventTaskMentioned, hooks.EventTaskStatusChanged, hooks.EventTaskCreated:
 	default:
 		return
 	}
@@ -1054,17 +1067,21 @@ func HandleAgentEvent(ev hooks.Event) {
 			}
 			autoQueue(a, ev, storage.AgentTriggerMention, ev.Comment)
 		}
-	case hooks.EventTaskStatusChanged:
+	case hooks.EventTaskStatusChanged, hooks.EventTaskCreated:
 		st, err := storage.GetTaskProjectStatus(ev.TaskID)
 		if err != nil || st == nil {
 			return
+		}
+		note := "Task moved to " + st.Name
+		if ev.Type == hooks.EventTaskCreated {
+			note = "Task created in " + st.Name
 		}
 		for i := range agents {
 			a := &agents[i]
 			if !containsInt(a.TriggerStatusIDs, st.ID) {
 				continue
 			}
-			autoQueue(a, ev, storage.AgentTriggerStatus, "Task moved to "+st.Name)
+			autoQueue(a, ev, storage.AgentTriggerStatus, note)
 		}
 	}
 }
