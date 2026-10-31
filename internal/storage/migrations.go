@@ -415,6 +415,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateTaskAttachmentsTable failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateFeedbackTables(); err != nil {
+		fmt.Printf("migration: CreateFeedbackTables failed: %v\n", err)
+		errCount++
+	}
 
 	// Last, so every table that can reference a role slug exists.
 	if err := MigrateLegacySiteRoles(); err != nil {

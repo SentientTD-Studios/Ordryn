@@ -256,6 +256,74 @@ export type ShareLinkView = {
   tasks: ShareLinkTask[]
 }
 
+/** Public status shown to feedback board visitors, derived from the linked task. */
+export type FeedbackPublicStatus = 'under_review' | 'planned' | 'in_progress' | 'done'
+export type FeedbackPostState = 'pending' | 'approved' | 'rejected'
+
+/** Manager view of a project's password-gated feedback board. */
+export type FeedbackBoard = {
+  exists: boolean
+  id?: number
+  url?: string
+  title?: string
+  intro: string
+  enabled: boolean
+  submissions_open: boolean
+  pending_count: number
+  created_at?: string
+  updated_at?: string
+}
+
+export type FeedbackBoardPatch = {
+  title?: string
+  intro?: string
+  enabled?: boolean
+  submissions_open?: boolean
+  password?: string
+}
+
+export type FeedbackPost = {
+  id: number
+  title: string
+  body: string
+  author_name: string
+  state: FeedbackPostState
+  task_id: number | null
+  status: FeedbackPublicStatus
+  vote_count: number
+  created_at: string
+  moderated_at?: string
+}
+
+export type PublicFeedbackPost = {
+  id: number
+  title: string
+  body: string
+  author_name: string
+  status: FeedbackPublicStatus
+  vote_count: number
+  voted: boolean
+  created_at: string
+}
+
+export type PublicFeedbackView = {
+  locked: boolean
+  title?: string
+  intro?: string
+  submissions_open: boolean
+  form_token?: string
+  posts?: PublicFeedbackPost[]
+  my_pending?: { id: number; title: string; created_at: string }[]
+}
+
+export type PublicFeedbackSubmission = {
+  title: string
+  body: string
+  author_name: string
+  website: string
+  form_token: string
+}
+
 export type TaskGitHubIssue = {
   issue_number: number
   issue_id: number

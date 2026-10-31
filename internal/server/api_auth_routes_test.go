@@ -27,6 +27,7 @@ var publicAPIAllowlist = map[string]string{
 	"/webhooks/inbound":        "inbound secret/HMAC + rate limit",
 	"/ext/callback":            "extension callback bearer + rate limit",
 	"/share-links/view/":       "share token in path",
+	"/public/feedback/":        "board password cookie + per-IP/visitor/board rate limits",
 	"/auth/device/code":        "devicePublic",
 	"/auth/device/token":       "devicePublic",
 	"/auth/device/status":      "device user_code poll",

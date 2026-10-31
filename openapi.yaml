@@ -55,6 +55,7 @@ tags:
   - name: Device Auth
   - name: GitHub
   - name: Live
+  - name: Feedback
   - name: Images
 
 paths:
@@ -5576,6 +5577,407 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/{id}/feedback:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Feedback]
+      summary: Get the project's public feedback board (manage)
+      description: Returns `exists:false` when the project has no board.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Board settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackBoard"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Feedback]
+      summary: Create or update the project's feedback board (manage)
+      description: >
+        Creates the board when none exists (password required). On update, omitted fields are kept.
+        Setting a new password signs every visitor out.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackBoardWrite"
+      responses:
+        "200":
+          description: Board settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackBoard"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Feedback]
+      summary: Delete the feedback board with all submissions and votes (manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/feedback/rotate-link:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Feedback]
+      summary: Replace the board's public link (manage)
+      description: The old link stops working and every visitor is signed out.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Board settings with the new URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackBoard"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/feedback/posts:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Feedback]
+      summary: List feedback submissions in one moderation state (manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+            default: pending
+      responses:
+        "200":
+          description: Submissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedbackPost"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/feedback/posts/{postId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/FeedbackPostID"
+    delete:
+      tags: [Feedback]
+      summary: Delete a submission and its votes (manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/feedback/posts/{postId}/approve:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/FeedbackPostID"
+    post:
+      tags: [Feedback]
+      summary: Approve a submission so visitors can see and vote on it (manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/FeedbackPostResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/feedback/posts/{postId}/reject:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/FeedbackPostID"
+    post:
+      tags: [Feedback]
+      summary: Reject (hide) a submission (manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/FeedbackPostResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/feedback/posts/{postId}/reopen:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/FeedbackPostID"
+    post:
+      tags: [Feedback]
+      summary: Move a submission back to the inbox (manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/FeedbackPostResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/feedback/posts/{postId}/promote:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/FeedbackPostID"
+    post:
+      tags: [Feedback]
+      summary: Create a task from a submission, link it, and approve the submission (manage)
+      description: Visitors then see the task's progress as the submission's status.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status_id:
+                  type: integer
+                  description: Optional board status for the new task (kanban projects)
+      responses:
+        "200":
+          $ref: "#/components/responses/FeedbackPostResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/feedback/posts/{postId}/link:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/FeedbackPostID"
+    post:
+      tags: [Feedback]
+      summary: Link a submission to an existing task in the project and approve it (manage)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id]
+              properties:
+                task_id:
+                  type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/FeedbackPostResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/public/feedback/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/FeedbackSlug"
+    get:
+      tags: [Feedback]
+      summary: Public feedback board (no account)
+      description: >
+        Returns only `{locked: true}` until the visitor has unlocked the board with its password.
+        Unknown, disabled and archived boards return 404. All public feedback endpoints are rate
+        limited per IP, and writes also per visitor and per board.
+      security: []
+      responses:
+        "200":
+          description: Board view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicFeedbackView"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v2/public/feedback/{slug}/unlock:
+    parameters:
+      - $ref: "#/components/parameters/FeedbackSlug"
+    post:
+      tags: [Feedback]
+      summary: Unlock a feedback board with its password
+      description: Sets an HttpOnly, SameSite=Strict cookie scoped to this board for 30 days.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+      responses:
+        "204":
+          description: Unlocked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v2/public/feedback/{slug}/lock:
+    parameters:
+      - $ref: "#/components/parameters/FeedbackSlug"
+    post:
+      tags: [Feedback]
+      summary: Sign out of a feedback board
+      security: []
+      responses:
+        "204":
+          description: Signed out
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/public/feedback/{slug}/posts:
+    parameters:
+      - $ref: "#/components/parameters/FeedbackSlug"
+    post:
+      tags: [Feedback]
+      summary: Submit feedback (unlocked visitors)
+      description: >
+        The submission waits for review and is visible only to its author until approved.
+        `form_token` comes from the board view and must be at least a few seconds old.
+        `website` is a honeypot and must be empty.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, form_token]
+              properties:
+                title:
+                  type: string
+                  maxLength: 140
+                body:
+                  type: string
+                  maxLength: 4000
+                author_name:
+                  type: string
+                  maxLength: 60
+                website:
+                  type: string
+                form_token:
+                  type: string
+      responses:
+        "201":
+          description: Submitted for review
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  state:
+                    type: string
+                    enum: [pending]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v2/public/feedback/{slug}/posts/{postId}/vote:
+    parameters:
+      - $ref: "#/components/parameters/FeedbackSlug"
+      - $ref: "#/components/parameters/FeedbackPostID"
+    post:
+      tags: [Feedback]
+      summary: Vote for an approved submission (unlocked visitors)
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/FeedbackVoteResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Feedback]
+      summary: Remove your vote (unlocked visitors)
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/FeedbackVoteResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /api/v2/tags:
     get:
       tags: [Tags]
@@ -7056,6 +7458,23 @@ components:
         type: integer
         minimum: 1
 
+    FeedbackPostID:
+      name: postId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+
+    FeedbackSlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 64
+      description: Unguessable public board slug
+
     AgentID:
       name: agentId
       in: path
@@ -7121,6 +7540,24 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+
+    FeedbackPostResponse:
+      description: Updated submission
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FeedbackPost"
+    FeedbackVoteResponse:
+      description: Vote saved
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              vote_count:
+                type: integer
+              voted:
+                type: boolean
 
   schemas:
     Error:
@@ -8708,6 +9145,134 @@ components:
         created_at:
           type: string
           format: date-time
+
+    FeedbackBoard:
+      type: object
+      properties:
+        exists:
+          type: boolean
+        id:
+          type: integer
+        url:
+          type: string
+          description: Public link; visitors also need the password
+        title:
+          type: string
+        intro:
+          type: string
+        enabled:
+          type: boolean
+        submissions_open:
+          type: boolean
+        pending_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    FeedbackBoardWrite:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        intro:
+          type: string
+          maxLength: 2000
+        enabled:
+          type: boolean
+        submissions_open:
+          type: boolean
+        password:
+          type: string
+          minLength: 6
+          maxLength: 128
+          description: Required when creating; on update a new value replaces the password
+
+    FeedbackStatus:
+      type: string
+      enum: [under_review, planned, in_progress, done]
+      description: Derived from the linked task; under_review when no task is linked
+
+    FeedbackPost:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        author_name:
+          type: string
+        state:
+          type: string
+          enum: [pending, approved, rejected]
+        task_id:
+          type: integer
+          nullable: true
+        status:
+          $ref: "#/components/schemas/FeedbackStatus"
+        vote_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        moderated_at:
+          type: string
+          format: date-time
+
+    PublicFeedbackView:
+      type: object
+      properties:
+        locked:
+          type: boolean
+        title:
+          type: string
+        intro:
+          type: string
+        submissions_open:
+          type: boolean
+        form_token:
+          type: string
+        posts:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              title:
+                type: string
+              body:
+                type: string
+              author_name:
+                type: string
+              status:
+                $ref: "#/components/schemas/FeedbackStatus"
+              vote_count:
+                type: integer
+              voted:
+                type: boolean
+              created_at:
+                type: string
+                format: date-time
+        my_pending:
+          type: array
+          description: The visitor's own submissions still waiting for review
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              title:
+                type: string
+              created_at:
+                type: string
+                format: date-time
 
     ShareLink:
       type: object

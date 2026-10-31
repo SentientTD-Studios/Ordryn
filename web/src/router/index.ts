@@ -43,6 +43,12 @@ const router = createRouter({
       component: () => import('@/views/ShareView.vue'),
     },
     {
+      // Password-gated public feedback board; works signed in or out.
+      path: '/feedback/:slug',
+      name: 'feedback-board',
+      component: () => import('@/views/FeedbackBoardView.vue'),
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
