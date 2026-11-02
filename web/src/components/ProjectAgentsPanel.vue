@@ -209,8 +209,8 @@ function openRunCount(agentId: number) {
           </li>
           <li class="mb-1">
             <strong>Connect a model.</strong> Create a key on the agent's settings and give it to whatever runs the
-            model: Claude Code (MCP), a local model with Ollama (see <code>examples/agents/ollama</code>), or your own
-            service (webhook or polling). Nothing happens until something is connected.
+            model: Claude Code (MCP), a local model with Ollama (download a ready-made script from the agent's
+            settings), or your own service (webhook or polling). Nothing happens until something is connected.
           </li>
           <li class="mb-1">
             <strong>Send it work.</strong> <code>@mention</code> it in a task comment, drag a card into a trigger column,
@@ -236,13 +236,12 @@ function openRunCount(agentId: number) {
           </li>
           <li>
             <strong>Reading code</strong> needs an agent with access to a checkout. GoTodo never reads your files.
-            The bundled local agent can be given read-only access to one folder (<code>REPO_DIR</code>) to explain bugs
-            and propose patches.
+            The local Ollama script can be given read-only access to one folder to explain bugs and propose patches.
           </li>
           <li>
             <strong>Code changes</strong> need an agent that runs where the code is, such as Claude Code on a machine
-            with the repository checked out, connected over MCP, or the bundled local agent with
-            <code>REPO_WRITE=true</code> (edits on its own git branch, never commits). Linking a GitHub repository tells
+            with the repository checked out, connected over MCP, or the local Ollama script set to read and edit a
+            folder (edits on its own git branch, never commits). Linking a GitHub repository tells
             it which repo to use; it doesn't give the agent access by itself. How much an agent may do on that machine
             is up to whoever runs it; the guardrails here only cover GoTodo.
           </li>
@@ -307,14 +306,14 @@ function openRunCount(agentId: number) {
           </div>
           <div v-if="recipe?.runner === 'read'" class="alert alert-info small py-2 mt-2 mb-0">
             This setup needs an agent that can <strong>read</strong> your code. GoTodo never reads files on your
-            machine; the agent does. With the bundled local agent, set <code>REPO_DIR</code> to your checkout
-            (<code>examples/agents/ollama</code>): it gets read-only, sandboxed access to that folder, skips secrets like
-            <code>.env</code>, and can't change anything. It explains and proposes a patch for a person to apply.
+            machine; the agent does. With the local Ollama script (download it from the agent's settings after
+            creating it), choose <strong>Read one folder</strong>: it gets read-only, sandboxed access to that folder,
+            skips secrets like <code>.env</code>, and can't change anything. It explains and proposes a patch for a person to apply.
           </div>
           <div v-else-if="recipe?.runner === 'repo'" class="alert alert-info small py-2 mt-2 mb-0">
             This setup needs an agent that runs where your code is and can change it: Claude Code on a machine with the
-            repository checked out (over MCP), or the bundled local agent (<code>examples/agents/ollama</code>) with
-            <code>REPO_DIR</code> and <code>REPO_WRITE=true</code>. The local agent edits only on a new git branch,
+            repository checked out (over MCP), or the local Ollama script set to <strong>Read and edit</strong> a git
+            checkout. The local script edits only on a new git branch,
             never touches main or secrets, and never commits or runs commands, so a person reviews the diff and commits.
             <template v-if="!repoLinked">Link the repository on the <strong>GitHub</strong> tab so the agent knows which one to use.</template>
           </div>

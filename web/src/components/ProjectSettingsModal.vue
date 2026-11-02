@@ -7,6 +7,7 @@ import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
+import ProjectFeedbackPanel from '@/components/ProjectFeedbackPanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
 import ProjectSprintsPanel from '@/components/ProjectSprintsPanel.vue'
 import ProjectGitHubPanel from '@/components/ProjectGitHubPanel.vue'
@@ -32,6 +33,7 @@ type SettingsTab =
   | 'agents'
   | 'rules'
   | 'sharing'
+  | 'feedback'
   | 'roles'
 
 const props = defineProps<{
@@ -84,6 +86,7 @@ const tabs = computed(() => {
     items.push({ id: 'rules', label: 'Rules' }, { id: 'api-keys', label: 'API keys' }, { id: 'agents', label: 'AI agents' })
   }
   items.push({ id: 'sharing', label: 'Sharing' })
+  if (canManage.value) items.push({ id: 'feedback', label: 'Feedback' })
   if (canManage.value) items.push({ id: 'roles', label: 'Roles' })
   return items
 })
@@ -451,6 +454,12 @@ async function archiveOrRestore() {
 
           <ProjectSharePanel
             v-else-if="tab === 'sharing'"
+            :project="project"
+            @changed="onPanelChanged"
+          />
+
+          <ProjectFeedbackPanel
+            v-else-if="tab === 'feedback' && canManage"
             :project="project"
             @changed="onPanelChanged"
           />

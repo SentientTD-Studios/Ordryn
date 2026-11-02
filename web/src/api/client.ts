@@ -67,6 +67,12 @@ import type {
   TaskTemplateInput,
   ShareLink,
   ShareLinkView,
+  FeedbackBoard,
+  FeedbackBoardPatch,
+  FeedbackPost,
+  FeedbackPostState,
+  PublicFeedbackView,
+  PublicFeedbackSubmission,
   SiteInfo,
   Tag,
   NotificationList,
@@ -1299,6 +1305,84 @@ export const api = {
 
   viewShareLink(token: string) {
     return request<ShareLinkView>(`/api/v2/share-links/view/${encodeURIComponent(token)}`)
+  },
+
+  getFeedbackBoard(projectId: number) {
+    return request<FeedbackBoard>(`/api/v2/projects/${projectId}/feedback`)
+  },
+
+  saveFeedbackBoard(projectId: number, patch: FeedbackBoardPatch) {
+    return request<FeedbackBoard>(`/api/v2/projects/${projectId}/feedback`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  rotateFeedbackBoardLink(projectId: number) {
+    return request<FeedbackBoard>(`/api/v2/projects/${projectId}/feedback/rotate-link`, { method: 'POST' })
+  },
+
+  deleteFeedbackBoard(projectId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/feedback`, { method: 'DELETE' })
+  },
+
+  listFeedbackPosts(projectId: number, state: FeedbackPostState) {
+    return request<FeedbackPost[]>(
+      `/api/v2/projects/${projectId}/feedback/posts?state=${encodeURIComponent(state)}`,
+    )
+  },
+
+  moderateFeedbackPost(projectId: number, postId: number, action: 'approve' | 'reject' | 'reopen') {
+    return request<FeedbackPost>(`/api/v2/projects/${projectId}/feedback/posts/${postId}/${action}`, {
+      method: 'POST',
+    })
+  },
+
+  promoteFeedbackPost(projectId: number, postId: number, statusId?: number) {
+    return request<FeedbackPost>(`/api/v2/projects/${projectId}/feedback/posts/${postId}/promote`, {
+      method: 'POST',
+      body: JSON.stringify(statusId ? { status_id: statusId } : {}),
+    })
+  },
+
+  linkFeedbackPost(projectId: number, postId: number, taskId: number) {
+    return request<FeedbackPost>(`/api/v2/projects/${projectId}/feedback/posts/${postId}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId }),
+    })
+  },
+
+  deleteFeedbackPost(projectId: number, postId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/feedback/posts/${postId}`, { method: 'DELETE' })
+  },
+
+  viewPublicFeedback(slug: string) {
+    return request<PublicFeedbackView>(`/api/v2/public/feedback/${encodeURIComponent(slug)}`)
+  },
+
+  unlockPublicFeedback(slug: string, password: string) {
+    return request<void>(`/api/v2/public/feedback/${encodeURIComponent(slug)}/unlock`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+  },
+
+  lockPublicFeedback(slug: string) {
+    return request<void>(`/api/v2/public/feedback/${encodeURIComponent(slug)}/lock`, { method: 'POST' })
+  },
+
+  submitPublicFeedback(slug: string, submission: PublicFeedbackSubmission) {
+    return request<{ id: number; state: FeedbackPostState }>(
+      `/api/v2/public/feedback/${encodeURIComponent(slug)}/posts`,
+      { method: 'POST', body: JSON.stringify(submission) },
+    )
+  },
+
+  votePublicFeedback(slug: string, postId: number, voted: boolean) {
+    return request<{ vote_count: number; voted: boolean }>(
+      `/api/v2/public/feedback/${encodeURIComponent(slug)}/posts/${postId}/vote`,
+      { method: voted ? 'POST' : 'DELETE' },
+    )
   },
 
   listTags(opts?: { project_id?: number }) {

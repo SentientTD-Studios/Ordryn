@@ -103,7 +103,7 @@ var mcpTools = []mcpTool{
 	{
 		Name:        "get_agent_context",
 		Title:       "Who am I",
-		Description: "Your agent profile: name, standing instructions from the project managers, guardrails (which fields and statuses you may change), and the board's statuses with their ids.",
+		Description: "Your agent profile: name, standing instructions from the project managers, guardrails (which fields and statuses you may change), the board's statuses, and the project's tags, with their ids.",
 		InputSchema: objSchema(map[string]any{}),
 		call:        func(map[string]any) mcpCall { return mcpCall{method: http.MethodGet, path: "/agent"} },
 	},
@@ -243,7 +243,8 @@ var mcpTools = []mcpTool{
 		Title: "Update a task",
 		Description: "Change task fields. `changes` takes the same keys as PATCH /api/v2/tasks/{id}: title, description, " +
 			"priority (0-3), due_date (YYYY-MM-DD), tag_ids, estimate_points, sprint_id, fields (custom fields), status_id, completed. " +
-			"Only fields your guardrails allow are accepted.",
+			"tag_ids REPLACES the task's whole tag list: to add or remove one tag, read the task's current tags with get_task " +
+			"and send the full new list (tag ids are in get_agent_context). Only fields your guardrails allow are accepted.",
 		InputSchema: objSchema(map[string]any{
 			"task_id": idProp,
 			"changes": map[string]any{"type": "object", "description": "Fields to change."},

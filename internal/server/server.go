@@ -166,6 +166,9 @@ func registerAPIV1Routes() {
 	handleAPI("/project-invites", v1(handlers.APIV1ProjectInvitesRouter))
 	handleAPI("/project-invites/", v1(handlers.APIV1ProjectInvitesRouter))
 	handleAPI("/share-links/view/", handlers.APIV1ShareLinkViewPublic)
+	// Password-gated public feedback boards: no session or API key; the handler
+	// applies its own per-IP, per-visitor and per-board limits.
+	handleAPI("/public/feedback/", handlers.APIV1PublicFeedback)
 	handleAPI("/share-links", v1(handlers.APIV1ShareLinksRouter))
 	handleAPI("/share-links/", v1(handlers.APIV1ShareLinksRouter))
 	handleAPI("/tags", v1(handlers.APIV1TagsRouter))

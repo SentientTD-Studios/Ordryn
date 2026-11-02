@@ -177,6 +177,9 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 	case "api-keys":
 		apiV1ProjectAPIKeys(w, r, projectID, parts[2:])
 		return true
+	case "feedback":
+		apiV1ProjectFeedback(w, r, projectID, parts[2:])
+		return true
 	case "agents":
 		apiV1ProjectAgents(w, r, projectID, parts[2:])
 		return true
@@ -455,6 +458,18 @@ func formatProjectEventLabel(eventType string, metadata map[string]interface{}) 
 		return "Share link revoked"
 	case "invite_revoked":
 		return "Invite revoked"
+	case "feedback_board_created":
+		return "Feedback board created"
+	case "feedback_board_updated":
+		return "Feedback board settings changed"
+	case "feedback_password_changed":
+		return "Feedback board password changed"
+	case "feedback_link_rotated":
+		return "Feedback board link replaced"
+	case "feedback_board_deleted":
+		return "Feedback board deleted"
+	case "feedback_post_promoted":
+		return "Feedback turned into a task"
 	case "status_added":
 		if name != "" {
 			return "Status added · " + name

@@ -172,7 +172,7 @@ export const AGENT_RECIPES: AgentRecipe[] = [
     label: 'Investigate code (read-only)',
     summary: 'Reads the code to explain a bug, answer a question, or review, and proposes a fix.',
     goodFor:
-      'Bug reports and "how does X work?" questions, with an agent that can read the code (e.g. the Ollama example with REPO_DIR set).',
+      'Bug reports and "how does X work?" questions, with an agent that can read the code (e.g. the local Ollama script with folder access).',
     runner: 'read',
     instructions: [
       'Use your code tools to find and read the files that matter before answering. Reply with a comment that has:',
@@ -188,7 +188,7 @@ export const AGENT_RECIPES: AgentRecipe[] = [
     label: 'Code changes',
     summary: 'Makes code changes in the linked repository and reports back.',
     goodFor:
-      'Bugs and small features, when the agent runs where the code is checked out (Claude Code over MCP, or the local agent with REPO_WRITE=true).',
+      'Bugs and small features, when the agent runs where the code is checked out (Claude Code over MCP, or the local Ollama script set to read and edit a folder).',
     runner: 'repo',
     instructions: [
       'Work in the project\'s repository. Read the task, its discussion, and any linked GitHub issue. Make the',

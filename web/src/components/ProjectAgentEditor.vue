@@ -17,6 +17,7 @@ import { APIError } from '@/api/types'
 import { pathPrefix } from '@/base'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import OllamaAgentScript from '@/components/OllamaAgentScript.vue'
 import { EXPIRY_PRESETS, expiresAtFromPreset, keyExpiryLabel, type ExpiryPreset } from '@/utils/projectApiKeys'
 import {
   AGENT_FIELDS,
@@ -590,7 +591,10 @@ watch(
           <button type="button" class="btn btn-sm btn-outline-secondary" @click="copy(jsonConfig)">Copy</button>
         </div>
       </details>
-      <p class="small text-muted mt-2 mb-0">
+      <hr class="my-3" />
+      <OllamaAgentScript :agent-id="agent.id" :handle="agent.handle" :minted-key="minted?.key ?? null" />
+      <hr class="my-3" />
+      <p class="small text-muted mb-0">
         Prefer plain HTTP? Poll <code>GET /api/v2/agent/runs</code>, then <code>POST /api/v2/agent/runs/{id}/start</code>
         and <code>…/finish</code>. See the <RouterLink to="/docs/api/v2#ai-agents">API docs</RouterLink>.
       </p>

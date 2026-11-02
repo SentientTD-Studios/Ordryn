@@ -27,6 +27,7 @@
     "@types/sortablejs": "^1.15.9",
     "@vitejs/plugin-vue": "^5.2.4",
     "@vue/tsconfig": "^0.9.1",
+    "esbuild": "^0.25.12",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
     "vue-tsc": "^2.2.12"

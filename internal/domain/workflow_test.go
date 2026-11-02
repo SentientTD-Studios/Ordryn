@@ -325,6 +325,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "task attachments: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateFeedbackTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "feedback: %v\n", err)
+		os.Exit(1)
+	}
 	if _, err := storage.EnsureSystemUser(); err != nil {
 		fmt.Fprintf(os.Stderr, "automation user: %v\n", err)
 		os.Exit(1)

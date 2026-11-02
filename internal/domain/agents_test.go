@@ -261,6 +261,71 @@ func TestAgentStatusTriggerIgnoresAgentActors(t *testing.T) {
 	}
 }
 
+// A task created straight into a trigger column (e.g. the board's default
+// column) starts a run, the same as moving an existing task there.
+func TestAgentStatusTriggerFiresOnCreate(t *testing.T) {
+	f := kanbanAgentProject(t)
+	trigger := []int{f.aiStatus}
+	a := newTestAgent(t, f.projectID, AgentInput{TriggerStatusIDs: &trigger})
+	flush := captureHooks(t)
+	ctx := context.Background()
+
+	sid := f.aiStatus
+	task, err := CreateTask(ctx, 1, CreateTaskInput{Title: "New in AI queue", ProjectID: &f.projectID, StatusID: &sid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flush()
+	runs := openRuns(t, a.ID, task)
+	if len(runs) != 1 || runs[0].Trigger != storage.AgentTriggerStatus || !strings.HasPrefix(runs[0].Note, "Task created in ") {
+		t.Fatalf("runs after create = %+v", runs)
+	}
+
+	// Created in a column that isn't a trigger: nothing.
+	other := newProjectTask(t, f.projectID, "Plain new task")
+	flush()
+	if runs := openRuns(t, a.ID, other); len(runs) != 0 {
+		t.Fatalf("create outside trigger column queued %d runs, want 0", len(runs))
+	}
+
+	// Who may send work still applies: an editor creating into the column is ignored.
+	edTask, err := CreateTask(ctx, 2, CreateTaskInput{Title: "Editor-created", ProjectID: &f.projectID, StatusID: &sid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flush()
+	if runs := openRuns(t, a.ID, edTask); len(runs) != 0 {
+		t.Fatalf("editor create queued %d runs for a managers-only agent, want 0", len(runs))
+	}
+}
+
+func TestGetAgentSelfListsAssignableTags(t *testing.T) {
+	f := kanbanAgentProject(t)
+	a := newTestAgent(t, f.projectID, AgentInput{})
+	pid := f.projectID
+	tag, err := storage.GetOrCreateTagByName(1, &pid, "needs-info")
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, err := GetAgentSelf(a.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tags, _ := self["tags"].([]map[string]any)
+	found := false
+	for _, tg := range tags {
+		if tg["id"] == tag.ID && tg["name"] == "needs-info" {
+			found = true
+		}
+		if name, _ := tg["name"].(string); storage.IsSystemTagName(name) {
+			t.Fatalf("system tag %q listed for the agent", name)
+		}
+	}
+	if !found {
+		t.Fatalf("project tag missing from agent context: %+v", self["tags"])
+	}
+}
+
 func TestAgentRunLifecycle(t *testing.T) {
 	f := kanbanAgentProject(t)
 	a := newTestAgent(t, f.projectID, AgentInput{})
