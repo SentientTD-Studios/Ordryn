@@ -50,7 +50,7 @@ async function loadNotifications() {
   if (!isAuthenticated.value) return
   notifLoading.value = true
   try {
-    const list = await api.listNotifications({ page: 1, per_page: 15 })
+    const list = await api.listNotifications({ page: 1, per_page: 15, unread: true })
     notifications.value = list.notifications
     unreadCount.value = list.unread_count
   } catch {
@@ -68,7 +68,7 @@ async function markOneRead(n: Notification) {
   if (n.read_at) return
   try {
     await api.markNotificationRead(n.id)
-    n.read_at = new Date().toISOString()
+    notifications.value = notifications.value.filter((x) => x.id !== n.id)
     unreadCount.value = Math.max(0, unreadCount.value - 1)
   } catch {
     /* ignore */
@@ -78,10 +78,7 @@ async function markOneRead(n: Notification) {
 async function markAllRead() {
   try {
     await api.markAllNotificationsRead()
-    notifications.value = notifications.value.map((n) => ({
-      ...n,
-      read_at: n.read_at || new Date().toISOString(),
-    }))
+    notifications.value = []
     unreadCount.value = 0
   } catch (err) {
     push(err instanceof Error ? err.message : 'Could not mark notifications read', 'error')
@@ -248,7 +245,7 @@ async function onLogout() {
               <div class="notif-list">
                 <div v-if="notifLoading" class="px-3 py-3 text-muted small">Loading…</div>
                 <div v-else-if="!notifications.length" class="px-3 py-3 text-muted small">
-                  No notifications yet.
+                  You're all caught up.
                 </div>
                 <button
                   v-for="n in notifications"

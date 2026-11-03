@@ -157,6 +157,15 @@ func CreateUserNotificationsBulk(items []UserNotification) ([]int, error) {
 
 // ListUserNotifications returns newest notifications for a user.
 func ListUserNotifications(userID, limit, offset int) ([]UserNotification, int, error) {
+	return listUserNotifications(userID, limit, offset, false)
+}
+
+// ListUnreadUserNotifications returns newest unread notifications for a user.
+func ListUnreadUserNotifications(userID, limit, offset int) ([]UserNotification, int, error) {
+	return listUserNotifications(userID, limit, offset, true)
+}
+
+func listUserNotifications(userID, limit, offset int, unreadOnly bool) ([]UserNotification, int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, 0, err
@@ -173,9 +182,14 @@ func ListUserNotifications(userID, limit, offset int) ([]UserNotification, int, 
 		offset = 0
 	}
 
+	unreadFilter := ""
+	if unreadOnly {
+		unreadFilter = " AND n.read_at IS NULL"
+	}
+
 	var total int
 	if err := pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM user_notifications WHERE user_id = $1`, userID).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM user_notifications n WHERE n.user_id = $1`+unreadFilter, userID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -188,7 +202,7 @@ func ListUserNotifications(userID, limit, offset int) ([]UserNotification, int, 
 		 FROM user_notifications n
 		 LEFT JOIN users u ON u.id = n.actor_user_id
 		 LEFT JOIN projects p ON p.id = n.project_id
-		 WHERE n.user_id = $1
+		 WHERE n.user_id = $1`+unreadFilter+`
 		 ORDER BY n.created_at DESC, n.id DESC
 		 LIMIT $2 OFFSET $3`,
 		userID, limit, offset)

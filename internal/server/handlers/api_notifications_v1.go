@@ -133,7 +133,11 @@ func apiV1ListNotifications(w http.ResponseWriter, r *http.Request, userID int) 
 			perPage = v
 		}
 	}
-	items, total, err := domain.ListNotificationsForUser(r.Context(), userID, page, perPage)
+	unreadOnly := false
+	if v := r.URL.Query().Get("unread"); v != "" {
+		unreadOnly, _ = strconv.ParseBool(v)
+	}
+	items, total, err := domain.ListNotificationsForUser(r.Context(), userID, page, perPage, unreadOnly)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load notifications.")
 		return

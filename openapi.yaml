@@ -4141,6 +4141,11 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
+        - name: unread
+          in: query
+          description: When true, only notifications that have not been read are returned.
+          schema:
+            type: boolean
       responses:
         "200":
           description: Notification list

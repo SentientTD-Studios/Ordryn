@@ -1194,10 +1194,11 @@ export const api = {
     return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'DELETE' })
   },
 
-  listNotifications(params: { page?: number; per_page?: number } = {}) {
+  listNotifications(params: { page?: number; per_page?: number; unread?: boolean } = {}) {
     const qs = new URLSearchParams()
     if (params.page) qs.set('page', String(params.page))
     if (params.per_page) qs.set('per_page', String(params.per_page))
+    if (params.unread) qs.set('unread', 'true')
     const q = qs.toString()
     return request<NotificationList>(`/api/v2/notifications${q ? `?${q}` : ''}`)
   },

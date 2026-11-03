@@ -187,8 +187,9 @@ func NotifyProjectMembersTaskCommented(taskID, actorUserID, projectID int, comme
 	}
 }
 
-// ListNotificationsForUser returns paginated notifications.
-func ListNotificationsForUser(ctx context.Context, userID, page, perPage int) ([]storage.UserNotification, int, error) {
+// ListNotificationsForUser returns paginated notifications; unreadOnly limits
+// the list to notifications that have not been read (dismissed) yet.
+func ListNotificationsForUser(ctx context.Context, userID, page, perPage int, unreadOnly bool) ([]storage.UserNotification, int, error) {
 	_ = ctx
 	if page <= 0 {
 		page = 1
@@ -197,6 +198,9 @@ func ListNotificationsForUser(ctx context.Context, userID, page, perPage int) ([
 		perPage = 20
 	}
 	offset := (page - 1) * perPage
+	if unreadOnly {
+		return storage.ListUnreadUserNotifications(userID, perPage, offset)
+	}
 	return storage.ListUserNotifications(userID, perPage, offset)
 }
 
