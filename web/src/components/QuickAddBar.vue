@@ -13,6 +13,8 @@ const props = defineProps<{
   defaultProjectId: number | null
   /** Sprint to place tasks in when they land in the default project. */
   sprintId?: number | null
+  /** Company mode: every task needs a project. */
+  requireProject?: boolean
 }>()
 
 const emit = defineEmits<{ created: [task: Task] }>()
@@ -73,6 +75,10 @@ async function submit() {
     if (text.value.includes('#')) await loadTags(tagKey.value)
     const p = parsed.value
     const projectId = targetProjectId.value
+    if (props.requireProject && projectId == null) {
+      toast.push('Choose a project: add +project to the text', 'error')
+      return
+    }
     const canSprint = projectId != null && hasProjectPerm(targetProject.value, PROJECT_PERMS.TASKS_SPRINT)
     let task = await api.createTask({
       title: p.title,

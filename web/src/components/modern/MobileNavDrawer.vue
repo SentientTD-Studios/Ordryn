@@ -18,8 +18,8 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const router = useRouter()
-const { isAuthenticated, user, hasPermission, logout } = useAuth()
-const { siteInfo } = useSite()
+const { isAuthenticated, user, hasPermission, managesPeople, adminLanding, logout } = useAuth()
+const { siteInfo, isCompanyMode } = useSite()
 const { push } = useToast()
 const overdueCount = inject<Ref<number>>('overdueCount', ref(0))
 const pendingInviteCount = inject<Ref<number>>('pendingInviteCount', ref(0))
@@ -31,8 +31,11 @@ const archivedCollapsed = ref(true)
 const viewsCollapsed = ref(false)
 
 const showChangelog = computed(() => siteInfo.value?.show_changelog !== false)
+// Company sites have no invites: people managers create accounts.
 const canViewInvites = computed(
-  () => hasPermission('admin') || hasPermission('createinvites') || !!siteInfo.value?.allow_user_invites,
+  () =>
+    !isCompanyMode.value &&
+    (hasPermission('admin') || hasPermission('createinvites') || !!siteInfo.value?.allow_user_invites),
 )
 const activeProject = computed(() => (typeof route.query.project === 'string' ? route.query.project : ''))
 const activeView = computed(() => (typeof route.query.view === 'string' ? route.query.view : ''))
@@ -199,7 +202,18 @@ watch(isAuthenticated, (ok) => {
                 @click="close"
               >
                 <i class="bi bi-diagram-3" />
-                <span>Organizations</span>
+                <span>{{ isCompanyMode ? 'Company & teams' : 'Organizations' }}</span>
+              </RouterLink>
+            </li>
+            <li v-if="managesPeople" class="sidebar-nav-item">
+              <RouterLink
+                to="/people"
+                class="sidebar-nav-link"
+                :class="{ active: route.path === '/people' }"
+                @click="close"
+              >
+                <i class="bi bi-people" />
+                <span>People</span>
               </RouterLink>
             </li>
             <li class="sidebar-nav-item">
@@ -226,9 +240,9 @@ watch(isAuthenticated, (ok) => {
                 <span>Logout</span>
               </button>
             </li>
-            <li v-if="hasPermission('admin')" class="sidebar-nav-item">
+            <li v-if="adminLanding" class="sidebar-nav-item">
               <RouterLink
-                to="/admin"
+                :to="adminLanding"
                 class="sidebar-nav-link"
                 :class="{ active: String(route.path).startsWith('/admin') }"
                 @click="close"
@@ -429,7 +443,7 @@ watch(isAuthenticated, (ok) => {
                 <span>Login</span>
               </RouterLink>
             </li>
-            <li class="sidebar-nav-item">
+            <li v-if="!isCompanyMode" class="sidebar-nav-item">
               <RouterLink to="/register" class="sidebar-nav-link" @click="close">
                 <i class="bi bi-person-plus" />
                 <span>Sign up</span>

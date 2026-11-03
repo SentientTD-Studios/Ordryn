@@ -1,78 +1,87 @@
 <template>
   <div class="share-panel">
-    <h4 class="h6">Members</h4>
-    <p v-if="orgManaged" class="small text-muted">
-      Members and roles are locked to
-      <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>.
-      Change organization roles to update this board.
-    </p>
-    <p v-else-if="project.organization_id" class="small text-muted">
-      Members were imported from
-      <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
-      as a starting point. You can change roles on this project without affecting the organization.
-    </p>
-    <ul v-if="members.length" class="list-unstyled mb-3">
-      <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
-        <span>{{ m.user_name || m.email }}</span>
-        <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
-        <span v-if="m.is_agent" class="badge text-bg-dark" title="Managed on the AI agents tab">
-          <i class="bi bi-robot me-1" />AI agent
-        </span>
-        <span v-else-if="m.inherited" class="badge text-bg-info">from org</span>
-        <template v-if="canEditMembers && canEditMember(m)">
-          <select
-            class="form-select form-select-sm w-auto"
-            :value="m.role"
-            @change="onRoleChange(m.user_id, ($event.target as HTMLSelectElement).value)"
-          >
-            <option v-if="m.role === 'owner'" value="owner" disabled>{{ m.role_name || 'Owner' }}</option>
-            <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
-          </select>
-          <button class="btn btn-sm btn-outline-danger" type="button" @click="removeMember(m.user_id)">
-            Remove
-          </button>
-        </template>
-      </li>
-    </ul>
-    <p v-else class="small text-muted mb-3">No members on this project.</p>
-
-    <template v-if="canEditMembers">
-      <h4 class="h6">Invite</h4>
-      <p v-if="!assignableRoles.length" class="small text-muted mb-2">
-        This project has no roles yet. Create one on the Roles tab, then invite people with it.
+    <CompanyProjectAccess
+      v-if="isCompanyMode"
+      :project="project"
+      :members="members"
+      @changed="loadPanel(); emit('changed')"
+    />
+    <template v-else>
+      <h4 class="h6">Members</h4>
+      <p v-if="orgManaged" class="small text-muted">
+        Members and roles are locked to
+        <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>.
+        Change organization roles to update this board.
       </p>
-      <form class="row g-2 align-items-end mb-3" @submit.prevent="sendInvite">
-        <div class="col-sm-6">
-          <label class="form-label small mb-0" for="invite-username">Username</label>
-          <UserSearchCombobox v-model="inviteUsername" :exclude-usernames="excludeUsernames" />
-        </div>
-        <div class="col-sm-3">
-          <label class="form-label small mb-0">Role</label>
-          <select v-model="inviteRole" class="form-select form-select-sm" required>
-            <option value="" disabled>Choose a role</option>
-            <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
-          </select>
-        </div>
-        <div class="col-sm-3">
-          <button class="btn btn-sm btn-primary w-100" type="submit" :disabled="!inviteRole">Invite</button>
-        </div>
-      </form>
-    </template>
-
-    <div v-if="invites.length" class="mb-3">
-      <h4 class="h6">Pending invites</h4>
-      <ul class="list-unstyled mb-0">
-        <li v-for="inv in invites" :key="inv.id" class="d-flex justify-content-between align-items-center mb-1">
-          <span class="small">{{ inv.user_name || inv.email }} ({{ assignableRoles.find((r) => r.slug === inv.role)?.name || inv.role }})</span>
-          <button
-            v-if="isOwner"
-            class="btn btn-sm btn-link text-danger"
-            type="button"
-            @click="revokeInvite(inv.id)"
-          >Revoke</button>
+      <p v-else-if="project.organization_id" class="small text-muted">
+        Members were imported from
+        <RouterLink to="/organizations">{{ project.organization_name || 'the organization' }}</RouterLink>
+        as a starting point. You can change roles on this project without affecting the organization.
+      </p>
+      <ul v-if="members.length" class="list-unstyled mb-3">
+        <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <span>{{ personLabel(m) }}</span>
+          <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
+          <span v-if="m.is_agent" class="badge text-bg-dark" title="Managed on the AI agents tab">
+            <i class="bi bi-robot me-1" />AI agent
+          </span>
+          <span v-else-if="m.inherited" class="badge text-bg-info">from org</span>
+          <template v-if="canEditMembers && canEditMember(m)">
+            <select
+              class="form-select form-select-sm w-auto"
+              :value="m.role"
+              @change="onRoleChange(m.user_id, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-if="m.role === 'owner'" value="owner" disabled>{{ m.role_name || 'Owner' }}</option>
+              <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
+            </select>
+            <button class="btn btn-sm btn-outline-danger" type="button" @click="removeMember(m.user_id)">
+              Remove
+            </button>
+          </template>
         </li>
       </ul>
-    </div>
+      <p v-else class="small text-muted mb-3">No members on this project.</p>
+
+      <template v-if="canEditMembers">
+        <h4 class="h6">Invite</h4>
+        <p v-if="!assignableRoles.length" class="small text-muted mb-2">
+          This project has no roles yet. Create one on the Roles tab, then invite people with it.
+        </p>
+        <form class="row g-2 align-items-end mb-3" @submit.prevent="sendInvite">
+          <div class="col-sm-6">
+            <label class="form-label small mb-0" for="invite-username">Username</label>
+            <UserSearchCombobox v-model="inviteUsername" :exclude-usernames="excludeUsernames" />
+          </div>
+          <div class="col-sm-3">
+            <label class="form-label small mb-0">Role</label>
+            <select v-model="inviteRole" class="form-select form-select-sm" required>
+              <option value="" disabled>Choose a role</option>
+              <option v-for="r in assignableRoles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
+            </select>
+          </div>
+          <div class="col-sm-3">
+            <button class="btn btn-sm btn-primary w-100" type="submit" :disabled="!inviteRole">Invite</button>
+          </div>
+        </form>
+      </template>
+
+      <div v-if="invites.length" class="mb-3">
+        <h4 class="h6">Pending invites</h4>
+        <ul class="list-unstyled mb-0">
+          <li v-for="inv in invites" :key="inv.id" class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small">{{ inv.user_name || inv.email }} ({{ assignableRoles.find((r) => r.slug === inv.role)?.name || inv.role }})</span>
+            <button
+              v-if="isOwner"
+              class="btn btn-sm btn-link text-danger"
+              type="button"
+              @click="revokeInvite(inv.id)"
+            >Revoke</button>
+          </li>
+        </ul>
+      </div>
+
+    </template>
 
     <h4 class="h6">Read-only share link</h4>
     <p class="small text-muted mb-2">
@@ -152,7 +161,10 @@ import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
+import CompanyProjectAccess from '@/components/CompanyProjectAccess.vue'
 import { canManageProject } from '@/utils/projectPerms'
+import { useSite } from '@/composables/useSite'
+import { personLabel } from '@/utils/personLabel'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -167,6 +179,8 @@ const assignableRoles = ref<ProjectRoleDef[]>([])
 const activityOpen = ref(false)
 const toast = useToast()
 const { askConfirm } = useConfirm()
+// Company projects are shared with teams and people instead of members and invites.
+const { isCompanyMode } = useSite()
 const isOwner = computed(() => canManageProject(props.project))
 const orgManaged = computed(() => !!props.project.org_managed && !!props.project.organization_id)
 const canEditMembers = computed(() => isOwner.value && !orgManaged.value)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProjectMember, ProjectRoleDef } from '@/api/types'
+import { personLabel } from '@/utils/personLabel'
 
 const props = withDefaults(
   defineProps<{
@@ -29,7 +30,7 @@ const canEdit = (member: ProjectMember) =>
 <template>
   <ul v-if="members.length" class="list-unstyled mb-0">
     <li v-for="m in members" :key="m.user_id" class="d-flex flex-wrap align-items-center gap-2 mb-1">
-      <span>{{ m.user_name || m.email }}</span>
+      <span>{{ personLabel(m) }}</span>
       <span class="badge text-bg-secondary">{{ m.role_name || m.role }}</span>
       <span v-if="m.is_agent" class="badge text-bg-dark" title="Managed on the AI agents tab">
         <i class="bi bi-robot me-1" />AI agent
@@ -39,7 +40,7 @@ const canEdit = (member: ProjectMember) =>
         <select
           class="form-select form-select-sm w-auto"
           :value="m.role"
-          :aria-label="`Change role for ${m.user_name || m.email}`"
+          :aria-label="`Change role for ${personLabel(m)}`"
           @change="emit('role-change', m.user_id, ($event.target as HTMLSelectElement).value)"
         >
           <option v-for="r in roles" :key="r.slug" :value="r.slug">{{ r.name }}</option>

@@ -433,6 +433,38 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateGrantInsightsPeopleToManagers failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateGrantSiteCreatePermissions(); err != nil {
+		fmt.Printf("migration: MigrateGrantSiteCreatePermissions failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateSiteSettingsAddSiteMode(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddSiteMode failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateOrganizationsAddCompany(); err != nil {
+		fmt.Printf("migration: MigrateOrganizationsAddCompany failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateCompanyProjectAccess(); err != nil {
+		fmt.Printf("migration: MigrateCompanyProjectAccess failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateSiteSettingsAddOwner(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddOwner failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateRolesAddDisplayName(); err != nil {
+		fmt.Printf("migration: MigrateRolesAddDisplayName failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateUsersAddNames(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddNames failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateSiteSettingsAddCompanyHome(); err != nil {
+		fmt.Printf("migration: MigrateSiteSettingsAddCompanyHome failed: %v\n", err)
+		errCount++
+	}
 
 	if errCount == 0 {
 		return nil

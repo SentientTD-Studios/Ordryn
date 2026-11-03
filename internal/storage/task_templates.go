@@ -68,7 +68,7 @@ func CreateTaskTemplatesTable() error {
 }
 
 const taskTemplateSelect = `
-	SELECT tt.id, tt.owner_id, COALESCE(NULLIF(u.user_name, ''), u.email, ''), tt.project_id, tt.name, tt.title,
+	SELECT tt.id, tt.owner_id, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''), tt.project_id, tt.name, tt.title,
 		tt.description, tt.priority, tt.tag_names, tt.estimate_points, tt.due_offset_days, tt.subtasks,
 		tt.created_at, tt.updated_at
 	FROM task_templates tt

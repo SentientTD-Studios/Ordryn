@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
-import type { AdminUser } from '@/api/types'
+import type { AdminUser, SiteRole } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useAuth } from '@/composables/useAuth'
+import { useSite } from '@/composables/useSite'
 import AdminSubnav from '@/components/AdminSubnav.vue'
+import { personLabel } from '@/utils/personLabel'
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
+const { user: me, refresh: refreshMe } = useAuth()
+// A company deactivates accounts when people leave; a public site bans them.
+const { isCompanyMode } = useSite()
+const banVerb = computed(() => (isCompanyMode.value ? 'Deactivate' : 'Ban'))
+const unbanVerb = computed(() => (isCompanyMode.value ? 'Reactivate' : 'Unban'))
 const users = ref<AdminUser[]>([])
+const siteRoles = ref<SiteRole[]>([])
 const search = ref('')
 const editingUsernameId = ref<number | null>(null)
 const editUsernameValue = ref('')
@@ -18,7 +28,7 @@ const filteredUsers = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return users.value
   return users.value.filter((u) => {
-    const name = (u.user_name || '').toLowerCase()
+    const name = `${u.user_name || ''} ${u.full_name || ''}`.toLowerCase()
     const email = (u.email || '').toLowerCase()
     return name.includes(q) || email.includes(q)
   })
@@ -26,29 +36,96 @@ const filteredUsers = computed(() => {
 
 async function load() {
   try {
-    users.value = await api.listAdminUsers()
+    const [list, roles] = await Promise.all([api.listAdminUsers(), api.listSiteRoles()])
+    users.value = list
+    siteRoles.value = roles.roles || []
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load users', 'error')
   }
 }
 
-async function toggleBan(user: AdminUser) {
+function grantsAdmin(roleId: number) {
+  return !!siteRoles.value.find((r) => r.id === roleId)?.permissions.includes('admin')
+}
+
+// The owner outranks admins: only the owner changes admins, and nobody changes the owner.
+const amOwner = computed(() => !!me.value?.is_site_owner)
+
+function lockedReason(user: AdminUser): string {
+  if (user.id === me.value?.id) return "You can't change your own role or account here"
+  if (user.is_owner) return "The site owner's account can't be changed"
+  if (grantsAdmin(user.role_id) && !amOwner.value) return 'Only the site owner can change admins'
+  return ''
+}
+
+async function transferOwnership(user: AdminUser) {
+  const who = personLabel(user)
   const ok = await askConfirm({
-    title: user.is_banned ? 'Unban user?' : 'Ban user?',
+    title: `Make ${who} the site owner?`,
+    message: `${who} becomes the one account above every admin, and only they can hand ownership back. You stay an admin, but you'll no longer be able to change other admins.`,
+    confirmLabel: 'Transfer ownership',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await api.transferSiteOwnership(user.id)
+    toast.push(`${who} is now the site owner`, 'success')
+    await refreshMe()
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not transfer ownership', 'error')
+  }
+}
+
+async function changeRole(user: AdminUser, event: Event) {
+  const select = event.target as HTMLSelectElement
+  const roleId = Number(select.value)
+  const next = siteRoles.value.find((r) => r.id === roleId)
+  if (!next || roleId === user.role_id) return
+  const who = personLabel(user)
+  // Gaining or losing admin is the one change worth a second look.
+  if (grantsAdmin(roleId) !== grantsAdmin(user.role_id)) {
+    const ok = await askConfirm({
+      title: grantsAdmin(roleId) ? 'Make admin?' : 'Remove admin?',
+      message: grantsAdmin(roleId)
+        ? `${who} will be able to change every site setting, role, and account.`
+        : `${who} will lose access to the admin area.`,
+      confirmLabel: grantsAdmin(roleId) ? 'Make admin' : 'Remove admin',
+      danger: true,
+    })
+    if (!ok) {
+      select.value = String(user.role_id)
+      return
+    }
+  }
+  try {
+    await api.setAdminUserRole(user.id, roleId)
+    toast.push(`${who} is now ${next.label}`, 'success')
+    await load()
+  } catch (err) {
+    select.value = String(user.role_id)
+    toast.push(err instanceof APIError ? err.message : 'Could not change role', 'error')
+  }
+}
+
+async function toggleBan(user: AdminUser) {
+  const verb = user.is_banned ? unbanVerb.value : banVerb.value
+  const ok = await askConfirm({
+    title: `${verb} user?`,
     message: user.is_banned
-      ? `Unban ${user.email}?`
-      : `Ban ${user.email}? They will no longer be able to sign in.`,
-    confirmLabel: user.is_banned ? 'Unban' : 'Ban',
+      ? `${verb} ${user.email}?`
+      : `${verb} ${user.email}? They will be signed out and can no longer sign in.`,
+    confirmLabel: verb,
     danger: !user.is_banned,
   })
   if (!ok) return
   try {
     if (user.is_banned) {
       await api.unbanUser(user.id)
-      toast.push('User unbanned', 'success')
+      toast.push(isCompanyMode.value ? 'User reactivated' : 'User unbanned', 'success')
     } else {
       await api.banUser(user.id)
-      toast.push('User banned', 'info')
+      toast.push(isCompanyMode.value ? 'User deactivated' : 'User banned', 'info')
     }
     await load()
   } catch (err) {
@@ -89,7 +166,11 @@ onMounted(load)
   <div class="container mt-3">
     <AdminSubnav />
     <h1>Users</h1>
-    <p class="text-muted">Search, rename, or ban accounts on this site.</p>
+    <p class="text-muted">
+      Search, rename, {{ isCompanyMode ? 'deactivate' : 'ban' }}, or change the
+      <RouterLink to="/admin/site-roles">site role</RouterLink> of accounts on this site. The site owner is the one
+      account above admins: only the owner can make, change, or {{ isCompanyMode ? 'deactivate' : 'ban' }} admins.
+    </p>
 
     <div class="mb-3" style="max-width: 28rem">
       <label for="admin-user-search" class="form-label">Search</label>
@@ -127,24 +208,61 @@ onMounted(load)
                 </div>
               </template>
               <template v-else>
-                <strong>{{ user.user_name || user.email }}</strong>
-                <button type="button" class="btn btn-link btn-sm py-0" @click="startEditUsername(user)">
+                <strong>{{ personLabel(user) }}</strong>
+                <span v-if="user.full_name && user.user_name" class="small text-muted ms-1">@{{ user.user_name }}</span>
+                <span v-if="user.is_owner" class="badge text-bg-primary ms-2">Owner</span>
+                <button
+                  v-if="user.id === me?.id || !lockedReason(user)"
+                  type="button"
+                  class="btn btn-link btn-sm py-0"
+                  @click="startEditUsername(user)"
+                >
                   Edit username
                 </button>
               </template>
               <div class="text-muted small">
                 {{ user.email }}
-                <span v-if="user.is_banned">· banned</span>
+                <span v-if="user.is_banned">· {{ isCompanyMode ? 'deactivated' : 'banned' }}</span>
               </div>
             </div>
-            <button
-              type="button"
-              class="btn btn-sm"
-              :class="user.is_banned ? 'btn-outline-secondary' : 'btn-outline-danger'"
-              @click="toggleBan(user)"
-            >
-              {{ user.is_banned ? 'Unban' : 'Ban' }}
-            </button>
+            <div class="d-flex align-items-center gap-2">
+              <label class="visually-hidden" :for="`admin-user-role-${user.id}`">Site role</label>
+              <select
+                :id="`admin-user-role-${user.id}`"
+                class="form-select form-select-sm"
+                style="width: auto"
+                :value="user.role_id"
+                :disabled="!!lockedReason(user)"
+                :title="lockedReason(user) || 'Site role'"
+                @change="changeRole(user, $event)"
+              >
+                <option
+                  v-for="role in siteRoles"
+                  :key="role.id"
+                  :value="role.id"
+                  :disabled="role.id !== user.role_id && grantsAdmin(role.id) && !amOwner"
+                >
+                  {{ role.label }}
+                </option>
+              </select>
+              <button
+                v-if="amOwner && !user.is_owner && !user.is_banned && grantsAdmin(user.role_id)"
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                @click="transferOwnership(user)"
+              >
+                Make owner
+              </button>
+              <button
+                v-if="!lockedReason(user)"
+                type="button"
+                class="btn btn-sm"
+                :class="user.is_banned ? 'btn-outline-secondary' : 'btn-outline-danger'"
+                @click="toggleBan(user)"
+              >
+                {{ user.is_banned ? unbanVerb : banVerb }}
+              </button>
+            </div>
           </div>
         </li>
         <li v-if="!filteredUsers.length" class="list-group-item text-muted">

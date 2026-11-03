@@ -78,6 +78,13 @@ func (s *SiteSettings) TaskTextLimits() TaskTextLimits {
 	}
 }
 
+func resetTaskTextLimitsCache() {
+	taskTextLimitsMu.Lock()
+	defer taskTextLimitsMu.Unlock()
+	taskTextLimitsCached = nil
+	taskTextLimitsExpires = time.Time{}
+}
+
 func cacheTaskTextLimits(l TaskTextLimits) {
 	taskTextLimitsMu.Lock()
 	taskTextLimitsCached = &l

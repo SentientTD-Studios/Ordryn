@@ -78,8 +78,10 @@ func StartServer() error {
 		fmt.Printf("Warning: custom field sync failed: %v\n", err)
 	}
 
-	if err := RunBootstrap(); err != nil {
-		return fmt.Errorf("bootstrap failed: %w", err)
+	announceSetup(mode)
+	// Creates the company once the first account exists and enrolls anyone missed.
+	if err := storage.EnsureCompanyReady(); err != nil {
+		fmt.Printf("Warning: company setup failed: %v\n", err)
 	}
 
 	mailer.SetAuditor(storage.RecordEmailAudit)
@@ -111,6 +113,7 @@ func StartServer() error {
 func registerAPIV1Routes() {
 	handleAPI("/health", handlers.APIV1Health)
 	handleAPI("/site", handlers.APIV1Site)
+	handleAPI("/setup", utils.AuthPublicChain(handlers.APIV1Setup))
 
 	authPublic := utils.AuthPublicChain
 	handleAPI("/auth/register", authPublic(handlers.APIV1AuthRegister))
@@ -119,7 +122,7 @@ func registerAPIV1Routes() {
 	handleAPI("/auth/logout", handlers.APIV1AuthLogout)
 	handleAPI("/auth/username-available", authPublic(handlers.APIV1UsernameAvailable))
 	handleAPI("/auth/forgot-password", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1ForgotPassword))
-	handleAPI("/join-requests", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1JoinRequestsCreate))
+	handleAPI("/join-requests", utils.NotInCompanyMode(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1JoinRequestsCreate)))
 	handleAPI("/auth/reset-password", handlers.APIV1ResetPasswordRouter)
 	handleAPI("/me", utils.AuthMeChain(handlers.APIV1Me))
 	handleAPI("/me/password", utils.AuthSessionChain(handlers.APIV1ChangePassword))
@@ -194,25 +197,30 @@ func registerAPIV1Routes() {
 	handleAPI("/import/", v1(handlers.APIV1ImportRouter))
 	handleAPI("/images", v1(handlers.APIV1Images))
 	handleBoth("/uploads/", handlers.ServeLocalImage)
-	handleAPI("/invites", utils.InviteAPIChain(handlers.APIV1InvitesRouter))
-	handleAPI("/invites/", utils.InviteAPIChain(handlers.APIV1InvitesRouter))
+	handleAPI("/invites", utils.NotInCompanyMode(utils.InviteAPIChain(handlers.APIV1InvitesRouter)))
+	handleAPI("/invites/", utils.NotInCompanyMode(utils.InviteAPIChain(handlers.APIV1InvitesRouter)))
 	handleAPI("/admin/project-roles", utils.AdminAPIChain(handlers.APIV1AdminProjectRolesRouter))
 	handleAPI("/admin/project-roles/", utils.AdminAPIChain(handlers.APIV1AdminProjectRolesRouter))
-	handleAPI("/admin/settings", utils.AdminAPIChain(handlers.APIV1AdminSettings))
-	handleAPI("/admin/image-hosting/test", utils.AdminAPIChain(handlers.APIV1AdminImageHostingTest))
+	handleAPI("/admin/settings", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminSettings))
+	handleAPI("/admin/image-hosting/test", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminImageHostingTest))
+	handleAPI("/company-home", v1(handlers.APIV1CompanyHome))
+	handleAPI("/people", utils.APIChain(handlers.APIV1PeopleRouter))
+	handleAPI("/people/", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/admin/users", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
 	handleAPI("/admin/users/", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
-	handleAPI("/admin/join-requests", utils.AdminAPIChain(handlers.APIV1AdminJoinRequestsRouter))
-	handleAPI("/admin/join-requests/", utils.AdminAPIChain(handlers.APIV1AdminJoinRequestsRouter))
-	handleAPI("/admin/invites", utils.AdminAPIChain(handlers.APIV1AdminInvitesRouter))
-	handleAPI("/admin/invites/", utils.AdminAPIChain(handlers.APIV1AdminInvitesRouter))
-	handleAPI("/admin/email-audit", utils.AdminAPIChain(handlers.APIV1AdminEmailAudit))
-	handleAPI("/admin/comment-audit", utils.AdminAPIChain(handlers.APIV1AdminCommentAuditRouter))
-	handleAPI("/admin/comment-audit/", utils.AdminAPIChain(handlers.APIV1AdminCommentAuditRouter))
-	handleAPI("/admin/audit", utils.AdminAPIChain(handlers.APIV1AdminAuditRouter))
-	handleAPI("/admin/audit/", utils.AdminAPIChain(handlers.APIV1AdminAuditRouter))
-	handleAPI("/admin/extensions", utils.AdminAPIChain(handlers.APIV1AdminExtensionsRouter))
-	handleAPI("/admin/extensions/", utils.AdminAPIChain(handlers.APIV1AdminExtensionsRouter))
+	handleAPI("/admin/site-roles", utils.SitePermAPIChain(storage.SitePermRolesManage, handlers.APIV1AdminSiteRolesRouter))
+	handleAPI("/admin/site-roles/", utils.SitePermAPIChain(storage.SitePermRolesManage, handlers.APIV1AdminSiteRolesRouter))
+	handleAPI("/admin/join-requests", utils.NotInCompanyMode(utils.AdminAPIChain(handlers.APIV1AdminJoinRequestsRouter)))
+	handleAPI("/admin/join-requests/", utils.NotInCompanyMode(utils.AdminAPIChain(handlers.APIV1AdminJoinRequestsRouter)))
+	handleAPI("/admin/invites", utils.NotInCompanyMode(utils.AdminAPIChain(handlers.APIV1AdminInvitesRouter)))
+	handleAPI("/admin/invites/", utils.NotInCompanyMode(utils.AdminAPIChain(handlers.APIV1AdminInvitesRouter)))
+	handleAPI("/admin/email-audit", utils.SitePermAPIChain(storage.SitePermAuditView, handlers.APIV1AdminEmailAudit))
+	handleAPI("/admin/comment-audit", utils.SitePermAPIChain(storage.SitePermAuditView, handlers.APIV1AdminCommentAuditRouter))
+	handleAPI("/admin/comment-audit/", utils.SitePermAPIChain(storage.SitePermAuditView, handlers.APIV1AdminCommentAuditRouter))
+	handleAPI("/admin/audit", utils.SitePermAPIChain(storage.SitePermAuditView, handlers.APIV1AdminAuditRouter))
+	handleAPI("/admin/audit/", utils.SitePermAPIChain(storage.SitePermAuditView, handlers.APIV1AdminAuditRouter))
+	handleAPI("/admin/extensions", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminExtensionsRouter))
+	handleAPI("/admin/extensions/", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminExtensionsRouter))
 	handleAPI("/extensions/", v1(handlers.APIV1ExtensionsStatic))
 	handleAPI("/announcements/dismiss", utils.AuthSessionChain(handlers.APIV1DismissAnnouncement))
 

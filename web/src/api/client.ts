@@ -3,6 +3,9 @@ import type {
   AdminSettings,
   AdminSettingsPatch,
   AdminUser,
+  SiteRole,
+  SiteRolesList,
+  SiteRoleWrite,
   AdminExtensionsList,
   AdminExtensionsReloadResponse,
   AdminExtension,
@@ -73,6 +76,11 @@ import type {
   FeedbackPostState,
   PublicFeedbackView,
   PublicFeedbackSubmission,
+  SetupPayload,
+  PeopleList,
+  ProjectAccess,
+  CreatePersonPayload,
+  CreatePersonResult,
   SiteInfo,
   Tag,
   NotificationList,
@@ -271,6 +279,13 @@ export const api = {
     invite_token?: string
   }) {
     return request<User>('/api/v2/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  completeSetup(payload: SetupPayload) {
+    return request<User>('/api/v2/setup', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -1527,6 +1542,10 @@ export const api = {
     })
   },
 
+  getCompanyHome() {
+    return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+  },
+
   getAdminSettings() {
     return request<AdminSettings>('/api/v2/admin/settings')
   },
@@ -1576,6 +1595,49 @@ export const api = {
     )
   },
 
+  listProjectAccess(projectId: number) {
+    return request<ProjectAccess>(`/api/v2/projects/${projectId}/access`)
+  },
+
+  shareProject(
+    projectId: number,
+    share: { team_id?: number; username?: string; level: 'full' | 'view'; role_id?: number },
+  ) {
+    return request<ProjectAccess>(`/api/v2/projects/${projectId}/access`, {
+      method: 'POST',
+      body: JSON.stringify(share),
+    })
+  },
+
+  unshareProject(projectId: number, shareId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/access/${shareId}`, { method: 'DELETE' })
+  },
+
+  listPeople() {
+    return request<PeopleList>('/api/v2/people')
+  },
+
+  createPerson(payload: CreatePersonPayload) {
+    return request<CreatePersonResult>('/api/v2/people', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  setPersonName(id: number, names: { first_name: string; last_name: string }) {
+    return request<{ ok: boolean; first_name: string; last_name: string; full_name: string }>(`/api/v2/people/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(names),
+    })
+  },
+
+  setPersonActive(id: number, active: boolean) {
+    return request<{ ok: boolean; active: boolean }>(
+      `/api/v2/people/${id}/${active ? 'reactivate' : 'deactivate'}`,
+      { method: 'POST' },
+    )
+  },
+
   listAdminUsers() {
     return request<AdminUser[]>('/api/v2/admin/users')
   },
@@ -1584,8 +1646,41 @@ export const api = {
     return request<{ ok: boolean }>(`/api/v2/admin/users/${id}/ban`, { method: 'POST' })
   },
 
+  transferSiteOwnership(id: number) {
+    return request<{ ok: boolean }>(`/api/v2/admin/users/${id}/owner`, { method: 'POST' })
+  },
+
   unbanUser(id: number) {
     return request<{ ok: boolean }>(`/api/v2/admin/users/${id}/unban`, { method: 'POST' })
+  },
+
+  setAdminUserRole(id: number, role_id: number) {
+    return request<{ ok: boolean; role_id: number; role_name: string }>(`/api/v2/admin/users/${id}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role_id }),
+    })
+  },
+
+  listSiteRoles() {
+    return request<SiteRolesList>('/api/v2/admin/site-roles')
+  },
+
+  createSiteRole(payload: SiteRoleWrite) {
+    return request<SiteRole>('/api/v2/admin/site-roles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateSiteRole(id: number, payload: SiteRoleWrite) {
+    return request<SiteRole>(`/api/v2/admin/site-roles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteSiteRole(id: number) {
+    return request<{ ok: boolean; users_moved: number }>(`/api/v2/admin/site-roles/${id}`, { method: 'DELETE' })
   },
 
   setAdminUsername(id: number, user_name: string) {

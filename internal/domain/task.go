@@ -86,11 +86,19 @@ type UpdateResult struct {
 	ProjectChanged  bool
 }
 
+// ErrProjectRequired is returned in company mode for a task without a project: every
+// task belongs to a project, so it stays visible to the company after its creator leaves.
+var ErrProjectRequired = fmt.Errorf("%w: choose a project for this task", ErrValidation)
+
 // CreateTask validates input, inserts a task, and optionally assigns tags.
 func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error) {
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
 		return 0, fmt.Errorf("%w: title is required", ErrValidation)
+	}
+	// Subtasks take their parent's project.
+	if storage.IsCompanyMode() && (in.ParentID == nil || *in.ParentID <= 0) && (in.ProjectID == nil || *in.ProjectID <= 0) {
+		return 0, ErrProjectRequired
 	}
 	description := strings.TrimSpace(in.Description)
 	if err := validateDescriptionLength(description, MaxDescriptionLength()); err != nil {
@@ -471,6 +479,9 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	if in.ProjectID != nil {
 		if newParentID.Valid {
 			return nil, fmt.Errorf("%w: subtasks inherit project from parent", ErrValidation)
+		}
+		if (*in.ProjectID == nil || **in.ProjectID == 0) && storage.IsCompanyMode() {
+			return nil, ErrProjectRequired
 		}
 		if *in.ProjectID == nil || **in.ProjectID == 0 {
 			newProjectID = sql.NullInt64{Valid: false}

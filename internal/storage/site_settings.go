@@ -66,6 +66,10 @@ type SiteSettings struct {
 	// caps each file. Off by default.
 	AttachmentsEnabled bool
 	AttachmentMaxBytes int64
+
+	// SiteMode is read-only here: UpsertSiteSettings never writes it. Change it
+	// with SetSiteMode, which enforces the lock.
+	SiteMode string
 }
 
 // CreateSiteSettingsTable ensures the site_settings table exists.
@@ -155,7 +159,8 @@ func GetSiteSettings() (*SiteSettings, error) {
 			COALESCE(notification_emails_enabled, FALSE),
 			COALESCE(trash_retention_days, 30),
 			COALESCE(attachments_enabled, FALSE),
-			COALESCE(attachment_max_bytes, 0)
+			COALESCE(attachment_max_bytes, 0),
+			COALESCE(site_mode, 'multi')
 		FROM site_settings WHERE id = 1`)
 	if err := row.Scan(
 		&s.SiteName, &s.DefaultTimezone, &s.ShowChangelog,
@@ -178,6 +183,7 @@ func GetSiteSettings() (*SiteSettings, error) {
 		&s.NotificationEmailsEnabled,
 		&s.TrashRetentionDays,
 		&s.AttachmentsEnabled, &s.AttachmentMaxBytes,
+		&s.SiteMode,
 	); err != nil {
 		return nil, err
 	}
@@ -185,6 +191,9 @@ func GetSiteSettings() (*SiteSettings, error) {
 	s.AuditRetentionDays = ClampAuditRetentionDays(s.AuditRetentionDays)
 	s.TrashRetentionDays = ClampTrashRetentionDays(s.TrashRetentionDays)
 	s.AttachmentMaxBytes = ClampAttachmentMaxBytes(s.AttachmentMaxBytes)
+	if s.SiteMode = NormalizeSiteMode(s.SiteMode); s.SiteMode == "" {
+		s.SiteMode = SiteModeMulti
+	}
 	s.Image.MaxBytes = imagehost.ClampMaxBytes(s.Image.MaxBytes)
 	s.MaxDescriptionLength = ClampTaskTextLength(s.MaxDescriptionLength)
 	s.MaxCommentLength = ClampTaskTextLength(s.MaxCommentLength)

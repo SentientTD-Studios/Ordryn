@@ -48,7 +48,7 @@ func UserExistsByEmail(email string) (bool, error) {
 }
 
 // CreateUser inserts a user and returns the new id.
-// Generates a unique username from the email (bootstrap / admin create).
+// Generates a unique username from the email (admin create).
 func CreateUser(email, hashedPassword, timezone string, roleID int) (int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -73,66 +73,42 @@ func CreateUser(email, hashedPassword, timezone string, roleID int) (int, error)
 	if err != nil {
 		return 0, fmt.Errorf("create user: %w", err)
 	}
-	return id, nil
-}
-
-// GetUserIDByEmail returns the user id for an email.
-func GetUserIDByEmail(email string) (int, error) {
-	pool, err := OpenDatabase()
-	if err != nil {
-		return 0, err
-	}
-	defer CloseDatabase(pool)
-
-	var id int
-	err = pool.QueryRow(context.Background(),
-		`SELECT id FROM users WHERE email = $1`, strings.TrimSpace(email)).Scan(&id)
-	if err != nil {
-		return 0, err
+	if err := JoinCompanyIfEnabled(id); err != nil {
+		fmt.Printf("company: could not add user %d: %v\n", id, err)
 	}
 	return id, nil
 }
 
-// HasActiveAPIKeyNamed reports whether the user has a non-revoked key with the given name.
-func HasActiveAPIKeyNamed(userID int, name string) (bool, error) {
+func defaultSiteSettings() SiteSettings {
+	return SiteSettings{
+		SiteName:           "GoTodo",
+		DefaultTimezone:    "America/New_York",
+		ShowChangelog:      true,
+		EnableRegistration: true,
+		InviteOnly:         true,
+		Email: mailer.Config{
+			SMTPPort: 587,
+			SMTPTLS:  true,
+		},
+	}
+}
+
+// EnsureSiteSettingsRow inserts the default settings row when none exists yet.
+// It never touches an existing row, even if reading it fails.
+func EnsureSiteSettingsRow() error {
 	pool, err := OpenDatabase()
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer CloseDatabase(pool)
 
-	var id int
-	err = pool.QueryRow(context.Background(),
-		`SELECT id FROM api_keys
-		 WHERE user_id = $1 AND name = $2 AND project_id IS NULL AND revoked_at IS NULL
-		 LIMIT 1`, userID, name).Scan(&id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
+	var exists bool
+	if err := pool.QueryRow(context.Background(),
+		`SELECT EXISTS (SELECT 1 FROM site_settings WHERE id = 1)`).Scan(&exists); err != nil {
+		return err
 	}
-	return true, nil
-}
-
-// EnsureEnableAPI upserts site_settings with enable_api=true, preserving other fields when present.
-func EnsureEnableAPI() error {
-	s, err := GetSiteSettings()
-	if err != nil || s == nil {
-		s = &SiteSettings{
-			SiteName:           "GoTodo",
-			DefaultTimezone:    "America/New_York",
-			ShowChangelog:      true,
-			EnableRegistration: true,
-			InviteOnly:         true,
-			EnableAPI:          true,
-			Email: mailer.Config{
-				SMTPPort: 587,
-				SMTPTLS:  true,
-			},
-		}
-	} else {
-		s.EnableAPI = true
+	if exists {
+		return nil
 	}
-	return UpsertSiteSettings(*s)
+	return UpsertSiteSettings(defaultSiteSettings())
 }

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
 )
 
@@ -270,7 +271,7 @@ func AuthMeChain(handler http.HandlerFunc) http.HandlerFunc {
 				if !authenticateBearer(w, r, token) {
 					return
 				}
-			} else if uid := GetSessionUserID(r); uid != nil {
+			} else if uid := activeSessionUserID(w, r); uid != nil {
 				*r = *SetAPIAuthKind(SetAPIUserID(r, *uid), AuthKindSession)
 			}
 			handler(w, r)
@@ -300,7 +301,7 @@ func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if uid := GetSessionUserID(r); uid != nil {
+		if uid := activeSessionUserID(w, r); uid != nil {
 			*r = *SetAPIAuthKind(SetAPIUserID(r, *uid), AuthKindSession)
 			next(w, r)
 			return
@@ -309,6 +310,21 @@ func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
 		APIJSONError(w, http.StatusUnauthorized, "unauthorized",
 			"Not authenticated. Send a session cookie or Authorization: Bearer <api_key>.")
 	}
+}
+
+// activeSessionUserID returns the session's user id, or nil when there is no session
+// or the account has been deactivated. A deactivated account's session is cleared,
+// so it is signed out on its next request rather than when the cookie expires.
+func activeSessionUserID(w http.ResponseWriter, r *http.Request) *int {
+	uid := GetSessionUserID(r)
+	if uid == nil {
+		return nil
+	}
+	if storage.IsUserBannedByID(*uid) {
+		sessionstore.ClearSessionCookie(w, r)
+		return nil
+	}
+	return uid
 }
 
 // AuthSessionChain wraps endpoints that need a logged-in SPA session or API key.

@@ -605,7 +605,7 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 	err = pool.QueryRow(context.Background(), `
 		SELECT t.id, t.title, COALESCE(t.description, ''), COALESCE(t.completed, false), COALESCE(t.priority, 0),
 		       t.project_id, COALESCE(p.name, ''), COALESCE(p.workflow_mode, 'classic'), COALESCE(t.status_id, 0), COALESCE(ps.name, ''),
-		       t.user_id, COALESCE(t.claimed_by, 0), COALESCE(u.user_name, u.email, ''),
+		       t.user_id, COALESCE(t.claimed_by, 0), COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''),
 		       COALESCE(CAST(t.due_date AS TEXT), ''), COALESCE(t.sprint_id, 0), COALESCE(sp.name, ''),
 		       t.parent_id, COALESCE(t.estimate_points, 0)
 		FROM tasks t

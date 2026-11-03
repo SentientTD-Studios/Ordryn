@@ -22,6 +22,10 @@ const defaultInviteTTL = 14 * 24 * time.Hour
 // opted out, already a member, or is the project owner.
 func InviteToProject(ctx context.Context, actorUserID, projectID int, rawUsername, role string) (*storage.ProjectInvite, error) {
 	_ = ctx
+	// Company projects are shared with teams and people directly; access comes from shares.
+	if storage.IsCompanyMode() {
+		return nil, fmt.Errorf("%w: share company projects with a team or person instead of inviting", ErrValidation)
+	}
 	name, err := PrepareUsername(rawUsername)
 	if err != nil {
 		return nil, err
@@ -154,7 +158,7 @@ func RemoveProjectMember(ctx context.Context, actorUserID, projectID, memberUser
 		return ErrForbidden
 	}
 	if err := denyOrgManagedMembershipEdits(projectID); err != nil {
-		if selfLeave {
+		if selfLeave && !storage.IsCompanyMode() {
 			return fmt.Errorf("%w: membership for this project is locked to the organization", ErrForbidden)
 		}
 		return err

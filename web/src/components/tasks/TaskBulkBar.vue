@@ -5,6 +5,10 @@ import { activeProjects, projectOptionLabel } from '@/utils/projectLabel'
 import { hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
 import { formatLocalDate } from '@/utils/quickAdd'
+import { useSite } from '@/composables/useSite'
+
+// Company mode: every task belongs to a project.
+const { isCompanyMode } = useSite()
 
 const props = defineProps<{
   count: number
@@ -68,7 +72,7 @@ function setDue(dueDate: string) {
             <label class="form-label text-muted small fw-bold text-uppercase mb-1 bulk-label">Move to project...</label>
             <select v-model="bulkProject" class="form-select form-select-sm mb-2" :disabled="!canMoveProject">
               <option value="">Select project...</option>
-              <option value="0">No Project</option>
+              <option v-if="!isCompanyMode" value="0">No Project</option>
               <option v-for="p in activeProjects(projects)" :key="p.id" :value="String(p.id)">{{ projectOptionLabel(p) }}</option>
             </select>
             <button

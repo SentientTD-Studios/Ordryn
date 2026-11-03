@@ -52,6 +52,12 @@ func CreatePasswordResetTable() error {
 
 // GenerateResetToken creates a new password reset token for the given email
 func GenerateResetToken(email string) (*PasswordReset, error) {
+	return GenerateResetTokenTTL(email, 15*time.Minute)
+}
+
+// GenerateResetTokenTTL creates a password token that expires after ttl. New
+// accounts use a longer lifetime so the person has time to open their welcome email.
+func GenerateResetTokenTTL(email string, ttl time.Duration) (*PasswordReset, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -68,8 +74,8 @@ func GenerateResetToken(email string) (*PasswordReset, error) {
 	// Generate UUID for the reset ID
 	resetID := uuid.New().String()
 
-	// Set expiration to 15 minutes from now (use UTC to match database)
-	expiresAt := time.Now().UTC().Add(15 * time.Minute)
+	// Use UTC to match the database.
+	expiresAt := time.Now().UTC().Add(ttl)
 
 	// Delete any existing reset tokens for this email
 	_, err = pool.Exec(context.Background(), "DELETE FROM password_reset WHERE email = $1", email)

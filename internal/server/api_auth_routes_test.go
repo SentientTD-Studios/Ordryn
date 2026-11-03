@@ -14,6 +14,7 @@ import (
 var publicAPIAllowlist = map[string]string{
 	"/health":                  "liveness",
 	"/site":                    "public site config",
+	"/setup":                   "first-time setup; guarded by the setup token from the server log",
 	"/auth/register":           "authPublic",
 	"/auth/login":              "authPublic",
 	"/auth/mfa/verify":         "authPublic",

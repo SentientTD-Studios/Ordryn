@@ -2,11 +2,12 @@
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { Organization, OrganizationMember, ProjectRoleDef } from '@/api/types'
+import { useSite } from '@/composables/useSite'
 
 export type OrgImportMode = 'copy' | 'lock' | 'select'
 export type OrgImportMemberPayload = { user_id: number; role: string }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     orgs: Organization[]
     selectId?: string
@@ -14,8 +15,16 @@ withDefaults(
   }>(),
   {
     selectId: 'org-import-org',
-    noneLabel: 'None — manage members on this project',
+    noneLabel: undefined,
   },
+)
+
+const { isCompanyMode } = useSite()
+// In company mode "no team" still files the project under the company, with only its creator.
+const effectiveNoneLabel = computed(
+  () =>
+    props.noneLabel ??
+    (isCompanyMode.value ? 'Company project — add people yourself' : 'None — manage members on this project'),
 )
 
 const organizationId = defineModel<number>('organizationId', { default: 0 })
@@ -87,11 +96,11 @@ defineExpose({ selectValid })
 
 <template>
   <div class="org-import-fields">
-    <label class="form-label small fw-bold" :for="selectId">Organization</label>
+    <label class="form-label small fw-bold" :for="selectId">{{ isCompanyMode ? 'Team' : 'Organization' }}</label>
     <select :id="selectId" v-model.number="organizationId" class="form-select form-select-sm">
-      <option :value="0">{{ noneLabel }}</option>
+      <option :value="0">{{ effectiveNoneLabel }}</option>
       <option v-for="o in orgs" :key="o.id" :value="o.id">
-        Import members from {{ o.name }}
+        {{ o.is_company ? `Import everyone in ${o.name}` : `Import members from ${o.name}` }}
       </option>
     </select>
 

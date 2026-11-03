@@ -936,6 +936,11 @@ func apiV1BulkTasks(w http.ResponseWriter, r *http.Request) {
 		if req.ProjectID != nil {
 			projectIDStr = strconv.Itoa(*req.ProjectID)
 		}
+		// Every company task belongs to a project.
+		if storage.IsCompanyMode() && (req.ProjectID == nil || *req.ProjectID <= 0) {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Choose a project; every task on this site needs one.")
+			return
+		}
 		err = bulkMoveProject(ctx, db, req.TaskIDs, userID, projectIDStr)
 	case "add_tag":
 		if req.TagID == nil || *req.TagID <= 0 {
@@ -1216,7 +1221,7 @@ func apiV1CreateProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, domain.ErrForbidden) {
-			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "You cannot create a project in that organization.")
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", sharingClientMessage(err, "You cannot create a project in that organization."))
 			return
 		}
 		if errors.Is(err, domain.ErrNotFound) {

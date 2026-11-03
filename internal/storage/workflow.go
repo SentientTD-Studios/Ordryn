@@ -737,7 +737,7 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		`SELECT t.id, t.status_id, COALESCE(s.name, ''), t.estimate_points,
 		        COALESCE(p.workflow_mode, 'classic'),
 		        COALESCE((SELECT SUM(minutes) FROM task_time_entries e WHERE e.task_id = t.id), 0),
-		        t.claimed_by, COALESCE(cu.user_name, cu.email, ''),
+		        t.claimed_by, COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, ''),
 		        t.sprint_id, COALESCE(sp.name, '')
 		 FROM tasks t
 		 LEFT JOIN project_statuses s ON s.id = t.status_id

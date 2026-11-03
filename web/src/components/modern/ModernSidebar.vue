@@ -4,6 +4,8 @@ import { useRoute, RouterLink } from 'vue-router'
 import Sortable from 'sortablejs'
 import type { Project, SavedView } from '@/api/types'
 import { projectNavLabel, projectOptionLabel, isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
+import { useAuth } from '@/composables/useAuth'
+import { useSite } from '@/composables/useSite'
 
 const props = defineProps<{
   collapsed: boolean
@@ -26,6 +28,8 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
+const { canCreateProjects, managesPeople } = useAuth()
+const { isCompanyMode } = useSite()
 
 const overdueCount = inject<Ref<number>>('overdueCount', ref(0))
 const pendingInviteCount = inject<Ref<number>>('pendingInviteCount', ref(0))
@@ -190,7 +194,20 @@ onBeforeUnmount(() => {
           @click="emit('close-mobile')"
         >
           <i class="bi bi-diagram-3" />
-          <span class="sidebar-text">Organizations</span>
+          <span class="sidebar-text">{{ isCompanyMode ? 'Company & teams' : 'Organizations' }}</span>
+        </RouterLink>
+      </li>
+      <li v-if="managesPeople" class="sidebar-nav-item">
+        <RouterLink
+          to="/people"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/people' }"
+          data-tooltip="People"
+          title="People"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-people" />
+          <span class="sidebar-text">People</span>
         </RouterLink>
       </li>
     </ul>
@@ -319,7 +336,7 @@ onBeforeUnmount(() => {
         </div>
       </li>
 
-      <li class="sidebar-nav-item d-flex align-items-center">
+      <li v-if="canCreateProjects" class="sidebar-nav-item d-flex align-items-center">
         <button
           type="button"
           class="sidebar-nav-link text-start w-100 border-0 bg-transparent"

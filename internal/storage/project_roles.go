@@ -621,6 +621,9 @@ func ListOrganizationRoles(orgID int) ([]ProjectRoleDef, error) {
 
 // ListAssignableProjectRoles returns site roles (except owner) plus org or project custom roles.
 func ListAssignableProjectRoles(projectID int) ([]ProjectRoleDef, error) {
+	if IsCompanyMode() {
+		return CompanyAssignableRoles()
+	}
 	site, err := ListSiteProjectRoles()
 	if err != nil {
 		return nil, err
@@ -877,6 +880,10 @@ func ResolveRoleDef(projectID int, slug string) *ProjectRoleDef {
 	slug = strings.TrimSpace(strings.ToLower(slug))
 	if slug == "" {
 		return nil
+	}
+	// Company mode writes site-role slugs; they mean the same on every project.
+	if d := companyRoleDef(slug); d != nil {
+		return d
 	}
 	var bind *ProjectOrgBinding
 	if projectID > 0 {

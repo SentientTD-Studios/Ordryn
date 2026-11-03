@@ -143,6 +143,100 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/APIError"
+        "409":
+          description: First-time setup hasn't been completed (`setup_required`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v2/setup:
+    get:
+      tags: [Auth]
+      summary: Whether first-time setup is still required
+      security: []
+      responses:
+        "200":
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setup_required:
+                    type: boolean
+                    description: True until setup creates the first account.
+    post:
+      tags: [Auth]
+      summary: Complete first-time setup and start a session
+      description: |
+        Creates the first account with the admin role, applies the initial site
+        settings and site mode, and signs the admin in. Only works while the site
+        has no accounts. `setup_token` is printed to the server log at startup while
+        setup is required; it changes on every restart until setup is finished.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [setup_token, email, user_name, password, confirm_password, timezone, site_mode]
+              properties:
+                setup_token:
+                  type: string
+                  description: Token from the server log. Dashes, spaces, and case are ignored.
+                email:
+                  type: string
+                  format: email
+                user_name:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+                confirm_password:
+                  type: string
+                timezone:
+                  type: string
+                  description: IANA timezone for the admin; also becomes the site default.
+                site_name:
+                  type: string
+                  description: Leave empty to keep the default name.
+                site_mode:
+                  type: string
+                  enum: [multi, company]
+                  description: Can still change in Admin until the first project or organization exists.
+                registration:
+                  type: string
+                  enum: [invite, open, closed]
+                  default: invite
+                  description: invite requires an invite token to sign up; open lets anyone sign up; closed turns signup off.
+                enable_api:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Admin created; Set-Cookie session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          description: Wrong setup token (`invalid_setup_token`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The site already has an account (`setup_complete`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -150,6 +244,7 @@ paths:
     post:
       tags: [Auth]
       summary: Submit a request to join the site
+      description: Not available on a company site (404); accounts there come from people managers.
       security: []
       requestBody:
         required: true
@@ -628,7 +723,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/APIError"
+                $ref: "#/components/schemas/Error"
     delete:
       tags: [Profile]
       summary: Remove profile picture
@@ -1503,6 +1598,9 @@ paths:
     post:
       tags: [Tasks]
       summary: Create a task
+      description: |
+        On a company site every task needs a project: a root task without `project_id`
+        returns 400 (subtasks take their parent's), and an update can't clear `project_id`.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -2082,6 +2180,10 @@ paths:
     post:
       tags: [Organizations]
       summary: Create an organization
+      description: |
+        Requires the orgs:create site permission (admins always have it). In company mode
+        these are teams inside the company, and entering company mode removes orgs:create
+        from the User site role.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -2100,6 +2202,8 @@ paths:
                 $ref: "#/components/schemas/Organization"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v2/organizations/{id}:
     parameters:
@@ -2543,6 +2647,10 @@ paths:
     post:
       tags: [Projects]
       summary: Create a project
+      description: |
+        Requires the projects:create site permission (admins always have it). In company
+        mode a project created without `organization_id` belongs to the company with only
+        its creator as a member.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -2561,6 +2669,8 @@ paths:
                 $ref: "#/components/schemas/Project"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v2/projects/reorder:
     post:
@@ -2638,6 +2748,10 @@ paths:
     delete:
       tags: [Projects]
       summary: Delete a project (owner only)
+      description: |
+        Tasks normally outlive a deleted project with no project. On a company site, where
+        every task needs a project, a project that still has tasks returns 409 (archive it
+        instead); deleting an empty one also purges its trashed tasks.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -5239,7 +5353,9 @@ paths:
     get:
       tags: [Projects]
       summary: List pending project invites
-      description: Any project member can list pending invites. Creating and revoking invites remains owner-only.
+      description: |
+        Any project member can list pending invites. Creating and revoking invites remains owner-only.
+        Company projects don't use invites; they are shared through /api/v2/projects/{id}/access.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -6601,6 +6717,7 @@ paths:
     get:
       tags: [Invites]
       summary: List invites
+      description: Not available on a company site (404); accounts there come from people managers.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -6660,6 +6777,7 @@ paths:
     get:
       tags: [Admin]
       summary: Get site settings
+      description: Needs admin, or `settings:manage` on a company site.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -6673,6 +6791,9 @@ paths:
     patch:
       tags: [Admin]
       summary: Update site settings
+      description: |
+        Needs admin, or `settings:manage` on a company site. `site_mode` and
+        `members_can_create_*` stay with admins (403 otherwise).
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -6689,6 +6810,315 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/access:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Who a company-mode project is shared with
+      description: |
+        Company mode only. Projects are shared with teams and people. A `full` share gives
+        the site role in `role_id` on this project, or each person's own site role when
+        `role_id` is absent; `view` lets them open the project without changing it. Someone
+        reached twice gets the role with the most project permissions (view only ranks
+        lowest). The creator gets their own role, site admins always have full access, and
+        holders of `projects:view_all` can at least view. `teams` and `roles` list the
+        teams and roles the caller can share with, and are empty unless `can_manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Shares
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAccess"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Projects]
+      summary: Share a company-mode project, or change a share
+      description: |
+        Needs Manage project on the project (site admins have it everywhere). Send
+        `team_id` or `username`. `role_id` picks the site role a full share gives; omit it
+        for each person's own role. Roles that grant admin can't be given on a share.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                team_id: { type: integer }
+                username: { type: string }
+                level: { type: string, enum: [full, view], default: full }
+                role_id: { type: integer, description: Site role for a full share; omit for each person's own. }
+      responses:
+        "200":
+          description: Updated shares
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAccess"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/access/{shareId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: shareId
+        in: path
+        required: true
+        schema: { type: integer }
+    delete:
+      tags: [Projects]
+      summary: Stop sharing a company-mode project with a team or person
+      description: People reached only through this share lose access.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Share removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/company-home:
+    get:
+      tags: [Auth]
+      summary: Company home page content
+      description: |
+        Company mode only (404 otherwise). Markdown that signed-in people see when no
+        project is shared with them yet; set as `company_home` in site settings.
+        `can_edit` is true for admins and `settings:manage` holders.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content: { type: string }
+                  can_edit: { type: boolean }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/people:
+    get:
+      tags: [Admin]
+      summary: List the accounts the caller can manage
+      description: |
+        Admins and site roles with `users:manage` see every account. In company mode,
+        team roles with `team:people` see their teams' members, and `people:profile`
+        holders see everyone (to set names) without managing accounts. `can_manage` says
+        whether the caller may deactivate or reactivate each one: admins and
+        `users:manage` holders can't be changed except by an admin, and team managers
+        can't change their team's owner or other managers. `can_edit_name` says whether
+        the caller may set the person's name (company mode). Returns 403 for everyone else.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: People plus the teams and roles the caller may give a new account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        email: { type: string }
+                        user_name: { type: string }
+                        full_name: { type: string, description: '"First Last", empty when no name is set' }
+                        first_name: { type: string }
+                        last_name: { type: string }
+                        active: { type: boolean }
+                        role_id: { type: integer }
+                        role_name: { type: string }
+                        can_manage: { type: boolean }
+                        can_edit_name: { type: boolean }
+                        teams:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id: { type: integer }
+                              name: { type: string }
+                              role: { type: string }
+                              role_name: { type: string }
+                  manages_everyone: { type: boolean }
+                  can_create: { type: boolean, description: False for those who only edit names }
+                  names_required: { type: boolean, description: True in company mode; new accounts need first_name and last_name }
+                  teams:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        roles:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              slug: { type: string }
+                              name: { type: string }
+                  site_roles:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        label: { type: string, description: Name to show; see SiteRole.label }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Admin]
+      summary: Create an account and send it a set-password link
+      description: |
+        The account has no usable password. A set-password link valid for 7 days is
+        emailed to it; when email isn't configured the link is returned as
+        `set_password_url` for the caller to pass on. Team managers must choose one of
+        their teams and a team role without `team:people` or `project:manage`, and can't
+        choose a site role. Only admins can create admins or `users:manage` holders.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, user_name]
+              properties:
+                email: { type: string, format: email }
+                user_name: { type: string }
+                first_name: { type: string, description: Required in company mode }
+                last_name: { type: string, description: Required in company mode }
+                team_id: { type: integer, description: "Company-mode team to join; omit for no team (admins and users:manage only)." }
+                site_role_id: { type: integer, description: Omit for the default User role. }
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  user_id: { type: integer }
+                  email_sent: { type: boolean }
+                  set_password_url: { type: string }
+                  warning: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/people/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Admin]
+      summary: Set a person's first and last name
+      description: |
+        Company mode only. Names are managed like a company directory: people can't set
+        their own unless they hold `people:profile` (admins do). Otherwise the caller needs
+        the person within their people reach (`people:profile` reaches everyone but admins,
+        whose names stay with the site owner). Both names are required.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [first_name, last_name]
+              properties:
+                first_name: { type: string, maxLength: 100 }
+                last_name: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  first_name: { type: string }
+                  last_name: { type: string }
+                  full_name: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/deactivate:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Deactivate an account
+      description: |
+        The person is signed out on their next request and can't sign in or use API
+        keys. Their work and memberships are kept. Same reach rules as GET /api/v2/people;
+        nobody can deactivate themselves or the last active admin.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Deactivated
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/reactivate:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Reactivate an account
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Reactivated
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v2/admin/users:
     get:
@@ -6783,6 +7213,179 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
+  /api/v2/admin/users/{id}/owner:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Transfer site ownership
+      description: |
+        The site owner is the one account above admins: only the owner can make, change,
+        or deactivate admins, and nobody can change or deactivate the owner. Only the
+        current owner can call this, and the new owner must be an active admin. The
+        previous owner stays an admin.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Ownership transferred
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/admin/users/{id}/role:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Admin]
+      summary: Assign a user's site role
+      description: |
+        Takes effect on the user's next request; no new login is needed. Admins can't change
+        their own role, the site must keep at least one admin, and agent and automation
+        accounts can't be reassigned. Only the site owner can give or take away the admin
+        role, and the owner's own role can't change (transfer ownership first).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_id]
+              properties:
+                role_id:
+                  type: integer
+      responses:
+        "200":
+          description: Role assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  role_id:
+                    type: integer
+                  role_name:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/admin/site-roles:
+    get:
+      tags: [Admin]
+      summary: List site roles and the site permission catalog
+      description: |
+        Site roles control site-wide abilities such as creating projects or organizations.
+        They are separate from project and organization roles. The built-in Admin role has
+        every permission and is locked; the built-in User role is the default for new accounts.
+        Needs admin, or `roles:manage` on a company site. A `roles:manage` holder who isn't an
+        admin can't change their own role, and only works with roles and permissions their
+        own role has.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Catalog plus roles (Admin, User, then custom roles by name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteRolesList"
+    post:
+      tags: [Admin]
+      summary: Create a custom site role
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SiteRoleWrite"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteRole"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/admin/site-roles/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Admin]
+      summary: Rename a site role or set its permissions
+      description: |
+        `permissions` replaces the role's catalog permissions; permissions outside the catalog
+        are kept. The Admin role's permissions can't be edited. On a company site the
+        Admin and User roles can be renamed, which sets their `label` and leaves `name`
+        unchanged; elsewhere they keep their names.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SiteRoleWrite"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteRole"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [Admin]
+      summary: Delete a custom site role
+      description: Accounts on the role move to the User role.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  users_moved:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /api/v2/admin/email-audit:
     get:
       tags: [Admin]
@@ -6849,10 +7452,13 @@ paths:
       description: |
         One newest-first view over task events, project events, comment revisions,
         outbound email attempts, and site-admin actions (bans, username changes,
-        site settings, role templates, invites, join requests, extensions).
+        site roles and role assignments, site settings, role templates, invites,
+        join requests, extensions).
         Change events carry `metadata.from` / `metadata.to`; site settings changes
         carry `metadata.changes` keyed by field. Secret values are never recorded.
         Rows older than `audit_retention_days` (when non-zero) are deleted automatically.
+        Needs admin, or `audit:view` on a company site (also for the email log and comment
+        history; restoring a comment stays with admins).
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7314,6 +7920,7 @@ paths:
     get:
       tags: [Admin]
       summary: List join requests
+      description: Not available on a company site (404); accounts there come from people managers.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7386,6 +7993,7 @@ paths:
     get:
       tags: [Admin]
       summary: List all invites (admin)
+      description: Not available on a company site (404); accounts there come from people managers.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7652,6 +8260,52 @@ components:
         attachment_max_bytes:
           type: integer
           description: Largest file a member may attach, in bytes.
+        site_mode:
+          type: string
+          enum: [multi, company]
+          description: multi lets anyone allowed create organizations; company runs the site as one company with admin-created teams.
+        setup_required:
+          type: boolean
+          description: True until first-time setup (POST /api/v2/setup) creates the admin account.
+
+    ProjectAccess:
+      type: object
+      properties:
+        shares:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              kind: { type: string, enum: [team, person] }
+              team_id: { type: integer }
+              user_id: { type: integer }
+              name: { type: string, description: Team name, or the person's full name (else username) }
+              email: { type: string }
+              user_name: { type: string, description: The person's username (person shares) }
+              level: { type: string, enum: [full, view] }
+              role_id: { type: integer, description: Role a full share gives; absent means each person's own }
+              role_label: { type: string }
+              is_company: { type: boolean }
+              member_count: { type: integer }
+              created_at: { type: string, format: date-time }
+        can_manage: { type: boolean }
+        teams:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              is_company: { type: boolean }
+        roles:
+          type: array
+          description: Roles a full share can give
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              label: { type: string }
 
     NotificationPreferences:
       type: object
@@ -7709,6 +8363,11 @@ components:
           format: email
         user_name:
           type: string
+        first_name:
+          type: string
+          description: Company mode; set by whoever manages names
+        last_name:
+          type: string
         timezone:
           type: string
         items_per_page:
@@ -7729,6 +8388,15 @@ components:
         avatar_url:
           type: string
           description: URL to user's uploaded profile picture, or empty if unset
+        is_site_owner:
+          type: boolean
+          description: True for the one account above admins (by default whoever ran first-time setup).
+        manages_people:
+          type: boolean
+          description: True when the user gets the People page (admin, users:manage, team:people on a company-mode team, or people:profile).
+        can_edit_name:
+          type: boolean
+          description: Company mode; true when the user may set their own first and last name (people:profile).
 
     MFARequired:
       type: object
@@ -8920,6 +9588,12 @@ components:
             type: string
         can_manage:
           type: boolean
+          description: True for members whose role can manage it, and for site admins on the company.
+        is_company:
+          type: boolean
+          description: |
+            The single organization everyone belongs to in company mode. It can't be deleted,
+            left, or invited to; accounts join it automatically.
         member_count:
           type: integer
         project_count:
@@ -10782,6 +11456,21 @@ components:
           minimum: 16384
           maximum: 52428800
           description: Per-file upload limit in bytes (default 5 MB, at most 50 MB). Files are stored in the database.
+        members_can_create_projects:
+          type: boolean
+          description: Whether the member site role has projects:create. Admins can always create projects.
+        members_can_create_organizations:
+          type: boolean
+          description: Whether the member site role has orgs:create. Admins can always create organizations.
+        site_mode:
+          type: string
+          enum: [multi, company]
+        site_mode_locked:
+          type: boolean
+          description: True once projects or organizations exist; site_mode can no longer change.
+        company_home:
+          type: string
+          description: Markdown shown in company mode to signed-in people with no projects yet.
         allow_user_invites:
           type: boolean
         user_invite_limit:
@@ -10901,6 +11590,22 @@ components:
           minimum: 16384
           maximum: 52428800
           description: Per-file upload limit in bytes (default 5 MB, at most 50 MB). Files are stored in the database.
+        members_can_create_projects:
+          type: boolean
+          description: Whether the member site role has projects:create. Admins can always create projects.
+        members_can_create_organizations:
+          type: boolean
+          description: Whether the member site role has orgs:create. Admins can always create organizations.
+        company_home:
+          type: string
+          maxLength: 20000
+          description: Markdown shown in company mode to signed-in people with no projects yet.
+        site_mode:
+          type: string
+          enum: [multi, company]
+          description: |
+            Can change only while no projects or organizations exist; otherwise the request
+            fails with 409 and nothing is saved.
         allow_user_invites:
           type: boolean
         user_invite_limit:
@@ -10981,8 +11686,73 @@ components:
           type: string
         is_banned:
           type: boolean
+        role_id:
+          type: integer
+        role_name:
+          type: string
         interval:
           type: integer
+
+    SitePermInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          enum: ["projects:create", "orgs:create", createinvites]
+        label:
+          type: string
+        description:
+          type: string
+        group:
+          type: string
+
+    SiteRole:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: Stored name. Fixed as `admin` and `user` for the built-in roles
+        label:
+          type: string
+          description: Name to show. Differs from `name` for built-in roles, which are renamed by label
+        permissions:
+          type: array
+          items:
+            type: string
+        user_count:
+          type: integer
+          description: Accounts on this role (agent accounts excluded)
+        built_in:
+          type: boolean
+          description: True for Admin and User, which can't be deleted
+        locked:
+          type: boolean
+          description: True for Admin, whose permissions can't be edited
+
+    SiteRolesList:
+      type: object
+      properties:
+        catalog:
+          type: array
+          items:
+            $ref: "#/components/schemas/SitePermInfo"
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/SiteRole"
+
+    SiteRoleWrite:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        permissions:
+          type: array
+          items:
+            type: string
 
     EmailAuditEntry:
       type: object

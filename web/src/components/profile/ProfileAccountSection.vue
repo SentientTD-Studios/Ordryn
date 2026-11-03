@@ -15,8 +15,8 @@ defineProps<{
   username: string
 }>()
 
-const { user, uploadAvatar, deleteAvatar } = useAuth()
-const { siteInfo } = useSite()
+const { user, uploadAvatar, deleteAvatar, refresh } = useAuth()
+const { siteInfo, isCompanyMode } = useSite()
 const { push } = useToast()
 const { askConfirm } = useConfirm()
 
@@ -100,9 +100,40 @@ async function onRemoveAvatar() {
 }
 
 const userInitials = computed(() => {
+  const first = user.value?.first_name?.trim()
+  const last = user.value?.last_name?.trim()
+  if (first && last) return (first[0] + last[0]).toUpperCase()
   const name = user.value?.user_name || user.value?.email || ''
   return name.slice(0, 2).toUpperCase()
 })
+
+// Company mode: names are managed like a company directory.
+const fullName = computed(() => `${user.value?.first_name || ''} ${user.value?.last_name || ''}`.trim())
+const editingName = ref(false)
+const firstDraft = ref('')
+const lastDraft = ref('')
+const nameBusy = ref(false)
+
+function startEditName() {
+  firstDraft.value = user.value?.first_name || ''
+  lastDraft.value = user.value?.last_name || ''
+  editingName.value = true
+}
+
+async function saveName() {
+  if (!user.value) return
+  nameBusy.value = true
+  try {
+    await api.setPersonName(user.value.id, { first_name: firstDraft.value.trim(), last_name: lastDraft.value.trim() })
+    await refresh()
+    editingName.value = false
+    push('Name saved', 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Could not save your name', 'error')
+  } finally {
+    nameBusy.value = false
+  }
+}
 
 function closePasswordForm() {
   showPasswordForm.value = false
@@ -212,6 +243,53 @@ onMounted(async () => {
       <h3 class="card-title mb-0">Account</h3>
     </div>
     <div class="card-body">
+      <div v-if="isCompanyMode" class="mb-3">
+        <label class="form-label fw-bold" :for="editingName ? 'profile-first-name' : undefined">Name</label>
+        <form v-if="editingName" class="row g-2" @submit.prevent="saveName">
+          <div class="col-sm-5">
+            <input
+              id="profile-first-name"
+              v-model="firstDraft"
+              class="form-control"
+              required
+              maxlength="100"
+              placeholder="First name"
+              aria-label="First name"
+            />
+          </div>
+          <div class="col-sm-5">
+            <input
+              v-model="lastDraft"
+              class="form-control"
+              required
+              maxlength="100"
+              placeholder="Last name"
+              aria-label="Last name"
+            />
+          </div>
+          <div class="col-sm-2 d-flex gap-1">
+            <button class="btn btn-primary" type="submit" :disabled="nameBusy">Save</button>
+            <button class="btn btn-outline-secondary" type="button" @click="editingName = false">Cancel</button>
+          </div>
+        </form>
+        <template v-else>
+          <div class="d-flex align-items-center gap-2">
+            <input
+              type="text"
+              class="form-control-plaintext"
+              :value="fullName || 'Not set'"
+              readonly
+              tabindex="-1"
+            />
+            <button v-if="user?.can_edit_name" class="btn btn-sm btn-outline-secondary" type="button" @click="startEditName">
+              Edit
+            </button>
+          </div>
+          <div v-if="!user?.can_edit_name" class="form-text">
+            Your name is managed by your company. Ask someone who manages people to change it.
+          </div>
+        </template>
+      </div>
       <div class="mb-3">
         <label class="form-label fw-bold">Email</label>
         <input type="text" class="form-control-plaintext" :value="email" readonly tabindex="-1" />

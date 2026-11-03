@@ -639,7 +639,7 @@ func RevokeAgentAPIKey(agentUserID, keyID int) error {
 
 const agentRunSelectCols = `r.id, r.agent_id, r.project_id, r.task_id, r.trigger, COALESCE(r.triggered_by, 0),
 	r.note, r.status, r.delivered, r.delivery_error, r.summary, r.created_at, r.started_at, r.finished_at,
-	COALESCE(a.name, ''), COALESCE(t.title, ''), COALESCE(NULLIF(tu.user_name, ''), tu.email, '')`
+	COALESCE(a.name, ''), COALESCE(t.title, ''), COALESCE(NULLIF(tu.full_name, ''), NULLIF(tu.user_name, ''), tu.email, '')`
 
 const agentRunFrom = `FROM agent_runs r
 	JOIN project_agents a ON a.id = r.agent_id

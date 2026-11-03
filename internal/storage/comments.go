@@ -167,8 +167,8 @@ func scanTaskComment(row interface {
 const taskCommentSelect = `SELECT c.id, c.task_id, COALESCE(c.user_id, 0), COALESCE(c.body, ''), c.created_at,
 		c.deleted_at, c.deleted_by_user_id, c.deleted_by_kind,
 		c.edited_at, COALESCE(c.edited_by_user_id, 0),
-		COALESCE(u.user_name, u.email, ''),
-		COALESCE(eu.user_name, eu.email, ''),
+		COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''),
+		COALESCE(NULLIF(eu.full_name, ''), NULLIF(eu.user_name, ''), eu.email, ''),
 		COALESCE(u.avatar_url, ''),
 		COALESCE(u.is_agent, FALSE)
 	 FROM task_comments c
@@ -176,8 +176,8 @@ const taskCommentSelect = `SELECT c.id, c.task_id, COALESCE(c.user_id, 0), COALE
 	 LEFT JOIN users eu ON eu.id = c.edited_by_user_id`
 
 const taskCommentRevisionSelect = `SELECT r.id, r.comment_id, r.task_id, COALESCE(r.body, ''), r.kind, r.created_at,
-		COALESCE(r.edited_by_user_id, 0), COALESCE(eu.user_name, eu.email, ''),
-		COALESCE(c.user_id, 0), COALESCE(au.user_name, au.email, ''),
+		COALESCE(r.edited_by_user_id, 0), COALESCE(NULLIF(eu.full_name, ''), NULLIF(eu.user_name, ''), eu.email, ''),
+		COALESCE(c.user_id, 0), COALESCE(NULLIF(au.full_name, ''), NULLIF(au.user_name, ''), au.email, ''),
 		COALESCE(t.title, ''), COALESCE(t.project_id, 0), COALESCE(p.name, ''),
 		(c.deleted_at IS NOT NULL), COALESCE(c.body, '')
 	 FROM task_comment_revisions r
@@ -449,8 +449,8 @@ func ListCommentAudit(f CommentAuditFilter) ([]TaskCommentRevision, int, error) 
 	if q := strings.TrimSpace(f.Query); q != "" {
 		where = append(where, fmt.Sprintf(`(
 			r.body ILIKE $%d OR COALESCE(t.title, '') ILIKE $%d OR COALESCE(p.name, '') ILIKE $%d
-			OR COALESCE(au.user_name, au.email, '') ILIKE $%d
-			OR COALESCE(eu.user_name, eu.email, '') ILIKE $%d
+			OR COALESCE(NULLIF(au.full_name, ''), NULLIF(au.user_name, ''), au.email, '') ILIKE $%d
+			OR COALESCE(NULLIF(eu.full_name, ''), NULLIF(eu.user_name, ''), eu.email, '') ILIKE $%d
 		)`, n, n, n, n, n))
 		args = append(args, "%"+q+"%")
 		n++

@@ -75,11 +75,17 @@ func CloseSharedPool() {
 	if sharedPool != nil {
 		sharedPool.Close()
 		sharedPool = nil
-		poolOnce = sync.Once{}
 	}
+	// Also forget a failed open (e.g. env not set yet), so the next call retries.
+	poolErr = nil
+	poolOnce = sync.Once{}
 }
 
-// ResetSharedPoolForTests closes and resets the singleton between tests.
+// ResetSharedPoolForTests closes and resets the singleton between tests. The next
+// connection may be to a different database, so caches of database rows go too.
 func ResetSharedPoolForTests() {
 	CloseSharedPool()
+	InvalidateSiteRoleCache()
+	resetSystemUserCache()
+	resetTaskTextLimitsCache()
 }

@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 	}
 
 	_, err = pool.Exec(context.Background(), `
-		CREATE TABLE users (id SERIAL PRIMARY KEY, email TEXT, user_name TEXT, avatar_url TEXT DEFAULT '');
+		CREATE TABLE users (id SERIAL PRIMARY KEY, email TEXT, user_name TEXT, avatar_url TEXT DEFAULT '', full_name TEXT NOT NULL DEFAULT '');
 		CREATE TABLE saved_views (
 			id SERIAL PRIMARY KEY,
 			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

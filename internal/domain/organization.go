@@ -35,24 +35,71 @@ func normalizeOrgDescription(raw string) (string, error) {
 
 func requireOrgAccess(orgID, userID int) (*storage.Organization, error) {
 	org, err := storage.GetAccessibleOrganization(orgID, userID)
-	if err != nil {
-		return nil, ErrNotFound
+	if err == nil {
+		return org, nil
 	}
-	return org, nil
+	// In company mode team managers oversee every team, including ones they aren't on.
+	if companyTeamManager(userID) {
+		if org, err := storage.GetOrganizationWithRole(orgID, userID); err == nil {
+			return org, nil
+		}
+	}
+	return nil, ErrNotFound
 }
+
+// companyTeamManager reports whether the site runs in company mode and userID may
+// create teams and choose who is on them: admins (the owner included) and the Manage
+// teams permission. Team membership never grants this in company mode.
+func companyTeamManager(userID int) bool {
+	if !storage.UserHasSitePermission(userID, storage.SitePermAdmin) &&
+		!storage.UserHasSitePermission(userID, storage.SitePermTeamsManage) {
+		return false
+	}
+	return storage.IsCompanyMode()
+}
+
+// errCompanyShareInstead rejects per-project members, invites, and roles: company
+// projects are shared with teams and people, and everyone's role is their site role.
+var errCompanyShareInstead = fmt.Errorf("%w: in company mode, share the project with teams or people instead; roles come from the Site roles page", ErrValidation)
+
+// errCompanyRolesAtSite rejects team role edits: company mode has site roles only.
+var errCompanyRolesAtSite = fmt.Errorf("%w: in company mode roles are set on the Site roles page, not per team", ErrValidation)
 
 func requireOrgManage(orgID, userID int) (*storage.Organization, error) {
 	org, err := requireOrgAccess(orgID, userID)
 	if err != nil {
 		return nil, err
 	}
-	if !storage.RoleCanManageOrganization(orgID, org.Role) {
+	if !CanManageOrganization(org, userID) {
 		return nil, ErrForbidden
 	}
 	return org, nil
 }
 
+// CanManageOrganization reports whether the user may manage org. Nobody owns the
+// company organization; site admins manage it instead.
+func CanManageOrganization(org *storage.Organization, userID int) bool {
+	if org.IsCompany {
+		return storage.UserHasSitePermission(userID, storage.SitePermAdmin)
+	}
+	if storage.IsCompanyMode() {
+		// Teams are plain groups in company mode; only team managers change them,
+		// whatever a member's stored team role says.
+		return companyTeamManager(userID)
+	}
+	return storage.RoleCanManageOrganization(org.ID, org.Role)
+}
+
+var (
+	errCompanyNoDelete = fmt.Errorf("%w: the company can't be deleted", ErrValidation)
+	errCompanyNoLeave  = fmt.Errorf("%w: everyone belongs to the company; ban the account to remove someone", ErrValidation)
+	errCompanyNoInvite = fmt.Errorf("%w: everyone already belongs to the company", ErrValidation)
+)
+
 func denyOrgManagedMembershipEdits(projectID int) error {
+	if storage.IsCompanyMode() {
+		return errCompanyShareInstead
+	}
 	if storage.ProjectIsOrgManaged(projectID) {
 		return fmt.Errorf("%w: membership and roles for this project are locked to the organization", ErrForbidden)
 	}
@@ -65,7 +112,13 @@ func ListOrganizationsForUser(ctx context.Context, userID int) ([]storage.Organi
 	if userID <= 0 {
 		return nil, ErrForbidden
 	}
-	orgs, err := storage.ListOrganizationsForUser(userID)
+	var orgs []storage.Organization
+	var err error
+	if companyTeamManager(userID) {
+		orgs, err = storage.ListAllOrganizationsWithRole(userID)
+	} else {
+		orgs, err = storage.ListOrganizationsForUser(userID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +147,16 @@ func CreateOrganizationForUser(ctx context.Context, userID int, name, descriptio
 	desc, err := normalizeOrgDescription(description)
 	if err != nil {
 		return nil, err
+	}
+	if storage.IsCompanyMode() {
+		// Company teams have no owner or roles: whoever may manage teams creates them.
+		if !companyTeamManager(userID) {
+			return nil, fmt.Errorf("%w: you don't have permission to create teams", ErrForbidden)
+		}
+		return storage.CreateTeam(userID, name, desc)
+	}
+	if !storage.UserHasSitePermission(userID, storage.SitePermOrgsCreate) {
+		return nil, fmt.Errorf("%w: you don't have permission to create organizations", ErrForbidden)
 	}
 	n, err := storage.CountOrganizationsCreatedBy(userID)
 	if err != nil {
@@ -128,7 +191,7 @@ func UpdateOrganizationForUser(ctx context.Context, userID, orgID int, name, des
 	if _, err := storage.UpdateOrganization(orgID, name, description); err != nil {
 		return nil, err
 	}
-	return storage.GetAccessibleOrganization(orgID, userID)
+	return requireOrgAccess(orgID, userID)
 }
 
 // DeleteOrganizationForUser removes an organization (owner only).
@@ -138,7 +201,10 @@ func DeleteOrganizationForUser(ctx context.Context, userID, orgID int) error {
 	if err != nil {
 		return err
 	}
-	if org.Role != storage.RoleOwner {
+	if org.IsCompany {
+		return errCompanyNoDelete
+	}
+	if org.Role != storage.RoleOwner && !companyTeamManager(userID) {
 		return ErrForbidden
 	}
 	return storage.DeleteOrganization(orgID)
@@ -167,6 +233,9 @@ func InviteToOrganization(ctx context.Context, actorUserID, orgID int, rawUserna
 	org, err := requireOrgManage(orgID, actorUserID)
 	if err != nil {
 		return nil, err
+	}
+	if org.IsCompany {
+		return nil, errCompanyNoInvite
 	}
 	name, err := PrepareUsername(rawUsername)
 	if err != nil {
@@ -295,6 +364,9 @@ func ListMyOrganizationInvitesForUser(ctx context.Context, userEmail string) ([]
 // UpdateOrganizationMemberRoleForUser changes a non-owner member's role.
 func UpdateOrganizationMemberRoleForUser(ctx context.Context, actorUserID, orgID, memberUserID int, role string) error {
 	_ = ctx
+	if storage.IsCompanyMode() {
+		return errCompanyRolesAtSite
+	}
 	if _, err := requireOrgManage(orgID, actorUserID); err != nil {
 		return err
 	}
@@ -370,9 +442,13 @@ func OrganizationMemberRoleImpactForUser(ctx context.Context, actorUserID, orgID
 // ListOrganizationProjectRostersForUser returns attached projects and their members.
 func ListOrganizationProjectRostersForUser(ctx context.Context, actorUserID, orgID int) ([]storage.OrgProjectRoster, error) {
 	_ = ctx
-	if _, err := requireOrgAccess(orgID, actorUserID); err != nil {
+	org, err := requireOrgAccess(orgID, actorUserID)
+	if err != nil {
 		return nil, err
 	}
+	// Company projects stay members-only: everyone is in the company, so listing all
+	// of them would show every employee every project.
+	hideInaccessible := org.IsCompany && !CanManageOrganization(org, actorUserID)
 	rosters, err := storage.ListOrganizationProjectRosters(orgID)
 	if err != nil {
 		return nil, err
@@ -380,14 +456,19 @@ func ListOrganizationProjectRostersForUser(ctx context.Context, actorUserID, org
 	if rosters == nil {
 		rosters = []storage.OrgProjectRoster{}
 	}
-	for i := range rosters {
-		proj, err := storage.GetAccessibleProjectByID(rosters[i].ID, actorUserID)
+	visible := rosters[:0]
+	for _, r := range rosters {
+		proj, err := storage.GetAccessibleProjectByID(r.ID, actorUserID)
 		if err != nil {
+			if !hideInaccessible {
+				visible = append(visible, r)
+			}
 			continue
 		}
-		rosters[i].CanManage = storage.RoleCanManageProject(proj.ID, proj.Role)
+		r.CanManage = storage.RoleCanManageProject(proj.ID, proj.Role)
+		visible = append(visible, r)
 	}
-	return rosters, nil
+	return visible, nil
 }
 
 // SyncOrganizationProjectsForUser copies current org members onto copy/lock projects.
@@ -413,8 +494,12 @@ func RemoveOrganizationMemberForUser(ctx context.Context, actorUserID, orgID, me
 	if err != nil {
 		return err
 	}
+	if org.IsCompany {
+		return errCompanyNoLeave
+	}
 	selfLeave := actorUserID == memberUserID
-	if !selfLeave && !storage.RoleCanManageOrganization(orgID, org.Role) {
+	// Company teams are assigned by team managers; nobody leaves one on their own.
+	if (!selfLeave || storage.IsCompanyMode()) && !CanManageOrganization(org, actorUserID) {
 		return ErrForbidden
 	}
 	targetRole, err := storage.GetOrganizationRole(orgID, memberUserID)
@@ -438,6 +523,10 @@ func ListOrganizationRolesForUser(ctx context.Context, userID, orgID int) ([]sto
 	_ = ctx
 	if _, err := requireOrgAccess(orgID, userID); err != nil {
 		return nil, nil, err
+	}
+	if storage.IsCompanyMode() {
+		// Company teams have no roles of their own.
+		return []storage.ProjectRoleDef{}, []storage.ProjectPermInfo{}, nil
 	}
 	site, err := storage.ListSiteProjectRoles()
 	if err != nil {
@@ -502,6 +591,9 @@ func isSiteRoleDef(d *storage.ProjectRoleDef) bool {
 // CreateOrganizationRoleForUser adds an org-only role, optionally copied from another role.
 func CreateOrganizationRoleForUser(ctx context.Context, userID, orgID int, in CreateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
 	_ = ctx
+	if storage.IsCompanyMode() {
+		return nil, errCompanyRolesAtSite
+	}
 	if _, err := requireOrgManage(orgID, userID); err != nil {
 		return nil, err
 	}
@@ -557,6 +649,9 @@ func CreateOrganizationRoleForUser(ctx context.Context, userID, orgID int, in Cr
 // override when roleID is a site default (except owner).
 func UpdateOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID int, in UpdateSiteProjectRoleInput) (*storage.ProjectRoleDef, error) {
 	_ = ctx
+	if storage.IsCompanyMode() {
+		return nil, errCompanyRolesAtSite
+	}
 	if _, err := requireOrgManage(orgID, userID); err != nil {
 		return nil, err
 	}
@@ -704,6 +799,9 @@ func markOrgRoleSiteOverride(d *storage.ProjectRoleDef) {
 // DeleteOrganizationRoleForUser removes an unused org-created role.
 func DeleteOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID int) error {
 	_ = ctx
+	if storage.IsCompanyMode() {
+		return errCompanyRolesAtSite
+	}
 	if _, err := requireOrgManage(orgID, userID); err != nil {
 		return err
 	}
@@ -737,6 +835,9 @@ func DeleteOrganizationRoleForUser(ctx context.Context, userID, orgID, roleID in
 // ReorderOrganizationRolesForUser persists drag-drop order of org custom roles.
 func ReorderOrganizationRolesForUser(ctx context.Context, userID, orgID int, roleIDs []int) error {
 	_ = ctx
+	if storage.IsCompanyMode() {
+		return errCompanyRolesAtSite
+	}
 	if _, err := requireOrgManage(orgID, userID); err != nil {
 		return err
 	}

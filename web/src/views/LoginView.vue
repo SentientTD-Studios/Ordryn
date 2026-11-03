@@ -20,7 +20,7 @@ const busy = ref(false)
 const error = ref('')
 const { login, verifyMFA } = useAuth()
 const { push } = useToast()
-const { enableJoinRequests } = useSite()
+const { enableJoinRequests, isCompanyMode } = useSite()
 const router = useRouter()
 const route = useRoute()
 
@@ -129,7 +129,10 @@ function backToPassword() {
               </template>
             </div>
             <div class="card-footer d-flex justify-content-between align-items-center">
-              <span v-if="!mfaRequired" class="small">
+              <span v-if="!mfaRequired && isCompanyMode" class="small text-muted">
+                Need an account? Ask your manager.
+              </span>
+              <span v-else-if="!mfaRequired" class="small">
                 <RouterLink to="/register">Create an account</RouterLink>
                 <template v-if="enableJoinRequests">
                   ·

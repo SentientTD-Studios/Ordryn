@@ -3,12 +3,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { CommentAuditList } from '@/api/types'
 import { APIError } from '@/api/types'
+import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import AdminSubnav from '@/components/AdminSubnav.vue'
 import RichBody from '@/components/RichBody.vue'
 
 const toast = useToast()
+// Audit viewers can read the history; restoring changes a live comment, so it stays with admins.
+const canRestore = computed(() => useAuth().hasPermission('admin'))
 const { askConfirm } = useConfirm()
 const loading = ref(false)
 const restoringId = ref<number | null>(null)
@@ -171,7 +174,7 @@ onMounted(load)
               </td>
               <td class="text-nowrap">
                 <button
-                  v-if="row.body.trim()"
+                  v-if="canRestore && row.body.trim()"
                   type="button"
                   class="btn btn-sm btn-outline-secondary"
                   :disabled="restoringId === row.id"
