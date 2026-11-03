@@ -20,6 +20,7 @@ type apiOrganizationJSON struct {
 	RoleName     string   `json:"role_name,omitempty"`
 	Permissions  []string `json:"permissions,omitempty"`
 	CanManage    bool     `json:"can_manage"`
+	IsCompany    bool     `json:"is_company"`
 	MemberCount  int      `json:"member_count"`
 	ProjectCount int      `json:"project_count"`
 	CreatedAt    string   `json:"created_at"`
@@ -40,6 +41,7 @@ type apiOrgMemberJSON struct {
 	UserID    int    `json:"user_id"`
 	Email     string `json:"email"`
 	UserName  string `json:"user_name"`
+	FullName  string `json:"full_name,omitempty"`
 	Role      string `json:"role"`
 	RoleName  string `json:"role_name,omitempty"`
 	CreatedAt string `json:"created_at"`
@@ -58,7 +60,7 @@ type apiOrganizationInviteJSON struct {
 	InviterUserName  string `json:"inviter_user_name,omitempty"`
 }
 
-func organizationToJSON(o storage.Organization) apiOrganizationJSON {
+func organizationToJSON(o storage.Organization, viewerID int) apiOrganizationJSON {
 	perms := storage.RolePermissionList(0, o.Role)
 	if def := storage.ResolveOrgRoleDef(o.ID, o.Role); def != nil && o.Role != storage.RoleOwner {
 		perms = def.Permissions
@@ -74,7 +76,8 @@ func organizationToJSON(o storage.Organization) apiOrganizationJSON {
 		Role:         o.Role,
 		RoleName:     storage.OrgRoleDisplayName(o.ID, o.Role),
 		Permissions:  perms,
-		CanManage:    storage.RoleCanManageOrganization(o.ID, o.Role),
+		CanManage:    domain.CanManageOrganization(&o, viewerID),
+		IsCompany:    o.IsCompany,
 		MemberCount:  o.MemberCount,
 		ProjectCount: o.ProjectCount,
 		CreatedAt:    formatRFC3339(o.CreatedAt),
@@ -115,7 +118,7 @@ func APIV1OrganizationsRouter(w http.ResponseWriter, r *http.Request) {
 			}
 			out := make([]apiOrganizationJSON, 0, len(orgs))
 			for _, o := range orgs {
-				out = append(out, organizationToJSON(o))
+				out = append(out, organizationToJSON(o, userID))
 			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(out)
@@ -132,7 +135,7 @@ func APIV1OrganizationsRouter(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(organizationToJSON(*created))
+			_ = json.NewEncoder(w).Encode(organizationToJSON(*created, userID))
 		default:
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		}
@@ -154,7 +157,7 @@ func APIV1OrganizationsRouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_ = json.NewEncoder(w).Encode(organizationToJSON(*org))
+			_ = json.NewEncoder(w).Encode(organizationToJSON(*org, userID))
 		case http.MethodPatch:
 			var req apiOrganizationPatchRequest
 			if err := decodeJSONBody(r, &req); err != nil {
@@ -167,7 +170,7 @@ func APIV1OrganizationsRouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_ = json.NewEncoder(w).Encode(organizationToJSON(*updated))
+			_ = json.NewEncoder(w).Encode(organizationToJSON(*updated, userID))
 		case http.MethodDelete:
 			if err := domain.DeleteOrganizationForUser(r.Context(), userID, orgID); err != nil {
 				writeProjectRoleDomainError(w, err)
@@ -209,6 +212,7 @@ func handleOrganizationMembers(w http.ResponseWriter, r *http.Request, userID, o
 					UserID:    m.UserID,
 					Email:     m.Email,
 					UserName:  m.UserName,
+					FullName:  m.FullName,
 					Role:      m.Role,
 					RoleName:  storage.OrgRoleDisplayName(orgID, m.Role),
 					CreatedAt: formatRFC3339(m.CreatedAt),
@@ -220,6 +224,10 @@ func handleOrganizationMembers(w http.ResponseWriter, r *http.Request, userID, o
 			var req apiInviteCreateRequest
 			if err := decodeJSONBody(r, &req); err != nil {
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+				return
+			}
+			if storage.IsCompanyMode() {
+				apiV1AddTeamMember(w, r, userID, orgID, req.Username)
 				return
 			}
 			inv, err := domain.InviteToOrganization(r.Context(), userID, orgID, req.Username, req.Role)
@@ -338,6 +346,7 @@ func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, 
 		UserID    int    `json:"user_id"`
 		Email     string `json:"email"`
 		UserName  string `json:"user_name"`
+		FullName  string `json:"full_name,omitempty"`
 		Role      string `json:"role"`
 		RoleName  string `json:"role_name,omitempty"`
 		Inherited bool   `json:"inherited,omitempty"`
@@ -359,6 +368,7 @@ func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, 
 				UserID:    m.UserID,
 				Email:     m.Email,
 				UserName:  m.UserName,
+				FullName:  m.FullName,
 				Role:      m.Role,
 				RoleName:  storage.RoleDisplayName(roster.ID, m.Role),
 				Inherited: m.Inherited,
@@ -376,6 +386,26 @@ func handleOrganizationProjects(w http.ResponseWriter, r *http.Request, userID, 
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// apiV1AddTeamMember puts someone straight onto a company-mode team.
+func apiV1AddTeamMember(w http.ResponseWriter, r *http.Request, userID, orgID int, username string) {
+	m, err := domain.AddTeamMemberForUser(r.Context(), userID, orgID, username)
+	if err != nil {
+		writeProjectRoleDomainError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(apiOrgMemberJSON{
+		UserID:    m.UserID,
+		Email:     m.Email,
+		UserName:  m.UserName,
+		FullName:  m.FullName,
+		Role:      m.Role,
+		RoleName:  "Member",
+		CreatedAt: formatRFC3339(m.CreatedAt),
+	})
 }
 
 func handleOrganizationInvites(w http.ResponseWriter, r *http.Request, userID, orgID int, rest []string) {
@@ -397,6 +427,11 @@ func handleOrganizationInvites(w http.ResponseWriter, r *http.Request, userID, o
 			var req apiInviteCreateRequest
 			if err := decodeJSONBody(r, &req); err != nil {
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+				return
+			}
+			if storage.IsCompanyMode() {
+				// Company teams add people directly; there is nothing to accept.
+				apiV1AddTeamMember(w, r, userID, orgID, req.Username)
 				return
 			}
 			inv, err := domain.InviteToOrganization(r.Context(), userID, orgID, req.Username, req.Role)

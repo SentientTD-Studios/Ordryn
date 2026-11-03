@@ -80,7 +80,7 @@ func GetEventsForTask(taskID, userID int, limit int) ([]TaskEvent, error) {
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT te.id, te.task_id, te.user_id, te.event_type, COALESCE(te.metadata, '{}'), te.created_at,
-		       COALESCE(u.user_name, ''), COALESCE(u.email, '')
+		       COALESCE(NULLIF(u.full_name, ''), u.user_name, ''), COALESCE(u.email, '')
 		FROM task_events te
 		JOIN tasks t ON t.id = te.task_id
 		LEFT JOIN users u ON u.id = te.user_id

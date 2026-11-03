@@ -224,7 +224,7 @@ func ListPendingNotificationEmails(mode string, minAge, maxAge time.Duration, li
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT n.id, n.type, n.title, n.body, COALESCE(n.task_id, 0),
-			COALESCE(pr.name, ''), COALESCE(NULLIF(au.user_name, ''), au.email, ''), n.created_at,
+			COALESCE(pr.name, ''), COALESCE(NULLIF(au.full_name, ''), NULLIF(au.user_name, ''), au.email, ''), n.created_at,
 			u.id, u.email, COALESCE(u.user_name, ''), COALESCE(NULLIF(u.timezone, ''), 'UTC'),
 			p.digest_hour, p.last_instant_at, p.last_digest_at
 		FROM user_notifications n

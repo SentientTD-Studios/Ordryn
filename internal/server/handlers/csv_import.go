@@ -9,9 +9,11 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -136,6 +138,14 @@ func apiV1ImportConfirm(w http.ResponseWriter, r *http.Request) {
 	cols := stagingColsToMap(staging.Cols)
 	imported, skipped, importErr := importTasksFromCSV(userID, cols, staging.Rows)
 	_ = clearImportStaging(r, w)
+	if errors.Is(importErr, errImportProjectCreateForbidden) || errors.Is(importErr, errImportProjectReadOnly) {
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden", importErr.Error())
+		return
+	}
+	if errors.Is(importErr, errImportProjectRequired) {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", importErr.Error())
+		return
+	}
 	if importErr != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", importErr.Error())
 		return
@@ -433,6 +443,65 @@ func parseBoolCell(val string) bool {
 	}
 }
 
+// errImportProjectRequired stops a company-mode import with a row that names no project.
+var errImportProjectRequired = errors.New("every task on this site needs a project; map a project column and fill it in for every row")
+
+// errImportProjectReadOnly stops a company-mode import naming a project the user can
+// open but can't add tasks to. Creating a same-named project instead would only confuse.
+var errImportProjectReadOnly = errors.New("you can't add tasks to a project the import names")
+
+// findImportProject resolves a project name from an import. On a multi-user site it
+// matches the user's own projects. On a company site, where projects are shared rather
+// than owned, it matches any project the user can open: one they can add tasks to wins,
+// and a match they can only view stops the import.
+func findImportProject(ctx context.Context, tx pgx.Tx, userID int, name string, company bool) (int, bool, error) {
+	if !company {
+		var id int
+		err := tx.QueryRow(ctx, `SELECT id FROM projects WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND COALESCE(archived, false) = false ORDER BY id ASC LIMIT 1`, userID, name).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, nil
+		}
+		return id, err == nil, err
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT p.id, pm.role FROM projects p
+		JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
+		WHERE LOWER(p.name) = LOWER($2) AND COALESCE(p.archived, false) = false
+		ORDER BY p.user_id = $1 DESC, pm.implicit_admin, p.id`, userID, name)
+	if err != nil {
+		return 0, false, err
+	}
+	type match struct {
+		id   int
+		role string
+	}
+	var matches []match
+	for rows.Next() {
+		var m match
+		if err := rows.Scan(&m.id, &m.role); err != nil {
+			rows.Close()
+			return 0, false, err
+		}
+		matches = append(matches, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, false, err
+	}
+	for _, m := range matches {
+		if storage.HasProjectPerm(m.id, m.role, storage.PermTasksCreate) {
+			return m.id, true, nil
+		}
+	}
+	if len(matches) > 0 {
+		return 0, false, fmt.Errorf("%w: %q", errImportProjectReadOnly, name)
+	}
+	return 0, false, nil
+}
+
+// errImportProjectCreateForbidden stops an import that would create a project the user may not create.
+var errImportProjectCreateForbidden = errors.New("you don't have permission to create projects; the import names a project you don't have")
+
 func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (imported, skipped int, err error) {
 	pool, err := storage.OpenDatabase()
 	if err != nil {
@@ -461,7 +530,9 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 	newProjects := make([]int, 0)
 
 	projectCache := make(map[string]int)
+	canCreateTags := make(map[int]bool)
 	maxDescription := domain.MaxDescriptionLength()
+	company := storage.IsCompanyMode()
 
 	for _, row := range rows {
 		title := cellValue(row, cols.title)
@@ -499,13 +570,26 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 
 		var projectID *int
 		projectName := cellValue(row, cols.project)
+		if projectName == "" && company {
+			return imported, skipped, errImportProjectRequired
+		}
 		if projectName != "" {
 			pid, ok := projectCache[projectName]
 			if !ok {
-				var foundID int
-				err := tx.QueryRow(ctx, `SELECT id FROM projects WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND COALESCE(archived, false) = false ORDER BY id ASC LIMIT 1`, userID, projectName).Scan(&foundID)
+				foundID, found, err := findImportProject(ctx, tx, userID, projectName, company)
 				if err != nil {
-					err = tx.QueryRow(ctx, "INSERT INTO projects (user_id, name) VALUES ($1, $2) RETURNING id", userID, projectName).Scan(&foundID)
+					return imported, skipped, err
+				}
+				if !found {
+					if !storage.UserHasSitePermission(userID, storage.SitePermProjectsCreate) {
+						return imported, skipped, fmt.Errorf("%w: %q", errImportProjectCreateForbidden, projectName)
+					}
+					// In company mode new projects belong to the company, members-only like any other.
+					err = tx.QueryRow(ctx, `
+						INSERT INTO projects (user_id, name, organization_id, org_import)
+						SELECT $1, $2, c.id, CASE WHEN c.id IS NULL THEN NULL ELSE $3 END
+						FROM (SELECT (SELECT id FROM organizations WHERE is_company) AS id) c
+						RETURNING id`, userID, projectName, storage.OrgImportSelect).Scan(&foundID)
 					if err != nil {
 						return imported, skipped, err
 					}
@@ -545,12 +629,23 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 		tagCSV := cellValue(row, cols.tags)
 		tagged := false
 		if tagCSV != "" {
-			tagIDs, tagErr := resolveImportTagIDs(userID, projectID, tagCSV)
+			canCreate, ok := canCreateTags[pidOrZero(projectID)]
+			if !ok {
+				canCreate = true
+				// Projects this import created are the user's own; others need Manage tags.
+				if projectID != nil && !slices.Contains(newProjects, *projectID) {
+					if canCreate, err = storage.UserCanManageTagNamespace(userID, projectID); err != nil {
+						return imported, skipped, err
+					}
+				}
+				canCreateTags[pidOrZero(projectID)] = canCreate
+			}
+			tagIDs, tagErr := resolveImportTagIDs(ctx, tx, userID, projectID, tagCSV, canCreate)
 			if tagErr != nil {
 				return imported, skipped, tagErr
 			}
 			if len(tagIDs) > 0 {
-				if err := setTaskTagsInTx(ctx, tx, taskID, userID, projectID, tagIDs); err != nil {
+				if err := setTaskTagsInTx(ctx, tx, taskID, tagIDs); err != nil {
 					return imported, skipped, err
 				}
 				tagged = true
@@ -593,7 +688,11 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 	return imported, skipped, nil
 }
 
-func resolveImportTagIDs(userID int, projectID *int, tagsCSV string) ([]int, error) {
+// resolveImportTagIDs finds or creates a row's tags inside the import's transaction,
+// which can see a project the import just created. canCreate is false where the user
+// can add tasks but not manage tags (a project shared with them): existing tags are
+// used and new names skipped.
+func resolveImportTagIDs(ctx context.Context, tx pgx.Tx, userID int, projectID *int, tagsCSV string, canCreate bool) ([]int, error) {
 	parts := strings.Split(tagsCSV, ";")
 	if len(parts) == 1 {
 		parts = strings.Split(tagsCSV, ",")
@@ -605,9 +704,12 @@ func resolveImportTagIDs(userID int, projectID *int, tagsCSV string) ([]int, err
 		if name == "" || storage.IsSystemTagName(name) {
 			continue
 		}
-		t, err := storage.GetOrCreateTagByName(userID, projectID, name)
+		t, err := storage.FindOrCreateTagInTx(ctx, tx, userID, projectID, name, canCreate)
 		if err != nil {
 			return nil, err
+		}
+		if t == nil {
+			continue
 		}
 		if !seen[t.ID] {
 			seen[t.ID] = true
@@ -620,25 +722,23 @@ func resolveImportTagIDs(userID int, projectID *int, tagsCSV string) ([]int, err
 	return ids, nil
 }
 
-func setTaskTagsInTx(ctx context.Context, tx pgx.Tx, taskID, userID int, projectID *int, tagIDs []int) error {
+// setTaskTagsInTx replaces a task's tags. The ids come from resolveImportTagIDs, which
+// only returns tags in the task's own namespace.
+func setTaskTagsInTx(ctx context.Context, tx pgx.Tx, taskID int, tagIDs []int) error {
 	if _, err := tx.Exec(ctx, "DELETE FROM task_tags WHERE task_id = $1", taskID); err != nil {
 		return err
 	}
 	for _, tagID := range tagIDs {
-		tag, err := storage.GetTag(tagID)
-		if err != nil {
-			return fmt.Errorf("invalid tag")
-		}
-		if projectID == nil {
-			if tag.ProjectID != nil || tag.UserID != userID {
-				return fmt.Errorf("invalid tag")
-			}
-		} else if tag.ProjectID == nil || *tag.ProjectID != *projectID {
-			return fmt.Errorf("invalid tag")
-		}
 		if _, err := tx.Exec(ctx, "INSERT INTO task_tags (task_id, tag_id) VALUES ($1, $2)", taskID, tagID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func pidOrZero(projectID *int) int {
+	if projectID == nil {
+		return 0
+	}
+	return *projectID
 }

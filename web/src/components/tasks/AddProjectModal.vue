@@ -5,6 +5,7 @@ import type { Organization, OrgImportMember, OrgImportMode } from '@/api/types'
 import { APIError } from '@/api/types'
 import OrgImportFields from '@/components/OrgImportFields.vue'
 import { useToast } from '@/composables/useToast'
+import { useSite } from '@/composables/useSite'
 
 const props = defineProps<{
   open: boolean
@@ -17,6 +18,8 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+// Company projects are shared with teams after they are created.
+const { isCompanyMode } = useSite()
 const name = ref('')
 const description = ref('')
 const orgId = ref(0)
@@ -92,7 +95,7 @@ async function create() {
               placeholder="Optional details about this project"
             />
           </div>
-          <div v-if="manageableOrgs.length" class="mb-3">
+          <div v-if="manageableOrgs.length && !isCompanyMode" class="mb-3">
             <OrgImportFields
               v-model:organization-id="orgId"
               v-model:import-mode="importMode"

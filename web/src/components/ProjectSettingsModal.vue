@@ -20,6 +20,7 @@ import ProjectAutomationPanel from '@/components/ProjectAutomationPanel.vue'
 import OrgImportFields from '@/components/OrgImportFields.vue'
 import ProjectMemberRoster from '@/components/ProjectMemberRoster.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
+import { useSite } from '@/composables/useSite'
 import { canManageProject } from '@/utils/projectPerms'
 
 type SettingsTab =
@@ -65,7 +66,9 @@ const tab = ref<SettingsTab>('details')
 const isOwner = computed(() => (props.project?.role || 'owner') === 'owner')
 const canManage = computed(() => canManageProject(props.project))
 const isKanban = computed(() => (props.project?.workflow_mode || 'classic') === 'kanban')
-const orgLinked = computed(() => !!props.project?.organization_id)
+// Company mode has no per-project roles or team imports: access is shared on the Sharing tab.
+const { isCompanyMode } = useSite()
+const orgLinked = computed(() => !isCompanyMode.value && !!props.project?.organization_id)
 const orgManaged = computed(() => orgLinked.value && !!props.project?.org_managed)
 const manageableOrgs = computed(() => orgs.value.filter((o) => o.can_manage))
 const attachDisabled = computed(() => {
@@ -87,7 +90,7 @@ const tabs = computed(() => {
   }
   items.push({ id: 'sharing', label: 'Sharing' })
   if (canManage.value) items.push({ id: 'feedback', label: 'Feedback' })
-  if (canManage.value) items.push({ id: 'roles', label: 'Roles' })
+  if (canManage.value && !isCompanyMode.value) items.push({ id: 'roles', label: 'Roles' })
   return items
 })
 
@@ -362,7 +365,7 @@ async function archiveOrRestore() {
                 @remove="onProjectMemberRemove"
               />
             </div>
-            <div v-else-if="isOwner && manageableOrgs.length" class="mb-3">
+            <div v-else-if="isOwner && manageableOrgs.length && !isCompanyMode" class="mb-3">
               <OrgImportFields
                 :orgs="manageableOrgs"
                 v-model:organization-id="attachOrgId"

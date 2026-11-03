@@ -96,6 +96,14 @@ var systemUser struct {
 	resolved bool
 }
 
+func resetSystemUserCache() {
+	systemUser.Lock()
+	defer systemUser.Unlock()
+	systemUser.id = 0
+	systemUser.resolved = false
+	systemUser.checked = time.Time{}
+}
+
 // SystemUserID returns the automation account's user id, or 0 before it exists.
 func SystemUserID() int {
 	systemUser.Lock()

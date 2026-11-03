@@ -41,6 +41,16 @@ type adminSettingsJSON struct {
 	AttachmentsEnabled        bool  `json:"attachments_enabled"`
 	AttachmentMaxBytes        int64 `json:"attachment_max_bytes"`
 
+	// Stored on the member site role, not site_settings; admins can always create both.
+	MembersCanCreateProjects      bool `json:"members_can_create_projects"`
+	MembersCanCreateOrganizations bool `json:"members_can_create_organizations"`
+
+	// SiteMode can change only while SiteModeLocked is false (no projects or organizations yet).
+	SiteMode       string `json:"site_mode"`
+	SiteModeLocked bool   `json:"site_mode_locked"`
+	// CompanyHome is Markdown shown in company mode to people with no projects yet.
+	CompanyHome string `json:"company_home"`
+
 	EmailProvider           string `json:"email_provider"`
 	EmailFromAddress        string `json:"email_from_address"`
 	EmailFromName           string `json:"email_from_name"`
@@ -93,6 +103,12 @@ type adminSettingsPatch struct {
 	AttachmentsEnabled        *bool  `json:"attachments_enabled"`
 	AttachmentMaxBytes        *int64 `json:"attachment_max_bytes"`
 
+	MembersCanCreateProjects      *bool `json:"members_can_create_projects"`
+	MembersCanCreateOrganizations *bool `json:"members_can_create_organizations"`
+
+	SiteMode    *string `json:"site_mode"`
+	CompanyHome *string `json:"company_home"`
+
 	EmailProvider           *string `json:"email_provider"`
 	EmailFromAddress        *string `json:"email_from_address"`
 	EmailFromName           *string `json:"email_from_name"`
@@ -140,7 +156,12 @@ func apiV1GetAdminSettings(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load settings.")
 		return
 	}
-	writeAdminSettings(w, s)
+	perms, err := loadAdminSettingsExtras()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load settings.")
+		return
+	}
+	writeAdminSettings(w, s, perms)
 }
 
 func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
@@ -149,10 +170,23 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load settings.")
 		return
 	}
+	currentPerms, err := loadAdminSettingsExtras()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load settings.")
+		return
+	}
 	var req adminSettingsPatch
 	if err := decodeJSONBody(r, &req); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
+	}
+	// Site settings managers aren't admins: the site mode and what the User role may
+	// create stay with admins.
+	if req.SiteMode != nil || req.MembersCanCreateProjects != nil || req.MembersCanCreateOrganizations != nil {
+		if actorID, ok := apiUserFromRequest(r); !ok || !storage.UserHasSitePermission(actorID, storage.SitePermAdmin) {
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only admins can change the site mode or what new accounts can create.")
+			return
+		}
 	}
 	next := *current
 	if req.SiteName != nil {
@@ -376,9 +410,41 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", errMsg)
 		return
 	}
+	if req.CompanyHome != nil && len([]rune(*req.CompanyHome)) > storage.MaxCompanyHomeLen {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("company_home must be %d characters or less.", storage.MaxCompanyHomeLen))
+		return
+	}
+	if req.SiteMode != nil {
+		mode := storage.NormalizeSiteMode(*req.SiteMode)
+		if mode == "" {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "site_mode must be multi or company.")
+			return
+		}
+		// Applied first so a locked mode refuses the whole request instead of saving half of it.
+		if err := storage.ChangeSiteMode(mode); err != nil {
+			if errors.Is(err, storage.ErrSiteModeLocked) {
+				utils.APIJSONError(w, http.StatusConflict, "conflict",
+					"The site mode can't change once projects or organizations exist.")
+				return
+			}
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
+			return
+		}
+	}
 	if err := storage.UpsertSiteSettings(next); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
 		return
+	}
+	if err := saveMemberCreatePerms(req); err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
+		return
+	}
+	if req.CompanyHome != nil {
+		if err := storage.SetCompanyHome(strings.TrimSpace(*req.CompanyHome)); err != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
+			return
+		}
 	}
 	config.Cfg.SiteName = next.SiteName
 	config.Cfg.DefaultTimezone = next.DefaultTimezone
@@ -387,24 +453,29 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 	if saved == nil {
 		saved = &next
 	}
-	if changes := siteSettingsAuditDiff(current, saved); len(changes) > 0 {
+	savedPerms, err := loadAdminSettingsExtras()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load settings.")
+		return
+	}
+	if changes := siteSettingsAuditDiff(current, saved, currentPerms, savedPerms); len(changes) > 0 {
 		logAdminEvent(r, "site_settings_updated", "site_settings", 0, "Site settings",
 			map[string]interface{}{"changes": changes})
 	}
-	writeAdminSettings(w, saved)
+	writeAdminSettings(w, saved, savedPerms)
 }
 
 // siteSettingsAuditDiff returns {field: {from, to}} for changed settings. Secret
 // values are never recorded; a rotated secret shows only {"changed": true}.
-func siteSettingsAuditDiff(before, after *storage.SiteSettings) map[string]interface{} {
-	toMap := func(s *storage.SiteSettings) map[string]interface{} {
+func siteSettingsAuditDiff(before, after *storage.SiteSettings, beforePerms, afterPerms adminSettingsExtras) map[string]interface{} {
+	toMap := func(s *storage.SiteSettings, p adminSettingsExtras) map[string]interface{} {
 		m := map[string]interface{}{}
-		if b, err := json.Marshal(adminSettingsView(s)); err == nil {
+		if b, err := json.Marshal(adminSettingsView(s, p)); err == nil {
 			_ = json.Unmarshal(b, &m)
 		}
 		return m
 	}
-	from, to := toMap(before), toMap(after)
+	from, to := toMap(before, beforePerms), toMap(after, afterPerms)
 	changes := map[string]interface{}{}
 	for k, v := range to {
 		if strings.HasSuffix(k, "_set") {
@@ -501,59 +572,106 @@ func taskTextLengthFromPatch(w http.ResponseWriter, field string, n int) (int, b
 	return n, true
 }
 
-func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(adminSettingsView(s))
+// adminSettingsExtras holds admin settings that live outside site_settings' upserted
+// fields: create permissions on the member site role, and whether the site mode is locked.
+type adminSettingsExtras struct {
+	Projects       bool
+	Organizations  bool
+	SiteModeLocked bool
+	CompanyHome    string
 }
 
-func adminSettingsView(s *storage.SiteSettings) adminSettingsJSON {
+func loadAdminSettingsExtras() (adminSettingsExtras, error) {
+	var p adminSettingsExtras
+	var err error
+	if p.Projects, err = storage.RoleHasPermission(storage.MemberRoleName, storage.SitePermProjectsCreate); err != nil {
+		return p, err
+	}
+	if p.Organizations, err = storage.RoleHasPermission(storage.MemberRoleName, storage.SitePermOrgsCreate); err != nil {
+		return p, err
+	}
+	if p.SiteModeLocked, err = storage.SiteModeLocked(); err != nil {
+		return p, err
+	}
+	if p.CompanyHome, err = storage.GetCompanyHome(); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+func saveMemberCreatePerms(req adminSettingsPatch) error {
+	if req.MembersCanCreateProjects != nil {
+		if err := storage.SetRolePermission(storage.MemberRoleName, storage.SitePermProjectsCreate, *req.MembersCanCreateProjects); err != nil {
+			return err
+		}
+	}
+	// Nobody creates organizations in company mode; teams come from Manage teams.
+	if req.MembersCanCreateOrganizations != nil && !storage.IsCompanyMode() {
+		if err := storage.SetRolePermission(storage.MemberRoleName, storage.SitePermOrgsCreate, *req.MembersCanCreateOrganizations); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeAdminSettings(w http.ResponseWriter, s *storage.SiteSettings, perms adminSettingsExtras) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(adminSettingsView(s, perms))
+}
+
+func adminSettingsView(s *storage.SiteSettings, perms adminSettingsExtras) adminSettingsJSON {
 	return adminSettingsJSON{
-		SiteName:                   s.SiteName,
-		DefaultTimezone:            s.DefaultTimezone,
-		ShowChangelog:              s.ShowChangelog,
-		SiteVersion:                version.Version, // baked into binary; not from DB
-		EnableRegistration:         s.EnableRegistration,
-		InviteOnly:                 s.InviteOnly,
-		EnableJoinRequests:         s.EnableJoinRequests,
-		MetaDescription:            s.MetaDescription,
-		EnableGlobalAnnouncement:   s.EnableGlobalAnnouncement,
-		GlobalAnnouncementText:     s.GlobalAnnouncementText,
-		EnableAPI:                  s.EnableAPI,
-		EnableInboundWebhooks:      s.EnableInboundWebhooks,
-		AllowUserInvites:           s.AllowUserInvites,
-		UserInviteLimit:            s.UserInviteLimit,
-		InviteExpirationDays:       s.InviteExpirationDays,
-		MaxDescriptionLength:       storage.ClampTaskTextLength(s.MaxDescriptionLength),
-		MaxCommentLength:           storage.ClampTaskTextLength(s.MaxCommentLength),
-		NotificationEmailsEnabled:  s.NotificationEmailsEnabled,
-		TrashRetentionDays:         storage.ClampTrashRetentionDays(s.TrashRetentionDays),
-		AttachmentsEnabled:         s.AttachmentsEnabled,
-		AttachmentMaxBytes:         storage.ClampAttachmentMaxBytes(s.AttachmentMaxBytes),
-		EmailProvider:              s.Email.Provider,
-		EmailFromAddress:           s.Email.FromAddress,
-		EmailFromName:              s.Email.FromName,
-		EmailMailgunDomain:         s.Email.MailgunDomain,
-		EmailMailgunAPIKeySet:      s.Email.MailgunAPIKeyEnc != "",
-		EmailSMTPHost:              s.Email.SMTPHost,
-		EmailSMTPPort:              s.Email.SMTPPort,
-		EmailSMTPUsername:          s.Email.SMTPUsername,
-		EmailSMTPPasswordSet:       s.Email.SMTPPasswordEnc != "",
-		EmailSMTPTLS:               s.Email.SMTPTLS,
-		EmailAuditRetentionDays:    storage.ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays),
-		AuditRetentionDays:         storage.ClampAuditRetentionDays(s.AuditRetentionDays),
-		GitHubOAuthClientID:        s.GitHubOAuthClientID,
-		GitHubOAuthClientSecretSet: s.GitHubOAuthClientSecretEnc != "",
-		GitHubOAuthConfigured:      strings.TrimSpace(s.GitHubOAuthClientID) != "" && s.GitHubOAuthClientSecretEnc != "",
-		ImageHostingProvider:       imagehost.NormalizeProvider(s.Image.Provider),
-		ImageMaxBytes:              imagehost.ClampMaxBytes(s.Image.MaxBytes),
-		ImageS3Endpoint:            s.Image.S3Endpoint,
-		ImageS3Region:              s.Image.S3Region,
-		ImageS3Bucket:              s.Image.S3Bucket,
-		ImageS3AccessKey:           s.Image.S3AccessKey,
-		ImageS3SecretKeySet:        s.ImageS3SecretKeyEnc != "",
-		ImageS3PublicURL:           s.Image.S3PublicURL,
-		ImageS3ForcePathStyle:      s.Image.S3ForcePathStyle,
-		ImageLocalPath:             s.Image.LocalPath,
+		SiteName:                      s.SiteName,
+		DefaultTimezone:               s.DefaultTimezone,
+		ShowChangelog:                 s.ShowChangelog,
+		SiteVersion:                   version.Version, // baked into binary; not from DB
+		EnableRegistration:            s.EnableRegistration,
+		InviteOnly:                    s.InviteOnly,
+		EnableJoinRequests:            s.EnableJoinRequests,
+		MetaDescription:               s.MetaDescription,
+		EnableGlobalAnnouncement:      s.EnableGlobalAnnouncement,
+		GlobalAnnouncementText:        s.GlobalAnnouncementText,
+		EnableAPI:                     s.EnableAPI,
+		EnableInboundWebhooks:         s.EnableInboundWebhooks,
+		AllowUserInvites:              s.AllowUserInvites,
+		UserInviteLimit:               s.UserInviteLimit,
+		InviteExpirationDays:          s.InviteExpirationDays,
+		MaxDescriptionLength:          storage.ClampTaskTextLength(s.MaxDescriptionLength),
+		MaxCommentLength:              storage.ClampTaskTextLength(s.MaxCommentLength),
+		NotificationEmailsEnabled:     s.NotificationEmailsEnabled,
+		TrashRetentionDays:            storage.ClampTrashRetentionDays(s.TrashRetentionDays),
+		AttachmentsEnabled:            s.AttachmentsEnabled,
+		AttachmentMaxBytes:            storage.ClampAttachmentMaxBytes(s.AttachmentMaxBytes),
+		MembersCanCreateProjects:      perms.Projects,
+		MembersCanCreateOrganizations: perms.Organizations,
+		SiteMode:                      s.SiteMode,
+		SiteModeLocked:                perms.SiteModeLocked,
+		CompanyHome:                   perms.CompanyHome,
+		EmailProvider:                 s.Email.Provider,
+		EmailFromAddress:              s.Email.FromAddress,
+		EmailFromName:                 s.Email.FromName,
+		EmailMailgunDomain:            s.Email.MailgunDomain,
+		EmailMailgunAPIKeySet:         s.Email.MailgunAPIKeyEnc != "",
+		EmailSMTPHost:                 s.Email.SMTPHost,
+		EmailSMTPPort:                 s.Email.SMTPPort,
+		EmailSMTPUsername:             s.Email.SMTPUsername,
+		EmailSMTPPasswordSet:          s.Email.SMTPPasswordEnc != "",
+		EmailSMTPTLS:                  s.Email.SMTPTLS,
+		EmailAuditRetentionDays:       storage.ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays),
+		AuditRetentionDays:            storage.ClampAuditRetentionDays(s.AuditRetentionDays),
+		GitHubOAuthClientID:           s.GitHubOAuthClientID,
+		GitHubOAuthClientSecretSet:    s.GitHubOAuthClientSecretEnc != "",
+		GitHubOAuthConfigured:         strings.TrimSpace(s.GitHubOAuthClientID) != "" && s.GitHubOAuthClientSecretEnc != "",
+		ImageHostingProvider:          imagehost.NormalizeProvider(s.Image.Provider),
+		ImageMaxBytes:                 imagehost.ClampMaxBytes(s.Image.MaxBytes),
+		ImageS3Endpoint:               s.Image.S3Endpoint,
+		ImageS3Region:                 s.Image.S3Region,
+		ImageS3Bucket:                 s.Image.S3Bucket,
+		ImageS3AccessKey:              s.Image.S3AccessKey,
+		ImageS3SecretKeySet:           s.ImageS3SecretKeyEnc != "",
+		ImageS3PublicURL:              s.Image.S3PublicURL,
+		ImageS3ForcePathStyle:         s.Image.S3ForcePathStyle,
+		ImageLocalPath:                s.Image.LocalPath,
 	}
 }
 
@@ -570,13 +688,18 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to list users.")
 			return
 		}
+		ownerID, _ := storage.SiteOwnerID()
 		out := make([]map[string]interface{}, 0, len(users))
 		for _, u := range users {
 			out = append(out, map[string]interface{}{
 				"id":        u.ID,
 				"email":     u.Email,
 				"user_name": u.UserName,
+				"full_name": u.FullName,
 				"is_banned": u.IsBanned,
+				"role_id":   u.RoleID,
+				"role_name": u.RoleName,
+				"is_owner":  u.ID == ownerID,
 			})
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -601,8 +724,9 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 				return
 			}
-			if err := storage.SetUserBanned(id, true); err != nil {
-				utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
+			actorID, _ := apiUserFromRequest(r)
+			if err := domain.SetAccountActiveForUser(r.Context(), actorID, id, false); err != nil {
+				writePeopleDomainError(w, err)
 				return
 			}
 			logAdminEvent(r, "user_banned", "user", int64(id), storage.UserAuditLabel(id),
@@ -612,8 +736,9 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 				return
 			}
-			if err := storage.SetUserBanned(id, false); err != nil {
-				utils.APIJSONError(w, http.StatusNotFound, "not_found", "User not found.")
+			actorID, _ := apiUserFromRequest(r)
+			if err := domain.SetAccountActiveForUser(r.Context(), actorID, id, true); err != nil {
+				writePeopleDomainError(w, err)
 				return
 			}
 			logAdminEvent(r, "user_unbanned", "user", int64(id), storage.UserAuditLabel(id),
@@ -623,7 +748,31 @@ func APIV1AdminUsersRouter(w http.ResponseWriter, r *http.Request) {
 				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 				return
 			}
+			actorID, _ := apiUserFromRequest(r)
+			if err := domain.RequireCanEditAdminAccount(actorID, id); err != nil {
+				writePeopleDomainError(w, err)
+				return
+			}
 			apiV1AdminSetUsername(w, r, id)
+			return
+		case "owner":
+			if r.Method != http.MethodPost {
+				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+				return
+			}
+			actorID, _ := apiUserFromRequest(r)
+			if err := domain.TransferSiteOwnership(r.Context(), actorID, id); err != nil {
+				writePeopleDomainError(w, err)
+				return
+			}
+			logAdminEvent(r, "site_owner_transferred", "user", int64(id), storage.UserAuditLabel(id),
+				map[string]interface{}{"from": storage.UserAuditLabel(actorID), "to": storage.UserAuditLabel(id)})
+		case "role":
+			if r.Method != http.MethodPut {
+				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+				return
+			}
+			apiV1AdminSetUserSiteRole(w, r, id)
 			return
 		default:
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Unknown action.")

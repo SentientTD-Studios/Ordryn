@@ -375,7 +375,7 @@ func ListProjectAPIKeys(projectID int) ([]APIKey, error) {
 	rows, err := pool.Query(context.Background(),
 		`SELECT ak.id, ak.user_id, ak.name, ak.key_prefix, ak.created_at, ak.last_used_at,
 		        ak.project_id, ak.scopes, ak.expires_at,
-		        COALESCE(NULLIF(u.user_name, ''), u.email)
+		        COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, '')
 		 FROM api_keys ak
 		 JOIN users u ON u.id = ak.user_id
 		 WHERE ak.project_id = $1 AND ak.revoked_at IS NULL AND NOT COALESCE(u.is_agent, FALSE)

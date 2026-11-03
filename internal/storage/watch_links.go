@@ -123,7 +123,7 @@ func ListTaskWatchers(taskID int) ([]TaskWatcher, error) {
 	}
 	defer CloseDatabase(pool)
 	rows, err := pool.Query(context.Background(), `
-		SELECT w.user_id, COALESCE(NULLIF(u.user_name, ''), u.email, '')
+		SELECT w.user_id, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, '')
 		FROM task_watchers w JOIN users u ON u.id = w.user_id
 		WHERE w.task_id = $1 ORDER BY 2, 1`, taskID)
 	if err != nil {

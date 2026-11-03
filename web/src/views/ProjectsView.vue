@@ -1,7 +1,7 @@
 <template>
   <div class="container mt-4">
     <div class="row">
-      <div class="col-md-8">
+      <div :class="canCreateProjects ? 'col-md-8' : 'col-12'">
         <div v-if="pendingInvites.length" class="card mb-4 border-primary">
           <div class="card-header">
             <h3 class="mb-0 h5">Pending project invites</h3>
@@ -290,7 +290,7 @@
         </div>
       </div>
 
-      <div class="col-md-4">
+      <div v-if="canCreateProjects" class="col-md-4">
         <div class="card">
           <div class="card-header">
             <h3 class="mb-0 h5">Create Project</h3>
@@ -326,7 +326,7 @@
                   <small class="text-muted">{{ description.length }}/1000</small>
                 </div>
               </div>
-              <div v-if="manageableOrgs.length" class="mb-3">
+              <div v-if="manageableOrgs.length && !isCompanyMode" class="mb-3">
                 <OrgImportFields
                   :orgs="manageableOrgs"
                   v-model:organization-id="organizationId"
@@ -364,6 +364,7 @@ import type { Organization, OrganizationInvite, OrgImportMember, OrgImportMode, 
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
+import { useSite } from '@/composables/useSite'
 import { useConfirm } from '@/composables/useConfirm'
 import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
@@ -388,6 +389,9 @@ const ownedTbodyEl = ref<HTMLElement | null>(null)
 let sortable: Sortable | null = null
 const toast = useToast()
 const auth = useAuth()
+// Company projects are shared with teams after they are created.
+const { isCompanyMode } = useSite()
+const { canCreateProjects } = auth
 const { askConfirm } = useConfirm()
 
 const ownedProjects = computed(() =>

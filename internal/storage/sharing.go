@@ -51,6 +51,7 @@ type ProjectMember struct {
 	UserID    int
 	Email     string
 	UserName  string
+	FullName  string
 	Role      string
 	Inherited bool
 	IsAgent   bool
@@ -420,11 +421,11 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), pm.role, pm.user_id <> p.user_id, COALESCE(u.is_agent, FALSE), pm.created_at
+		SELECT pm.user_id, u.email, COALESCE(u.user_name, ''), u.full_name, pm.role, pm.user_id <> p.user_id, COALESCE(u.is_agent, FALSE), pm.created_at
 		FROM project_members pm
 		JOIN users u ON u.id = pm.user_id
 		JOIN projects p ON p.id = pm.project_id
-		WHERE pm.project_id = $1
+		WHERE pm.project_id = $1 AND NOT pm.implicit_admin
 		ORDER BY CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, u.email`,
 		projectID)
 	if err != nil {
@@ -437,7 +438,7 @@ func ListProjectMembers(projectID int) ([]ProjectMember, error) {
 	for rows.Next() {
 		var m ProjectMember
 		var notCreator bool
-		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.Role, &notCreator, &m.IsAgent, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.UserName, &m.FullName, &m.Role, &notCreator, &m.IsAgent, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		// Everyone except the project creator comes from the organization roster on a locked

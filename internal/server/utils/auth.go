@@ -193,10 +193,15 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 // RequirePermission is a middleware that checks if a user has a specific permission
 func RequirePermission(permission string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		email, _, permissions, loggedIn := GetSessionUser(r)
+		email, _, _, loggedIn := GetSessionUser(r)
 		if !loggedIn {
 			http.Redirect(w, r, GetBasePath()+"/", http.StatusSeeOther)
 			return
+		}
+		// The session's permission list is a login-time snapshot; read the role live.
+		var permissions []string
+		if uid := GetSessionUserID(r); uid != nil {
+			permissions, _ = storage.GetUserPermissions(*uid)
 		}
 
 		if email != "" {

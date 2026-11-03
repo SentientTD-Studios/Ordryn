@@ -15,6 +15,8 @@ type UserProfile struct {
 	ID                      int
 	Email                   string
 	UserName                string
+	FirstName               string
+	LastName                string
 	Timezone                string
 	ItemsPerPage            int
 	RoleID                  int
@@ -40,13 +42,13 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		       COALESCE(u.allow_project_invites, true),
 		       COALESCE(u.username_change_available, false),
 		       COALESCE(u.mfa_enabled, false),
-		       COALESCE(u.avatar_url, '')
+		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name
 		FROM users u
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1`, userID).Scan(
 		&p.ID, &p.Email, &p.UserName, &p.Timezone, &p.ItemsPerPage, &p.RoleID, &p.Permissions,
 		&p.AllowProjectInvites, &p.UsernameChangeAvailable,
-		&p.MFAEnabled, &p.AvatarURL,
+		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName,
 	)
 	if err != nil {
 		return nil, err
@@ -197,6 +199,10 @@ func RegisterUser(email, hashedPassword, timezone, userName string, roleID, invi
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err
+	}
+	if err := JoinCompanyIfEnabled(id); err != nil {
+		// The account exists; EnsureCompanyReady enrolls it on the next startup.
+		fmt.Printf("company: could not add user %d: %v\n", id, err)
 	}
 	return id, nil
 }

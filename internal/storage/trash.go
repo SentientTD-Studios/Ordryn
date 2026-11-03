@@ -193,6 +193,19 @@ func PurgeTrashedTask(taskID int) (bool, error) {
 	return tag.RowsAffected() > 0, nil
 }
 
+// PurgeTrashedProjectTasks permanently deletes a project's trashed tasks. Company
+// mode calls it before deleting a project, so no task outlives it without one.
+func PurgeTrashedProjectTasks(projectID int) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(),
+		`DELETE FROM tasks WHERE project_id = $1 AND deleted_at IS NOT NULL`, projectID)
+	return err
+}
+
 // TrashedTask is one entry in a trash listing: a task trashed on its own, or
 // the top of a batch (its trashed subtasks are counted, not listed).
 type TrashedTask struct {
@@ -221,7 +234,7 @@ func ListTrashCandidates(userID, limit int) ([]TrashedTask, error) {
 	rows, err := pool.Query(context.Background(), `
 		SELECT t.id, t.title, COALESCE(t.user_id, 0), COALESCE(t.project_id, 0), COALESCE(p.name, ''),
 			COALESCE(t.parent_id, 0), COALESCE(par.title, ''), t.deleted_at,
-			COALESCE(t.deleted_by, 0), COALESCE(NULLIF(u.user_name, ''), u.email, ''),
+			COALESCE(t.deleted_by, 0), COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''),
 			(SELECT COUNT(*) FROM tasks c WHERE c.parent_id = t.id AND c.deleted_at IS NOT NULL
 				AND c.delete_batch IS NOT DISTINCT FROM t.delete_batch)
 		FROM tasks t

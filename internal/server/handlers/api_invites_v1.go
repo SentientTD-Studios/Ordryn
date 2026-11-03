@@ -66,20 +66,8 @@ func parseInviteExpiration(s string) (*time.Time, error) {
 }
 
 func isUserAdmin(r *http.Request, userID int) bool {
-	if _, _, perms, loggedIn := utils.GetSessionUser(r); loggedIn {
-		for _, p := range perms {
-			if p == "admin" {
-				return true
-			}
-		}
-	} else if profile, err := storage.GetUserProfileByID(userID); err == nil {
-		for _, p := range profile.Permissions {
-			if p == "admin" {
-				return true
-			}
-		}
-	}
-	return false
+	_ = r
+	return storage.UserHasPermission(userID, storage.SitePermAdmin)
 }
 
 // APIV1InvitesRouter handles user-scoped /api/v2/invites and /api/v2/invites/{id}.

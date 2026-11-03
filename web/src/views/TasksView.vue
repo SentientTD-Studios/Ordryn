@@ -9,6 +9,8 @@ import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
 import ModernTaskCard from '@/components/modern/ModernTaskCard.vue'
 import KanbanBoard from '@/components/KanbanBoard.vue'
 import QuickAddBar from '@/components/QuickAddBar.vue'
+import CompanyHome from '@/components/CompanyHome.vue'
+import { useSite } from '@/composables/useSite'
 import ExtensionSurfaceFrame from '@/components/ExtensionSurfaceFrame.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -99,9 +101,23 @@ const activeProjectObj = computed(() => {
 
 const isReadOnlyProjectView = computed(() => !!activeProjectObj.value && !hasAnyProjectWrite(activeProjectObj.value))
 const isArchivedProjectView = computed(() => !!activeProjectObj.value?.archived)
-const canAddTasks = computed(
-  () => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_CREATE) && !isArchivedProjectView.value,
+// Company mode: every task belongs to a project. Off a project page, new tasks go to
+// the first project the person can add tasks to; with none, they can't add tasks.
+const { isCompanyMode } = useSite()
+const metaLoaded = ref(false)
+const writableProjects = computed(() =>
+  projects.value.filter((p) => !p.archived && hasProjectPerm(p, PROJECT_PERMS.TASKS_CREATE)),
 )
+const defaultTaskProjectId = computed<number | null>(() => {
+  if (activeProjectObj.value) return activeProjectObj.value.id
+  return isCompanyMode.value ? (writableProjects.value[0]?.id ?? null) : null
+})
+// No project shared yet: show the company home page instead of an empty task list.
+const showCompanyHome = computed(() => isCompanyMode.value && metaLoaded.value && projects.value.length === 0)
+const canAddTasks = computed(() => {
+  if (isCompanyMode.value && !activeProjectObj.value) return writableProjects.value.length > 0
+  return hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_CREATE) && !isArchivedProjectView.value
+})
 
 const tagFilterByName = computed(() => !filters.project)
 const displayTags = computed(() => (tagFilterByName.value ? uniqueTagsByName(tags.value) : tags.value))
@@ -248,7 +264,7 @@ function onBoardSprintChange() {
 }
 
 function openAddFromView() {
-  openAdd(undefined, filters.project, null, board.currentSprintId())
+  openAdd(undefined, activeProjectObj.value ? filters.project : defaultTaskProjectId.value, null, board.currentSprintId())
 }
 
 /** Board has no infinite-scroll sentinel — fetch remaining pages after the first.
@@ -348,6 +364,7 @@ async function loadMeta() {
     projects.value = projs
     savedViews.value = views
     organizations.value = orgs
+    metaLoaded.value = true
     await loadTags()
     await surfaces.load()
   } catch {
@@ -974,7 +991,8 @@ onUnmounted(() => {
     />
 
     <div class="ordryn-main-pane flex-grow-1 p-2 p-sm-3 p-md-4 overflow-auto d-flex flex-column justify-content-between">
-      <div>
+      <CompanyHome v-if="showCompanyHome" />
+      <div v-else>
         <TasksToolbar
           :total="total"
           :completed-count="completedCount"
@@ -992,7 +1010,7 @@ onUnmounted(() => {
           <template #actions>
             <TaskTemplatesMenu
               v-if="canAddTasks"
-              :project-id="activeProjectObj?.id ?? null"
+              :project-id="defaultTaskProjectId"
               :sprint-id="board.currentSprintId() ?? null"
               @created="onTemplateTaskCreated"
             />
@@ -1116,7 +1134,8 @@ onUnmounted(() => {
           <QuickAddBar
             v-if="canAddTasks"
             :projects="projects"
-            :default-project-id="activeProjectObj?.id ?? null"
+            :default-project-id="defaultTaskProjectId"
+            :require-project="isCompanyMode"
             :sprint-id="board.currentSprintId() ?? null"
             @created="onBoardTaskCreated"
           />

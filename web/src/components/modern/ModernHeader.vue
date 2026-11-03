@@ -18,15 +18,18 @@ const props = defineProps<{
   mobileNavOpen?: boolean
 }>()
 
-const { isAuthenticated, user, logout, hasPermission } = useAuth()
-const { siteName, siteInfo } = useSite()
+const { isAuthenticated, user, logout, hasPermission, adminLanding } = useAuth()
+const { siteName, siteInfo, isCompanyMode } = useSite()
 const { currentTheme, availableThemes, setTheme } = useTheme()
 const { push } = useToast()
 const router = useRouter()
 
 const showChangelog = computed(() => siteInfo.value?.show_changelog !== false)
+// Company sites have no invites: people managers create accounts.
 const canViewInvites = computed(
-  () => hasPermission('admin') || hasPermission('createinvites') || !!siteInfo.value?.allow_user_invites,
+  () =>
+    !isCompanyMode.value &&
+    (hasPermission('admin') || hasPermission('createinvites') || !!siteInfo.value?.allow_user_invites),
 )
 
 const notifications = ref<Notification[]>([])
@@ -175,7 +178,7 @@ async function onLogout() {
           <RouterLink to="/docs/guide" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">How to use</RouterLink>
           <RouterLink to="/docs/api/v2" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">API</RouterLink>
           <template v-if="isAuthenticated">
-            <RouterLink v-if="hasPermission('admin')" to="/admin" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">Admin</RouterLink>
+            <RouterLink v-if="adminLanding" :to="adminLanding" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">Admin</RouterLink>
             <RouterLink v-if="canViewInvites" to="/invites" class="nav-link-item text-decoration-none small fw-medium" style="color: var(--ordryn-muted);">Invites</RouterLink>
           </template>
         </nav>
@@ -262,7 +265,7 @@ async function onLogout() {
               </div>
             </div>
           </div>
-          <span class="text-muted small d-none d-lg-inline me-1">{{ user?.user_name || user?.email }}</span>
+          <span class="text-muted small d-none d-lg-inline me-1">{{ [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.user_name || user?.email }}</span>
           <RouterLink to="/settings" class="btn btn-outline-secondary btn-sm d-none d-md-flex align-items-center gap-1" title="Profile Settings">
             <img
               v-if="user?.avatar_url"
@@ -280,7 +283,7 @@ async function onLogout() {
           </button>
         </template>
         <template v-else>
-          <RouterLink to="/register" class="btn btn-outline-secondary btn-sm d-none d-sm-inline-block">Sign Up</RouterLink>
+          <RouterLink v-if="!isCompanyMode" to="/register" class="btn btn-outline-secondary btn-sm d-none d-sm-inline-block">Sign Up</RouterLink>
           <RouterLink to="/login" class="btn btn-primary btn-sm">Login</RouterLink>
         </template>
       </div>

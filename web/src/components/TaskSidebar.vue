@@ -25,6 +25,7 @@ import { useImageUpload } from '@/composables/useImageUpload'
 import { insertMarkdownAtCursor } from '@/utils/taskCommentBody'
 import { dropHasFiles, imageFileFromClipboard, imageFileFromDrop, shouldIgnoreTaskOverlayClose } from '@/utils/imageUpload'
 import { useAuth } from '@/composables/useAuth'
+import { useSite } from '@/composables/useSite'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -116,6 +117,11 @@ const selectedProject = computed(() => {
 })
 const assignableProjects = computed(() =>
   projects.value.filter((p) => !isArchivedProject(p) || p.id === Number(projectId.value)),
+)
+// Company mode: every task belongs to a project, so there's no "No project" choice.
+const { isCompanyMode } = useSite()
+const firstWritableProjectId = computed<number | ''>(
+  () => projects.value.find((p) => !isArchivedProject(p) && hasProjectPerm(p, PROJECT_PERMS.TASKS_CREATE))?.id ?? '',
 )
 const canEditDetails = computed(() => {
   if (mode.value === 'view') return false
@@ -813,6 +819,10 @@ async function save(keepOpen = false): Promise<boolean> {
   if (readOnly.value) return false
   if (!title.value.trim()) return false
   if (!validateDescription()) return false
+  if (isCompanyMode.value && !isSubtask.value && projectId.value === '') {
+    toast.push('Choose a project for this task', 'error')
+    return false
+  }
   if (mode.value === 'add' && selectedProject.value && isArchivedProject(selectedProject.value)) {
     toast.push('Cannot add tasks to an archived project', 'error')
     return false
@@ -1025,6 +1035,7 @@ watch(
         resetForm()
         if (due) dueDate.value = due
         if (proj) projectId.value = Number(proj)
+        else if (isCompanyMode.value) projectId.value = firstWritableProjectId.value
         if (parent) {
           parentId.value = parent
           parentTitle.value = parentLabel || ''
@@ -1481,15 +1492,17 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
           <TaskAgentsPanel :task-id="taskId" />
         </div>
         <div class="form-group mt-2 kanban-order-project">
-          <label for="project_id">Project (optional):</label>
+          <label for="project_id">{{ isCompanyMode ? 'Project:' : 'Project (optional):' }}</label>
           <select
             id="project_id"
             v-model="projectId"
             class="form-select"
+            :required="isCompanyMode && !isSubtask"
             :disabled="readOnly || isSubtask || projectLockedToOwner"
             @change="onProjectChange"
           >
-            <option value="">No project</option>
+            <option v-if="!isCompanyMode" value="">No project</option>
+            <option v-else-if="projectId === ''" value="" disabled>Choose a project</option>
             <option v-for="p in assignableProjects" :key="p.id" :value="p.id" :disabled="isArchivedProject(p)">{{ projectOptionLabel(p) }}</option>
           </select>
           <small v-if="projectLockedToOwner" class="form-hint d-block mt-1">

@@ -81,7 +81,7 @@ func CreateTaskAttachmentsTable() error {
 }
 
 const attachmentSelect = `
-	SELECT a.id, a.task_id, COALESCE(a.user_id, 0), COALESCE(NULLIF(u.user_name, ''), u.email, ''),
+	SELECT a.id, a.task_id, COALESCE(a.user_id, 0), COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''),
 		a.file_name, a.content_type, a.size_bytes, a.created_at
 	FROM task_attachments a
 	LEFT JOIN users u ON u.id = a.user_id`

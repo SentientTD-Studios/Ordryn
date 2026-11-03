@@ -31,6 +31,9 @@ type apiSiteResponse struct {
 	MaxCommentLength         int    `json:"max_comment_length"`
 	AttachmentsEnabled       bool   `json:"attachments_enabled"`
 	AttachmentMaxBytes       int64  `json:"attachment_max_bytes"`
+	SiteMode                 string `json:"site_mode"`
+	// SetupRequired is true until first-time setup creates the admin account.
+	SetupRequired bool `json:"setup_required"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -59,14 +62,18 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 	}
 
 	textLimits := settings.TaskTextLimits()
+	setupRequired, _ := storage.SetupRequired()
+	// Company accounts come only from people managers: no signup, join requests, or invites,
+	// whatever the stored settings say.
+	company := storage.NormalizeSiteMode(settings.SiteMode) == storage.SiteModeCompany
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(apiSiteResponse{
 		SiteName:                 settings.SiteName,
 		ShowChangelog:            settings.ShowChangelog,
-		EnableRegistration:       settings.EnableRegistration,
-		InviteOnly:               settings.InviteOnly,
-		EnableJoinRequests:       settings.EnableJoinRequests,
+		EnableRegistration:       settings.EnableRegistration && !company,
+		InviteOnly:               settings.InviteOnly && !company,
+		EnableJoinRequests:       settings.EnableJoinRequests && !company,
 		MetaDescription:          settings.MetaDescription,
 		EnableGlobalAnnouncement: settings.EnableGlobalAnnouncement,
 		GlobalAnnouncementText:   settings.GlobalAnnouncementText,
@@ -74,7 +81,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		GitHubOAuthConfigured:    domain.GitHubOAuthConfigured(),
 		ImageHostingEnabled:      imageEnabled,
 		ImageMaxBytes:            imageMax,
-		AllowUserInvites:         settings.AllowUserInvites,
+		AllowUserInvites:         settings.AllowUserInvites && !company,
 		UserInviteLimit:          settings.UserInviteLimit,
 		InviteExpirationDays:     settings.InviteExpirationDays,
 		EnableInboundWebhooks:    settings.EnableInboundWebhooks,
@@ -82,5 +89,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		MaxCommentLength:         textLimits.Comment,
 		AttachmentsEnabled:       settings.AttachmentsEnabled,
 		AttachmentMaxBytes:       storage.ClampAttachmentMaxBytes(settings.AttachmentMaxBytes),
+		SiteMode:                 settings.SiteMode,
+		SetupRequired:            setupRequired,
 	})
 }

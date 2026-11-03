@@ -17,6 +17,7 @@ type apiProjectMemberJSON struct {
 	UserID    int    `json:"user_id"`
 	Email     string `json:"email"`
 	UserName  string `json:"user_name"`
+	FullName  string `json:"full_name,omitempty"`
 	Role      string `json:"role"`
 	RoleName  string `json:"role_name,omitempty"`
 	Inherited bool   `json:"inherited,omitempty"`
@@ -137,6 +138,9 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 	case "invites":
 		apiV1ProjectInvites(w, r, projectID, parts[2:])
 		return true
+	case "access":
+		apiV1ProjectAccess(w, r, projectID, parts[2:])
+		return true
 	case "watch":
 		if len(parts) == 2 {
 			apiV1ProjectWatch(w, r, projectID)
@@ -253,6 +257,7 @@ func apiV1ProjectMembers(w http.ResponseWriter, r *http.Request, projectID int, 
 				UserID:    m.UserID,
 				Email:     email,
 				UserName:  m.UserName,
+				FullName:  m.FullName,
 				Role:      m.Role,
 				RoleName:  storage.RoleDisplayName(projectID, m.Role),
 				Inherited: m.Inherited,

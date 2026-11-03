@@ -35,6 +35,8 @@ type apiUserMeJSON struct {
 	ID                      int      `json:"id"`
 	Email                   string   `json:"email"`
 	UserName                string   `json:"user_name"`
+	FirstName               string   `json:"first_name"`
+	LastName                string   `json:"last_name"`
 	Timezone                string   `json:"timezone"`
 	ItemsPerPage            int      `json:"items_per_page"`
 	Permissions             []string `json:"permissions"`
@@ -42,6 +44,12 @@ type apiUserMeJSON struct {
 	UsernameChangeAvailable bool     `json:"username_change_available"`
 	MFAEnabled              bool     `json:"mfa_enabled"`
 	AvatarURL               string   `json:"avatar_url"`
+	// ManagesPeople is true when the user gets the People page: they manage accounts or names.
+	ManagesPeople bool `json:"manages_people"`
+	// IsSiteOwner marks the one account above admins.
+	IsSiteOwner bool `json:"is_site_owner"`
+	// CanEditName is true in company mode for those allowed to set their own name.
+	CanEditName bool `json:"can_edit_name"`
 }
 
 func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
@@ -49,10 +57,13 @@ func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
 	if perms == nil {
 		perms = []string{}
 	}
+	access, _ := domain.PeopleAccessFor(p.ID)
 	return apiUserMeJSON{
 		ID:                      p.ID,
 		Email:                   p.Email,
 		UserName:                p.UserName,
+		FirstName:               p.FirstName,
+		LastName:                p.LastName,
 		Timezone:                p.Timezone,
 		ItemsPerPage:            p.ItemsPerPage,
 		Permissions:             perms,
@@ -60,6 +71,9 @@ func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
 		UsernameChangeAvailable: p.UsernameChangeAvailable,
 		MFAEnabled:              p.MFAEnabled,
 		AvatarURL:               p.AvatarURL,
+		ManagesPeople:           access.SeesPeople(),
+		IsSiteOwner:             access.Owner,
+		CanEditName:             domain.CanEditNames(p.ID, access, p.ID),
 	}
 }
 
@@ -128,6 +142,17 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if !utils.IsValidTimezone(timezone) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid timezone.")
+		return
+	}
+
+	if required, err := storage.SetupRequired(); err != nil || required {
+		utils.APIJSONError(w, http.StatusConflict, "setup_required",
+			"This site hasn't been set up yet. Finish first-time setup to create the admin account.")
+		return
+	}
+	if mode, err := storage.GetSiteMode(); err == nil && mode == storage.SiteModeCompany {
+		utils.APIJSONError(w, http.StatusForbidden, "registration_disabled",
+			"Accounts on this site are created by its admins and team managers.")
 		return
 	}
 
@@ -276,7 +301,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if banned, banErr := storage.IsUserBanned(email); banErr == nil && banned {
-		utils.APIJSONError(w, http.StatusForbidden, "banned", "This account has been banned.")
+		utils.APIJSONError(w, http.StatusForbidden, "banned", "This account has been deactivated. Contact your site administrator.")
 		return
 	}
 

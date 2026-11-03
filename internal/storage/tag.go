@@ -747,6 +747,54 @@ func GetOrCreateTagByName(userID int, projectID *int, name string) (*Tag, error)
 	return &t, nil
 }
 
+// FindOrCreateTagInTx is GetOrCreateTagByName inside tx, so it sees rows tx hasn't
+// committed, such as a project an import just created. With create false it only
+// finds. It returns nil, nil when the tag doesn't exist and create is false, and an
+// error for a reserved name.
+func FindOrCreateTagInTx(ctx context.Context, tx pgx.Tx, userID int, projectID *int, name string, create bool) (*Tag, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 50 || IsSystemTagName(name) {
+		return nil, fmt.Errorf("invalid tag name %q", name)
+	}
+	personal := projectID == nil || *projectID <= 0
+	find := func() (Tag, error) {
+		if personal {
+			return scanTag(tx.QueryRow(ctx, `SELECT `+tagSelectCols+` FROM tags
+				WHERE project_id IS NULL AND user_id = $1 AND LOWER(name) = LOWER($2)`, userID, name))
+		}
+		return scanTag(tx.QueryRow(ctx, `SELECT `+tagSelectCols+` FROM tags
+			WHERE project_id = $1 AND LOWER(name) = LOWER($2)`, *projectID, name))
+	}
+	t, err := find()
+	if err == nil {
+		if t.Protected || IsSystemTagName(t.Name) {
+			return nil, fmt.Errorf("tag name is reserved")
+		}
+		return &t, nil
+	}
+	if !isNoRows(err) {
+		return nil, err
+	}
+	if !create {
+		return nil, nil
+	}
+	if personal {
+		t, err = scanTag(tx.QueryRow(ctx, `INSERT INTO tags (user_id, name) VALUES ($1, $2)
+			RETURNING `+tagSelectCols, userID, name))
+	} else {
+		t, err = scanTag(tx.QueryRow(ctx, `INSERT INTO tags (user_id, project_id, name) VALUES ($1, $2, $3)
+			RETURNING `+tagSelectCols, userID, *projectID, name))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tag: %v", err)
+	}
+	t.Color = tagColorForID(t.ID)
+	if _, err := tx.Exec(ctx, "UPDATE tags SET color = $1 WHERE id = $2", t.Color, t.ID); err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 // DeleteTag removes a tag by id.
 func DeleteTag(id int) error {
 	pool, err := OpenDatabase()

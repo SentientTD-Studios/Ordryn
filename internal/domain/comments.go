@@ -435,7 +435,7 @@ func RestoreCommentRevisionForUser(ctx context.Context, userID, taskID, commentI
 // ListCommentAuditForAdmin returns the site-wide comment revision log.
 func ListCommentAuditForAdmin(ctx context.Context, userID int, filter storage.CommentAuditFilter) ([]storage.TaskCommentRevision, int, error) {
 	_ = ctx
-	if !storage.UserHasPermission(userID, "admin") {
+	if !storage.UserHasSitePermission(userID, storage.SitePermAuditView) {
 		return nil, 0, ErrForbidden
 	}
 	return storage.ListCommentAudit(filter)

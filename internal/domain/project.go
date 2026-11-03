@@ -99,7 +99,13 @@ func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput
 	if len(description) > MaxProjectDescriptionLength {
 		return nil, fmt.Errorf("%w: project description must be %d characters or less", ErrValidation, MaxProjectDescriptionLength)
 	}
+	if !storage.UserHasSitePermission(userID, storage.SitePermProjectsCreate) {
+		return nil, fmt.Errorf("%w: you don't have permission to create projects", ErrForbidden)
+	}
 	var spec *storage.OrgImportSpec
+	if in.OrganizationID != nil && *in.OrganizationID > 0 && storage.IsCompanyMode() {
+		return nil, fmt.Errorf("%w: in company mode, create the project and then share it with teams", ErrValidation)
+	}
 	if in.OrganizationID != nil && *in.OrganizationID > 0 {
 		org, err := requireOrgManage(*in.OrganizationID, userID)
 		if err != nil {
@@ -110,9 +116,40 @@ func CreateProjectForUser(ctx context.Context, userID int, in CreateProjectInput
 			return nil, err
 		}
 		spec = parsed
+	} else {
+		company, err := companyProjectSpec()
+		if err != nil {
+			return nil, err
+		}
+		spec = company
 	}
+	return createProject(userID, name, description, spec)
+}
+
+// companyProjectSpec attaches projects created without a team to the company in
+// company mode. Nobody else is imported: projects stay visible to their members only.
+func companyProjectSpec() (*storage.OrgImportSpec, error) {
+	mode, err := storage.GetSiteMode()
+	if err != nil || mode != storage.SiteModeCompany {
+		return nil, err
+	}
+	orgID, err := storage.EnsureCompanyOrganization()
+	if err != nil {
+		return nil, err
+	}
+	if orgID == 0 {
+		return nil, fmt.Errorf("company organization is missing")
+	}
+	return &storage.OrgImportSpec{OrganizationID: orgID, Mode: storage.OrgImportSelect}, nil
+}
+
+func createProject(userID int, name, description string, spec *storage.OrgImportSpec) (*storage.Project, error) {
 	proj, err := storage.CreateProjectWithOrg(userID, name, description, spec)
 	if err != nil {
+		return nil, err
+	}
+	// Company projects start with their creator and the site admins.
+	if err := storage.RecomputeCompanyProjectAccess(proj.ID); err != nil {
 		return nil, err
 	}
 	live.AfterProjectChange(userID, proj.ID, live.TypeProjectCreated)
@@ -322,6 +359,19 @@ func DeleteProject(ctx context.Context, userID, projectID int) error {
 	}
 	if !storage.RoleCanManageProject(proj.ID, proj.Role) {
 		return ErrForbidden
+	}
+	// Tasks outlive a deleted project with no project, which company mode doesn't allow.
+	if storage.IsCompanyMode() {
+		n, err := storage.CountProjectTasks(projectID)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("%w: this project still has %d tasks; archive it instead, or move or delete its tasks first", ErrConflict, n)
+		}
+		if err := storage.PurgeTrashedProjectTasks(projectID); err != nil {
+			return err
+		}
 	}
 	// Membership cascades with the project, so capture the live audience first.
 	members, _ := storage.ProjectMemberUserIDs(projectID)

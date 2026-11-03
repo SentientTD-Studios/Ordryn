@@ -302,7 +302,7 @@ func UserDisplayNames(ids []int) (map[int]string, error) {
 	}
 	defer CloseDatabase(pool)
 	rows, err := pool.Query(context.Background(),
-		`SELECT id, COALESCE(NULLIF(user_name, ''), email, '') FROM users WHERE id = ANY($1)`, ids)
+		`SELECT id, COALESCE(NULLIF(full_name, ''), NULLIF(user_name, ''), email, '') FROM users WHERE id = ANY($1)`, ids)
 	if err != nil {
 		return nil, err
 	}

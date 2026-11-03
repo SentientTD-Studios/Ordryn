@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { api } from '@/api/client'
-import type { User } from '@/api/types'
+import type { SetupPayload, User } from '@/api/types'
 import { isMFARequired } from '@/api/types'
 
 const user = ref<User | null>(null)
@@ -49,6 +49,11 @@ export function useAuth() {
     return user.value
   }
 
+  async function completeSetup(payload: SetupPayload) {
+    user.value = await api.completeSetup(payload)
+    return user.value
+  }
+
   async function logout() {
     try {
       await api.logout()
@@ -83,6 +88,25 @@ export function useAuth() {
     return !!user.value?.permissions?.includes(permission)
   }
 
+  /** A site permission; admin implies every one. */
+  function hasSitePermission(permission: string) {
+    return hasPermission('admin') || hasPermission(permission)
+  }
+
+  // The first admin page the user can open, or null for none. Company-mode roles can
+  // hold parts of admin (settings, roles, audit logs) without being admins.
+  const adminLanding = computed(() => {
+    if (hasPermission('admin') || hasPermission('settings:manage')) return '/admin'
+    if (hasPermission('roles:manage')) return '/admin/site-roles'
+    if (hasPermission('audit:view')) return '/admin/audit'
+    return null
+  })
+
+  // Site admins can always create; everyone else needs the permission on their site role.
+  const canCreateProjects = computed(() => hasPermission('admin') || hasPermission('projects:create'))
+  const canCreateOrganizations = computed(() => hasPermission('admin') || hasPermission('orgs:create'))
+  const managesPeople = computed(() => !!user.value?.manages_people)
+
   return {
     user,
     loading,
@@ -90,10 +114,16 @@ export function useAuth() {
     isAuthenticated,
     needsUsernameClaim,
     hasPermission,
+    hasSitePermission,
+    adminLanding,
+    canCreateProjects,
+    canCreateOrganizations,
+    managesPeople,
     refresh,
     login,
     verifyMFA,
     register,
+    completeSetup,
     logout,
     updateProfile,
     claimUsername,
