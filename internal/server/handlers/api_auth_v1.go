@@ -140,6 +140,10 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Passwords do not match.")
 		return
 	}
+	if err := domain.ValidatePassword(req.Password); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", passwordPolicyMessage(err))
+		return
+	}
 	if !utils.IsValidTimezone(timezone) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid timezone.")
 		return
@@ -270,11 +274,15 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := utils.IsLoginBlocked(r.Context(), email, 5)
+	blocked, err := utils.IsLoginBlocked(r.Context(), email, utils.LoginFailuresPerEmail)
 	if err != nil {
 		fmt.Printf("APIV1AuthLogin block check: %v\n", err)
 	}
-	if blocked {
+	ipBlocked, err := utils.IsLoginBlockedForIP(r.Context(), utils.ClientIP(r))
+	if err != nil {
+		fmt.Printf("APIV1AuthLogin IP block check: %v\n", err)
+	}
+	if blocked || ipBlocked {
 		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
 			"Too many login attempts; please try again later.")
 		return
@@ -286,16 +294,15 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		err = errors.New("agent accounts cannot sign in")
 	}
 	if err != nil {
-		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
-			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)
-		}
+		// No real compare ran; spend the same time so a fast reply doesn't
+		// reveal that the account doesn't exist.
+		domain.SpendPasswordCheckTime(req.Password)
+		recordFailedLogin(r, email)
 		utils.APIJSONError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(req.Password)) != nil {
-		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
-			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)
-		}
+		recordFailedLogin(r, email)
 		utils.APIJSONError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
 		return
 	}
@@ -340,6 +347,16 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("APIV1AuthLogin clear failed login: %v\n", clearErr)
 	}
 	writeAPIUserJSON(w, http.StatusOK, profile)
+}
+
+// recordFailedLogin counts a failed sign-in against the email and the client IP.
+func recordFailedLogin(r *http.Request, email string) {
+	if _, err := utils.IncrementFailedLogin(r.Context(), email, utils.LoginFailureWindowSeconds); err != nil {
+		fmt.Printf("APIV1AuthLogin increment failed login: %v\n", err)
+	}
+	if err := utils.IncrementFailedLoginForIP(r.Context(), utils.ClientIP(r)); err != nil {
+		fmt.Printf("APIV1AuthLogin increment failed login for IP: %v\n", err)
+	}
 }
 
 // APIV1AuthLogout handles POST /api/v2/auth/logout.

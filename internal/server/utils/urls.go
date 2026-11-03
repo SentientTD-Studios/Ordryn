@@ -4,6 +4,7 @@ import (
 	"GoTodo/internal/config"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -29,6 +30,12 @@ func AbsoluteURLForRequest(r *http.Request, path string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
+	// A configured public origin wins over the request's Host header, which the
+	// client controls: otherwise a forged Host could point a password-reset email
+	// at an attacker's site.
+	if public := PublicURL(); public != "" {
+		return public + path
+	}
 	base := GetBasePath()
 	if strings.Contains(base, "://") {
 		return strings.TrimSuffix(base, "/") + path
@@ -37,6 +44,16 @@ func AbsoluteURLForRequest(r *http.Request, path string) string {
 		return fmt.Sprintf("%s://%s%s", RequestScheme(r), r.Host, path)
 	}
 	return fmt.Sprintf("%s://%s%s%s", RequestScheme(r), r.Host, base, path)
+}
+
+// PublicURL returns PUBLIC_URL (scheme, host and any BASE_PATH prefix) without a
+// trailing slash, or "" when it isn't set to an absolute http(s) URL.
+func PublicURL() string {
+	u := strings.TrimSuffix(strings.TrimSpace(os.Getenv("PUBLIC_URL")), "/")
+	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		return ""
+	}
+	return u
 }
 
 // TrimPublicPrefix removes BASE_PATH from an incoming request path.

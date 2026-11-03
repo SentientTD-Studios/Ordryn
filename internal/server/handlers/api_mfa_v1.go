@@ -39,7 +39,7 @@ func incrementFailedMFA(r *http.Request, email string) {
 	if email == "" {
 		return
 	}
-	if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
+	if _, incErr := utils.IncrementFailedLogin(r.Context(), email, utils.LoginFailureWindowSeconds); incErr != nil {
 		fmt.Printf("MFA increment failed login: %v\n", incErr)
 	}
 }
@@ -58,7 +58,7 @@ func APIV1AuthMFAVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := utils.IsLoginBlocked(r.Context(), email, 5)
+	blocked, err := utils.IsLoginBlocked(r.Context(), email, utils.LoginFailuresPerEmail)
 	if err != nil {
 		fmt.Printf("APIV1AuthMFAVerify block check: %v\n", err)
 	}

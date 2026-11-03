@@ -30,8 +30,8 @@ func ChangePassword(ctx context.Context, userID int, currentPassword, newPasswor
 	if newPassword != confirmPassword {
 		return fmt.Errorf("%w: new passwords do not match", ErrValidation)
 	}
-	if len(newPassword) < 8 {
-		return fmt.Errorf("%w: new password must be at least 8 characters long", ErrValidation)
+	if err := ValidatePassword(newPassword); err != nil {
+		return err
 	}
 	hash, err := storage.GetPasswordHashByID(userID)
 	if err != nil {

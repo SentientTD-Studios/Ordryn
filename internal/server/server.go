@@ -78,6 +78,7 @@ func StartServer() error {
 		fmt.Printf("Warning: custom field sync failed: %v\n", err)
 	}
 
+	utils.CheckNetworkConfig()
 	announceSetup(mode)
 	// Creates the company once the first account exists and enrolls anyone missed.
 	if err := storage.EnsureCompanyReady(); err != nil {
