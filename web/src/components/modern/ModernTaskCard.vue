@@ -252,6 +252,7 @@ function formatMinutes(total: number) {
                 v-for="tag in task.tags"
                 :key="tag.id"
                 class="ordryn-badge ordryn-badge-tag"
+                :style="tag.color ? { backgroundColor: tag.color, color: '#fff' } : undefined"
               >
                 {{ tag.name }}
               </span>
