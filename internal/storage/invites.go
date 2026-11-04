@@ -240,7 +240,11 @@ func SetUserBanned(userID int, banned bool) error {
 	}
 	defer CloseDatabase(pool)
 	tag, err := pool.Exec(context.Background(),
-		`UPDATE users SET is_banned = $1 WHERE id = $2`, banned, userID)
+		// Deactivating also signs out existing sessions, so reactivating the
+		// account later doesn't bring old (possibly stolen) cookies back to life.
+		`UPDATE users SET is_banned = $1,
+		        session_version = session_version + CASE WHEN $1 THEN 1 ELSE 0 END
+		 WHERE id = $2`, banned, userID)
 	if err != nil {
 		return err
 	}

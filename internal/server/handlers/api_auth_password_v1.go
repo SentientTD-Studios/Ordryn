@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -156,8 +156,8 @@ func apiV1ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reset, err := storage.ValidateResetToken(id, token)
-	if err != nil {
+	// Check the token before spending bcrypt time on a request that can't succeed.
+	if _, err := storage.ValidateResetToken(id, token); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid or expired reset token.")
 		return
 	}
@@ -168,14 +168,14 @@ func apiV1ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := storage.OpenDatabase()
-	if err != nil {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+	// Uses up the token and sets the password together, so the token works once.
+	email, err := storage.ResetPasswordWithToken(id, token, string(hashedPassword))
+	if errors.Is(err, storage.ErrResetTokenInvalid) {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid or expired reset token.")
 		return
 	}
-	defer storage.CloseDatabase(db)
-
-	if _, err := db.Exec(context.Background(), "UPDATE users SET password = $1 WHERE email = $2", string(hashedPassword), reset.Email); err != nil {
+	if err != nil {
+		fmt.Printf("reset-password: %v\n", err)
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
@@ -192,8 +192,7 @@ Your password has been changed for %s.
 
 If you did not request this, please reach out to support.
 `, siteName)
-	_ = mailer.SendEmail(storage.SiteEmailConfig(settings), mailer.TriggerPasswordChanged, subject, body, reset.Email)
-	_ = storage.DeleteResetToken(id, token)
+	_ = mailer.SendEmail(storage.SiteEmailConfig(settings), mailer.TriggerPasswordChanged, subject, body, email)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})

@@ -127,6 +127,7 @@ func registerAPIV1Routes() {
 	handleAPI("/auth/reset-password", handlers.APIV1ResetPasswordRouter)
 	handleAPI("/me", utils.AuthMeChain(handlers.APIV1Me))
 	handleAPI("/me/password", utils.AuthSessionChain(handlers.APIV1ChangePassword))
+	handleAPI("/me/sign-out-others", utils.AuthSessionChain(handlers.APIV1SignOutOtherDevices))
 	handleAPI("/me/mfa", utils.AuthSessionChain(handlers.APIV1MeMFA))
 	handleAPI("/me/mfa/setup", utils.AuthSessionChain(handlers.APIV1MeMFASetup))
 	handleAPI("/me/mfa/enable", utils.AuthSessionChain(handlers.APIV1MeMFAEnable))

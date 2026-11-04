@@ -83,19 +83,27 @@ func writeAPIUserJSON(w http.ResponseWriter, status int, p *storage.UserProfile)
 	_ = json.NewEncoder(w).Encode(profileToMeJSON(p))
 }
 
+// establishSession signs p in on this browser. Each sign-in gets a fresh session
+// id and records the account's session version, so it can be revoked later.
 func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserProfile) error {
 	session, err := sessionstore.GetSession(r)
 	if err != nil {
 		return err
 	}
+	sid, err := utils.NewSessionID()
+	if err != nil {
+		return err
+	}
 	session.Values = map[interface{}]interface{}{
-		"user_id":        p.ID,
-		"email":          p.Email,
-		"user_name":      p.UserName,
-		"role_id":        p.RoleID,
-		"permissions":    p.Permissions,
-		"timezone":       p.Timezone,
-		"items_per_page": p.ItemsPerPage,
+		utils.SessionIDKey:      sid,
+		utils.SessionVersionKey: p.SessionVersion,
+		"user_id":               p.ID,
+		"email":                 p.Email,
+		"user_name":             p.UserName,
+		"role_id":               p.RoleID,
+		"permissions":           p.Permissions,
+		"timezone":              p.Timezone,
+		"items_per_page":        p.ItemsPerPage,
 	}
 	if session.Options == nil && sessionstore.Store != nil && sessionstore.Store.Options != nil {
 		opts := *sessionstore.Store.Options
@@ -364,6 +372,12 @@ func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
+	}
+	// Revoke this sign-in on the server too, so a copy of the cookie stops working.
+	if sess, err := sessionstore.GetSession(r); err == nil {
+		if err := utils.RevokeSessionID(r.Context(), utils.SessionStringValue(sess, utils.SessionIDKey)); err != nil {
+			fmt.Printf("APIV1AuthLogout revoke session: %v\n", err)
+		}
 	}
 	sessionstore.ClearSessionCookie(w, r)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

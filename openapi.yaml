@@ -334,7 +334,10 @@ paths:
   /api/v2/auth/logout:
     post:
       tags: [Auth]
-      summary: Clear session cookie
+      summary: Sign out this session
+      description: >-
+        Clears the session cookie and revokes this sign-in on the server, so a copy
+        of the cookie stops working too. Other sessions stay signed in.
       security: []
       responses:
         "200":
@@ -834,13 +837,35 @@ paths:
               $ref: "#/components/schemas/ChangePasswordRequest"
       responses:
         "200":
-          description: Password changed
+          description: >-
+            Password changed. Every other session of the account is signed out;
+            the session that made the change stays signed in.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OK"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v2/me/sign-out-others:
+    post:
+      tags: [Profile]
+      summary: Sign out other devices
+      description: >-
+        Signs out every session of the account except the one making the request.
+        Called with an API key, it signs out all browser sessions. API keys are not affected.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Other sessions signed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
         "401":
           $ref: "#/components/responses/Unauthorized"
 

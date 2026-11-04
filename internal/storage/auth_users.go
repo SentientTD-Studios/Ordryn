@@ -25,6 +25,8 @@ type UserProfile struct {
 	UsernameChangeAvailable bool
 	MFAEnabled              bool
 	AvatarURL               string
+	// SessionVersion is recorded in the session cookie at sign-in; see GetSessionState.
+	SessionVersion int
 }
 
 // GetUserProfileByID loads profile fields and role permissions for a user.
@@ -42,13 +44,13 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		       COALESCE(u.allow_project_invites, true),
 		       COALESCE(u.username_change_available, false),
 		       COALESCE(u.mfa_enabled, false),
-		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name
+		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name, u.session_version
 		FROM users u
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1`, userID).Scan(
 		&p.ID, &p.Email, &p.UserName, &p.Timezone, &p.ItemsPerPage, &p.RoleID, &p.Permissions,
 		&p.AllowProjectInvites, &p.UsernameChangeAvailable,
-		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName,
+		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName, &p.SessionVersion,
 	)
 	if err != nil {
 		return nil, err
@@ -133,14 +135,17 @@ func GetPasswordHashByID(userID int) (string, error) {
 	return hash, err
 }
 
-// UpdatePasswordByID sets a new password hash for a user.
+// UpdatePasswordByID sets a new password hash for a user and signs out all of
+// their existing sessions.
 func UpdatePasswordByID(userID int, hashedPassword string) error {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return err
 	}
 	defer CloseDatabase(pool)
-	_, err = pool.Exec(context.Background(), `UPDATE users SET password = $1 WHERE id = $2`, hashedPassword, userID)
+	_, err = pool.Exec(context.Background(),
+		`UPDATE users SET password = $1, session_version = session_version + 1 WHERE id = $2`,
+		hashedPassword, userID)
 	return err
 }
 

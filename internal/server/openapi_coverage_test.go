@@ -33,6 +33,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/auth/device/deny",
 	"/api/v2/me",
 	"/api/v2/me/password",
+	"/api/v2/me/sign-out-others",
 	"/api/v2/me/mfa",
 	"/api/v2/me/mfa/setup",
 	"/api/v2/me/mfa/enable",

@@ -327,6 +327,11 @@ export const api = {
     })
   },
 
+  /** Signs out every other session of this account; this browser stays signed in. */
+  signOutOtherDevices() {
+    return request<{ ok: boolean }>('/api/v2/me/sign-out-others', { method: 'POST' })
+  },
+
   listAPIKeys() {
     return request<APIKey[]>('/api/v2/api-keys')
   },

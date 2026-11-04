@@ -374,9 +374,18 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := MigrateUsersAddSessionVersion(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddSessionVersion failed: %v\n", err)
+		errCount++
+	}
+
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {
 		fmt.Printf("migration: CreatePasswordResetTable failed: %v\n", err)
+		errCount++
+	}
+	if err := MigratePasswordResetHashTokens(); err != nil {
+		fmt.Printf("migration: MigratePasswordResetHashTokens failed: %v\n", err)
 		errCount++
 	}
 
