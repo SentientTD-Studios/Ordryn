@@ -54,6 +54,16 @@ export function useAuth() {
     return user.value
   }
 
+  /** Confirms the email; returns the user when that also signed them in, else null. */
+  async function verifyEmail(id: string, token: string, password: string) {
+    const result = await api.verifyEmail(id, token, password)
+    if ('id' in result) {
+      user.value = result
+      return user.value
+    }
+    return null
+  }
+
   async function completeSetup(payload: SetupPayload) {
     user.value = await api.completeSetup(payload)
     return user.value
@@ -126,6 +136,7 @@ export function useAuth() {
     managesPeople,
     refresh,
     login,
+    verifyEmail,
     verifyMFA,
     register,
     completeSetup,

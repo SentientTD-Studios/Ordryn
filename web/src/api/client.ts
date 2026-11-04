@@ -285,10 +285,10 @@ export const api = {
     })
   },
 
-  verifyEmail(id: string, token: string) {
-    return request<{ ok: boolean }>('/api/v2/auth/verify-email', {
+  verifyEmail(id: string, token: string, password: string) {
+    return request<User | { ok: boolean }>('/api/v2/auth/verify-email', {
       method: 'POST',
-      body: JSON.stringify({ id, token }),
+      body: JSON.stringify({ id, token, password }),
     })
   },
 

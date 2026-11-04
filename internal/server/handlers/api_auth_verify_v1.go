@@ -10,6 +10,8 @@ import (
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // verificationRequired reports whether open self-registration must confirm the
@@ -62,7 +64,8 @@ Confirm your email address to finish creating your %s account:
 
 %s
 
-This link expires in 48 hours. If you didn't sign up, ignore this email and no account will be activated.
+You'll be asked for the password you chose when you signed up. This link expires in 48 hours.
+If you didn't sign up, ignore this email and no account will be activated.
 `, site, link)
 	_ = mailer.SendEmail(storage.SiteEmailConfig(settings), mailer.TriggerEmailVerification, subject, body, email)
 }
@@ -96,12 +99,15 @@ func recoverBackground(what string) {
 }
 
 type verifyEmailRequest struct {
-	ID    string `json:"id"`
-	Token string `json:"token"`
+	ID       string `json:"id"`
+	Token    string `json:"token"`
+	Password string `json:"password"`
 }
 
-// APIV1VerifyEmail handles POST /api/v2/auth/verify-email. It confirms the email
-// but doesn't sign in: the person signs in with their password next.
+// APIV1VerifyEmail handles POST /api/v2/auth/verify-email. The link and the
+// password chosen at sign-up together confirm the email (see
+// storage.VerifyEmailWithToken for why the link alone isn't enough), and then
+// sign the person in.
 func APIV1VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -114,20 +120,55 @@ func APIV1VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	id := strings.TrimSpace(req.ID)
 	token := strings.TrimSpace(req.Token)
-	if id == "" || token == "" {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "id and token are required.")
+	if id == "" || token == "" || req.Password == "" {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "id, token and password are required.")
 		return
 	}
-	if _, err := storage.VerifyEmailWithToken(id, token); err != nil {
-		if errors.Is(err, storage.ErrVerificationInvalid) {
+	userID, err := storage.VerifyEmailWithToken(id, token, func(hash string) bool {
+		return bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) == nil
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrVerificationInvalid):
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_link",
 				"This confirmation link is invalid or has expired. Request a new one below.")
-			return
+		case errors.Is(err, storage.ErrVerificationPassword):
+			utils.APIJSONError(w, http.StatusUnauthorized, "invalid_credentials",
+				"That isn't the password this account was signed up with. If you signed up more than once, "+
+					"use the password from your latest sign-up and the link from the latest email.")
+		default:
+			fmt.Printf("APIV1VerifyEmail: %v\n", err)
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		}
-		fmt.Printf("APIV1VerifyEmail: %v\n", err)
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
+
+	// Confirmed. Sign in the same way a successful login would, except that an
+	// account needing a second factor (or one deactivated meanwhile) goes to the
+	// normal sign-in page instead.
+	profile, err := storage.GetUserProfileByID(userID)
+	if err != nil {
+		writeVerifiedOnly(w)
+		return
+	}
+	if banned, banErr := storage.IsUserBanned(profile.Email); banErr != nil || banned {
+		writeVerifiedOnly(w)
+		return
+	}
+	if mfa, mfaErr := storage.UserHasMFA(userID); mfaErr != nil || mfa {
+		writeVerifiedOnly(w)
+		return
+	}
+	if err := establishSession(w, r, profile); err != nil {
+		fmt.Printf("APIV1VerifyEmail session: %v\n", err)
+		writeVerifiedOnly(w)
+		return
+	}
+	writeAPIUserJSON(w, http.StatusOK, profile)
+}
+
+// writeVerifiedOnly answers a confirmation that didn't also sign the person in.
+func writeVerifiedOnly(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

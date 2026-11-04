@@ -296,7 +296,27 @@ func registerWithVerification(w http.ResponseWriter, r *http.Request, email, use
 		return
 	}
 
-	taken, err := storage.UsernameTaken(userName, 0)
+	existing, err := storage.GetUserByEmail(email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	unconfirmed := false
+	if existing != nil {
+		verified, verr := storage.IsEmailVerified(existing.ID)
+		if verr != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+			return
+		}
+		unconfirmed = !verified
+	}
+	// A repeat sign-up replaces an unconfirmed account's username, so that account
+	// doesn't count as holding it.
+	excludeID := 0
+	if unconfirmed {
+		excludeID = existing.ID
+	}
+	taken, err := storage.UsernameTaken(userName, excludeID)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
@@ -315,17 +335,26 @@ func registerWithVerification(w http.ResponseWriter, r *http.Request, email, use
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
-	existing, err := storage.GetUserByEmail(email)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
-		return
-	}
 	if existing != nil {
-		// Signing up again before confirming usually means the first link was
-		// lost or expired, so send a fresh one. Anyone can already request that
-		// through resend-verification, so this reveals nothing new.
-		verified, verr := storage.IsEmailVerified(existing.ID)
-		if verr == nil && !verified {
+		replaced := false
+		if unconfirmed {
+			// Signing up again before confirming: take this sign-up's details and
+			// send a fresh link. The first sign-up may not have been the owner's,
+			// and confirming also needs the password, so only whoever has both the
+			// inbox and the latest password can activate the account.
+			replaced, err = storage.ReplaceUnverifiedRegistration(existing.ID, string(hashed), timezone, userName)
+			if err != nil {
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+					utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+					return
+				}
+				fmt.Printf("APIV1AuthRegister replace unconfirmed: %v\n", err)
+				utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+				return
+			}
+		}
+		if replaced {
 			go sendVerificationEmail(existing.ID, existing.Email, utils.AbsoluteURLForRequest(r, "/verify-email"))
 		} else {
 			go sendSignupExistingEmail(existing.Email,

@@ -131,8 +131,10 @@ paths:
 
         Open sign-up on a site with email answers 202 for every address: a new
         address gets an unconfirmed account and a confirmation link; an address
-        that already has an account gets an email telling its owner. The account
-        can sign in once the link is used (`POST /api/v2/auth/verify-email`).
+        that already has an account gets an email telling its owner. Signing up
+        again with an address that is still unconfirmed replaces its password,
+        username and timezone and sends a new link. The account is activated by
+        using the link together with the password (`POST /api/v2/auth/verify-email`).
       security: []
       requestBody:
         required: true
@@ -336,8 +338,16 @@ paths:
   /api/v2/auth/verify-email:
     post:
       tags: [Auth]
-      summary: Confirm an email address
-      description: Uses up the link from the confirmation email. Doesn't sign in.
+      summary: Confirm an email address and sign in
+      description: |
+        Uses up the link from the confirmation email. The password chosen at
+        sign-up is required too: a link proves control of the inbox but not who
+        started the sign-up, and a repeat sign-up of an unconfirmed address
+        replaces its password. A wrong password leaves the link usable.
+
+        On success the account is signed in (session cookie, `User` body), unless
+        it needs a second factor or was deactivated; then the body is `{"ok": true}`
+        and the person signs in normally.
       security: []
       requestBody:
         required: true
@@ -345,22 +355,32 @@ paths:
           application/json:
             schema:
               type: object
-              required: [id, token]
+              required: [id, token, password]
               properties:
                 id:
                   type: string
                   format: uuid
                 token:
                   type: string
+                password:
+                  type: string
       responses:
         "200":
-          description: Email confirmed
+          description: Email confirmed; signed in (`User`) or confirmed only (`OK`)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OK"
+                oneOf:
+                  - $ref: "#/components/schemas/User"
+                  - $ref: "#/components/schemas/OK"
         "400":
-          description: "`invalid_link`: unknown, used or expired"
+          description: "`invalid_link`: unknown, used or expired; `invalid_request`: missing fields"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "`invalid_credentials`: the password isn't the account's; the link still works"
           content:
             application/json:
               schema:

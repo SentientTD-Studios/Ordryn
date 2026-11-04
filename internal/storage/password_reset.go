@@ -266,6 +266,16 @@ func ResetPasswordWithToken(id, token, passwordHash string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// The reset confirmed the email, so any outstanding confirmation link is spent.
+	if _, err := tx.Exec(ctx, `DELETE FROM email_verifications WHERE user_id = $1`, *userID); err != nil {
+		return "", err
+	}
+	// API keys keep working through a reset, as is usual. But a reset is also how
+	// someone takes an account back, and a key made by whoever had it would keep
+	// working too, so ask the owner to check their keys.
+	if _, err := tx.Exec(ctx, insertAPIKeyReviewNotificationSQL, *userID); err != nil {
+		return "", err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", err
 	}

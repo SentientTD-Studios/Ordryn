@@ -28,7 +28,7 @@ func TestVerifyEmailValidation(t *testing.T) {
 		t.Fatalf("missing fields: %d %v", code, payload)
 	}
 	// A malformed id is rejected before any database lookup.
-	code, payload = postJSON(t, APIV1VerifyEmail, "/api/v2/auth/verify-email", `{"id":"nope","token":"x"}`)
+	code, payload = postJSON(t, APIV1VerifyEmail, "/api/v2/auth/verify-email", `{"id":"nope","token":"x","password":"p"}`)
 	if code != http.StatusBadRequest || payload["error"] != "invalid_link" {
 		t.Fatalf("malformed id: %d %v", code, payload)
 	}
@@ -79,5 +79,14 @@ func TestVerificationPendingResponse(t *testing.T) {
 	}
 	if payload["verification_required"] != true || payload["message"] == "" {
 		t.Fatalf("payload = %v", payload)
+	}
+}
+
+// Confirming needs the sign-up password as well as the link.
+func TestVerifyEmailRequiresPassword(t *testing.T) {
+	code, payload := postJSON(t, APIV1VerifyEmail, "/api/v2/auth/verify-email",
+		`{"id":"6f1c2b9e-1d5a-4c1e-9a43-2a7b1f0c9d11","token":"abc"}`)
+	if code != http.StatusBadRequest || payload["error"] != "invalid_request" {
+		t.Fatalf("missing password: %d %v", code, payload)
 	}
 }
