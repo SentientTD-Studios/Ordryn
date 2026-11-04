@@ -142,6 +142,27 @@ function closePasswordForm() {
   confirmPassword.value = ''
 }
 
+const signingOut = ref(false)
+
+async function signOutOtherDevices() {
+  const ok = await askConfirm({
+    title: 'Sign out other devices',
+    message: 'Every other browser and device signed in to this account will be signed out. This one stays signed in. API keys keep working.',
+    confirmLabel: 'Sign out other devices',
+    warning: true,
+  })
+  if (!ok) return
+  signingOut.value = true
+  try {
+    await api.signOutOtherDevices()
+    push('Other devices were signed out', 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Could not sign out other devices', 'error')
+  } finally {
+    signingOut.value = false
+  }
+}
+
 async function changePassword() {
   busy.value = true
   try {
@@ -151,7 +172,7 @@ async function changePassword() {
       confirm_password: confirmPassword.value,
     })
     closePasswordForm()
-    push('Password updated', 'success')
+    push('Password updated. Your other devices were signed out.', 'success')
   } catch (err) {
     push(err instanceof APIError ? err.message : 'Password change failed', 'error')
   } finally {
@@ -358,6 +379,23 @@ onMounted(async () => {
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><h3 class="card-title mb-0">Signed-in devices</h3></div>
+    <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <p class="text-muted small mb-0">
+        Lost a device or signed in on a shared computer? Sign out everywhere except this browser.
+      </p>
+      <button
+        type="button"
+        class="btn btn-outline-secondary"
+        :disabled="signingOut"
+        @click="signOutOtherDevices"
+      >
+        {{ signingOut ? 'Signing out…' : 'Sign out other devices' }}
+      </button>
     </div>
   </div>
 

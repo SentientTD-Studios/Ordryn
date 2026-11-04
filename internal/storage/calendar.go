@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // GetUserByCalendarToken returns the user ID for a valid, non-banned calendar feed token.
@@ -52,7 +53,7 @@ func ClearCalendarTokenByEmail(email string) error {
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(),
-		"UPDATE users SET calendar_token = NULL WHERE email = $1", email)
+		"UPDATE users SET calendar_token = NULL WHERE LOWER(email) = LOWER($1)", strings.TrimSpace(email))
 	return err
 }
 

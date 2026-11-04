@@ -8,6 +8,7 @@ import (
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/server/handlers"
 	"GoTodo/internal/server/utils"
+	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
 	"fmt"
 	"net"
@@ -38,8 +39,10 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 }
 
 // handleAPI registers a REST path on the canonical /api/v2 prefix and the
-// /api/v1 compatibility alias, including BASE_PATH mounts.
+// /api/v1 compatibility alias, including BASE_PATH mounts. Every API route
+// rejects state-changing requests sent from other websites.
 func handleAPI(suffix string, fn http.HandlerFunc) {
+	fn = utils.RejectCrossSite(fn)
 	handleBoth("/api/v2"+suffix, fn)
 	handleBoth("/api/v1"+suffix, fn)
 }
@@ -48,6 +51,7 @@ func StartServer() error {
 	if err := utils.LoadRuntimeConfig(); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	sessionstore.Configure()
 
 	mode := utils.ResolveMode(os.Args[1:])
 	utils.SetRuntimeMode(mode)
@@ -72,12 +76,14 @@ func StartServer() error {
 	if err := storage.RunMigrations(); err != nil {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
 	}
+	handlers.CheckRegistrationConfig()
 
 	extensions.Load()
 	if err := domain.SyncCustomFieldDefs(); err != nil {
 		fmt.Printf("Warning: custom field sync failed: %v\n", err)
 	}
 
+	utils.CheckNetworkConfig()
 	announceSetup(mode)
 	// Creates the company once the first account exists and enrolls anyone missed.
 	if err := storage.EnsureCompanyReady(); err != nil {
@@ -124,8 +130,11 @@ func registerAPIV1Routes() {
 	handleAPI("/auth/forgot-password", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1ForgotPassword))
 	handleAPI("/join-requests", utils.NotInCompanyMode(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1JoinRequestsCreate)))
 	handleAPI("/auth/reset-password", handlers.APIV1ResetPasswordRouter)
+	handleAPI("/auth/verify-email", authPublic(handlers.APIV1VerifyEmail))
+	handleAPI("/auth/resend-verification", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1ResendVerification))
 	handleAPI("/me", utils.AuthMeChain(handlers.APIV1Me))
 	handleAPI("/me/password", utils.AuthSessionChain(handlers.APIV1ChangePassword))
+	handleAPI("/me/sign-out-others", utils.AuthSessionChain(handlers.APIV1SignOutOtherDevices))
 	handleAPI("/me/mfa", utils.AuthSessionChain(handlers.APIV1MeMFA))
 	handleAPI("/me/mfa/setup", utils.AuthSessionChain(handlers.APIV1MeMFASetup))
 	handleAPI("/me/mfa/enable", utils.AuthSessionChain(handlers.APIV1MeMFAEnable))

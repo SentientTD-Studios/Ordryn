@@ -25,6 +25,8 @@ type UserProfile struct {
 	UsernameChangeAvailable bool
 	MFAEnabled              bool
 	AvatarURL               string
+	// SessionVersion is recorded in the session cookie at sign-in; see GetSessionState.
+	SessionVersion int
 }
 
 // GetUserProfileByID loads profile fields and role permissions for a user.
@@ -42,13 +44,13 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		       COALESCE(u.allow_project_invites, true),
 		       COALESCE(u.username_change_available, false),
 		       COALESCE(u.mfa_enabled, false),
-		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name
+		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name, u.session_version
 		FROM users u
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1`, userID).Scan(
 		&p.ID, &p.Email, &p.UserName, &p.Timezone, &p.ItemsPerPage, &p.RoleID, &p.Permissions,
 		&p.AllowProjectInvites, &p.UsernameChangeAvailable,
-		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName,
+		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName, &p.SessionVersion,
 	)
 	if err != nil {
 		return nil, err
@@ -133,14 +135,17 @@ func GetPasswordHashByID(userID int) (string, error) {
 	return hash, err
 }
 
-// UpdatePasswordByID sets a new password hash for a user.
+// UpdatePasswordByID sets a new password hash for a user and signs out all of
+// their existing sessions.
 func UpdatePasswordByID(userID int, hashedPassword string) error {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return err
 	}
 	defer CloseDatabase(pool)
-	_, err = pool.Exec(context.Background(), `UPDATE users SET password = $1 WHERE id = $2`, hashedPassword, userID)
+	_, err = pool.Exec(context.Background(),
+		`UPDATE users SET password = $1, session_version = session_version + 1 WHERE id = $2`,
+		hashedPassword, userID)
 	return err
 }
 
@@ -168,6 +173,16 @@ func LookupInvite(email, token string) (id int, used bool, expiresAt *time.Time,
 // RegisterUser creates a user and optionally consumes an invite in one transaction.
 // inviteID <= 0 skips invite updates. userName must already be validated and unique.
 func RegisterUser(email, hashedPassword, timezone, userName string, roleID, inviteID int) (int, error) {
+	return registerUser(email, hashedPassword, timezone, userName, roleID, inviteID, true)
+}
+
+// RegisterUnverifiedUser creates an account that can't sign in until its email is
+// confirmed with VerifyEmailWithToken. Used for open self-registration.
+func RegisterUnverifiedUser(email, hashedPassword, timezone, userName string, roleID int) (int, error) {
+	return registerUser(email, hashedPassword, timezone, userName, roleID, 0, false)
+}
+
+func registerUser(email, hashedPassword, timezone, userName string, roleID, inviteID int, verified bool) (int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return 0, err
@@ -186,9 +201,9 @@ func RegisterUser(email, hashedPassword, timezone, userName string, roleID, invi
 
 	var id int
 	err = tx.QueryRow(ctx,
-		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available)
-		 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
-		strings.TrimSpace(email), hashedPassword, roleID, timezone, strings.TrimSpace(userName)).Scan(&id)
+		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available, email_verified_at)
+		 VALUES ($1, $2, $3, $4, $5, FALSE, CASE WHEN $6 THEN NOW() END) RETURNING id`,
+		NormalizeEmail(email), hashedPassword, roleID, timezone, strings.TrimSpace(userName), verified).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("register user: %w", err)
 	}
@@ -216,7 +231,7 @@ func GetAuthCredentials(email string) (hashedPassword string, roleID int, timezo
 	defer CloseDatabase(pool)
 
 	err = pool.QueryRow(context.Background(),
-		`SELECT password, role_id, COALESCE(timezone, 'America/New_York') FROM users WHERE email = $1`,
+		`SELECT password, role_id, COALESCE(timezone, 'America/New_York') FROM users WHERE LOWER(email) = LOWER($1) ORDER BY (email = $1) DESC, id LIMIT 1`,
 		strings.TrimSpace(email)).Scan(&hashedPassword, &roleID, &timezone)
 	return hashedPassword, roleID, timezone, err
 }

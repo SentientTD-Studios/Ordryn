@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"GoTodo/internal/storage"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -83,19 +86,27 @@ func writeAPIUserJSON(w http.ResponseWriter, status int, p *storage.UserProfile)
 	_ = json.NewEncoder(w).Encode(profileToMeJSON(p))
 }
 
+// establishSession signs p in on this browser. Each sign-in gets a fresh session
+// id and records the account's session version, so it can be revoked later.
 func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserProfile) error {
 	session, err := sessionstore.GetSession(r)
 	if err != nil {
 		return err
 	}
+	sid, err := utils.NewSessionID()
+	if err != nil {
+		return err
+	}
 	session.Values = map[interface{}]interface{}{
-		"user_id":        p.ID,
-		"email":          p.Email,
-		"user_name":      p.UserName,
-		"role_id":        p.RoleID,
-		"permissions":    p.Permissions,
-		"timezone":       p.Timezone,
-		"items_per_page": p.ItemsPerPage,
+		utils.SessionIDKey:      sid,
+		utils.SessionVersionKey: p.SessionVersion,
+		"user_id":               p.ID,
+		"email":                 p.Email,
+		"user_name":             p.UserName,
+		"role_id":               p.RoleID,
+		"permissions":           p.Permissions,
+		"timezone":              p.Timezone,
+		"items_per_page":        p.ItemsPerPage,
 	}
 	if session.Options == nil && sessionstore.Store != nil && sessionstore.Store.Options != nil {
 		opts := *sessionstore.Store.Options
@@ -140,6 +151,10 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Passwords do not match.")
 		return
 	}
+	if err := domain.ValidatePassword(req.Password); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", passwordPolicyMessage(err))
+		return
+	}
 	if !utils.IsValidTimezone(timezone) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid timezone.")
 		return
@@ -158,7 +173,11 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 
 	enableRegistration := true
 	inviteOnly := true
-	if settings, err := storage.GetSiteSettings(); err == nil && settings != nil {
+	settings, settingsErr := storage.GetSiteSettings()
+	if settingsErr != nil {
+		settings = nil
+	}
+	if settings != nil {
 		enableRegistration = settings.EnableRegistration
 		inviteOnly = settings.InviteOnly
 	}
@@ -169,6 +188,12 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if inviteOnly && token == "" {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invite token is required.")
+		return
+	}
+	// Open sign-up on a site that can send email: confirm the address first, and
+	// never say whether it's already registered.
+	if !inviteOnly && token == "" && verificationRequired(settings) {
+		registerWithVerification(w, r, email, userName, req.Password, timezone)
 		return
 	}
 
@@ -252,6 +277,114 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusCreated, profile)
 }
 
+// signupMailPerHour is how many sign-ups that send email one client may make per hour.
+const signupMailPerHour = 5
+
+// registerWithVerification creates an unconfirmed account and emails a link, or,
+// when the email already has an account, emails its owner instead. Both give the
+// same response and do the same expensive work, so neither the reply nor its
+// timing reveals which happened. Usernames are public, so a taken one is reported.
+func registerWithVerification(w http.ResponseWriter, r *http.Request, email, userName, password, timezone string) {
+	// Every request here sends an email, so limit how often one client can do it.
+	allowed, err := utils.AllowRequest(context.WithoutCancel(r.Context()), utils.RedisClient,
+		"rl:tb:signup-mail:"+utils.ClientIP(r), signupMailPerHour, signupMailPerHour/3600.0, 1, 3600)
+	if err != nil {
+		fmt.Printf("sign-up limit check: %v\n", err)
+	} else if !allowed {
+		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+			"Too many sign-ups from your network. Try again later.")
+		return
+	}
+
+	existing, err := storage.GetUserByEmail(email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	unconfirmed := false
+	if existing != nil {
+		verified, verr := storage.IsEmailVerified(existing.ID)
+		if verr != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+			return
+		}
+		unconfirmed = !verified
+	}
+	// A repeat sign-up replaces an unconfirmed account's username, so that account
+	// doesn't count as holding it.
+	excludeID := 0
+	if unconfirmed {
+		excludeID = existing.ID
+	}
+	taken, err := storage.UsernameTaken(userName, excludeID)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	if taken {
+		utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+		return
+	}
+	roleID, err := storage.GetDefaultRoleID()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	if existing != nil {
+		replaced := false
+		if unconfirmed {
+			// Signing up again before confirming: take this sign-up's details and
+			// send a fresh link. The first sign-up may not have been the owner's,
+			// and confirming also needs the password, so only whoever has both the
+			// inbox and the latest password can activate the account.
+			replaced, err = storage.ReplaceUnverifiedRegistration(existing.ID, string(hashed), timezone, userName)
+			if err != nil {
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+					utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+					return
+				}
+				fmt.Printf("APIV1AuthRegister replace unconfirmed: %v\n", err)
+				utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+				return
+			}
+		}
+		if replaced {
+			go sendVerificationEmail(existing.ID, existing.Email, utils.AbsoluteURLForRequest(r, "/verify-email"))
+		} else {
+			go sendSignupExistingEmail(existing.Email,
+				utils.AbsoluteURLForRequest(r, "/login"),
+				utils.AbsoluteURLForRequest(r, "/forgot-password"))
+		}
+		writeVerificationPending(w)
+		return
+	}
+
+	userID, err := storage.RegisterUnverifiedUser(email, string(hashed), timezone, userName, roleID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if strings.Contains(pgErr.ConstraintName, "user_name") {
+				utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+				return
+			}
+			// A concurrent sign-up took the email: answer as if it had existed.
+			writeVerificationPending(w)
+			return
+		}
+		fmt.Printf("APIV1AuthRegister: %v\n", err)
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	go sendVerificationEmail(userID, storage.NormalizeEmail(email), utils.AbsoluteURLForRequest(r, "/verify-email"))
+	writeVerificationPending(w)
+}
+
 // APIV1AuthLogin handles POST /api/v2/auth/login.
 func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -270,13 +403,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := utils.IsLoginBlocked(r.Context(), email, 5)
-	if err != nil {
-		fmt.Printf("APIV1AuthLogin block check: %v\n", err)
-	}
-	if blocked {
-		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
-			"Too many login attempts; please try again later.")
+	if !loginGateAllows(w, r, email) {
 		return
 	}
 
@@ -286,16 +413,15 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		err = errors.New("agent accounts cannot sign in")
 	}
 	if err != nil {
-		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
-			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)
-		}
+		// No real compare ran; spend the same time so a fast reply doesn't
+		// reveal that the account doesn't exist.
+		domain.SpendPasswordCheckTime(req.Password)
+		recordFailedLogin(r, email)
 		utils.APIJSONError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(req.Password)) != nil {
-		if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
-			fmt.Printf("APIV1AuthLogin increment failed login: %v\n", incErr)
-		}
+		recordFailedLogin(r, email)
 		utils.APIJSONError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password.")
 		return
 	}
@@ -308,6 +434,17 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	user, err := storage.GetUserByEmail(email)
 	if err != nil || user == nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	// Only reached with the right password, so this reveals nothing to a guesser.
+	// Enforced only while the site can send email: otherwise there'd be no way to
+	// get a confirmation link, and the account would be locked out for good.
+	if verified, err := storage.IsEmailVerified(user.ID); err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	} else if !verified && siteCanSendEmail() {
+		utils.APIJSONError(w, http.StatusForbidden, "email_unverified",
+			"Confirm your email address before signing in. Check your inbox for the link, or send a new one.")
 		return
 	}
 	profile, err := storage.GetUserProfileByID(user.ID)
@@ -336,10 +473,39 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "session_error", "Failed to create session.")
 		return
 	}
-	if clearErr := utils.ClearFailedLogin(r.Context(), email); clearErr != nil {
+	if clearErr := utils.ClearFailedLogin(r.Context(), email, utils.ClientIP(r)); clearErr != nil {
 		fmt.Printf("APIV1AuthLogin clear failed login: %v\n", clearErr)
 	}
 	writeAPIUserJSON(w, http.StatusOK, profile)
+}
+
+// loginGateAllows checks the sign-in limits for email from this client and, when
+// the attempt can't proceed, writes the 429 and returns false. Redis errors fail
+// open: a Redis outage shouldn't stop everyone signing in.
+func loginGateAllows(w http.ResponseWriter, r *http.Request, email string) bool {
+	gate, err := utils.CheckLogin(r.Context(), email, utils.ClientIP(r))
+	if err != nil {
+		fmt.Printf("sign-in limit check: %v\n", err)
+	}
+	switch gate {
+	case utils.LoginLocked:
+		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+			"Too many login attempts; please try again later.")
+		return false
+	case utils.LoginSlowedDown:
+		w.Header().Set("Retry-After", strconv.Itoa(utils.LoginSlowdownSeconds))
+		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+			"Too many failed sign-ins from your network. Wait a few seconds and try again.")
+		return false
+	}
+	return true
+}
+
+// recordFailedLogin counts a failed sign-in against the email and the client IP.
+func recordFailedLogin(r *http.Request, email string) {
+	if err := utils.RecordFailedLogin(r.Context(), email, utils.ClientIP(r)); err != nil {
+		fmt.Printf("record failed login: %v\n", err)
+	}
 }
 
 // APIV1AuthLogout handles POST /api/v2/auth/logout.
@@ -347,6 +513,12 @@ func APIV1AuthLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 		return
+	}
+	// Revoke this sign-in on the server too, so a copy of the cookie stops working.
+	if sess, err := sessionstore.GetSession(r); err == nil {
+		if err := utils.RevokeSessionID(r.Context(), utils.SessionStringValue(sess, utils.SessionIDKey)); err != nil {
+			fmt.Printf("APIV1AuthLogout revoke session: %v\n", err)
+		}
 	}
 	sessionstore.ClearSessionCookie(w, r)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

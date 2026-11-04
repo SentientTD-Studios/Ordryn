@@ -118,8 +118,8 @@ func CompleteSetup(ctx context.Context, in SetupInput, timezoneOK bool) (int, er
 	if !available {
 		return 0, fmt.Errorf("%w: that username is reserved; choose another", ErrValidation)
 	}
-	if len(in.Password) < 8 {
-		return 0, fmt.Errorf("%w: password must be at least 8 characters long", ErrValidation)
+	if err := ValidatePassword(in.Password); err != nil {
+		return 0, err
 	}
 	if in.Password != in.ConfirmPassword {
 		return 0, fmt.Errorf("%w: passwords do not match", ErrValidation)

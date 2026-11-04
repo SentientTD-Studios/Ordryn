@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"GoTodo/internal/server/utils"
@@ -77,7 +78,7 @@ func TestAPIV1AuthRegisterValidation(t *testing.T) {
 		},
 		{
 			name:       "invalid timezone",
-			body:       `{"email":"a@b.com","password":"x","confirm_password":"x","timezone":"Not/AZone","user_name":"alice"}`,
+			body:       `{"email":"a@b.com","password":"longenough1","confirm_password":"longenough1","timezone":"Not/AZone","user_name":"alice"}`,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "invalid_request",
 		},
@@ -109,6 +110,57 @@ func TestAPIV1AuthRegisterValidation(t *testing.T) {
 			}
 			if payload["error"] != tt.wantCode {
 				t.Fatalf("error = %q, want %q", payload["error"], tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestPasswordPolicyRejectedBeforeAnyLookup(t *testing.T) {
+	long := strings.Repeat("a", 73)
+	tests := []struct {
+		name     string
+		path     string
+		handler  http.HandlerFunc
+		body     string
+		wantText string
+	}{
+		{
+			name:     "register too short",
+			path:     "/api/v2/auth/register",
+			handler:  APIV1AuthRegister,
+			body:     `{"email":"a@b.com","password":"short","confirm_password":"short","timezone":"UTC","user_name":"alice"}`,
+			wantText: "Password must be at least 8 characters long.",
+		},
+		{
+			name:     "register too long",
+			path:     "/api/v2/auth/register",
+			handler:  APIV1AuthRegister,
+			body:     `{"email":"a@b.com","password":"` + long + `","confirm_password":"` + long + `","timezone":"UTC","user_name":"alice"}`,
+			wantText: "Password is too long",
+		},
+		{
+			name:     "reset too long",
+			path:     "/api/v2/auth/reset-password",
+			handler:  APIV1ResetPasswordRouter,
+			body:     `{"id":"x","token":"y","new_password":"` + long + `","confirm_password":"` + long + `"}`,
+			wantText: "Password is too long",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tt.path, bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			tt.handler(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+			}
+			var payload map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode: %v body=%s", err, rec.Body.String())
+			}
+			if !strings.HasPrefix(payload["message"], tt.wantText) {
+				t.Fatalf("message = %q, want prefix %q", payload["message"], tt.wantText)
 			}
 		})
 	}

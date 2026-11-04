@@ -166,7 +166,14 @@ func APIV1ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Changing the password signed out every session, this one included; sign
+	// this browser back in so only the other devices are logged out.
 	profile, err := storage.GetUserProfileByID(userID)
+	if err == nil && profile != nil && utils.GetAPIAuthKind(r) == utils.AuthKindSession {
+		if serr := establishSession(w, r, profile); serr != nil {
+			fmt.Printf("APIV1ChangePassword session: %v\n", serr)
+		}
+	}
 	if err == nil && profile != nil {
 		siteName := "GoTodo"
 		settings, serr := storage.GetSiteSettings()
@@ -187,6 +194,39 @@ This email cannot receive replies. Please do not reply to this email.
 		}
 	}
 
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// APIV1SignOutOtherDevices handles POST /api/v2/me/sign-out-others: it signs out
+// every other session of the account and keeps this one signed in.
+func APIV1SignOutOtherDevices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	userID, ok := utils.GetAPIUserID(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	if _, err := storage.BumpSessionVersion(userID); err != nil {
+		fmt.Printf("APIV1SignOutOtherDevices: %v\n", err)
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to sign out other devices.")
+		return
+	}
+	if utils.GetAPIAuthKind(r) == utils.AuthKindSession {
+		profile, err := storage.GetUserProfileByID(userID)
+		if err == nil {
+			err = establishSession(w, r, profile)
+		}
+		if err != nil {
+			fmt.Printf("APIV1SignOutOtherDevices session: %v\n", err)
+			utils.APIJSONError(w, http.StatusInternalServerError, "session_error",
+				"Other devices were signed out, but this one was too. Please sign in again.")
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

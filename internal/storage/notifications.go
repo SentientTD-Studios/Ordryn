@@ -15,7 +15,23 @@ const (
 	NotificationTaskCommented = "task_commented"
 	NotificationTaskMentioned = "task_mentioned"
 	NotificationJoinRequest   = "join_request"
+	// NotificationAPIKeyReview asks the owner to check their API keys after a
+	// password reset. It's a security notice, so preferences can't turn it off.
+	NotificationAPIKeyReview = "api_key_review"
 )
+
+// insertAPIKeyReviewNotificationSQL adds the API-key review notice for user $1
+// when they have any active key, personal or project. It skips the opt-out
+// checks in insertUserNotificationSQL on purpose.
+const insertAPIKeyReviewNotificationSQL = `INSERT INTO user_notifications (user_id, type, title, body)
+	 SELECT $1, '` + NotificationAPIKeyReview + `',
+	        'Check your API keys',
+	        'Your password was reset. API keys keep working after a reset, so check that you recognize ' ||
+	        'every key on your account and revoke any you don''t.'
+	 WHERE EXISTS (
+		SELECT 1 FROM api_keys
+		WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())
+	 )`
 
 // UserNotification is an in-app notification for a user.
 type UserNotification struct {

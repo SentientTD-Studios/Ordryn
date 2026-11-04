@@ -39,9 +39,7 @@ func incrementFailedMFA(r *http.Request, email string) {
 	if email == "" {
 		return
 	}
-	if _, incErr := utils.IncrementFailedLogin(r.Context(), email, 900); incErr != nil {
-		fmt.Printf("MFA increment failed login: %v\n", incErr)
-	}
+	recordFailedLogin(r, email)
 }
 
 // APIV1AuthMFAVerify handles POST /api/v2/auth/mfa/verify.
@@ -58,13 +56,7 @@ func APIV1AuthMFAVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := utils.IsLoginBlocked(r.Context(), email, 5)
-	if err != nil {
-		fmt.Printf("APIV1AuthMFAVerify block check: %v\n", err)
-	}
-	if blocked {
-		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
-			"Too many login attempts; please try again later.")
+	if !loginGateAllows(w, r, email) {
 		return
 	}
 
@@ -99,7 +91,7 @@ func APIV1AuthMFAVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if email != "" {
-		if clearErr := utils.ClearFailedLogin(r.Context(), email); clearErr != nil {
+		if clearErr := utils.ClearFailedLogin(r.Context(), email, utils.ClientIP(r)); clearErr != nil {
 			fmt.Printf("APIV1AuthMFAVerify clear failed login: %v\n", clearErr)
 		}
 	}

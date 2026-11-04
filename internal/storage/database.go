@@ -618,7 +618,7 @@ func GetUserByEmail(email string) (*User, error) {
 	var user User
 	// include items_per_page (use COALESCE to ensure default)
 	// Use COALESCE for user_name as well since it can be NULL for newly created users
-	err = pool.QueryRow(context.Background(), "SELECT id, email, password, COALESCE(user_name, ''), COALESCE(items_per_page, 15) FROM users WHERE email=$1", email).Scan(&user.ID, &user.Email, &user.Password, &user.UserName, &user.ItemsPerPage)
+	err = pool.QueryRow(context.Background(), "SELECT id, email, password, COALESCE(user_name, ''), COALESCE(items_per_page, 15) FROM users WHERE LOWER(email) = LOWER($1) ORDER BY (email = $1) DESC, id LIMIT 1", strings.TrimSpace(email)).Scan(&user.ID, &user.Email, &user.Password, &user.UserName, &user.ItemsPerPage)
 	if err != nil {
 		return nil, err
 	}
@@ -634,7 +634,7 @@ func IsUserBanned(email string) (bool, error) {
 	defer CloseDatabase(pool)
 
 	var isB bool
-	err = pool.QueryRow(context.Background(), "SELECT COALESCE(is_banned, FALSE) FROM users WHERE email = $1", email).Scan(&isB)
+	err = pool.QueryRow(context.Background(), "SELECT COALESCE(is_banned, FALSE) FROM users WHERE LOWER(email) = LOWER($1) ORDER BY (email = $1) DESC, id LIMIT 1", strings.TrimSpace(email)).Scan(&isB)
 	if err != nil {
 		return false, err
 	}

@@ -73,7 +73,7 @@ func CreateSetupAdmin(a SetupAdmin) (int, error) {
 	err = tx.QueryRow(ctx,
 		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available)
 		 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
-		strings.TrimSpace(a.Email), a.PasswordHash, roleID, a.Timezone, strings.TrimSpace(a.UserName)).Scan(&id)
+		NormalizeEmail(a.Email), a.PasswordHash, roleID, a.Timezone, strings.TrimSpace(a.UserName)).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("create setup admin: %w", err)
 	}

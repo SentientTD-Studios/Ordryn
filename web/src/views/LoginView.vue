@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { useSite } from '@/composables/useSite'
+import { api } from '@/api/client'
 import { APIError, isMFARequired } from '@/api/types'
 import {
   isDeviceAuthPath,
@@ -18,6 +19,9 @@ const mfaCode = ref('')
 const mfaRequired = ref(false)
 const busy = ref(false)
 const error = ref('')
+// True when the password was right but the email isn't confirmed yet.
+const needsConfirmation = ref(false)
+const resending = ref(false)
 const { login, verifyMFA } = useAuth()
 const { push } = useToast()
 const { enableJoinRequests, isCompanyMode } = useSite()
@@ -44,6 +48,7 @@ async function finishLogin() {
 async function onSubmit() {
   busy.value = true
   error.value = ''
+  needsConfirmation.value = false
   try {
     if (mfaRequired.value) {
       await verifyMFA(mfaCode.value.trim())
@@ -58,8 +63,21 @@ async function onSubmit() {
     await finishLogin()
   } catch (err) {
     error.value = err instanceof APIError ? err.message : 'Login failed'
+    needsConfirmation.value = err instanceof APIError && err.code === 'email_unverified'
   } finally {
     busy.value = false
+  }
+}
+
+async function resendConfirmation() {
+  resending.value = true
+  try {
+    await api.resendVerification(email.value.trim())
+    push('A new confirmation link is on its way. Check your inbox.', 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Could not send a new link', 'error')
+  } finally {
+    resending.value = false
   }
 }
 
@@ -104,6 +122,16 @@ function backToPassword() {
                   />
                 </div>
                 <div v-if="error" class="text-danger mb-2">{{ error }}</div>
+                <div v-if="needsConfirmation" class="mb-3">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    :disabled="resending"
+                    @click="resendConfirmation"
+                  >
+                    {{ resending ? 'Sending…' : 'Send a new confirmation link' }}
+                  </button>
+                </div>
                 <div class="mb-2">
                   <RouterLink to="/forgot-password" class="text-decoration-none small">Forgot Password?</RouterLink>
                 </div>

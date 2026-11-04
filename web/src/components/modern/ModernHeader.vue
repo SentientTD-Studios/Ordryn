@@ -94,6 +94,10 @@ async function openNotification(n: Notification) {
     await router.push({ name: 'admin-requests' })
     return
   }
+  if (n.type === 'api_key_review') {
+    await router.push({ path: '/settings', hash: '#developer' })
+    return
+  }
   if (n.task_id) {
     await router.push({ name: 'task', params: { id: String(n.task_id) } })
     return

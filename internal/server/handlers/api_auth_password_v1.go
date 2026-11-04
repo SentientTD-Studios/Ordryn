@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"GoTodo/internal/domain"
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
@@ -50,21 +51,44 @@ func APIV1ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Everything that depends on whether the account exists happens after the
+	// response, so the reply takes the same time for every address.
+	resetPage := utils.AbsoluteURLForRequest(r, "/reset-password")
+	go sendPasswordResetEmail(email, resetPage)
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// sendPasswordResetEmail mails a reset link when email belongs to a real account.
+// It runs in the background and never reports back to the requester.
+func sendPasswordResetEmail(email, resetPage string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			fmt.Printf("forgot-password: recovered from panic: %v\n", rec)
+		}
+	}()
 	user, err := storage.GetUserByEmail(email)
-	if err == nil && user != nil && !storage.IsAgentEmail(email) {
-		resetToken, err := storage.GenerateResetToken(email)
-		if err == nil {
-			resetLink := utils.AbsoluteURLForRequest(r,
-				fmt.Sprintf("/reset-password?token=%s&id=%s", resetToken.Token, resetToken.ID))
+	if err != nil || user == nil || storage.IsAgentEmail(user.Email) {
+		return
+	}
+	// Send to the address on the account, whatever case the request used.
+	email = user.Email
+	resetToken, err := storage.GenerateResetToken(user.ID, email)
+	if err != nil {
+		fmt.Printf("forgot-password: could not create reset token: %v\n", err)
+		return
+	}
+	resetLink := fmt.Sprintf("%s?token=%s&id=%s", resetPage, resetToken.Token, resetToken.ID)
 
-			siteName := "GoTodo"
-			settings, err := storage.GetSiteSettings()
-			if err == nil && settings != nil && settings.SiteName != "" {
-				siteName = settings.SiteName
-			}
+	siteName := "GoTodo"
+	settings, err := storage.GetSiteSettings()
+	if err == nil && settings != nil && settings.SiteName != "" {
+		siteName = settings.SiteName
+	}
 
-			subject := fmt.Sprintf("%s - Password Reset Request", siteName)
-			body := fmt.Sprintf(`Hello,
+	subject := fmt.Sprintf("%s - Password Reset Request", siteName)
+	body := fmt.Sprintf(`Hello,
 
 You requested to reset your password. Open this link to choose a new password:
 
@@ -75,12 +99,7 @@ This link will expire in 15 minutes.
 If you did not request this password reset, please ignore this email.
 `, resetLink)
 
-			_ = mailer.SendEmail(storage.SiteEmailConfig(settings), mailer.TriggerPasswordReset, subject, body, email)
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	_ = mailer.SendEmail(storage.SiteEmailConfig(settings), mailer.TriggerPasswordReset, subject, body, email)
 }
 
 // APIV1ResetPasswordRouter handles GET validate + POST reset for password recovery.
@@ -134,13 +153,13 @@ func apiV1ResetPassword(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Passwords do not match.")
 		return
 	}
-	if len(newPassword) < 8 {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Password must be at least 8 characters long.")
+	if err := domain.ValidatePassword(newPassword); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", passwordPolicyMessage(err))
 		return
 	}
 
-	reset, err := storage.ValidateResetToken(id, token)
-	if err != nil {
+	// Check the token before spending bcrypt time on a request that can't succeed.
+	if _, err := storage.ValidateResetToken(id, token); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid or expired reset token.")
 		return
 	}
@@ -151,14 +170,14 @@ func apiV1ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := storage.OpenDatabase()
-	if err != nil {
-		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+	// Uses up the token and sets the password together, so the token works once.
+	email, err := storage.ResetPasswordWithToken(id, token, string(hashedPassword))
+	if errors.Is(err, storage.ErrResetTokenInvalid) {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid or expired reset token.")
 		return
 	}
-	defer storage.CloseDatabase(db)
-
-	if _, err := db.Exec(context.Background(), "UPDATE users SET password = $1 WHERE email = $2", string(hashedPassword), reset.Email); err != nil {
+	if err != nil {
+		fmt.Printf("reset-password: %v\n", err)
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
@@ -175,9 +194,21 @@ Your password has been changed for %s.
 
 If you did not request this, please reach out to support.
 `, siteName)
-	_ = mailer.SendEmail(storage.SiteEmailConfig(settings), mailer.TriggerPasswordChanged, subject, body, reset.Email)
-	_ = storage.DeleteResetToken(id, token)
+	_ = mailer.SendEmail(storage.SiteEmailConfig(settings), mailer.TriggerPasswordChanged, subject, body, email)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// passwordPolicyMessage turns a domain.ValidatePassword error into a sentence for the user.
+func passwordPolicyMessage(err error) string {
+	msg := sharingClientMessage(err, "Password does not meet the requirements.")
+	if msg == "" {
+		return msg
+	}
+	msg = strings.ToUpper(msg[:1]) + msg[1:]
+	if !strings.HasSuffix(msg, ".") {
+		msg += "."
+	}
+	return msg
 }

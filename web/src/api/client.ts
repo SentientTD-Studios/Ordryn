@@ -104,6 +104,7 @@ import type {
   UserSearchHit,
   WorkflowMode,
   MFARequired,
+  VerificationPending,
   MFAStatus,
   MFASetup,
   MFARecoveryCodes,
@@ -278,9 +279,23 @@ export const api = {
     timezone?: string
     invite_token?: string
   }) {
-    return request<User>('/api/v2/auth/register', {
+    return request<User | VerificationPending>('/api/v2/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
+    })
+  },
+
+  verifyEmail(id: string, token: string, password: string) {
+    return request<User | { ok: boolean }>('/api/v2/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ id, token, password }),
+    })
+  },
+
+  resendVerification(email: string) {
+    return request<{ ok: boolean }>('/api/v2/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     })
   },
 
@@ -325,6 +340,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     })
+  },
+
+  /** Signs out every other session of this account; this browser stays signed in. */
+  signOutOtherDevices() {
+    return request<{ ok: boolean }>('/api/v2/me/sign-out-others', { method: 'POST' })
   },
 
   listAPIKeys() {

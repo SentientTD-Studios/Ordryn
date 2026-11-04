@@ -37,7 +37,7 @@ func UserExistsByEmail(email string) (bool, error) {
 
 	var id int
 	err = pool.QueryRow(context.Background(),
-		`SELECT id FROM users WHERE email = $1`, strings.TrimSpace(email)).Scan(&id)
+		`SELECT id FROM users WHERE LOWER(email) = LOWER($1)`, strings.TrimSpace(email)).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
@@ -59,7 +59,7 @@ func CreateUser(email, hashedPassword, timezone string, roleID int) (int, error)
 	if timezone == "" {
 		timezone = "America/New_York"
 	}
-	email = strings.TrimSpace(email)
+	email = NormalizeEmail(email)
 	claimed := make(map[string]int)
 	userName, err := allocateGeneratedUsername(email, claimed)
 	if err != nil {

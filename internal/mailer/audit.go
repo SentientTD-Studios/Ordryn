@@ -16,6 +16,8 @@ const (
 	TriggerOrganizationInvite = "organization_invite"
 	TriggerNotification       = "notification"
 	TriggerNotificationDigest = "notification_digest"
+	TriggerEmailVerification  = "email_verification"
+	TriggerSignupExisting     = "signup_existing_account"
 
 	StatusSent          = "sent"
 	StatusFailed        = "failed"
@@ -54,7 +56,8 @@ func KnownTrigger(t string) bool {
 	switch strings.TrimSpace(t) {
 	case TriggerPasswordReset, TriggerPasswordChanged, TriggerSiteInvite,
 		TriggerJoinRequest, TriggerProjectInvite, TriggerOrganizationInvite,
-		TriggerNotification, TriggerNotificationDigest:
+		TriggerNotification, TriggerNotificationDigest,
+		TriggerEmailVerification, TriggerSignupExisting:
 		return true
 	default:
 		return false

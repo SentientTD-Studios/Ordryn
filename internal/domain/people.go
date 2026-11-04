@@ -282,7 +282,7 @@ func CreateAccountForUser(ctx context.Context, actorUserID int, in CreateAccount
 			return &CreatedAccount{UserID: userID}, fmt.Errorf("account created, but adding it to the team failed: %w", err)
 		}
 	}
-	reset, err := storage.GenerateResetTokenTTL(email, SetPasswordLinkTTL)
+	reset, err := storage.GenerateResetTokenTTL(userID, email, SetPasswordLinkTTL)
 	if err != nil {
 		return &CreatedAccount{UserID: userID}, fmt.Errorf("account created, but the set-password link failed: %w", err)
 	}
