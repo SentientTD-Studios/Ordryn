@@ -160,101 +160,90 @@ func KeyByUser(r *http.Request) string {
 	return "user:" + strings.ToLower(email)
 }
 
+// Failed sign-in limits. Each counts failures over LoginFailureWindowSeconds.
 const (
-	// LoginFailuresPerEmail locks an email out of sign-in for the window below.
-	LoginFailuresPerEmail = 5
-	// LoginFailuresPerIP blocks an IP that fails this often across any accounts in
-	// the window. Only failures count, so an office behind one NAT address isn't
-	// blocked by its own successful sign-ins.
+	// LoginFailuresPerEmailAndIP locks one email out from one IP. Someone guessing
+	// from elsewhere can't lock the real owner out this way.
+	LoginFailuresPerEmailAndIP = 5
+	// LoginFailuresPerEmail is the backstop for guesses spread over many IPs.
+	LoginFailuresPerEmail = 30
+	// LoginFailuresPerIP blocks an IP that fails this often across any accounts.
+	// Only failures count, so an office behind one NAT address isn't blocked by
+	// its own successful sign-ins.
 	LoginFailuresPerIP = 20
 	// LoginFailureWindowSeconds is how long failures are remembered.
 	LoginFailureWindowSeconds = 900
 )
 
-func failedLoginIPKey(ip string) string {
-	return "rl:fail:ip:" + ip
+type failureCounter struct {
+	key   string
+	limit int64
 }
 
-// IncrementFailedLoginForIP counts a failed sign-in from ip.
-func IncrementFailedLoginForIP(ctx context.Context, ip string) error {
-	if RedisClient == nil || ip == "" {
+// loginFailureCounters returns the counters a sign-in attempt for email from ip
+// is checked against. Counters with an empty part are skipped.
+func loginFailureCounters(email, ip string) []failureCounter {
+	email = strings.ToLower(strings.TrimSpace(email))
+	var out []failureCounter
+	if email != "" && ip != "" {
+		out = append(out, failureCounter{"rl:fail:email-ip:" + email + "|" + ip, LoginFailuresPerEmailAndIP})
+	}
+	if email != "" {
+		out = append(out, failureCounter{"rl:fail:email:" + email, LoginFailuresPerEmail})
+	}
+	if ip != "" {
+		out = append(out, failureCounter{"rl:fail:ip:" + ip, LoginFailuresPerIP})
+	}
+	return out
+}
+
+// LoginBlocked reports whether sign-in for email from ip is blocked by any limit.
+func LoginBlocked(ctx context.Context, email, ip string) (bool, error) {
+	if RedisClient == nil {
+		return false, nil
+	}
+	for _, c := range loginFailureCounters(email, ip) {
+		val, err := RedisClient.Get(ctx, c.key).Int64()
+		if err == redis.Nil {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if val >= c.limit {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// RecordFailedLogin counts a failed password or MFA code for email from ip.
+func RecordFailedLogin(ctx context.Context, email, ip string) error {
+	if RedisClient == nil {
 		return nil
 	}
-	key := failedLoginIPKey(ip)
-	val, err := RedisClient.Incr(ctx, key).Result()
-	if err != nil {
-		return err
-	}
-	if val == 1 {
-		_, _ = RedisClient.Expire(ctx, key, LoginFailureWindowSeconds*time.Second).Result()
+	for _, c := range loginFailureCounters(email, ip) {
+		val, err := RedisClient.Incr(ctx, c.key).Result()
+		if err != nil {
+			return err
+		}
+		if val == 1 {
+			_, _ = RedisClient.Expire(ctx, c.key, LoginFailureWindowSeconds*time.Second).Result()
+		}
 	}
 	return nil
 }
 
-// IsLoginBlockedForIP reports whether ip has reached LoginFailuresPerIP.
-func IsLoginBlockedForIP(ctx context.Context, ip string) (bool, error) {
-	if RedisClient == nil || ip == "" {
-		return false, nil
-	}
-	val, err := RedisClient.Get(ctx, failedLoginIPKey(ip)).Int64()
-	if err != nil {
-		if err == redis.Nil {
-			return false, nil
-		}
-		return false, err
-	}
-	return val >= LoginFailuresPerIP, nil
-}
-
-// IncrementFailedLogin increments a per-email failed-login counter with TTL (windowSeconds).
-// Returns the current count after incrementing.
-func IncrementFailedLogin(ctx context.Context, email string, windowSeconds int) (int64, error) {
-	if RedisClient == nil {
-		return 0, nil
-	}
-	if email == "" {
-		return 0, nil
-	}
-	key := "rl:fail:email:" + strings.ToLower(email)
-	val, err := RedisClient.Incr(ctx, key).Result()
-	if err != nil {
-		return 0, err
-	}
-	if val == 1 {
-		// first failure, set TTL
-		_, _ = RedisClient.Expire(ctx, key, time.Duration(windowSeconds)*time.Second).Result()
-	}
-	return val, nil
-}
-
-// IsLoginBlocked checks whether the failed-login counter for email has reached threshold.
-func IsLoginBlocked(ctx context.Context, email string, threshold int64) (bool, error) {
-	if RedisClient == nil {
-		return false, nil
-	}
-	if email == "" {
-		return false, nil
-	}
-	key := "rl:fail:email:" + strings.ToLower(email)
-	val, err := RedisClient.Get(ctx, key).Int64()
-	if err != nil {
-		if err == redis.Nil {
-			return false, nil
-		}
-		return false, err
-	}
-	return val >= threshold, nil
-}
-
-// ClearFailedLogin removes the failed-login counter for the given email.
-func ClearFailedLogin(ctx context.Context, email string) error {
+// ClearFailedLogin resets the email-and-IP counter after a successful sign-in.
+// The per-email and per-IP counters run out on their own, so a successful
+// sign-in doesn't reset the budget of someone guessing from elsewhere.
+func ClearFailedLogin(ctx context.Context, email, ip string) error {
 	if RedisClient == nil {
 		return nil
 	}
-	if email == "" {
+	counters := loginFailureCounters(email, ip)
+	if len(counters) == 0 || !strings.HasPrefix(counters[0].key, "rl:fail:email-ip:") {
 		return nil
 	}
-	key := "rl:fail:email:" + strings.ToLower(email)
-	_, err := RedisClient.Del(ctx, key).Result()
-	return err
+	return RedisClient.Del(ctx, counters[0].key).Err()
 }

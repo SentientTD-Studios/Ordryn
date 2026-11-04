@@ -5,7 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { useSite } from '@/composables/useSite'
 import { api } from '@/api/client'
-import { APIError } from '@/api/types'
+import { APIError, isVerificationPending } from '@/api/types'
 import TimezoneSelect from '@/components/TimezoneSelect.vue'
 
 function queryString(value: unknown): string {
@@ -28,6 +28,10 @@ const busy = ref(false)
 const error = ref('')
 const usernameHint = ref('')
 const usernameOk = ref<boolean | null>(null)
+// Set once open sign-up has emailed a confirmation link.
+const pendingEmail = ref('')
+const pendingMessage = ref('')
+const resending = ref(false)
 const { register } = useAuth()
 const { push } = useToast()
 const { enableJoinRequests } = useSite()
@@ -62,7 +66,7 @@ async function onSubmit() {
   busy.value = true
   error.value = ''
   try {
-    await register({
+    const result = await register({
       email: email.value.trim(),
       user_name: userName.value.trim(),
       password: password.value,
@@ -70,12 +74,31 @@ async function onSubmit() {
       timezone: timezone.value,
       invite_token: invite.value.trim() || undefined,
     })
+    if (isVerificationPending(result)) {
+      pendingEmail.value = email.value.trim()
+      pendingMessage.value = result.message
+      password.value = ''
+      confirm.value = ''
+      return
+    }
     push('Account created', 'success')
     await router.replace('/')
   } catch (err) {
     error.value = err instanceof APIError ? err.message : 'Registration failed'
   } finally {
     busy.value = false
+  }
+}
+
+async function resendConfirmation() {
+  resending.value = true
+  try {
+    await api.resendVerification(pendingEmail.value)
+    push('If that address is waiting for confirmation, a new link is on its way', 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Could not send a new link', 'error')
+  } finally {
+    resending.value = false
   }
 }
 </script>
@@ -86,8 +109,21 @@ async function onSubmit() {
       <div class="col-md-6">
         <div class="card">
           <div class="card-body">
-            <h1 class="card-title">Sign Up</h1>
-            <form @submit.prevent="onSubmit">
+            <h1 class="card-title">{{ pendingEmail ? 'Check your email' : 'Sign Up' }}</h1>
+            <div v-if="pendingEmail">
+              <p>{{ pendingMessage }}</p>
+              <p class="text-muted small">
+                We sent it to <strong>{{ pendingEmail }}</strong>. The link expires in 48 hours.
+                You can sign in once you've confirmed your address.
+              </p>
+              <div class="d-flex flex-wrap gap-2">
+                <RouterLink to="/login" class="btn btn-primary">Go to sign in</RouterLink>
+                <button type="button" class="btn btn-outline-secondary" :disabled="resending" @click="resendConfirmation">
+                  {{ resending ? 'Sending…' : 'Send a new link' }}
+                </button>
+              </div>
+            </div>
+            <form v-else @submit.prevent="onSubmit">
               <div class="mb-3">
                 <label for="signup-email" class="form-label">Email</label>
                 <input
@@ -158,7 +194,7 @@ async function onSubmit() {
                 {{ busy ? 'Creating…' : 'Create account' }}
               </button>
             </form>
-            <p class="mt-3 mb-0 text-muted">
+            <p v-if="!pendingEmail" class="mt-3 mb-0 text-muted">
               Already registered?
               <RouterLink to="/login">Sign in</RouterLink>
               <template v-if="enableJoinRequests">

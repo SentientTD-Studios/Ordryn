@@ -42,6 +42,16 @@ export function isMFARequired(value: User | MFARequired): value is MFARequired {
   return 'mfa_required' in value && value.mfa_required === true
 }
 
+/** Open sign-up answers this for every address: the account waits for email confirmation. */
+export type VerificationPending = {
+  verification_required: true
+  message: string
+}
+
+export function isVerificationPending(value: User | VerificationPending): value is VerificationPending {
+  return 'verification_required' in value && value.verification_required === true
+}
+
 export type UserSearchHit = {
   user_name: string
 }
@@ -1244,6 +1254,8 @@ export type EmailAuditTrigger =
   | 'join_request'
   | 'project_invite'
   | 'organization_invite'
+  | 'email_verification'
+  | 'signup_existing_account'
 
 export type EmailAuditEntry = {
   id: number

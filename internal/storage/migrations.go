@@ -382,6 +382,14 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateUsersEmailCaseInsensitive failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateUsersAddEmailVerified(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddEmailVerified failed: %v\n", err)
+		errCount++
+	}
+	if err := CreateEmailVerificationsTable(); err != nil {
+		fmt.Printf("migration: CreateEmailVerificationsTable failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {

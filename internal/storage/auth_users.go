@@ -173,6 +173,16 @@ func LookupInvite(email, token string) (id int, used bool, expiresAt *time.Time,
 // RegisterUser creates a user and optionally consumes an invite in one transaction.
 // inviteID <= 0 skips invite updates. userName must already be validated and unique.
 func RegisterUser(email, hashedPassword, timezone, userName string, roleID, inviteID int) (int, error) {
+	return registerUser(email, hashedPassword, timezone, userName, roleID, inviteID, true)
+}
+
+// RegisterUnverifiedUser creates an account that can't sign in until its email is
+// confirmed with VerifyEmailWithToken. Used for open self-registration.
+func RegisterUnverifiedUser(email, hashedPassword, timezone, userName string, roleID int) (int, error) {
+	return registerUser(email, hashedPassword, timezone, userName, roleID, 0, false)
+}
+
+func registerUser(email, hashedPassword, timezone, userName string, roleID, inviteID int, verified bool) (int, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return 0, err
@@ -191,9 +201,9 @@ func RegisterUser(email, hashedPassword, timezone, userName string, roleID, invi
 
 	var id int
 	err = tx.QueryRow(ctx,
-		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available)
-		 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
-		NormalizeEmail(email), hashedPassword, roleID, timezone, strings.TrimSpace(userName)).Scan(&id)
+		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available, email_verified_at)
+		 VALUES ($1, $2, $3, $4, $5, FALSE, CASE WHEN $6 THEN NOW() END) RETURNING id`,
+		NormalizeEmail(email), hashedPassword, roleID, timezone, strings.TrimSpace(userName), verified).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("register user: %w", err)
 	}

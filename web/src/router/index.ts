@@ -72,6 +72,12 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      // Opened from the confirmation email; works signed in or out.
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('@/views/VerifyEmailView.vue'),
+    },
+    {
       path: '/register',
       name: 'register',
       component: () => import('@/views/RegisterView.vue'),

@@ -28,6 +28,8 @@ const triggerOptions = [
   { value: 'organization_invite', label: 'Organization invite' },
   { value: 'notification', label: 'Notification' },
   { value: 'notification_digest', label: 'Notification digest' },
+  { value: 'email_verification', label: 'Email confirmation' },
+  { value: 'signup_existing_account', label: 'Sign-up with existing email' },
 ] as const
 
 const totalPages = computed(() => Math.max(1, Math.ceil(result.value.total / pageSize)))

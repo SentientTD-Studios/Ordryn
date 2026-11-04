@@ -104,6 +104,7 @@ import type {
   UserSearchHit,
   WorkflowMode,
   MFARequired,
+  VerificationPending,
   MFAStatus,
   MFASetup,
   MFARecoveryCodes,
@@ -278,9 +279,23 @@ export const api = {
     timezone?: string
     invite_token?: string
   }) {
-    return request<User>('/api/v2/auth/register', {
+    return request<User | VerificationPending>('/api/v2/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
+    })
+  },
+
+  verifyEmail(id: string, token: string) {
+    return request<{ ok: boolean }>('/api/v2/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ id, token }),
+    })
+  },
+
+  resendVerification(email: string) {
+    return request<{ ok: boolean }>('/api/v2/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     })
   },
 

@@ -25,6 +25,8 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/auth/login",
 	"/api/v2/auth/mfa/verify",
 	"/api/v2/auth/logout",
+	"/api/v2/auth/verify-email",
+	"/api/v2/auth/resend-verification",
 	"/api/v2/auth/username-available",
 	"/api/v2/auth/device/code",
 	"/api/v2/auth/device/token",

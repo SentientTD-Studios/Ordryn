@@ -14,6 +14,7 @@ import (
 	"GoTodo/internal/storage"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -170,7 +171,11 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 
 	enableRegistration := true
 	inviteOnly := true
-	if settings, err := storage.GetSiteSettings(); err == nil && settings != nil {
+	settings, settingsErr := storage.GetSiteSettings()
+	if settingsErr != nil {
+		settings = nil
+	}
+	if settings != nil {
 		enableRegistration = settings.EnableRegistration
 		inviteOnly = settings.InviteOnly
 	}
@@ -181,6 +186,12 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if inviteOnly && token == "" {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invite token is required.")
+		return
+	}
+	// Open sign-up on a site that can send email: confirm the address first, and
+	// never say whether it's already registered.
+	if !inviteOnly && token == "" && verificationRequired(settings) {
+		registerWithVerification(w, r, email, userName, req.Password, timezone)
 		return
 	}
 
@@ -264,6 +275,63 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusCreated, profile)
 }
 
+// registerWithVerification creates an unconfirmed account and emails a link, or,
+// when the email already has an account, emails its owner instead. Both give the
+// same response and do the same expensive work, so neither the reply nor its
+// timing reveals which happened. Usernames are public, so a taken one is reported.
+func registerWithVerification(w http.ResponseWriter, r *http.Request, email, userName, password, timezone string) {
+	taken, err := storage.UsernameTaken(userName, 0)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	if taken {
+		utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+		return
+	}
+	roleID, err := storage.GetDefaultRoleID()
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	exists, err := storage.UserExistsByEmail(email)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	if exists {
+		go sendSignupExistingEmail(email,
+			utils.AbsoluteURLForRequest(r, "/login"),
+			utils.AbsoluteURLForRequest(r, "/forgot-password"))
+		writeVerificationPending(w)
+		return
+	}
+
+	userID, err := storage.RegisterUnverifiedUser(email, string(hashed), timezone, userName, roleID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if strings.Contains(pgErr.ConstraintName, "user_name") {
+				utils.APIJSONError(w, http.StatusConflict, "username_taken", "That username is already taken.")
+				return
+			}
+			// A concurrent sign-up took the email: answer as if it had existed.
+			writeVerificationPending(w)
+			return
+		}
+		fmt.Printf("APIV1AuthRegister: %v\n", err)
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	go sendVerificationEmail(userID, storage.NormalizeEmail(email), utils.AbsoluteURLForRequest(r, "/verify-email"))
+	writeVerificationPending(w)
+}
+
 // APIV1AuthLogin handles POST /api/v2/auth/login.
 func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -282,15 +350,11 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := utils.IsLoginBlocked(r.Context(), email, utils.LoginFailuresPerEmail)
+	blocked, err := utils.LoginBlocked(r.Context(), email, utils.ClientIP(r))
 	if err != nil {
 		fmt.Printf("APIV1AuthLogin block check: %v\n", err)
 	}
-	ipBlocked, err := utils.IsLoginBlockedForIP(r.Context(), utils.ClientIP(r))
-	if err != nil {
-		fmt.Printf("APIV1AuthLogin IP block check: %v\n", err)
-	}
-	if blocked || ipBlocked {
+	if blocked {
 		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
 			"Too many login attempts; please try again later.")
 		return
@@ -325,6 +389,15 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
+	// Only reached with the right password, so this reveals nothing to a guesser.
+	if verified, err := storage.IsEmailVerified(user.ID); err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	} else if !verified {
+		utils.APIJSONError(w, http.StatusForbidden, "email_unverified",
+			"Confirm your email address before signing in. Check your inbox for the link, or send a new one.")
+		return
+	}
 	profile, err := storage.GetUserProfileByID(user.ID)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
@@ -351,7 +424,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "session_error", "Failed to create session.")
 		return
 	}
-	if clearErr := utils.ClearFailedLogin(r.Context(), email); clearErr != nil {
+	if clearErr := utils.ClearFailedLogin(r.Context(), email, utils.ClientIP(r)); clearErr != nil {
 		fmt.Printf("APIV1AuthLogin clear failed login: %v\n", clearErr)
 	}
 	writeAPIUserJSON(w, http.StatusOK, profile)
@@ -359,11 +432,8 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 
 // recordFailedLogin counts a failed sign-in against the email and the client IP.
 func recordFailedLogin(r *http.Request, email string) {
-	if _, err := utils.IncrementFailedLogin(r.Context(), email, utils.LoginFailureWindowSeconds); err != nil {
-		fmt.Printf("APIV1AuthLogin increment failed login: %v\n", err)
-	}
-	if err := utils.IncrementFailedLoginForIP(r.Context(), utils.ClientIP(r)); err != nil {
-		fmt.Printf("APIV1AuthLogin increment failed login for IP: %v\n", err)
+	if err := utils.RecordFailedLogin(r.Context(), email, utils.ClientIP(r)); err != nil {
+		fmt.Printf("record failed login: %v\n", err)
 	}
 }
 

@@ -76,6 +76,7 @@ func StartServer() error {
 	if err := storage.RunMigrations(); err != nil {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
 	}
+	handlers.CheckRegistrationConfig()
 
 	extensions.Load()
 	if err := domain.SyncCustomFieldDefs(); err != nil {
@@ -129,6 +130,8 @@ func registerAPIV1Routes() {
 	handleAPI("/auth/forgot-password", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1ForgotPassword))
 	handleAPI("/join-requests", utils.NotInCompanyMode(utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1JoinRequestsCreate)))
 	handleAPI("/auth/reset-password", handlers.APIV1ResetPasswordRouter)
+	handleAPI("/auth/verify-email", authPublic(handlers.APIV1VerifyEmail))
+	handleAPI("/auth/resend-verification", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1ResendVerification))
 	handleAPI("/me", utils.AuthMeChain(handlers.APIV1Me))
 	handleAPI("/me/password", utils.AuthSessionChain(handlers.APIV1ChangePassword))
 	handleAPI("/me/sign-out-others", utils.AuthSessionChain(handlers.APIV1SignOutOtherDevices))

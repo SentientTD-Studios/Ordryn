@@ -82,6 +82,8 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/auth/login</code></a></td><td>Login (session cookie; may require MFA)</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/auth/mfa/verify</code></a></td><td>Complete MFA login</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/auth/logout</code></a></td><td>Sign out this session</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/auth/verify-email</code></a></td><td>Confirm an email address</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#session-auth"><code>/api/v2/auth/resend-verification</code></a></td><td>Send a new confirmation link</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#session-auth"><code>/api/v2/auth/username-available</code></a></td><td>Check username availability</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#session-auth"><code>/api/v2/users/search</code></a></td><td>Search usernames for project invites or discussion mentions</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#session-auth"><code>/api/v2/me</code></a></td><td>Current user / update profile prefs</td></tr>

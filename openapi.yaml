@@ -124,7 +124,15 @@ paths:
   /api/v2/auth/register:
     post:
       tags: [Auth]
-      summary: Register and start a session
+      summary: Register an account
+      description: |
+        With an invite token, or on a site without outbound email, the account is
+        created and signed in (201).
+
+        Open sign-up on a site with email answers 202 for every address: a new
+        address gets an unconfirmed account and a confirmation link; an address
+        that already has an account gets an email telling its owner. The account
+        can sign in once the link is used (`POST /api/v2/auth/verify-email`).
       security: []
       requestBody:
         required: true
@@ -139,6 +147,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
+        "202":
+          description: Confirmation email sent (or, for an existing address, a notice to its owner)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_required:
+                    type: boolean
+                  message:
+                    type: string
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -303,6 +322,76 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >-
+            `email_unverified`: the password is right but the email hasn't been
+            confirmed yet. `banned`: the account is deactivated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v2/auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Confirm an email address
+      description: Uses up the link from the confirmation email. Doesn't sign in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, token]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Email confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          description: "`invalid_link`: unknown, used or expired"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v2/auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Send a new confirmation link
+      description: >-
+        Always answers 200. If the address has an unconfirmed account, a new link
+        is emailed and earlier links stop working.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
         "429":
           $ref: "#/components/responses/RateLimited"
 

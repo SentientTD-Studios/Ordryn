@@ -66,6 +66,14 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "password_reset hash: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateUsersAddEmailVerified(); err != nil {
+		fmt.Fprintf(os.Stderr, "email_verified_at: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateEmailVerificationsTable(); err != nil {
+		fmt.Fprintf(os.Stderr, "email_verifications: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.MigrateUsersAddAllowProjectInvites(); err != nil {
 		fmt.Fprintf(os.Stderr, "allow_project_invites: %v\n", err)
 		os.Exit(1)

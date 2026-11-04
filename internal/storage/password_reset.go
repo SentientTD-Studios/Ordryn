@@ -190,7 +190,8 @@ func ValidateResetToken(id, token string) (*PasswordReset, error) {
 
 // ResetPasswordWithToken uses up the token and sets the account's password in one
 // transaction, so a token works exactly once even under concurrent requests. It
-// also signs out the account's existing sessions. It returns the account's email.
+// also signs out the account's existing sessions, and confirms the email: the link
+// was delivered there. It returns the account's email.
 func ResetPasswordWithToken(id, token, passwordHash string) (string, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return "", ErrResetTokenInvalid
@@ -228,7 +229,9 @@ func ResetPasswordWithToken(id, token, passwordHash string) (string, error) {
 	}
 
 	tag, err := tx.Exec(ctx,
-		`UPDATE users SET password = $1, session_version = session_version + 1 WHERE LOWER(email) = LOWER($2)`,
+		`UPDATE users SET password = $1, session_version = session_version + 1,
+		        email_verified_at = COALESCE(email_verified_at, NOW())
+		 WHERE LOWER(email) = LOWER($2)`,
 		passwordHash, email)
 	if err != nil {
 		return "", err

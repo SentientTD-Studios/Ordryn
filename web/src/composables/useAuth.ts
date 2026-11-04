@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { api } from '@/api/client'
 import type { SetupPayload, User } from '@/api/types'
-import { isMFARequired } from '@/api/types'
+import { isMFARequired, isVerificationPending } from '@/api/types'
 
 const user = ref<User | null>(null)
 const loading = ref(false)
@@ -45,7 +45,12 @@ export function useAuth() {
     timezone?: string
     invite_token?: string
   }) {
-    user.value = await api.register(payload)
+    const result = await api.register(payload)
+    // Open sign-up waits for email confirmation: nobody is signed in yet.
+    if (isVerificationPending(result)) {
+      return result
+    }
+    user.value = result
     return user.value
   }
 
