@@ -102,6 +102,12 @@ func authenticateBearer(w http.ResponseWriter, r *http.Request, token string) bo
 		APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Invalid, expired, or revoked API key.")
 		return false
 	}
+	if p.IsLocalAgent {
+		if err := authorizeLocalAgentKeyRequest(r, p); err != nil {
+			writeScopedKeyError(w, err)
+			return false
+		}
+	}
 	if p.IsProjectScoped() {
 		// Agent keys act as the agent, whose own checks run in
 		// authorizeProjectKeyRequest; other project keys act as their creator.
@@ -111,18 +117,176 @@ func authenticateBearer(w http.ResponseWriter, r *http.Request, token string) bo
 			return false
 		}
 		if err := authorizeProjectKeyRequest(r, p); err != nil {
-			var se *scopedKeyError
-			if errors.As(err, &se) {
-				APIJSONError(w, se.status, se.code, se.message)
-			} else {
-				APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
-			}
+			writeScopedKeyError(w, err)
 			return false
 		}
 	}
 	ctx := context.WithValue(r.Context(), apiKeyPrincipalKey{}, p)
 	*r = *SetAPIAuthKind(SetAPIUserID(r.WithContext(ctx), p.UserID), AuthKindAPIKey)
 	return true
+}
+
+func writeScopedKeyError(w http.ResponseWriter, err error) {
+	var se *scopedKeyError
+	if errors.As(err, &se) {
+		APIJSONError(w, se.status, se.code, se.message)
+		return
+	}
+	APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
+}
+
+func errLocalAgentEndpoint() error {
+	return &scopedKeyError{http.StatusForbidden, "forbidden",
+		"Local agent keys can only read and work on tasks; this endpoint is not available to them."}
+}
+
+// authorizeLocalAgentKeyRequest is the allowlist for local agent keys. They act
+// as their owner, so the handler still applies the owner's project roles; this
+// narrows what the key can reach to tasks, comments, and the lookups an agent
+// needs to work on them, within its scopes and optional project limit. Anything
+// not matched here is denied, including account settings and minting keys.
+func authorizeLocalAgentKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) error {
+	parts := strings.Split(apiRoutePath(r), "/")
+	pid := p.LimitProjectID
+	require := func(scope string) error {
+		if !p.HasScope(scope) {
+			return errScopedMissing(scope)
+		}
+		return nil
+	}
+	inProject := func(taskID int) error {
+		if pid == 0 {
+			return nil // the handler checks the owner's access
+		}
+		return requireTaskInProject(taskID, pid)
+	}
+
+	switch {
+	// /mcp: tool calls are replayed through this same allowlist.
+	case len(parts) == 1 && parts[0] == "mcp":
+		return require(storage.APIScopeTasksRead)
+
+	// /me: who the agent is working for.
+	case len(parts) == 1 && parts[0] == "me" && r.Method == http.MethodGet:
+		return require(storage.APIScopeTasksRead)
+
+	// /tasks
+	case len(parts) == 1 && parts[0] == "tasks":
+		switch r.Method {
+		case http.MethodGet:
+			if err := require(storage.APIScopeTasksRead); err != nil {
+				return err
+			}
+			if pid > 0 {
+				q := r.URL.Query()
+				q.Set("project", strconv.Itoa(pid))
+				r.URL.RawQuery = q.Encode()
+			}
+			return nil
+		case http.MethodPost:
+			if err := require(storage.APIScopeTasksWrite); err != nil {
+				return err
+			}
+			if pid > 0 {
+				return checkScopedTaskBody(r, pid, true, nil)
+			}
+			return nil
+		}
+
+	// /tasks/{id}
+	case len(parts) == 2 && parts[0] == "tasks":
+		taskID, ok := positiveInt(parts[1])
+		if !ok {
+			break
+		}
+		switch r.Method {
+		case http.MethodGet:
+			if err := require(storage.APIScopeTasksRead); err != nil {
+				return err
+			}
+			return inProject(taskID)
+		case http.MethodPatch:
+			if err := require(storage.APIScopeTasksWrite); err != nil {
+				return err
+			}
+			if err := inProject(taskID); err != nil {
+				return err
+			}
+			if pid > 0 {
+				return checkScopedTaskBody(r, pid, false, nil)
+			}
+			return nil
+		}
+
+	// /tasks/{id}/comments and /tasks/{id}/claim
+	case len(parts) == 3 && parts[0] == "tasks":
+		taskID, ok := positiveInt(parts[1])
+		if !ok {
+			break
+		}
+		switch {
+		case parts[2] == "comments" && r.Method == http.MethodGet:
+			if err := require(storage.APIScopeTasksRead); err != nil {
+				return err
+			}
+			return inProject(taskID)
+		case parts[2] == "comments" && r.Method == http.MethodPost:
+			if err := require(storage.APIScopeCommentsWrite); err != nil {
+				return err
+			}
+			return inProject(taskID)
+		case parts[2] == "claim" && (r.Method == http.MethodPost || r.Method == http.MethodDelete):
+			if err := require(storage.APIScopeTasksWrite); err != nil {
+				return err
+			}
+			return inProject(taskID)
+		}
+
+	// /projects: the list only when the key isn't limited to one project.
+	case len(parts) == 1 && parts[0] == "projects" && r.Method == http.MethodGet:
+		if pid > 0 {
+			return errScopedEndpoint(pid)
+		}
+		return require(storage.APIScopeTasksRead)
+
+	// /projects/{id} and its read-only lookups (statuses, sprints, custom fields)
+	case parts[0] == "projects" && len(parts) >= 2 && len(parts) <= 3 && r.Method == http.MethodGet:
+		id, ok := positiveInt(parts[1])
+		if !ok {
+			break
+		}
+		if pid > 0 && id != pid {
+			return errScopedNotFound()
+		}
+		if len(parts) == 3 {
+			switch parts[2] {
+			case "statuses", "sprints", "custom-fields":
+			default:
+				return errLocalAgentEndpoint()
+			}
+		}
+		return require(storage.APIScopeTasksRead)
+
+	// /tags?project_id=N (read-only)
+	case len(parts) == 1 && parts[0] == "tags" && r.Method == http.MethodGet:
+		if err := require(storage.APIScopeTasksRead); err != nil {
+			return err
+		}
+		if pid > 0 {
+			raw := strings.TrimSpace(r.URL.Query().Get("project_id"))
+			if raw != "" && raw != strconv.Itoa(pid) {
+				return errScopedNotFound()
+			}
+			q := r.URL.Query()
+			q.Set("project_id", strconv.Itoa(pid))
+			r.URL.RawQuery = q.Encode()
+		}
+		return nil
+	}
+	if pid > 0 {
+		return errScopedEndpoint(pid)
+	}
+	return errLocalAgentEndpoint()
 }
 
 // authorizeProjectKeyRequest is the allowlist for project-scoped keys. Anything

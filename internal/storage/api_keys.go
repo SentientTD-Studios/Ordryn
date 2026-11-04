@@ -32,9 +32,20 @@ type APIKey struct {
 	ProjectID  *int
 	Scopes     []string
 	ExpiresAt  *time.Time
+	// Kind is "" for standard keys and APIKeyKindLocalAgent for local agent keys.
+	Kind string
+	// LimitProjectID optionally limits a local agent key to one project.
+	LimitProjectID *int
 	// CreatorName is filled by ListProjectAPIKeys for display.
 	CreatorName string
+	// LimitProjectName is filled by ListAPIKeysForUser for display.
+	LimitProjectName string
 }
+
+// APIKeyKindLocalAgent marks a personal key made for an AI agent running on the
+// owner's machine (Claude Code, Codex, Gemini CLI, ...). It acts as the owner,
+// but only through the task allowlist and its scopes, optionally in one project.
+const APIKeyKindLocalAgent = "local_agent"
 
 // Project API key scopes.
 const (
@@ -54,6 +65,11 @@ type APIKeyPrincipal struct {
 	Scopes    []string
 	// IsAgent is true when the key belongs to an AI agent account.
 	IsAgent bool
+	// IsLocalAgent is true for a personal local agent key (see APIKeyKindLocalAgent).
+	IsLocalAgent bool
+	// LimitProjectID is the one project a local agent key may reach, or 0 for
+	// every project its owner belongs to.
+	LimitProjectID int
 }
 
 // IsProjectScoped reports whether the key is limited to a single project.
@@ -107,6 +123,9 @@ func CreateAPIKeysTable() error {
 		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS scopes TEXT[] NOT NULL DEFAULT '{}'`,
 		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
 		`CREATE INDEX IF NOT EXISTS idx_api_keys_project_id ON api_keys(project_id) WHERE project_id IS NOT NULL`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT ''`,
+		// CASCADE, never SET NULL: clearing the limit would widen the key to every project.
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS limit_project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE`,
 	} {
 		if _, err := pool.Exec(context.Background(), stmt); err != nil {
 			return fmt.Errorf("failed to migrate api_keys: %v", err)
@@ -131,38 +150,48 @@ func newAPIKeyRaw() (string, error) {
 
 // CreateAPIKey generates a new key, stores its hash, and returns the plaintext once.
 func CreateAPIKey(userID int, name string) (plaintext string, record *APIKey, err error) {
+	return createPersonalAPIKey(APIKey{UserID: userID, Name: name})
+}
+
+// CreateOrRotateLocalAgentAPIKey revokes any same-name personal keys, then
+// mints a local agent key. Callers validate scopes, the project limit, and the
+// expiry first.
+func CreateOrRotateLocalAgentAPIKey(userID int, name string, scopes []string, limitProjectID *int, expiresAt *time.Time) (string, *APIKey, error) {
+	if err := RevokeAPIKeysByName(userID, name); err != nil {
+		return "", nil, err
+	}
+	return createPersonalAPIKey(APIKey{UserID: userID, Name: name, Kind: APIKeyKindLocalAgent,
+		Scopes: scopes, LimitProjectID: limitProjectID, ExpiresAt: expiresAt})
+}
+
+func createPersonalAPIKey(k APIKey) (string, *APIKey, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return "", nil, err
 	}
 	defer CloseDatabase(pool)
 
-	plaintext, err = newAPIKeyRaw()
+	plaintext, err := newAPIKeyRaw()
 	if err != nil {
 		return "", nil, err
 	}
-	hash := HashAPIKey(plaintext)
 	prefix := plaintext
 	if len(prefix) > 24 {
 		prefix = prefix[:24] + "…"
 	}
-
-	var id int
-	var createdAt time.Time
+	k.KeyPrefix = prefix
+	scopes := k.Scopes
+	if scopes == nil {
+		scopes = []string{}
+	}
 	err = pool.QueryRow(context.Background(),
-		`INSERT INTO api_keys (user_id, name, key_hash, key_prefix)
-		 VALUES ($1, $2, $3, $4) RETURNING id, created_at`,
-		userID, name, hash, prefix).Scan(&id, &createdAt)
+		`INSERT INTO api_keys (user_id, name, key_hash, key_prefix, kind, scopes, limit_project_id, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
+		k.UserID, k.Name, HashAPIKey(plaintext), prefix, k.Kind, scopes, k.LimitProjectID, k.ExpiresAt).Scan(&k.ID, &k.CreatedAt)
 	if err != nil {
 		return "", nil, err
 	}
-	return plaintext, &APIKey{
-		ID:        id,
-		UserID:    userID,
-		Name:      name,
-		KeyPrefix: prefix,
-		CreatedAt: createdAt,
-	}, nil
+	return plaintext, &k, nil
 }
 
 // ListAPIKeysForUser returns non-revoked keys for display (no hash).
@@ -174,9 +203,12 @@ func ListAPIKeysForUser(userID int) ([]APIKey, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT id, user_id, name, key_prefix, created_at, last_used_at, revoked_at
-		 FROM api_keys WHERE user_id = $1 AND project_id IS NULL AND revoked_at IS NULL
-		 ORDER BY created_at DESC`, userID)
+		`SELECT ak.id, ak.user_id, ak.name, ak.key_prefix, ak.created_at, ak.last_used_at, ak.revoked_at,
+		        ak.kind, ak.scopes, ak.limit_project_id, COALESCE(p.name, ''), ak.expires_at
+		 FROM api_keys ak
+		 LEFT JOIN projects p ON p.id = ak.limit_project_id
+		 WHERE ak.user_id = $1 AND ak.project_id IS NULL AND ak.revoked_at IS NULL
+		 ORDER BY ak.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -185,12 +217,13 @@ func ListAPIKeysForUser(userID int) ([]APIKey, error) {
 	out := make([]APIKey, 0)
 	for rows.Next() {
 		var k APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt,
+			&k.Kind, &k.Scopes, &k.LimitProjectID, &k.LimitProjectName, &k.ExpiresAt); err != nil {
 			return nil, err
 		}
 		out = append(out, k)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // RevokeAPIKeysByName revokes all active keys for a user that share the given name.
@@ -297,18 +330,36 @@ func LookupAPIKey(rawKey string) (*APIKeyPrincipal, error) {
 	var p APIKeyPrincipal
 	var projectID *int
 	var isBanned bool
+	var kind string
+	var limitProjectID *int
 	err = pool.QueryRow(context.Background(),
-		`SELECT ak.id, ak.user_id, ak.project_id, ak.scopes, COALESCE(u.is_banned, FALSE), COALESCE(u.is_agent, FALSE)
+		`SELECT ak.id, ak.user_id, ak.project_id, ak.scopes, COALESCE(u.is_banned, FALSE), COALESCE(u.is_agent, FALSE),
+		        ak.kind, ak.limit_project_id
 		 FROM api_keys ak
 		 JOIN users u ON u.id = ak.user_id
 		 WHERE ak.key_hash = $1 AND ak.revoked_at IS NULL
 		   AND (ak.expires_at IS NULL OR ak.expires_at > NOW())`,
-		HashAPIKey(rawKey)).Scan(&p.KeyID, &p.UserID, &projectID, &p.Scopes, &isBanned, &p.IsAgent)
+		HashAPIKey(rawKey)).Scan(&p.KeyID, &p.UserID, &projectID, &p.Scopes, &isBanned, &p.IsAgent, &kind, &limitProjectID)
 	if err != nil || isBanned {
 		return nil, fmt.Errorf("invalid key")
 	}
 	if projectID != nil {
 		p.ProjectID = *projectID
+	}
+	switch kind {
+	case "":
+	case APIKeyKindLocalAgent:
+		// A local agent key is always a personal key of a human account;
+		// anything else is a malformed row and fails closed.
+		if projectID != nil || p.IsAgent {
+			return nil, fmt.Errorf("invalid key")
+		}
+		p.IsLocalAgent = true
+		if limitProjectID != nil {
+			p.LimitProjectID = *limitProjectID
+		}
+	default:
+		return nil, fmt.Errorf("invalid key")
 	}
 
 	_, _ = pool.Exec(context.Background(),

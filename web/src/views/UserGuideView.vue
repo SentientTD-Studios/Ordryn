@@ -329,6 +329,33 @@ onUnmounted(() => {
           </li>
         </ul>
 
+        <h3 id="local-agents" class="h5 mt-4">Your own AI agent (local agent keys)</h3>
+        <p>
+          If you already work with an AI coding agent on your computer (Claude Code, Codex, Gemini CLI, Cursor, or
+          similar), you don't need to set up a project agent. Let it read your tasks directly instead: open
+          <strong>Settings → Developer → Local AI agents</strong>, create a key, and copy the setup for your agent.
+          Then, in your editor or terminal, just say “check out task #123” or paste a task link.
+        </p>
+        <ul>
+          <li>
+            The key acts as <em>you</em>: the agent sees the projects you can see, and any comment or change it makes
+            appears under your name. By default it can only read. Tick <strong>Post comments</strong> or
+            <strong>Create, update, move and claim tasks</strong> if you want it to report back or move cards.
+          </li>
+          <li>
+            Pick one project under <strong>Projects</strong> to keep the key to that project, which suits a key you
+            use in one repository.
+          </li>
+          <li>
+            A local agent key can't change your account, create other keys, or delete anything. Revoke it from the
+            API keys list at any time.
+          </li>
+          <li>
+            Nothing runs on this site and no model API is called. Your agent connects over MCP, or the REST API if
+            it doesn't support MCP, only while you're using it.
+          </li>
+        </ul>
+
         <h2 id="automation" class="h4 mt-4">Automation rules</h2>
         <p>
           Project managers can set up rules under project settings → <strong>Rules</strong> so routine cleanup happens

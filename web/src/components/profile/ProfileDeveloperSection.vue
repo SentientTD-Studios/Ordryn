@@ -5,6 +5,8 @@ import type { APIKey } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { keyExpiryLabel, scopeLabel } from '@/utils/projectApiKeys'
+import LocalAgentKeysCard from './LocalAgentKeysCard.vue'
 
 const { push } = useToast()
 const { askConfirm } = useConfirm()
@@ -83,11 +85,15 @@ onMounted(() => {
 </script>
 
 <template>
+  <LocalAgentKeysCard @created="loadKeys" />
   <div id="api-keys-section" class="card mb-4">
     <div class="card-header">
       <h3 class="card-title mb-0">API keys</h3>
     </div>
     <div class="card-body">
+      <p class="text-muted small">
+        Keys created here act with your full access. For an AI agent, create a local agent key above instead.
+      </p>
       <form class="row g-2 mb-3" @submit.prevent="createKey">
         <div class="col-sm-8">
           <input v-model="keyName" type="text" class="form-control" placeholder="Key name" required maxlength="80" />
@@ -117,7 +123,11 @@ onMounted(() => {
               </div>
             </template>
             <template v-else>
-              <span class="api-key-name">{{ key.name }}</span>
+              <span class="api-key-name">
+                {{ key.name }}
+                <span v-if="key.kind === 'local_agent'" class="badge text-bg-info ms-1">Local agent</span>
+                <span v-if="key.expired" class="badge text-bg-danger ms-1">Expired</span>
+              </span>
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-secondary" @click="beginRenameKey(key)">Rename</button>
                 <button type="button" class="btn btn-sm btn-outline-danger" @click="revokeKey(key)">Revoke</button>
@@ -137,6 +147,20 @@ onMounted(() => {
               <span class="api-key-field-label">Last used</span>
               <span class="api-key-field-value">{{ key.last_used_at ? formatKeyTime(key.last_used_at) : 'Never' }}</span>
             </div>
+            <template v-if="key.kind === 'local_agent'">
+              <div class="api-key-field">
+                <span class="api-key-field-label">Can</span>
+                <span class="api-key-field-value">{{ key.scopes.map(scopeLabel).join(', ') }}</span>
+              </div>
+              <div class="api-key-field">
+                <span class="api-key-field-label">Projects</span>
+                <span class="api-key-field-value">{{ key.project_id ? `Only ${key.project_name || `#${key.project_id}`}` : 'All my projects' }}</span>
+              </div>
+              <div class="api-key-field">
+                <span class="api-key-field-label">Expires</span>
+                <span class="api-key-field-value">{{ keyExpiryLabel(key.expires_at) }}</span>
+              </div>
+            </template>
           </div>
         </div>
         <p v-if="!keys.length" class="text-muted mb-0">No API keys.</p>

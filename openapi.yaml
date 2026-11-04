@@ -24,6 +24,17 @@ info:
     `/api/v2/agent`, and an MCP endpoint at `/api/v2/mcp`. Edits outside the
     guardrails return 403 `agent_guardrail`.
 
+    Local agent keys (`POST /api/v2/api-keys` with `kind: "local_agent"`) are
+    personal keys for an AI agent on your own machine (Claude Code, Codex,
+    Gemini CLI, Cursor, a script). They act as you, carry the same scopes as
+    project keys (`tasks:read` is required), and may be limited to one project
+    with `project_id`. They reach only `/mcp`, `GET /me`, tasks (list, get,
+    create, update, claim), task comments (list, post), `GET /projects` (when
+    not limited), a project's details, statuses, sprints and custom fields, and
+    `GET /tags`. Everything else returns 403, including key management and
+    account settings. When limited, tasks in other projects return 404 and
+    lists are filtered to the project.
+
     Rate limits (per user, Redis token bucket). Reads and writes are independent.
     Bearer API keys: 120 GET/min (~2/sec) and 60 writes/min (~1/sec).
     SPA session cookies use a higher budget (600 GET/min, 240 writes/min) so the
@@ -1567,6 +1578,14 @@ paths:
     post:
       tags: [API Keys]
       summary: Create or rotate a named API key
+      description: |
+        Creates a personal key. An existing key with the same name is revoked.
+        `kind: "standard"` (the default) acts with your full access.
+        `kind: "local_agent"` makes a key for an AI agent on your machine: it
+        acts as you but only through the task allowlist, within `scopes`
+        (default `["tasks:read"]`; `tasks:read` is required) and, if
+        `project_id` is set, one project you belong to. Local agent keys and
+        project keys cannot create keys.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -1581,6 +1600,25 @@ paths:
                 name:
                   type: string
                   maxLength: 80
+                kind:
+                  type: string
+                  enum: [standard, local_agent]
+                  default: standard
+                scopes:
+                  type: array
+                  description: local_agent only
+                  items:
+                    type: string
+                    enum: ["tasks:read", "tasks:write", "comments:write"]
+                project_id:
+                  type: integer
+                  nullable: true
+                  description: local_agent only; limits the key to this project
+                expires_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: local_agent only; at most 5 years out
       responses:
         "201":
           description: Key created; plaintext shown once
@@ -5155,15 +5193,25 @@ paths:
   /api/v2/mcp:
     post:
       tags: [AI Agents]
-      summary: Model Context Protocol endpoint (agent keys only)
+      summary: Model Context Protocol endpoint (agent and local agent keys)
       description: |
         MCP over the streamable HTTP transport, answering with plain JSON (no SSE
         stream). Supports `initialize`, `ping`, `tools/list`, and `tools/call`.
-        Tools: get_agent_context, list_my_runs, start_run, finish_run, get_task,
-        get_task_comments, list_tasks, add_comment, move_task, update_task,
-        create_task. Each tool is replayed through the REST API with the caller's
-        key, so the same guardrails and rate limits apply; guardrail refusals come
-        back as tool results with `isError: true`.
+
+        AI agent keys get: get_agent_context, list_my_runs, start_run,
+        finish_run, get_task, get_task_comments, list_tasks, add_comment,
+        move_task, update_task, create_task.
+
+        Local agent keys get get_context, get_project, get_task (with
+        `include_comments`), get_task_comments, and list_tasks with `tasks:read`;
+        update_task, move_task, create_task, and claim_task with `tasks:write`;
+        and add_comment with `comments:write`. Tools outside the key's scopes are
+        not listed. `task_id` also accepts `"#123"` or a `/tasks/123` link.
+
+        Each tool is replayed through the REST API with the caller's key, so the
+        same allowlist, scopes, guardrails, and rate limits apply; refusals come
+        back as tool results with `isError: true`. Standard personal keys and
+        project keys get 403.
       security:
         - BearerAuth: []
       requestBody:
@@ -8961,6 +9009,26 @@ components:
           type: string
           format: date-time
           nullable: true
+        kind:
+          type: string
+          enum: [standard, local_agent]
+        scopes:
+          type: array
+          description: Empty for standard keys
+          items:
+            type: string
+        project_id:
+          type: integer
+          nullable: true
+          description: The one project a local agent key is limited to
+        project_name:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        expired:
+          type: boolean
 
     APIKeyCreated:
       allOf:

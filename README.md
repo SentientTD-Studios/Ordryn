@@ -161,13 +161,25 @@ Refusals return `403 agent_guardrail`. **Pause** refuses the agent's keys and st
 
 **Connecting an agent.** Mint a key on the agent's settings (it acts as the agent, never as you), then use any of:
 
-- **MCP:** `POST /api/v2/mcp` is a Model Context Protocol server (streamable HTTP, JSON responses). For Claude Code:
+- **MCP:** `POST /api/v2/mcp` is a Model Context Protocol server (also used by [local agent keys](#local-agent-keys)) (streamable HTTP, JSON responses). For Claude Code:
   `claude mcp add --transport http gotodo-<handle> https://<host>/api/v2/mcp --header "Authorization: Bearer <agent key>"`.
   Tools: `get_agent_context`, `list_my_runs`, `start_run`, `finish_run`, `get_task`, `get_task_comments`, `list_tasks`, `add_comment`, `move_task`, `update_task`, `create_task`. They run through the REST API with the same key, so guardrails and rate limits are identical.
 - **REST queue:** `GET /api/v2/agent` (instructions, guardrails, statuses), `GET /api/v2/agent/runs`, `POST /api/v2/agent/runs/{id}/start`, `POST /api/v2/agent/runs/{id}/finish` with `{ "status": "succeeded"|"failed", "summary" }`.
 - **Webhook:** set a public HTTPS `webhook_url` and each new run is POSTed as `agent.run` JSON (run, agent instructions, task, guardrails, API URLs; never a key). Requests are signed with `X-Ordryn-Signature: sha256=HMAC(secret, body)` once you create a signing secret. Delivery is tried once. Failures show on the run, and the run stays in the agent's queue.
 
 Treat anything members write on a task as input the agent will read: limit who can trigger it and give it only the role and guardrails it needs. Full reference: the in-app API docs (`/docs/api/v2#ai-agents`) and [`openapi.yaml`](openapi.yaml) (tag **AI Agents**).
+
+### Local agent keys
+
+To let an AI agent on your own machine read your tasks while you work with it, with no project agent and no model API on the server, create a **local agent key** under **Settings → Developer → Local AI agents** (or `POST /api/v2/api-keys` with `"kind": "local_agent"`). Then say "check out task #123" in Claude Code, Codex, Gemini CLI, Cursor, or any MCP client. The page gives copy-paste setup for each.
+
+- **Acts as you.** The agent sees what you can see, and comments or edits appear under your name. Comments and edits go through the same role checks as your session.
+- **Scopes.** Same as project keys. `tasks:read` is required. `tasks:write` (update, move, create, claim) and `comments:write` are opt-in.
+- **Optional project limit** (`project_id`). Other projects' tasks return 404 and lists are filtered. The key is deleted with the project.
+- **Allowlist.** `/mcp`, `GET /me`, tasks (list, get, create, update, claim), task comments (list, post), project details, statuses, sprints, custom fields, and tags. Everything else returns 403, including key management, account settings, and deletes.
+- **MCP tools.** `get_context`, `get_project`, `get_task` (with `include_comments`), `get_task_comments`, and `list_tasks` (`mine: true` for your claimed tasks). With the write scopes it also gets `update_task`, `move_task`, `create_task`, `claim_task`, and `add_comment`. Tools outside the key's scopes are not listed. `task_id` accepts `123`, `"#123"`, or a pasted `/tasks/123` link.
+
+Standard personal keys still act with full access and are refused by `/mcp`.
 
 ## Automation rules
 

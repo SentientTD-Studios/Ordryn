@@ -47,6 +47,7 @@ onUnmounted(() => {
                             <li class="list-inline-item"><a href="#overview">Overview</a></li>
                             <li class="list-inline-item"><a href="#authentication">Authentication</a></li>
                             <li class="list-inline-item"><a href="#project-keys">Project API keys</a></li>
+                            <li class="list-inline-item"><a href="#local-agent-keys">Local agent keys</a></li>
                             <li class="list-inline-item"><a href="#ai-agents">AI agents &amp; MCP</a></li>
                             <li class="list-inline-item"><a href="#session-auth">Session auth (SPA)</a></li>
                             <li class="list-inline-item"><a href="#device-auth">Device authorization</a></li>
@@ -203,6 +204,38 @@ Content-Type: application/json
 
 → 201 { "id", "name", "key_prefix", "scopes", "expires_at", "key": "gotodo_…" }</code></pre>
 
+                    <h2 id="local-agent-keys" class="h4 mt-4">Local agent keys</h2>
+                    <p>
+                        A local agent key lets an AI agent on your own machine (Claude Code, Codex, Gemini CLI, Cursor, or a
+                        script) read your tasks while you work with it in your editor, for example “check out task #123”.
+                        Create one under profile → Developer → <strong>Local AI agents</strong>, or with
+                        <code>POST /api/v2/api-keys</code> and <code>"kind": "local_agent"</code>. It acts as you, so the agent
+                        sees what you see and anything it posts appears under your name. It only reaches tasks: <code>/mcp</code>,
+                        <code>GET /me</code>, task list/get/create/update/claim, task comments, project details, statuses, sprints,
+                        custom fields, and tags. Key management, account settings, deletes, and everything else return 403.
+                    </p>
+                    <p>
+                        Scopes match project keys and <code>tasks:read</code> is required. Add <code>tasks:write</code> or
+                        <code>comments:write</code> only if the agent should update tasks or comment. Set <code>project_id</code>
+                        to limit the key to one project: other projects' tasks then return 404 and lists are filtered to it.
+                    </p>
+                    <pre class="api-docs-pre"><code>POST {{ basePath }}/api/v2/api-keys
+Content-Type: application/json
+
+{ "name": "Laptop – Claude Code", "kind": "local_agent", "scopes": ["tasks:read", "comments:write"], "project_id": 12, "expires_at": null }
+
+→ 201 { "id", "name", "kind": "local_agent", "scopes", "project_id", "project_name", "expires_at", "key": "gotodo_…" }</code></pre>
+                    <p>
+                        Over MCP, a local agent key gets <code>get_context</code>, <code>get_project</code>, <code>get_task</code>
+                        (with <code>include_comments</code>), <code>get_task_comments</code>, and <code>list_tasks</code>
+                        (<code>mine: true</code> for tasks you've claimed). With <code>tasks:write</code> it also gets
+                        <code>update_task</code>, <code>move_task</code>, <code>create_task</code>, and <code>claim_task</code>,
+                        and with <code>comments:write</code> it gets <code>add_comment</code>. Tools outside the key's scopes
+                        aren't listed. <code>task_id</code> also accepts <code>"#123"</code> or a pasted <code>/tasks/123</code> link.
+                    </p>
+                    <pre class="api-docs-pre"><code>claude mcp add --transport http gotodo https://todo.example.com{{ basePath }}/api/v2/mcp \
+  --header "Authorization: Bearer gotodo_…"</code></pre>
+
                     <h2 id="ai-agents" class="h4 mt-4">AI agents &amp; MCP</h2>
                     <p>
                         Project managers can add AI agents under project settings → <strong>AI agents</strong> (or
@@ -273,7 +306,7 @@ POST {{ basePath }}/api/v2/agent/runs/41/finish        { "status": "succeeded", 
                     <h3 class="h6 mt-3">MCP (Claude Code and other MCP clients)</h3>
                     <p>
                         <code>POST /api/v2/mcp</code> is a Model Context Protocol server (streamable HTTP, JSON responses)
-                        for agent keys. Tools: <code>get_agent_context</code>, <code>list_my_runs</code>, <code>start_run</code>,
+                        for agent keys and <a href="#local-agent-keys">local agent keys</a>. Agent keys get: <code>get_agent_context</code>, <code>list_my_runs</code>, <code>start_run</code>,
                         <code>finish_run</code>, <code>get_task</code>, <code>get_task_comments</code>, <code>list_tasks</code>,
                         <code>add_comment</code>, <code>move_task</code>, <code>update_task</code>, <code>create_task</code>. Each
                         tool runs through the REST API with the same key, so guardrails and rate limits are identical.
