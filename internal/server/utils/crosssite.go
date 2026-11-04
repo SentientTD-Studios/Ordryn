@@ -58,13 +58,38 @@ func isCrossSiteRequest(r *http.Request) bool {
 	if err != nil || u.Host == "" {
 		return true
 	}
-	if strings.EqualFold(u.Host, r.Host) {
-		return false
+	originHost := hostWithoutDefaultPort(u.Scheme, u.Host)
+
+	// The host the browser used: the request's own Host, or, behind a trusted
+	// proxy that rewrites Host (nginx does by default), the forwarded one.
+	candidates := []string{r.Host}
+	if PeerIsTrustedProxy(r) {
+		if fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); fwd != "" {
+			candidates = append(candidates, fwd)
+		}
+	}
+	for _, h := range candidates {
+		if strings.EqualFold(originHost, hostWithoutDefaultPort(u.Scheme, h)) {
+			return false
+		}
 	}
 	if public := PublicURL(); public != "" {
-		if pu, err := url.Parse(public); err == nil && strings.EqualFold(u.Scheme+"://"+u.Host, pu.Scheme+"://"+pu.Host) {
+		if pu, err := url.Parse(public); err == nil && strings.EqualFold(u.Scheme, pu.Scheme) &&
+			strings.EqualFold(originHost, hostWithoutDefaultPort(pu.Scheme, pu.Host)) {
 			return false
 		}
 	}
 	return true
+}
+
+// hostWithoutDefaultPort drops :443 from https hosts and :80 from http hosts, so
+// "example.com" and "example.com:443" compare equal.
+func hostWithoutDefaultPort(scheme, host string) string {
+	switch strings.ToLower(scheme) {
+	case "https":
+		return strings.TrimSuffix(host, ":443")
+	case "http":
+		return strings.TrimSuffix(host, ":80")
+	}
+	return host
 }

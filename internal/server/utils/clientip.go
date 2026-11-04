@@ -10,9 +10,13 @@ import (
 	"sync"
 )
 
-// privateProxyRanges are the addresses a reverse proxy on the same host or private
-// network connects from. They're trusted by default so typical deployments behind
-// nginx, Caddy or a container network keep seeing real client IPs.
+// loopbackProxyRanges are trusted by default: a reverse proxy on the same host.
+var loopbackProxyRanges = []string{"127.0.0.0/8", "::1/128"}
+
+// privateProxyRanges add private networks, for a proxy in another container or on
+// the LAN. They aren't trusted by default: with a Docker published port, clients
+// arrive from the bridge gateway, a private address, and could then forge
+// X-Forwarded-For.
 var privateProxyRanges = []string{
 	"127.0.0.0/8", "::1/128",
 	"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
@@ -20,13 +24,13 @@ var privateProxyRanges = []string{
 }
 
 // ParseTrustedProxies reads a TRUSTED_PROXIES value: a comma-separated list of IPs,
-// CIDR ranges, the word "private" (loopback and private ranges), or "none". An empty
-// value means "private". Invalid entries are returned as an error alongside the
-// ranges that did parse.
+// CIDR ranges, "loopback" (the default), "private" (loopback and private ranges),
+// or "none". Invalid entries are returned as an error alongside the ranges that
+// did parse.
 func ParseTrustedProxies(spec string) ([]netip.Prefix, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
-		spec = "private"
+		spec = "loopback"
 	}
 	var out []netip.Prefix
 	var bad []string
@@ -37,6 +41,11 @@ func ParseTrustedProxies(spec string) ([]netip.Prefix, error) {
 			continue
 		case "none":
 			return nil, nil
+		case "loopback":
+			for _, cidr := range loopbackProxyRanges {
+				out = append(out, netip.MustParsePrefix(cidr))
+			}
+			continue
 		case "private":
 			for _, cidr := range privateProxyRanges {
 				out = append(out, netip.MustParsePrefix(cidr))
@@ -100,7 +109,46 @@ func isTrusted(a netip.Addr, trusted []netip.Prefix) bool {
 // rightmost address that isn't itself a trusted proxy. Entries further left were
 // written by the client and can say anything.
 func ClientIP(r *http.Request) string {
-	return clientIPFrom(r.RemoteAddr, r.Header.Values("X-Forwarded-For"), loadTrustedProxies())
+	xff := r.Header.Values("X-Forwarded-For")
+	trusted := loadTrustedProxies()
+	if len(xff) > 0 {
+		if peer, ok := peerAddr(r.RemoteAddr); ok && !isTrusted(peer, trusted) {
+			warnUntrustedForwarder(peer)
+		}
+	}
+	return clientIPFrom(r.RemoteAddr, xff, trusted)
+}
+
+// PeerIsTrustedProxy reports whether the request came straight from a proxy listed
+// in TRUSTED_PROXIES, so its forwarding headers can be believed.
+func PeerIsTrustedProxy(r *http.Request) bool {
+	peer, ok := peerAddr(r.RemoteAddr)
+	return ok && isTrusted(peer, loadTrustedProxies())
+}
+
+func peerAddr(remoteAddr string) (netip.Addr, bool) {
+	host := remoteAddr
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = h
+	}
+	a, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return a.Unmap(), true
+}
+
+var untrustedForwarderWarned sync.Once
+
+// warnUntrustedForwarder logs, once, that X-Forwarded-For came from an address
+// that isn't a trusted proxy. Usually that's a reverse proxy the admin hasn't
+// listed yet, and every user then shares the proxy's rate limits.
+func warnUntrustedForwarder(peer netip.Addr) {
+	untrustedForwarderWarned.Do(func() {
+		fmt.Printf("Warning: got X-Forwarded-For from %s, which isn't in TRUSTED_PROXIES, so it was ignored. "+
+			"If %s is your reverse proxy, set TRUSTED_PROXIES=%s (or a range that covers it); until then "+
+			"all its users share one rate limit.\n", peer, peer, peer)
+	})
 }
 
 func clientIPFrom(remoteAddr string, xff []string, trusted []netip.Prefix) string {

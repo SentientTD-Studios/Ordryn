@@ -6,8 +6,12 @@ import (
 
 func TestParseTrustedProxies(t *testing.T) {
 	ranges, err := ParseTrustedProxies("")
+	if err != nil || len(ranges) != len(loopbackProxyRanges) {
+		t.Fatalf("empty spec should mean loopback only; got %v, %v", ranges, err)
+	}
+	ranges, err = ParseTrustedProxies("private")
 	if err != nil || len(ranges) != len(privateProxyRanges) {
-		t.Fatalf("empty spec should mean private ranges; got %v, %v", ranges, err)
+		t.Fatalf("private should add private ranges; got %v, %v", ranges, err)
 	}
 	ranges, err = ParseTrustedProxies("none")
 	if err != nil || len(ranges) != 0 {
@@ -54,6 +58,19 @@ func TestClientIPFrom(t *testing.T) {
 				t.Fatalf("clientIPFrom() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// With the default (loopback) trust, a client reaching the app through a Docker
+// published port arrives from the bridge gateway and must not be able to choose
+// its IP with a forged header.
+func TestDefaultTrustIgnoresHeaderFromDockerGateway(t *testing.T) {
+	def, _ := ParseTrustedProxies("")
+	if got := clientIPFrom("172.17.0.1:5000", []string{"1.2.3.4"}, def); got != "172.17.0.1" {
+		t.Fatalf("got %q; a private peer isn't trusted by default", got)
+	}
+	if got := clientIPFrom("127.0.0.1:5000", []string{"203.0.113.9"}, def); got != "203.0.113.9" {
+		t.Fatalf("got %q; a same-host proxy is trusted by default", got)
 	}
 }
 

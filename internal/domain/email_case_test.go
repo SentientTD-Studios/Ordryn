@@ -23,6 +23,26 @@ func insertUserWithPassword(t *testing.T, email, password string) int {
 	return id
 }
 
+// allowEmailCaseDuplicates drops the case-insensitive email index for one test,
+// so it can create accounts that differ only by case (as legacy data can), and
+// puts the index back afterwards. Call it before creating those accounts, so
+// their cleanup runs first.
+func allowEmailCaseDuplicates(t *testing.T) {
+	t.Helper()
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(context.Background(), `DROP INDEX IF EXISTS users_email_lower_key`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := storage.MigrateUsersEmailCaseInsensitive(); err != nil {
+			t.Errorf("restore email index: %v", err)
+		}
+	})
+}
+
 func deleteUser(t *testing.T, id int) {
 	t.Helper()
 	pool, err := storage.OpenDatabase()
@@ -63,6 +83,7 @@ func TestNormalizeEmail(t *testing.T) {
 // lookup must pick the same one, or login could check one account's password
 // and then sign in as the other.
 func TestDuplicateCaseEmailsResolveToOneAccount(t *testing.T) {
+	allowEmailCaseDuplicates(t)
 	older := insertUserWithPassword(t, "Dupe@Example.com", "hash-older")
 	newer := insertUserWithPassword(t, "dupe@example.com", "hash-newer")
 	t.Cleanup(func() {

@@ -93,15 +93,20 @@ func TestSecureCookiesFollowsConfig(t *testing.T) {
 	t.Cleanup(func() { config.Cfg.UseHTTPS = orig })
 
 	config.Cfg.UseHTTPS = false
-	t.Setenv("ENV", "")
-	if SecureCookies() {
-		t.Fatal("no HTTPS and not production: Secure should be off")
-	}
+	t.Setenv("PUBLIC_URL", "")
 	t.Setenv("ENV", "production")
-	if !SecureCookies() {
-		t.Fatal("ENV=production should turn Secure on")
+	if SecureCookies() {
+		t.Fatal("ENV=production alone must not force Secure: plain-HTTP sites couldn't sign in")
 	}
-	t.Setenv("ENV", "")
+	t.Setenv("PUBLIC_URL", "http://todo.lan")
+	if SecureCookies() {
+		t.Fatal("an http:// PUBLIC_URL must not turn Secure on")
+	}
+	t.Setenv("PUBLIC_URL", "https://todo.example.com")
+	if !SecureCookies() {
+		t.Fatal("an https:// PUBLIC_URL should turn Secure on")
+	}
+	t.Setenv("PUBLIC_URL", "")
 	config.Cfg.UseHTTPS = true
 	if !SecureCookies() {
 		t.Fatal("USE_HTTPS should turn Secure on")

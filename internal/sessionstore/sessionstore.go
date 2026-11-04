@@ -50,10 +50,15 @@ func cookieEncryptionKey(sessionKey string) []byte {
 	return mac.Sum(nil)
 }
 
-// SecureCookies reports whether cookies get the Secure flag: when USE_HTTPS is on
-// or ENV=production (which also turns on HSTS, so the site is served over HTTPS).
+// SecureCookies reports whether cookies get the Secure flag: only when the site
+// is known to be served over HTTPS, from USE_HTTPS or an https:// PUBLIC_URL. A
+// Secure cookie on a plain-HTTP site is dropped by the browser and nobody can
+// sign in, so ENV=production alone doesn't turn it on.
 func SecureCookies() bool {
-	return config.Cfg.UseHTTPS || strings.EqualFold(strings.TrimSpace(os.Getenv("ENV")), "production")
+	if config.Cfg.UseHTTPS {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(os.Getenv("PUBLIC_URL"))), "https://")
 }
 
 // Configure applies runtime config to the store's cookie defaults. Call it once
@@ -61,6 +66,10 @@ func SecureCookies() bool {
 func Configure() {
 	if Store != nil && Store.Options != nil {
 		Store.Options.Secure = SecureCookies()
+	}
+	if !SecureCookies() && strings.EqualFold(strings.TrimSpace(os.Getenv("ENV")), "production") {
+		fmt.Println("Warning: ENV=production but neither USE_HTTPS=true nor an https:// PUBLIC_URL is set, " +
+			"so session cookies aren't marked Secure. If the site is served over HTTPS, set one of them.")
 	}
 }
 

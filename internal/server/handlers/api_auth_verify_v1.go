@@ -19,6 +19,12 @@ func verificationRequired(settings *storage.SiteSettings) bool {
 	return settings != nil && mailer.Configured(storage.SiteEmailConfig(settings))
 }
 
+// siteCanSendEmail reports whether outbound email is configured right now.
+func siteCanSendEmail() bool {
+	settings, err := storage.GetSiteSettings()
+	return err == nil && verificationRequired(settings)
+}
+
 func siteDisplayName(settings *storage.SiteSettings) string {
 	if settings != nil && strings.TrimSpace(settings.SiteName) != "" {
 		return settings.SiteName

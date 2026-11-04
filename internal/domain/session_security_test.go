@@ -65,7 +65,7 @@ func TestResetTokenIsHashedAndWorksOnce(t *testing.T) {
 	id := insertUserWithRole(t, email, "user")
 	startVersion := sessionVersionOf(t, id)
 
-	reset, err := storage.GenerateResetToken(email)
+	reset, err := storage.GenerateResetToken(id, email)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,8 +109,8 @@ func TestResetTokenIsHashedAndWorksOnce(t *testing.T) {
 
 func TestResetTokenConcurrentUseSucceedsOnce(t *testing.T) {
 	email := "reset-race@example.com"
-	insertUserWithRole(t, email, "user")
-	reset, err := storage.GenerateResetToken(email)
+	id := insertUserWithRole(t, email, "user")
+	reset, err := storage.GenerateResetToken(id, email)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +138,8 @@ func TestResetTokenConcurrentUseSucceedsOnce(t *testing.T) {
 
 func TestExpiredResetTokenIsRejected(t *testing.T) {
 	email := "reset-expired@example.com"
-	insertUserWithRole(t, email, "user")
-	reset, err := storage.GenerateResetTokenTTL(email, -time.Minute)
+	id := insertUserWithRole(t, email, "user")
+	reset, err := storage.GenerateResetTokenTTL(id, email, -time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +157,36 @@ func TestResetTokenRejectsMalformedID(t *testing.T) {
 	}
 	if _, err := storage.ResetPasswordWithToken("not-a-uuid", "x", "y"); !errors.Is(err, storage.ErrResetTokenInvalid) {
 		t.Fatalf("err = %v, want ErrResetTokenInvalid", err)
+	}
+}
+
+// Accounts whose emails differ only by case can exist; a reset link must change
+// only the account it was issued for.
+func TestResetChangesOnlyItsOwnAccount(t *testing.T) {
+	allowEmailCaseDuplicates(t)
+	older := insertUserWithPassword(t, "Twin@Example.com", "hash-older")
+	newer := insertUserWithPassword(t, "twin@example.com", "hash-newer")
+	t.Cleanup(func() {
+		deleteUser(t, older)
+		deleteUser(t, newer)
+	})
+	olderVersion := sessionVersionOf(t, older)
+
+	reset, err := storage.GenerateResetToken(newer, "twin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.ResetPasswordWithToken(reset.ID, reset.Token, "hash-reset"); err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := storage.GetPasswordHashByID(newer); h != "hash-reset" {
+		t.Fatalf("target account hash = %q, want hash-reset", h)
+	}
+	if h, _ := storage.GetPasswordHashByID(older); h != "hash-older" {
+		t.Fatalf("other account's password changed to %q", h)
+	}
+	if v := sessionVersionOf(t, older); v != olderVersion {
+		t.Fatalf("other account was signed out: version %d -> %d", olderVersion, v)
 	}
 }
 

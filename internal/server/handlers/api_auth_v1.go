@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -275,11 +277,25 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 	writeAPIUserJSON(w, http.StatusCreated, profile)
 }
 
+// signupMailPerHour is how many sign-ups that send email one client may make per hour.
+const signupMailPerHour = 5
+
 // registerWithVerification creates an unconfirmed account and emails a link, or,
 // when the email already has an account, emails its owner instead. Both give the
 // same response and do the same expensive work, so neither the reply nor its
 // timing reveals which happened. Usernames are public, so a taken one is reported.
 func registerWithVerification(w http.ResponseWriter, r *http.Request, email, userName, password, timezone string) {
+	// Every request here sends an email, so limit how often one client can do it.
+	allowed, err := utils.AllowRequest(context.WithoutCancel(r.Context()), utils.RedisClient,
+		"rl:tb:signup-mail:"+utils.ClientIP(r), signupMailPerHour, signupMailPerHour/3600.0, 1, 3600)
+	if err != nil {
+		fmt.Printf("sign-up limit check: %v\n", err)
+	} else if !allowed {
+		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+			"Too many sign-ups from your network. Try again later.")
+		return
+	}
+
 	taken, err := storage.UsernameTaken(userName, 0)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
@@ -299,15 +315,23 @@ func registerWithVerification(w http.ResponseWriter, r *http.Request, email, use
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
-	exists, err := storage.UserExistsByEmail(email)
-	if err != nil {
+	existing, err := storage.GetUserByEmail(email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
 	}
-	if exists {
-		go sendSignupExistingEmail(email,
-			utils.AbsoluteURLForRequest(r, "/login"),
-			utils.AbsoluteURLForRequest(r, "/forgot-password"))
+	if existing != nil {
+		// Signing up again before confirming usually means the first link was
+		// lost or expired, so send a fresh one. Anyone can already request that
+		// through resend-verification, so this reveals nothing new.
+		verified, verr := storage.IsEmailVerified(existing.ID)
+		if verr == nil && !verified {
+			go sendVerificationEmail(existing.ID, existing.Email, utils.AbsoluteURLForRequest(r, "/verify-email"))
+		} else {
+			go sendSignupExistingEmail(existing.Email,
+				utils.AbsoluteURLForRequest(r, "/login"),
+				utils.AbsoluteURLForRequest(r, "/forgot-password"))
+		}
 		writeVerificationPending(w)
 		return
 	}
@@ -350,13 +374,7 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := utils.LoginBlocked(r.Context(), email, utils.ClientIP(r))
-	if err != nil {
-		fmt.Printf("APIV1AuthLogin block check: %v\n", err)
-	}
-	if blocked {
-		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
-			"Too many login attempts; please try again later.")
+	if !loginGateAllows(w, r, email) {
 		return
 	}
 
@@ -390,10 +408,12 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Only reached with the right password, so this reveals nothing to a guesser.
+	// Enforced only while the site can send email: otherwise there'd be no way to
+	// get a confirmation link, and the account would be locked out for good.
 	if verified, err := storage.IsEmailVerified(user.ID); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 		return
-	} else if !verified {
+	} else if !verified && siteCanSendEmail() {
 		utils.APIJSONError(w, http.StatusForbidden, "email_unverified",
 			"Confirm your email address before signing in. Check your inbox for the link, or send a new one.")
 		return
@@ -428,6 +448,28 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("APIV1AuthLogin clear failed login: %v\n", clearErr)
 	}
 	writeAPIUserJSON(w, http.StatusOK, profile)
+}
+
+// loginGateAllows checks the sign-in limits for email from this client and, when
+// the attempt can't proceed, writes the 429 and returns false. Redis errors fail
+// open: a Redis outage shouldn't stop everyone signing in.
+func loginGateAllows(w http.ResponseWriter, r *http.Request, email string) bool {
+	gate, err := utils.CheckLogin(r.Context(), email, utils.ClientIP(r))
+	if err != nil {
+		fmt.Printf("sign-in limit check: %v\n", err)
+	}
+	switch gate {
+	case utils.LoginLocked:
+		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+			"Too many login attempts; please try again later.")
+		return false
+	case utils.LoginSlowedDown:
+		w.Header().Set("Retry-After", strconv.Itoa(utils.LoginSlowdownSeconds))
+		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+			"Too many failed sign-ins from your network. Wait a few seconds and try again.")
+		return false
+	}
+	return true
 }
 
 // recordFailedLogin counts a failed sign-in against the email and the client IP.

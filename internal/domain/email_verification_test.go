@@ -115,7 +115,7 @@ func TestVerificationRejectsMalformedID(t *testing.T) {
 func TestPasswordResetConfirmsEmail(t *testing.T) {
 	email := "verify-by-reset@example.com"
 	id := insertUnverifiedUser(t, email)
-	reset, err := storage.GenerateResetToken(email)
+	reset, err := storage.GenerateResetToken(id, email)
 	if err != nil {
 		t.Fatal(err)
 	}

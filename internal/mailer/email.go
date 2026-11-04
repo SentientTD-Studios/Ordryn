@@ -37,17 +37,17 @@ type Config struct {
 // SendEmail sends an email using the given provider config (Mailgun or SMTP).
 // trigger identifies the product event (password reset, site invite, …) for audit logs.
 func SendEmail(cfg Config, trigger, subject, message, toEmail string) error {
-	err := sendEmail(cfg, subject, message, toEmail)
+	err := sendEmail(cfg, trigger, subject, message, toEmail)
 	recordAudit(cfg, trigger, toEmail, err)
 	return err
 }
 
-func sendEmail(cfg Config, subject, message, toEmail string) error {
+func sendEmail(cfg Config, trigger, subject, message, toEmail string) error {
 	fromAddr, from, err := checkConfigured(cfg)
 	if err != nil {
 		return err
 	}
-	if err := allowCoreSend(toEmail); err != nil {
+	if err := allowSendFor(trigger, toEmail); err != nil {
 		return err
 	}
 	return deliverConfigured(cfg, subject, message, toEmail, from, fromAddr)

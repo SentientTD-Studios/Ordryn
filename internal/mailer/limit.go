@@ -49,6 +49,34 @@ var notificationLimiter = &coreSendLimiter{
 	globalW:     notificationGlobalWindow,
 }
 
+// Sign-up mail (confirmation links, "you already have an account") is triggered by
+// anonymous requests, so it gets its own budget: a flood of sign-ups can't use up
+// the core budget that password resets and invites rely on.
+const (
+	signupRecipientLimit  = 3
+	signupRecipientWindow = time.Hour
+	signupGlobalLimit     = 30
+	signupGlobalWindow    = 15 * time.Minute
+)
+
+var signupLimiter = &coreSendLimiter{
+	byRecipient: map[string][]time.Time{},
+	now:         time.Now,
+	recipientN:  signupRecipientLimit,
+	recipientW:  signupRecipientWindow,
+	globalN:     signupGlobalLimit,
+	globalW:     signupGlobalWindow,
+}
+
+// allowSendFor picks the budget for a core email by its trigger.
+func allowSendFor(trigger, toEmail string) error {
+	switch trigger {
+	case TriggerEmailVerification, TriggerSignupExisting:
+		return signupLimiter.allow(toEmail)
+	}
+	return allowCoreSend(toEmail)
+}
+
 func allowNotificationSend(toEmail string) error {
 	return notificationLimiter.allow(toEmail)
 }

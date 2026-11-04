@@ -104,6 +104,22 @@ func MigratePasswordResetHashTokens() error {
 	if _, err := pool.Exec(ctx, `DROP INDEX IF EXISTS idx_password_reset_token`); err != nil {
 		return fmt.Errorf("password_reset hash: %w", err)
 	}
+
+	// Tie each token to one account. Existing links are matched by email, taking the
+	// same account sign-in would pick: an exact-case match, otherwise the oldest.
+	accountStmts := []string{
+		`ALTER TABLE password_reset ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE`,
+		`UPDATE password_reset pr SET user_id = (
+			SELECT u.id FROM users u WHERE LOWER(u.email) = LOWER(pr.email)
+			ORDER BY (u.email = pr.email) DESC, u.id LIMIT 1)
+		 WHERE pr.user_id IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset(user_id)`,
+	}
+	for _, stmt := range accountStmts {
+		if _, err := pool.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("password_reset user_id: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -117,15 +133,17 @@ func hashResetToken(token string) string {
 // ErrResetTokenInvalid is returned for an unknown, used or expired reset token.
 var ErrResetTokenInvalid = errors.New("invalid or expired reset token")
 
-// GenerateResetToken creates a new password reset token for the given email
-func GenerateResetToken(email string) (*PasswordReset, error) {
-	return GenerateResetTokenTTL(email, 15*time.Minute)
+// GenerateResetToken creates a 15-minute password reset token for one account.
+func GenerateResetToken(userID int, email string) (*PasswordReset, error) {
+	return GenerateResetTokenTTL(userID, email, 15*time.Minute)
 }
 
 // GenerateResetTokenTTL creates a password token that expires after ttl. New
 // accounts use a longer lifetime so the person has time to open their welcome email.
 // The returned Token is the only copy of the plain-text token; only its hash is stored.
-func GenerateResetTokenTTL(email string, ttl time.Duration) (*PasswordReset, error) {
+// The token is tied to userID, so it can only ever change that one account, even
+// when another account's email differs from it only by case.
+func GenerateResetTokenTTL(userID int, email string, ttl time.Duration) (*PasswordReset, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -141,16 +159,15 @@ func GenerateResetTokenTTL(email string, ttl time.Duration) (*PasswordReset, err
 	// Use UTC to match the database.
 	expiresAt := time.Now().UTC().Add(ttl)
 
-	// Delete any existing reset tokens for this email
-	email = NormalizeEmail(email)
-	_, err = pool.Exec(context.Background(), "DELETE FROM password_reset WHERE LOWER(email) = $1", email)
+	// A new link replaces the account's earlier ones.
+	_, err = pool.Exec(context.Background(), "DELETE FROM password_reset WHERE user_id = $1", userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clean up old tokens: %v", err)
 	}
 
 	_, err = pool.Exec(context.Background(),
-		"INSERT INTO password_reset (id, email, token_hash, expires_at) VALUES ($1, $2, $3, $4)",
-		resetID, email, hashResetToken(token), expiresAt)
+		"INSERT INTO password_reset (id, user_id, email, token_hash, expires_at) VALUES ($1, $2, $3, $4, $5)",
+		resetID, userID, NormalizeEmail(email), hashResetToken(token), expiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reset token: %v", err)
 	}
@@ -209,11 +226,11 @@ func ResetPasswordWithToken(id, token, passwordHash string) (string, error) {
 	}
 	defer tx.Rollback(ctx)
 
-	var email string
+	var userID *int
 	var expiresAt time.Time
 	err = tx.QueryRow(ctx,
-		`DELETE FROM password_reset WHERE id = $1 AND token_hash = $2 RETURNING email, expires_at`,
-		id, hashResetToken(token)).Scan(&email, &expiresAt)
+		`DELETE FROM password_reset WHERE id = $1 AND token_hash = $2 RETURNING user_id, expires_at`,
+		id, hashResetToken(token)).Scan(&userID, &expiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrResetTokenInvalid
 	}
@@ -228,16 +245,26 @@ func ResetPasswordWithToken(id, token, passwordHash string) (string, error) {
 		return "", ErrResetTokenInvalid
 	}
 
-	tag, err := tx.Exec(ctx,
+	if userID == nil {
+		// A link from before tokens were tied to accounts, whose email matched no
+		// single account when it was migrated.
+		if err := tx.Commit(ctx); err != nil {
+			return "", err
+		}
+		return "", ErrResetTokenInvalid
+	}
+
+	var email string
+	err = tx.QueryRow(ctx,
 		`UPDATE users SET password = $1, session_version = session_version + 1,
 		        email_verified_at = COALESCE(email_verified_at, NOW())
-		 WHERE LOWER(email) = LOWER($2)`,
-		passwordHash, email)
+		 WHERE id = $2 RETURNING email`,
+		passwordHash, *userID).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrResetTokenInvalid
+	}
 	if err != nil {
 		return "", err
-	}
-	if tag.RowsAffected() == 0 {
-		return "", ErrResetTokenInvalid
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", err

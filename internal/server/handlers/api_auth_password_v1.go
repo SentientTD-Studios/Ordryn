@@ -74,7 +74,7 @@ func sendPasswordResetEmail(email, resetPage string) {
 	}
 	// Send to the address on the account, whatever case the request used.
 	email = user.Email
-	resetToken, err := storage.GenerateResetToken(email)
+	resetToken, err := storage.GenerateResetToken(user.ID, email)
 	if err != nil {
 		fmt.Printf("forgot-password: could not create reset token: %v\n", err)
 		return

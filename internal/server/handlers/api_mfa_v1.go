@@ -56,13 +56,7 @@ func APIV1AuthMFAVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := utils.LoginBlocked(r.Context(), email, utils.ClientIP(r))
-	if err != nil {
-		fmt.Printf("APIV1AuthMFAVerify block check: %v\n", err)
-	}
-	if blocked {
-		utils.APIJSONError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
-			"Too many login attempts; please try again later.")
+	if !loginGateAllows(w, r, email) {
 		return
 	}
 
