@@ -142,7 +142,8 @@ func GenerateResetTokenTTL(email string, ttl time.Duration) (*PasswordReset, err
 	expiresAt := time.Now().UTC().Add(ttl)
 
 	// Delete any existing reset tokens for this email
-	_, err = pool.Exec(context.Background(), "DELETE FROM password_reset WHERE email = $1", email)
+	email = NormalizeEmail(email)
+	_, err = pool.Exec(context.Background(), "DELETE FROM password_reset WHERE LOWER(email) = $1", email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clean up old tokens: %v", err)
 	}
@@ -227,7 +228,7 @@ func ResetPasswordWithToken(id, token, passwordHash string) (string, error) {
 	}
 
 	tag, err := tx.Exec(ctx,
-		`UPDATE users SET password = $1, session_version = session_version + 1 WHERE email = $2`,
+		`UPDATE users SET password = $1, session_version = session_version + 1 WHERE LOWER(email) = LOWER($2)`,
 		passwordHash, email)
 	if err != nil {
 		return "", err

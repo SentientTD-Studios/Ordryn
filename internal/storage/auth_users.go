@@ -193,7 +193,7 @@ func RegisterUser(email, hashedPassword, timezone, userName string, roleID, invi
 	err = tx.QueryRow(ctx,
 		`INSERT INTO users (email, password, role_id, timezone, user_name, username_change_available)
 		 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
-		strings.TrimSpace(email), hashedPassword, roleID, timezone, strings.TrimSpace(userName)).Scan(&id)
+		NormalizeEmail(email), hashedPassword, roleID, timezone, strings.TrimSpace(userName)).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("register user: %w", err)
 	}
@@ -221,7 +221,7 @@ func GetAuthCredentials(email string) (hashedPassword string, roleID int, timezo
 	defer CloseDatabase(pool)
 
 	err = pool.QueryRow(context.Background(),
-		`SELECT password, role_id, COALESCE(timezone, 'America/New_York') FROM users WHERE email = $1`,
+		`SELECT password, role_id, COALESCE(timezone, 'America/New_York') FROM users WHERE LOWER(email) = LOWER($1) ORDER BY (email = $1) DESC, id LIMIT 1`,
 		strings.TrimSpace(email)).Scan(&hashedPassword, &roleID, &timezone)
 	return hashedPassword, roleID, timezone, err
 }

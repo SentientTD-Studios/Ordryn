@@ -8,6 +8,7 @@ import (
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/server/handlers"
 	"GoTodo/internal/server/utils"
+	"GoTodo/internal/sessionstore"
 	"GoTodo/internal/storage"
 	"fmt"
 	"net"
@@ -38,8 +39,10 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 }
 
 // handleAPI registers a REST path on the canonical /api/v2 prefix and the
-// /api/v1 compatibility alias, including BASE_PATH mounts.
+// /api/v1 compatibility alias, including BASE_PATH mounts. Every API route
+// rejects state-changing requests sent from other websites.
 func handleAPI(suffix string, fn http.HandlerFunc) {
+	fn = utils.RejectCrossSite(fn)
 	handleBoth("/api/v2"+suffix, fn)
 	handleBoth("/api/v1"+suffix, fn)
 }
@@ -48,6 +51,7 @@ func StartServer() error {
 	if err := utils.LoadRuntimeConfig(); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	sessionstore.Configure()
 
 	mode := utils.ResolveMode(os.Args[1:])
 	utils.SetRuntimeMode(mode)

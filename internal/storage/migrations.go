@@ -378,6 +378,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateUsersAddSessionVersion failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateUsersEmailCaseInsensitive(); err != nil {
+		fmt.Printf("migration: MigrateUsersEmailCaseInsensitive failed: %v\n", err)
+		errCount++
+	}
 
 	// Ensure password_reset table exists
 	if err := CreatePasswordResetTable(); err != nil {
