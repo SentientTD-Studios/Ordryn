@@ -137,7 +137,7 @@ defineExpose({ focus: () => inputEl.value?.focus() })
         enterkeyhint="done"
         name="quick-add-task"
         autocomplete="off"
-        data-bwignore
+        data-bwignore="true"
         data-1p-ignore
         data-lpignore="true"
         data-form-type="other"
