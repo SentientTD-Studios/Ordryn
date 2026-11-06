@@ -12,6 +12,7 @@ defineProps<{
   timezone: string
   itemsPerPage: number
   allowProjectInvites: boolean
+  homeSplitView: boolean
   busy: boolean
   dirty: boolean
 }>()
@@ -20,6 +21,7 @@ const emit = defineEmits<{
   'update:timezone': [value: string]
   'update:itemsPerPage': [value: number]
   'update:allowProjectInvites': [value: boolean]
+  'update:homeSplitView': [value: boolean]
   save: []
 }>()
 
@@ -132,6 +134,21 @@ onMounted(() => {
           </label>
           <div class="form-text">
             When off, other users cannot invite you to shared projects. Existing memberships are unchanged.
+          </div>
+        </div>
+        <div class="form-check mb-3">
+          <input
+            id="profile-home-split"
+            class="form-check-input"
+            type="checkbox"
+            :checked="homeSplitView"
+            @change="emit('update:homeSplitView', ($event.target as HTMLInputElement).checked)"
+          />
+          <label class="form-check-label" for="profile-home-split">
+            Show projects above tasks on Home
+          </label>
+          <div class="form-text">
+            Adds a grid of your projects to the top of the Home page, above your task list.
           </div>
         </div>
         <button type="submit" class="btn btn-primary" :disabled="busy || !dirty">

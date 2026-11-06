@@ -61,6 +61,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateUsersAddAllowProjectInvites failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateUsersAddHomeSplitView(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddHomeSplitView failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateUsersUsernames(); err != nil {
 		fmt.Printf("migration: MigrateUsersUsernames failed: %v\n", err)
 		errCount++
@@ -172,6 +176,10 @@ func RunMigrations() error {
 
 	if err := CreateProjectSharingTables(); err != nil {
 		fmt.Printf("migration: CreateProjectSharingTables failed: %v\n", err)
+		errCount++
+	}
+	if err := CreateProjectPinsTable(); err != nil {
+		fmt.Printf("migration: CreateProjectPinsTable failed: %v\n", err)
 		errCount++
 	}
 	if err := MigrateProjectMemberRoleConstraints(); err != nil {

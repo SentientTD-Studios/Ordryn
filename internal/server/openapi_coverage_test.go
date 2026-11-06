@@ -88,6 +88,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/users/search",
 	"/api/v2/projects",
 	"/api/v2/projects/reorder",
+	"/api/v2/projects/pins",
 	"/api/v2/projects/{id}",
 	"/api/v2/projects/{id}/archive",
 	"/api/v2/projects/{id}/restore",

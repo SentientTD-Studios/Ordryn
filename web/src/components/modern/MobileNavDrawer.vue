@@ -6,7 +6,9 @@ import type { Project, SavedView } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { useToast } from '@/composables/useToast'
-import { projectNavLabel, isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
+import { useProjectNav } from '@/composables/useProjectNav'
+import { sidebarProjectSections } from '@/utils/projectNav'
+import SidebarProjectLink from '@/components/modern/SidebarProjectLink.vue'
 
 const props = defineProps<{
   open: boolean
@@ -27,8 +29,8 @@ const pendingInviteCount = inject<Ref<number>>('pendingInviteCount', ref(0))
 const projects = ref<Project[]>([])
 const savedViews = ref<SavedView[]>([])
 const projectsCollapsed = ref(false)
-const archivedCollapsed = ref(true)
 const viewsCollapsed = ref(false)
+const nav = useProjectNav()
 
 const showChangelog = computed(() => siteInfo.value?.show_changelog !== false)
 // Company sites have no invites: people managers create accounts.
@@ -40,13 +42,9 @@ const canViewInvites = computed(
 const activeProject = computed(() => (typeof route.query.project === 'string' ? route.query.project : ''))
 const activeView = computed(() => (typeof route.query.view === 'string' ? route.query.view : ''))
 
-const ownedProjects = computed(() =>
-  projects.value.filter((p) => isProjectOwner(p) && !isArchivedProject(p)),
+const sections = computed(() =>
+  sidebarProjectSections(projects.value, nav.pinIds(projects.value), nav.recentIds.value),
 )
-const sharedProjects = computed(() =>
-  projects.value.filter((p) => !isProjectOwner(p) && !isArchivedProject(p)),
-)
-const archivedProjectList = computed(() => projects.value.filter(isArchivedProject))
 
 async function loadLists() {
   if (!isAuthenticated.value) {
@@ -68,8 +66,20 @@ function close() {
 }
 
 function selectProject(id: string) {
-  void router.push({ path: '/', query: { project: id } })
+  const numeric = Number(id)
+  if (numeric > 0) nav.touchRecent(numeric)
   close()
+  const inPlace = nav.inPlaceSelectHandler()
+  if (inPlace && route.path === '/') {
+    inPlace(id)
+    return
+  }
+  void router.push({ path: '/', query: { project: id } })
+}
+
+function openSwitcher() {
+  close()
+  nav.openSwitcher()
 }
 
 function selectView(id: string) {
@@ -289,73 +299,78 @@ watch(isAuthenticated, (ok) => {
             </button>
           </div>
 
-          <ul v-if="!projectsCollapsed" class="sidebar-nav-list">
-            <li class="sidebar-nav-item">
-              <a
-                href="#"
-                class="sidebar-nav-link"
-                :class="{ active: activeProject === '0' }"
-                @click.prevent="selectProject('0')"
-              >
-                <i class="bi bi-folder-x" />
-                <span class="text-truncate">No Project</span>
-              </a>
-            </li>
-            <li v-for="proj in ownedProjects" :key="proj.id" class="sidebar-nav-item">
-              <a
-                href="#"
-                class="sidebar-nav-link"
-                :class="{ active: activeProject === String(proj.id) }"
-                @click.prevent="selectProject(String(proj.id))"
-              >
-                <i class="bi bi-folder2-open" />
-                <span class="text-truncate">{{ projectNavLabel(proj) }}</span>
-              </a>
-            </li>
-            <li v-for="proj in sharedProjects" :key="proj.id" class="sidebar-nav-item">
-              <a
-                href="#"
-                class="sidebar-nav-link"
-                :class="{ active: activeProject === String(proj.id) }"
-                @click.prevent="selectProject(String(proj.id))"
-              >
-                <i class="bi bi-folder2" />
-                <span class="text-truncate">{{ projectNavLabel(proj) }}</span>
-              </a>
-            </li>
-            <li v-if="archivedProjectList.length" class="sidebar-nav-item">
-              <button
-                type="button"
-                class="sidebar-nav-link text-start w-100 border-0 bg-transparent"
-                @click="archivedCollapsed = !archivedCollapsed"
-              >
-                <i class="bi bi-archive" />
-                <span>Archived</span>
-                <i :class="archivedCollapsed ? 'bi bi-chevron-down' : 'bi bi-chevron-up'" class="ms-auto" />
-              </button>
-            </li>
-            <li
-              v-for="proj in archivedCollapsed ? [] : archivedProjectList"
-              :key="'arch-' + proj.id"
-              class="sidebar-nav-item"
-            >
-              <a
-                href="#"
-                class="sidebar-nav-link"
-                :class="{ active: activeProject === String(proj.id) }"
-                @click.prevent="selectProject(String(proj.id))"
-              >
-                <i class="bi bi-archive" />
-                <span class="text-truncate">{{ projectNavLabel(proj) }}</span>
-              </a>
-            </li>
-            <li class="sidebar-nav-item">
-              <RouterLink to="/projects" class="sidebar-nav-link" @click="close">
-                <i class="bi bi-plus-lg" />
-                <span>Manage projects</span>
-              </RouterLink>
-            </li>
-          </ul>
+          <template v-if="!projectsCollapsed">
+            <ul class="sidebar-nav-list">
+              <li class="sidebar-nav-item">
+                <button
+                  type="button"
+                  class="sidebar-nav-link sidebar-find-project"
+                  @click="openSwitcher"
+                >
+                  <i class="bi bi-search" />
+                  <span>Find a project</span>
+                </button>
+              </li>
+              <li class="sidebar-nav-item">
+                <a
+                  href="#"
+                  class="sidebar-nav-link"
+                  :class="{ active: activeProject === '0' }"
+                  @click.prevent="selectProject('0')"
+                >
+                  <i class="bi bi-folder-x" />
+                  <span class="text-truncate">No Project</span>
+                </a>
+              </li>
+            </ul>
+            <template v-if="sections.pinned.length">
+              <div class="sidebar-subsection-label">Pinned</div>
+              <ul class="sidebar-nav-list">
+                <SidebarProjectLink
+                  v-for="proj in sections.pinned"
+                  :key="proj.id"
+                  :project="proj"
+                  :active="activeProject === String(proj.id)"
+                  pinned
+                  compact
+                  @select="selectProject(String(proj.id))"
+                />
+              </ul>
+            </template>
+            <ul v-if="sections.suggested.length" class="sidebar-nav-list">
+              <SidebarProjectLink
+                v-for="proj in sections.suggested"
+                :key="proj.id"
+                :project="proj"
+                :active="activeProject === String(proj.id)"
+                :pinned="false"
+                compact
+                @select="selectProject(String(proj.id))"
+              />
+            </ul>
+            <template v-if="sections.recent.length">
+              <div class="sidebar-subsection-label">Recent</div>
+              <ul class="sidebar-nav-list">
+                <SidebarProjectLink
+                  v-for="proj in sections.recent"
+                  :key="proj.id"
+                  :project="proj"
+                  :active="activeProject === String(proj.id)"
+                  :pinned="false"
+                  compact
+                  @select="selectProject(String(proj.id))"
+                />
+              </ul>
+            </template>
+            <ul class="sidebar-nav-list">
+              <li class="sidebar-nav-item">
+                <RouterLink to="/projects" class="sidebar-nav-link" @click="close">
+                  <i class="bi bi-gear" />
+                  <span>Manage projects</span>
+                </RouterLink>
+              </li>
+            </ul>
+          </template>
 
           <div class="sidebar-section-header d-flex align-items-center justify-content-between">
             <RouterLink

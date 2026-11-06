@@ -14,6 +14,7 @@ type UpdateProfileInput struct {
 	Timezone            string
 	ItemsPerPage        int
 	AllowProjectInvites bool
+	HomeSplitView       bool
 }
 
 // UpdateProfile validates and persists profile preference fields. timezoneOK should come from utils.IsValidTimezone.

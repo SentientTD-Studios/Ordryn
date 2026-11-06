@@ -24,6 +24,7 @@ const router = useRouter()
 const timezone = ref('UTC')
 const itemsPerPage = ref(15)
 const allowProjectInvites = ref(true)
+const homeSplitView = ref(false)
 const busy = ref(false)
 
 const activeSection = computed(() =>
@@ -34,6 +35,7 @@ function applyUserPrefs(u: User) {
   timezone.value = u.timezone || 'UTC'
   itemsPerPage.value = u.items_per_page || 15
   allowProjectInvites.value = u.allow_project_invites !== false
+  homeSplitView.value = !!u.home_split_view
 }
 
 const prefsDirty = computed(() => {
@@ -42,7 +44,8 @@ const prefsDirty = computed(() => {
   return (
     timezone.value.trim() !== (u.timezone || 'UTC') ||
     Number(itemsPerPage.value) !== (u.items_per_page || 15) ||
-    allowProjectInvites.value !== (u.allow_project_invites !== false)
+    allowProjectInvites.value !== (u.allow_project_invites !== false) ||
+    homeSplitView.value !== !!u.home_split_view
   )
 })
 
@@ -80,6 +83,7 @@ async function save() {
       timezone: timezone.value.trim(),
       items_per_page: Number(itemsPerPage.value),
       allow_project_invites: allowProjectInvites.value,
+      home_split_view: homeSplitView.value,
     })
     push('Profile updated', 'success')
   } catch (err) {
@@ -144,6 +148,7 @@ onUnmounted(() => {
           v-model:timezone="timezone"
           v-model:items-per-page="itemsPerPage"
           v-model:allow-project-invites="allowProjectInvites"
+          v-model:home-split-view="homeSplitView"
           :busy="busy"
           :dirty="prefsDirty"
           @save="save"

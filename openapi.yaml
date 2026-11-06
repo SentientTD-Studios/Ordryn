@@ -2836,6 +2836,49 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
+  /api/v2/projects/pins:
+    put:
+      tags: [Projects]
+      summary: Set pinned projects
+      description: >-
+        Replaces the caller's pinned projects (shown at the top of the sidebar) with the given
+        ordered list. Pins are per user and may include owned or shared projects. Send an empty
+        array to unpin everything. Project lists report each project's `pinned` flag and `pin_position`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_ids]
+              properties:
+                project_ids:
+                  type: array
+                  maxItems: 50
+                  uniqueItems: true
+                  items:
+                    type: integer
+                  description: Full ordered list of pinned project IDs; each must be a project the caller owns or is a member of
+      responses:
+        "200":
+          description: Pins saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_ids:
+                    type: array
+                    items:
+                      type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/projects/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -8512,6 +8555,9 @@ components:
             type: string
         allow_project_invites:
           type: boolean
+        home_split_view:
+          type: boolean
+          description: When true, Home shows a grid of projects above the task list (default false)
           description: When false, the user cannot be invited to shared projects
         username_change_available:
           type: boolean
@@ -8592,6 +8638,9 @@ components:
           enum: [10, 15, 25, 50]
         allow_project_invites:
           type: boolean
+        home_split_view:
+          type: boolean
+          description: Show a grid of projects above the task list on Home
 
     RegisterRequest:
       type: object
@@ -9262,6 +9311,12 @@ components:
         org_managed:
           type: boolean
           description: When true, imported members and roles are locked to the organization. Organization role changes update this board, and project sharing/roles cannot be edited here.
+        pinned:
+          type: boolean
+          description: True when the caller pinned this project to their sidebar (set on GET /api/v2/projects)
+        pin_position:
+          type: integer
+          description: Order among the caller's pinned projects (0 first); omitted when not pinned
 
     ProjectCreate:
       type: object

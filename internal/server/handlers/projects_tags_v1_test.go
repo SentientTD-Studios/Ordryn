@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -97,6 +98,52 @@ func TestAPIV1ProjectsReorderMethodNotAllowed(t *testing.T) {
 	APIV1ProjectsRouter(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestAPIV1ProjectPinsValidation(t *testing.T) {
+	many := make([]string, 51)
+	for i := range many {
+		many[i] = strconv.Itoa(i + 1)
+	}
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "missing ids", body: `{}`},
+		{name: "invalid json", body: `{`},
+		{name: "duplicate ids", body: `{"project_ids":[1,1]}`},
+		{name: "non-positive id", body: `{"project_ids":[0]}`},
+		{name: "too many", body: `{"project_ids":[` + strings.Join(many, ",") + `]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, "/api/v2/projects/pins", bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			req = utils.SetAPIUserID(req, 1)
+			rec := httptest.NewRecorder()
+			APIV1ProjectsRouter(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestAPIV1ProjectPinsAuthAndMethod(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPut, "/api/v2/projects/pins", bytes.NewBufferString(`{"project_ids":[]}`))
+	rec := httptest.NewRecorder()
+	APIV1ProjectsRouter(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v2/projects/pins", nil)
+	req = utils.SetAPIUserID(req, 1)
+	rec = httptest.NewRecorder()
+	APIV1ProjectsRouter(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
 

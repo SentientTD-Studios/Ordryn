@@ -141,7 +141,7 @@ func UpdateProfileWithoutUsername(ctx context.Context, userID int, in UpdateProf
 	if !itemsPerPageOK {
 		return nil, fmt.Errorf("%w: invalid items per page", ErrValidation)
 	}
-	if err := storage.UpdateUserProfilePrefsByID(userID, in.Timezone, in.ItemsPerPage, in.AllowProjectInvites); err != nil {
+	if err := storage.UpdateUserProfilePrefsByID(userID, in.Timezone, in.ItemsPerPage, in.AllowProjectInvites, in.HomeSplitView); err != nil {
 		return nil, err
 	}
 	return storage.GetUserProfileByID(userID)

@@ -584,6 +584,22 @@ func MigrateUsersRemoveDigestSettings() error {
 	return nil
 }
 
+// MigrateUsersAddHomeSplitView adds the preference that shows projects above tasks on Home (default off).
+func MigrateUsersAddHomeSplitView() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer CloseDatabase(pool)
+
+	_, err = pool.Exec(context.Background(),
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS home_split_view BOOLEAN NOT NULL DEFAULT FALSE")
+	if err != nil {
+		return fmt.Errorf("failed to add home_split_view: %v", err)
+	}
+	return nil
+}
+
 // MigrateUsersAddAllowProjectInvites adds preference for receiving project invites (default on).
 func MigrateUsersAddAllowProjectInvites() error {
 	pool, err := OpenDatabase()

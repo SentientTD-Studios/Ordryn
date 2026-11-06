@@ -20,6 +20,7 @@ import BoardSprintBar from '@/components/tasks/BoardSprintBar.vue'
 import TaskBulkBar from '@/components/tasks/TaskBulkBar.vue'
 import SaveViewModal from '@/components/tasks/SaveViewModal.vue'
 import AddProjectModal from '@/components/tasks/AddProjectModal.vue'
+import HomeProjectsPanel from '@/components/tasks/HomeProjectsPanel.vue'
 import TaskTemplatesMenu from '@/components/tasks/TaskTemplatesMenu.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useBoardSprints } from '@/composables/useBoardSprints'
@@ -30,6 +31,7 @@ import { useTaskListState } from '@/composables/useTaskListState'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useTaskSortable } from '@/composables/useTaskSortable'
 import { useToast } from '@/composables/useToast'
+import { useProjectNav } from '@/composables/useProjectNav'
 import { useConfirm } from '@/composables/useConfirm'
 import { useViewDensity } from '@/composables/useViewDensity'
 import { useSidebarState } from '@/composables/useSidebarState'
@@ -48,6 +50,7 @@ const { openAdd, openEdit, openView, lastSavedTask, lastDeletedTask } = useTaskS
 const { density } = useViewDensity()
 const { sidebarCollapsed, toggleSidebar } = useSidebarState()
 const { focusedTaskId, registerTaskShortcuts, unregisterTaskShortcuts } = useKeyboardShortcuts()
+const projectNav = useProjectNav()
 const toast = useToast()
 const { askConfirm } = useConfirm()
 const { user } = useAuth()
@@ -114,6 +117,10 @@ const defaultTaskProjectId = computed<number | null>(() => {
 })
 // No project shared yet: show the company home page instead of an empty task list.
 const showCompanyHome = computed(() => isCompanyMode.value && metaLoaded.value && projects.value.length === 0)
+// Preference: Home (no project or saved view selected) shows a project grid above the task list.
+const showHomeProjects = computed(
+  () => !!user.value?.home_split_view && !filters.project && !activeViewId.value && !showCompanyHome.value,
+)
 const canAddTasks = computed(() => {
   if (isCompanyMode.value && !activeProjectObj.value) return writableProjects.value.length > 0
   return hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_CREATE) && !isArchivedProjectView.value
@@ -873,19 +880,18 @@ async function onProjectSettingsChanged() {
   refreshEditingProject()
 }
 
-async function onReorderProjects(projectIds: number[]) {
-  const previous = [...projects.value]
-  const ownedActive = projects.value.filter((p) => (!p.role || p.role === 'owner') && !isArchivedProject(p))
-  const rest = projects.value.filter((p) => !ownedActive.some((o) => o.id === p.id))
-  const byId = new Map(ownedActive.map((p) => [p.id, p]))
-  projects.value = [...projectIds.map((id) => byId.get(id)!).filter(Boolean), ...rest]
-  try {
-    await api.reorderProjects(projectIds)
-  } catch (err) {
-    projects.value = previous
-    toast.push(err instanceof APIError ? err.message : 'Could not reorder projects', 'error')
-  }
-}
+// The project switcher and mobile drawer switch projects in place while this view is open.
+const unregisterProjectSelect = projectNav.registerSelectHandler((id) => {
+  if (filters.project !== id) selectProjectFilter(id)
+})
+
+watch(
+  () => filters.project,
+  (id) => {
+    const pid = Number(id)
+    if (pid > 0 && projects.value.some((p) => p.id === pid)) projectNav.touchRecent(pid)
+  },
+)
 
 function selectHome() {
   activeViewId.value = null
@@ -969,6 +975,7 @@ useLiveUpdates((event, batch) => {
 
 onUnmounted(() => {
   unregisterTaskShortcuts()
+  unregisterProjectSelect()
 })
 </script>
 
@@ -986,13 +993,18 @@ onUnmounted(() => {
       @select-view="selectSavedViewFilter"
       @add-project="showAddProjectModal = true"
       @edit-project="openEditProject"
-      @reorder-projects="onReorderProjects"
       @add-view="showSaveViewModal = true"
     />
 
     <div class="ordryn-main-pane flex-grow-1 p-2 p-sm-3 p-md-4 overflow-auto d-flex flex-column justify-content-between">
       <CompanyHome v-if="showCompanyHome" />
       <div v-else>
+        <HomeProjectsPanel
+          v-if="showHomeProjects"
+          :projects="projects"
+          @select="selectProjectFilter"
+          @add-project="showAddProjectModal = true"
+        />
         <TasksToolbar
           :total="total"
           :completed-count="completedCount"
