@@ -78,6 +78,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "allow_project_invites: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateUsersAddHomeSplitView(); err != nil {
+		fmt.Fprintf(os.Stderr, "home_split_view: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateProjectsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "projects: %v\n", err)
 		os.Exit(1)
@@ -96,6 +100,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := storage.CreateProjectSharingTables(); err != nil {
 		fmt.Fprintf(os.Stderr, "sharing: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateProjectPinsTable(); err != nil {
+		fmt.Fprintf(os.Stderr, "project pins: %v\n", err)
 		os.Exit(1)
 	}
 	if err := storage.CreateOrganizationTables(); err != nil {

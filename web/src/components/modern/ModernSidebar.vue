@@ -3,9 +3,11 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch, type Ref } fro
 import { useRoute, RouterLink } from 'vue-router'
 import Sortable from 'sortablejs'
 import type { Project, SavedView } from '@/api/types'
-import { projectNavLabel, projectOptionLabel, isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
+import { useProjectNav } from '@/composables/useProjectNav'
+import { sidebarProjectSections } from '@/utils/projectNav'
+import SidebarProjectLink from '@/components/modern/SidebarProjectLink.vue'
 
 const props = defineProps<{
   collapsed: boolean
@@ -23,7 +25,6 @@ const emit = defineEmits<{
   'select-view': [id: string]
   'add-project': []
   'edit-project': [project: Project]
-  'reorder-projects': [projectIds: number[]]
   'add-view': []
 }>()
 
@@ -34,22 +35,29 @@ const { isCompanyMode } = useSite()
 const overdueCount = inject<Ref<number>>('overdueCount', ref(0))
 const pendingInviteCount = inject<Ref<number>>('pendingInviteCount', ref(0))
 
+const nav = useProjectNav()
+
 const projectsCollapsed = ref(false)
 const viewsCollapsed = ref(false)
-const archivedCollapsed = ref(true)
-const ownedListEl = ref<HTMLElement | null>(null)
+const pinnedListEl = ref<HTMLElement | null>(null)
 let sortable: Sortable | null = null
 
-const ownedProjects = computed(() =>
-  props.projects.filter((p) => isProjectOwner(p) && !isArchivedProject(p)),
-)
-const sharedProjects = computed(() =>
-  props.projects.filter((p) => !isProjectOwner(p) && !isArchivedProject(p)),
-)
-const archivedProjectList = computed(() => props.projects.filter(isArchivedProject))
+const pinIds = computed(() => nav.pinIds(props.projects))
+const sections = computed(() => sidebarProjectSections(props.projects, pinIds.value, nav.recentIds.value))
+const hiddenCount = computed(() => {
+  const shown = sections.value.pinned.length + sections.value.suggested.length + sections.value.recent.length
+  return Math.max(0, props.projects.length - shown)
+})
+const shortcutHint = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl+K'
 
-function isOwner(proj: Project) {
-  return isProjectOwner(proj)
+function selectProject(proj: Project) {
+  nav.touchRecent(proj.id)
+  emit('select-project', String(proj.id))
+  emit('close-mobile')
+}
+
+function togglePin(proj: Project) {
+  void nav.togglePin(proj.id, props.projects)
 }
 
 function destroySortable() {
@@ -57,7 +65,7 @@ function destroySortable() {
   sortable = null
 }
 
-function collectOwnedIds(el: HTMLElement): number[] {
+function collectPinnedIds(el: HTMLElement): number[] {
   return Array.from(el.querySelectorAll(':scope > .project-reorder-item'))
     .map((node) => parseInt((node as HTMLElement).dataset.projectId || '', 10))
     .filter((id) => !Number.isNaN(id))
@@ -65,23 +73,29 @@ function collectOwnedIds(el: HTMLElement): number[] {
 
 function initSortable() {
   destroySortable()
-  if (!ownedListEl.value || ownedProjects.value.length < 2 || props.collapsed) return
-  sortable = Sortable.create(ownedListEl.value, {
+  if (!pinnedListEl.value || sections.value.pinned.length < 2 || props.collapsed) return
+  sortable = Sortable.create(pinnedListEl.value, {
     handle: '.project-drag-handle',
     draggable: '.project-reorder-item',
     animation: 150,
     onEnd(evt) {
-      const el = evt.to as HTMLElement
-      const ids = collectOwnedIds(el)
-      if (ids.length === ownedProjects.value.length) {
-        emit('reorder-projects', ids)
+      const from = evt.from as HTMLElement
+      const ids = collectPinnedIds(from)
+      // Put the DOM back where Vue left it; the new order re-renders from state.
+      if (evt.oldIndex != null) {
+        evt.item.remove()
+        from.insertBefore(evt.item, from.children[evt.oldIndex] ?? null)
       }
+      if (evt.oldIndex === evt.newIndex) return
+      // Archived pins are hidden here but keep their place at the end of the list.
+      const visible = new Set(ids)
+      void nav.setPins([...ids, ...pinIds.value.filter((id) => !visible.has(id))], props.projects)
     },
   })
 }
 
 watch(
-  [ownedProjects, () => props.collapsed, projectsCollapsed],
+  [() => sections.value.pinned.length, () => props.collapsed, projectsCollapsed, pinnedListEl],
   async () => {
     await nextTick()
     initSortable()
@@ -241,158 +255,113 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <!-- Projects List (Collapsible) -->
-    <ul v-if="!projectsCollapsed" class="sidebar-nav-list">
-      <!-- No Project Option -->
-      <li class="sidebar-nav-item">
-        <a
-          href="#"
-          class="sidebar-nav-link"
-          :class="{ active: activeProject === '0' }"
-          data-tooltip="No Project"
-          title="No Project"
-          @click.prevent="emit('select-project', '0'); emit('close-mobile')"
-        >
-          <i class="bi bi-folder-x" />
-          <span class="sidebar-text text-truncate">No Project</span>
-        </a>
-      </li>
-    </ul>
-
-    <!-- Owned projects (sortable) -->
-    <ul
-      v-if="!projectsCollapsed"
-      ref="ownedListEl"
-      class="sidebar-nav-list"
-    >
-      <li
-        v-for="proj in ownedProjects"
-        :key="proj.id"
-        class="sidebar-nav-item position-relative project-reorder-item"
-        :data-project-id="proj.id"
-      >
-        <div class="d-flex align-items-center justify-content-between w-100 min-w-0">
-          <span
-            class="project-drag-handle text-muted d-none d-md-inline-flex me-1 hover-reveal"
-            title="Drag to reorder"
-            aria-label="Drag to reorder project"
-            @click.stop
-          >
-            <i class="bi bi-grip-vertical" style="font-size: 0.85rem;" />
-          </span>
-          <a
-            href="#"
-            class="sidebar-nav-link flex-grow-1 min-w-0"
-            :class="{ active: activeProject === String(proj.id) }"
-            :data-tooltip="proj.description ? `${projectOptionLabel(proj)} — ${proj.description}` : projectOptionLabel(proj)"
-            :title="proj.description ? `${projectOptionLabel(proj)} — ${proj.description}` : projectOptionLabel(proj)"
-            @click.prevent="emit('select-project', String(proj.id)); emit('close-mobile')"
-          >
-            <i class="bi bi-folder2-open" />
-            <span class="sidebar-text text-truncate">{{ projectNavLabel(proj) }}</span>
-          </a>
-
-          <button
-            v-if="isOwner(proj)"
-            type="button"
-            class="btn btn-sm text-muted p-0 border-0 hover-reveal d-none d-md-inline-block flex-shrink-0 me-2"
-            title="Edit project"
-            @click.stop="emit('edit-project', proj)"
-          >
-            <i class="bi bi-pencil" style="font-size: 0.85rem;" />
-          </button>
-        </div>
-      </li>
-    </ul>
-
-    <!-- Shared projects (not reorderable) + add -->
-    <ul v-if="!projectsCollapsed" class="sidebar-nav-list">
-      <li
-        v-for="proj in sharedProjects"
-        :key="proj.id"
-        class="sidebar-nav-item position-relative"
-      >
-        <div class="d-flex align-items-center justify-content-between w-100 min-w-0">
-          <a
-            href="#"
-            class="sidebar-nav-link flex-grow-1 min-w-0"
-            :class="{ active: activeProject === String(proj.id) }"
-            :data-tooltip="proj.description ? `${projectOptionLabel(proj)} — ${proj.description}` : projectOptionLabel(proj)"
-            :title="proj.description ? `${projectOptionLabel(proj)} — ${proj.description}` : projectOptionLabel(proj)"
-            @click.prevent="emit('select-project', String(proj.id)); emit('close-mobile')"
-          >
-            <i class="bi bi-folder2-open" />
-            <span class="sidebar-text text-truncate">{{ projectNavLabel(proj) }}</span>
-          </a>
-
+    <template v-if="!projectsCollapsed">
+      <!-- Find a project (opens the switcher) -->
+      <ul class="sidebar-nav-list">
+        <li class="sidebar-nav-item">
           <button
             type="button"
-            class="btn btn-sm text-muted p-0 border-0 hover-reveal d-none d-md-inline-block flex-shrink-0 me-2"
-            title="Project settings"
-            @click.stop="emit('edit-project', proj)"
+            class="sidebar-nav-link sidebar-find-project"
+            data-tooltip="Find a project"
+            :title="`Find a project (${shortcutHint})`"
+            @click="nav.openSwitcher()"
           >
-            <i class="bi bi-pencil" style="font-size: 0.85rem;" />
+            <i class="bi bi-search" />
+            <span class="sidebar-text">Find a project</span>
+            <span class="sidebar-text sidebar-shortcut">{{ shortcutHint }}</span>
           </button>
-        </div>
-      </li>
-
-      <li v-if="canCreateProjects" class="sidebar-nav-item d-flex align-items-center">
-        <button
-          type="button"
-          class="sidebar-nav-link text-start w-100 border-0 bg-transparent"
-          data-tooltip="Create Project"
-          title="Create a new Project"
-          @click="emit('add-project')"
-        >
-          <i class="bi bi-plus-lg" />
-          <span class="sidebar-text">Project</span>
-        </button>
-      </li>
-    </ul>
-
-    <div
-      v-if="!projectsCollapsed && archivedProjectList.length"
-      class="sidebar-section-header d-flex align-items-center justify-content-between"
-    >
-      <span class="sidebar-section-link sidebar-text fw-bold text-uppercase">Archived</span>
-      <button
-        type="button"
-        class="btn btn-sm text-muted p-0 border-0 sidebar-text me-1"
-        :title="archivedCollapsed ? 'Expand archived' : 'Collapse archived'"
-        @click="archivedCollapsed = !archivedCollapsed"
-      >
-        <i :class="archivedCollapsed ? 'bi bi-chevron-down' : 'bi bi-chevron-up'" style="font-size: 0.8rem;" />
-      </button>
-    </div>
-    <ul v-if="!projectsCollapsed && !archivedCollapsed && archivedProjectList.length" class="sidebar-nav-list">
-      <li
-        v-for="proj in archivedProjectList"
-        :key="proj.id"
-        class="sidebar-nav-item position-relative"
-      >
-        <div class="d-flex align-items-center justify-content-between w-100 min-w-0">
+        </li>
+        <li class="sidebar-nav-item">
           <a
             href="#"
-            class="sidebar-nav-link flex-grow-1 min-w-0"
-            :class="{ active: activeProject === String(proj.id) }"
-            :data-tooltip="proj.description ? `${projectOptionLabel(proj)} — ${proj.description}` : projectOptionLabel(proj)"
-            :title="proj.description ? `${projectOptionLabel(proj)} — ${proj.description}` : projectOptionLabel(proj)"
-            @click.prevent="emit('select-project', String(proj.id)); emit('close-mobile')"
+            class="sidebar-nav-link"
+            :class="{ active: activeProject === '0' }"
+            data-tooltip="No Project"
+            title="No Project"
+            @click.prevent="emit('select-project', '0'); emit('close-mobile')"
           >
-            <i class="bi bi-archive" />
-            <span class="sidebar-text text-truncate">{{ projectNavLabel(proj) }}</span>
+            <i class="bi bi-folder-x" />
+            <span class="sidebar-text text-truncate">No Project</span>
           </a>
+        </li>
+      </ul>
+
+      <!-- Pinned (drag to reorder) -->
+      <template v-if="sections.pinned.length">
+        <div class="sidebar-subsection-label">Pinned</div>
+        <ul ref="pinnedListEl" class="sidebar-nav-list">
+          <SidebarProjectLink
+            v-for="proj in sections.pinned"
+            :key="proj.id"
+            :project="proj"
+            :active="activeProject === String(proj.id)"
+            pinned
+            draggable
+            @select="selectProject(proj)"
+            @toggle-pin="togglePin(proj)"
+            @edit="emit('edit-project', proj)"
+          />
+        </ul>
+      </template>
+
+      <!-- Nothing pinned yet: show the top projects -->
+      <ul v-if="sections.suggested.length" class="sidebar-nav-list">
+        <SidebarProjectLink
+          v-for="proj in sections.suggested"
+          :key="proj.id"
+          :project="proj"
+          :active="activeProject === String(proj.id)"
+          :pinned="false"
+          @select="selectProject(proj)"
+          @toggle-pin="togglePin(proj)"
+          @edit="emit('edit-project', proj)"
+        />
+      </ul>
+
+      <!-- Recently opened -->
+      <template v-if="sections.recent.length">
+        <div class="sidebar-subsection-label">Recent</div>
+        <ul class="sidebar-nav-list">
+          <SidebarProjectLink
+            v-for="proj in sections.recent"
+            :key="proj.id"
+            :project="proj"
+            :active="activeProject === String(proj.id)"
+            :pinned="false"
+            @select="selectProject(proj)"
+            @toggle-pin="togglePin(proj)"
+            @edit="emit('edit-project', proj)"
+          />
+        </ul>
+      </template>
+
+      <ul class="sidebar-nav-list">
+        <li v-if="hiddenCount > 0" class="sidebar-nav-item">
           <button
             type="button"
-            class="btn btn-sm text-muted p-0 border-0 hover-reveal d-none d-md-inline-block flex-shrink-0 me-2"
-            title="Project settings"
-            @click.stop="emit('edit-project', proj)"
+            class="sidebar-nav-link text-start w-100 border-0 bg-transparent"
+            data-tooltip="All projects"
+            title="Browse all projects"
+            @click="nav.openSwitcher()"
           >
-            <i class="bi bi-pencil" style="font-size: 0.85rem;" />
+            <i class="bi bi-three-dots" />
+            <span class="sidebar-text">All projects ({{ projects.length }})</span>
           </button>
-        </div>
-      </li>
-    </ul>
+        </li>
+        <li v-if="canCreateProjects" class="sidebar-nav-item d-flex align-items-center">
+          <button
+            type="button"
+            class="sidebar-nav-link text-start w-100 border-0 bg-transparent"
+            data-tooltip="Create Project"
+            title="Create a new Project"
+            @click="emit('add-project')"
+          >
+            <i class="bi bi-plus-lg" />
+            <span class="sidebar-text">Project</span>
+          </button>
+        </li>
+      </ul>
+    </template>
 
     <!-- Section: Views Header -->
     <div class="sidebar-section-header d-flex align-items-center justify-content-between">

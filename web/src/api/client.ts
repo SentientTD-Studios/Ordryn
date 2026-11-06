@@ -317,7 +317,7 @@ export const api = {
     return request<{ ok: boolean }>('/api/v2/auth/logout', { method: 'POST' })
   },
 
-  patchMe(payload: Partial<Pick<User, 'timezone' | 'items_per_page' | 'allow_project_invites'>>) {
+  patchMe(payload: Partial<Pick<User, 'timezone' | 'items_per_page' | 'allow_project_invites' | 'home_split_view'>>) {
     return request<User>('/api/v2/me', {
       method: 'PATCH',
       body: JSON.stringify(payload),
@@ -891,6 +891,14 @@ export const api = {
   reorderProjects(projectIds: number[]) {
     return request<{ ok: boolean }>('/api/v2/projects/reorder', {
       method: 'POST',
+      body: JSON.stringify({ project_ids: projectIds }),
+    })
+  },
+
+  /** Replaces the caller's pinned sidebar projects with this ordered list. */
+  setProjectPins(projectIds: number[]) {
+    return request<{ project_ids: number[] }>('/api/v2/projects/pins', {
+      method: 'PUT',
       body: JSON.stringify({ project_ids: projectIds }),
     })
   },

@@ -9,6 +9,8 @@ export type User = {
   items_per_page: number
   permissions: string[]
   allow_project_invites: boolean
+  /** Home shows a grid of projects above the task list. */
+  home_split_view?: boolean
   username_change_available: boolean
   mfa_enabled: boolean
   avatar_url?: string
@@ -86,6 +88,9 @@ export type Project = {
   organization_id?: number | null
   organization_name?: string
   org_managed?: boolean
+  /** Caller pinned this project to their sidebar (set on project lists). */
+  pinned?: boolean
+  pin_position?: number
 }
 
 export type OrgImportMode = 'copy' | 'lock' | 'select'

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -346,6 +347,40 @@ func ReorderProjectsForUser(ctx context.Context, userID int, orderedIDs []int) e
 	}
 	if err := storage.ReorderProjects(userID, orderedIDs); err != nil {
 		return fmt.Errorf("%w: %s", ErrValidation, err.Error())
+	}
+	return nil
+}
+
+// SetProjectPinsForUser replaces the user's pinned sidebar projects with orderedIDs.
+// An empty list unpins everything.
+func SetProjectPinsForUser(ctx context.Context, userID int, orderedIDs []int) error {
+	_ = ctx
+	if err := ValidateProjectPinIDs(orderedIDs); err != nil {
+		return err
+	}
+	if err := storage.SetProjectPins(userID, orderedIDs); err != nil {
+		if errors.Is(err, storage.ErrProjectPinNotAccessible) {
+			return fmt.Errorf("%w: project not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
+}
+
+// ValidateProjectPinIDs checks pin ids are positive, unique, and under the pin cap.
+func ValidateProjectPinIDs(ids []int) error {
+	if len(ids) > storage.MaxProjectPins {
+		return fmt.Errorf("%w: at most %d projects can be pinned", ErrValidation, storage.MaxProjectPins)
+	}
+	seen := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return fmt.Errorf("%w: project_ids must be positive ids", ErrValidation)
+		}
+		if _, dup := seen[id]; dup {
+			return fmt.Errorf("%w: project_ids must not repeat", ErrValidation)
+		}
+		seen[id] = struct{}{}
 	}
 	return nil
 }

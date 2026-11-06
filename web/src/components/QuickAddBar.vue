@@ -114,16 +114,36 @@ defineExpose({ focus: () => inputEl.value?.focus() })
 </script>
 
 <template>
-  <form class="quick-add-bar mb-3" @submit.prevent="submit">
+  <form
+    class="quick-add-bar mb-3"
+    autocomplete="off"
+    data-bwignore
+    data-1p-ignore
+    data-lpignore="true"
+    data-form-type="other"
+    @submit.prevent="submit"
+  >
     <div class="input-group input-group-sm">
       <span class="input-group-text"><i class="bi bi-plus-lg" aria-hidden="true" /></span>
+      <!--
+        Opt out of password-manager autofill (Bitwarden, 1Password, LastPass, Dashlane).
+        type="search" is what actually stops Bitwarden's inline menu; avoid credential
+        keywords (login, user, email, password) in the placeholder too.
+      -->
       <input
         ref="inputEl"
         v-model="text"
-        type="text"
+        type="search"
+        enterkeyhint="done"
+        name="quick-add-task"
+        autocomplete="off"
+        data-bwignore
+        data-1p-ignore
+        data-lpignore="true"
+        data-form-type="other"
         class="form-control"
         maxlength="500"
-        placeholder="Quick add: Fix login #bug !high tomorrow"
+        placeholder="Quick add: Fix header #bug !high tomorrow"
         aria-label="Quick add task"
         aria-describedby="quick-add-help"
         :disabled="busy"
@@ -149,3 +169,12 @@ defineExpose({ focus: () => inputEl.value?.focus() })
     </div>
   </form>
 </template>
+
+<style scoped>
+/* type="search" (used to dodge password-manager autofill) adds a native clear button; Esc already clears. */
+.quick-add-bar input[type='search']::-webkit-search-cancel-button,
+.quick-add-bar input[type='search']::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+</style>

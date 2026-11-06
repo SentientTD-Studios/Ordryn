@@ -17,6 +17,7 @@ type apiMePatchRequest struct {
 	Timezone            *string `json:"timezone"`
 	ItemsPerPage        *int    `json:"items_per_page"`
 	AllowProjectInvites *bool   `json:"allow_project_invites"`
+	HomeSplitView       *bool   `json:"home_split_view"`
 }
 
 type apiChangePasswordRequest struct {
@@ -78,6 +79,10 @@ func apiV1PatchMe(w http.ResponseWriter, r *http.Request) {
 		Timezone:            current.Timezone,
 		ItemsPerPage:        current.ItemsPerPage,
 		AllowProjectInvites: current.AllowProjectInvites,
+		HomeSplitView:       current.HomeSplitView,
+	}
+	if req.HomeSplitView != nil {
+		in.HomeSplitView = *req.HomeSplitView
 	}
 	if req.Timezone != nil {
 		in.Timezone = *req.Timezone

@@ -22,6 +22,8 @@ type UserProfile struct {
 	RoleID                  int
 	Permissions             []string
 	AllowProjectInvites     bool
+	// HomeSplitView shows a grid of projects above the task list on Home.
+	HomeSplitView           bool
 	UsernameChangeAvailable bool
 	MFAEnabled              bool
 	AvatarURL               string
@@ -42,6 +44,7 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		SELECT u.id, u.email, COALESCE(u.user_name, ''), COALESCE(u.timezone, 'America/New_York'),
 		       COALESCE(u.items_per_page, 15), u.role_id, COALESCE(r.permissions, '{}'),
 		       COALESCE(u.allow_project_invites, true),
+		       COALESCE(u.home_split_view, false),
 		       COALESCE(u.username_change_available, false),
 		       COALESCE(u.mfa_enabled, false),
 		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name, u.session_version
@@ -49,7 +52,7 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1`, userID).Scan(
 		&p.ID, &p.Email, &p.UserName, &p.Timezone, &p.ItemsPerPage, &p.RoleID, &p.Permissions,
-		&p.AllowProjectInvites, &p.UsernameChangeAvailable,
+		&p.AllowProjectInvites, &p.HomeSplitView, &p.UsernameChangeAvailable,
 		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName, &p.SessionVersion,
 	)
 	if err != nil {

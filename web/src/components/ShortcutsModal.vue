@@ -27,6 +27,10 @@ import { RouterLink } from 'vue-router'
           <table class="table table-sm mb-3">
             <tbody>
               <tr>
+                <td><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd></td>
+                <td>Find a project (works on every page)</td>
+              </tr>
+              <tr>
                 <td><kbd>n</kbd></td>
                 <td>New task (open sidebar)</td>
               </tr>

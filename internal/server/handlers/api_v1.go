@@ -205,6 +205,8 @@ type apiProjectJSON struct {
 	OrganizationID           *int     `json:"organization_id,omitempty"`
 	OrganizationName         string   `json:"organization_name,omitempty"`
 	OrgManaged               bool     `json:"org_managed"`
+	Pinned                   bool     `json:"pinned"`
+	PinPosition              *int     `json:"pin_position,omitempty"`
 }
 
 type apiTagCreateRequest struct {
@@ -256,6 +258,14 @@ func orgImportMembersFromAPI(in []apiOrgImportMember) []storage.OrgImportMember 
 }
 
 type apiProjectReorderRequest struct {
+	ProjectIDs []int `json:"project_ids"`
+}
+
+type apiProjectPinsRequest struct {
+	ProjectIDs *[]int `json:"project_ids"`
+}
+
+type apiProjectPinsResponse struct {
 	ProjectIDs []int `json:"project_ids"`
 }
 
@@ -1138,6 +1148,14 @@ func APIV1ProjectsRouter(w http.ResponseWriter, r *http.Request) {
 		apiV1ReorderProjects(w, r)
 		return
 	}
+	if sub == "pins" {
+		if r.Method != http.MethodPut {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		apiV1SetProjectPins(w, r)
+		return
+	}
 	if handleProjectSubResource(w, r, sub) {
 		return
 	}
@@ -1174,9 +1192,19 @@ func apiV1ListProjects(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to list projects.")
 		return
 	}
+	pins, err := storage.GetProjectPinPositions(userID)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to list projects.")
+		return
+	}
 	out := make([]apiProjectJSON, 0, len(projects))
 	for i := range projects {
-		out = append(out, projectToAPIJSON(&projects[i]))
+		item := projectToAPIJSON(&projects[i])
+		if pos, ok := pins[item.ID]; ok {
+			item.Pinned = true
+			item.PinPosition = &pos
+		}
+		out = append(out, item)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(out)
@@ -1332,6 +1360,39 @@ func apiV1ReorderProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(apiReorderOKResponse{OK: true})
+}
+
+// apiV1SetProjectPins replaces the caller's pinned sidebar projects (PUT /api/v2/projects/pins).
+func apiV1SetProjectPins(w http.ResponseWriter, r *http.Request) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	var req apiProjectPinsRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	if req.ProjectIDs == nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "project_ids is required.")
+		return
+	}
+	ids := *req.ProjectIDs
+	if err := domain.SetProjectPinsForUser(r.Context(), userID, ids); err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save pinned projects.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(apiProjectPinsResponse{ProjectIDs: ids})
 }
 
 func apiV1DeleteProject(w http.ResponseWriter, r *http.Request, projectID int) {

@@ -44,6 +44,7 @@ type apiUserMeJSON struct {
 	ItemsPerPage            int      `json:"items_per_page"`
 	Permissions             []string `json:"permissions"`
 	AllowProjectInvites     bool     `json:"allow_project_invites"`
+	HomeSplitView           bool     `json:"home_split_view"`
 	UsernameChangeAvailable bool     `json:"username_change_available"`
 	MFAEnabled              bool     `json:"mfa_enabled"`
 	AvatarURL               string   `json:"avatar_url"`
@@ -71,6 +72,7 @@ func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
 		ItemsPerPage:            p.ItemsPerPage,
 		Permissions:             perms,
 		AllowProjectInvites:     p.AllowProjectInvites,
+		HomeSplitView:           p.HomeSplitView,
 		UsernameChangeAvailable: p.UsernameChangeAvailable,
 		MFAEnabled:              p.MFAEnabled,
 		AvatarURL:               p.AvatarURL,

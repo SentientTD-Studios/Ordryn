@@ -16,6 +16,8 @@ import TaskSidebar from '@/components/TaskSidebar.vue'
 import ChangelogModal from '@/components/ChangelogModal.vue'
 import ShortcutsModal from '@/components/ShortcutsModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import ProjectSwitcher from '@/components/modern/ProjectSwitcher.vue'
+import { resetProjectNav, useProjectNav } from '@/composables/useProjectNav'
 
 const route = useRoute()
 const { isAuthenticated } = useAuth()
@@ -84,7 +86,18 @@ function closeMobileNav() {
   mobileNavOpen.value = false
 }
 
+const projectNav = useProjectNav()
+
 function onMobileNavKeydown(e: KeyboardEvent) {
+  // Ctrl/Cmd+K toggles the project switcher from anywhere in the app.
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    if (!isAuthenticated.value || route.name === 'share') return
+    e.preventDefault()
+    closeMobileNav()
+    if (projectNav.switcherOpen.value) projectNav.closeSwitcher()
+    else projectNav.openSwitcher()
+    return
+  }
   if (e.key === 'Escape' && mobileNavOpen.value) {
     e.preventDefault()
     closeMobileNav()
@@ -104,7 +117,7 @@ watch(
 
 watch(
   isAuthenticated,
-  (authed) => {
+  (authed, wasAuthed) => {
     if (authed) {
       void loadOverdue()
       void loadPendingInvites()
@@ -112,6 +125,8 @@ watch(
     } else {
       overdueCount.value = 0
       pendingInviteCount.value = 0
+      // Only on an actual sign-out, not the initial load before auth resolves.
+      if (wasAuthed) resetProjectNav()
       stopLiveUpdates()
     }
   },
@@ -175,5 +190,6 @@ onUnmounted(() => {
     <TaskSidebar v-if="isAuthenticated && route.name !== 'share'" />
     <ChangelogModal v-if="showChangelog" />
     <ShortcutsModal />
+    <ProjectSwitcher v-if="isAuthenticated" />
   </div>
 </template>
