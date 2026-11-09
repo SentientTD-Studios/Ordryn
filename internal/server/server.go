@@ -187,6 +187,7 @@ func registerAPIV1Routes() {
 	handleAPI("/tags/", v1(handlers.APIV1TagsRouter))
 	handleAPI("/saved-views", v1(handlers.APIV1SavedViewsRouter))
 	handleAPI("/saved-views/", v1(handlers.APIV1SavedViewsRouter))
+	handleAPI("/queries/", v1(handlers.APIV1QueriesRouter))
 	handleAPI("/task-templates", v1(handlers.APIV1TaskTemplatesRouter))
 	handleAPI("/task-templates/", v1(handlers.APIV1TaskTemplatesRouter))
 	handleAPI("/trash", v1(handlers.APIV1TrashRouter))

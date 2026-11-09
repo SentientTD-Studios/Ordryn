@@ -22,7 +22,6 @@ const emit = defineEmits<{
   'close-mobile': []
   'select-home': []
   'select-project': [id: string]
-  'select-view': [id: string]
   'add-project': []
   'edit-project': [project: Project]
   'add-view': []
@@ -389,17 +388,17 @@ onBeforeUnmount(() => {
     <!-- Views List (Collapsible) -->
     <ul v-if="!viewsCollapsed" class="sidebar-nav-list">
       <li v-for="view in savedViews" :key="view.id" class="sidebar-nav-item">
-        <a
-          href="#"
+        <RouterLink
+          :to="`/views/${view.id}`"
           class="sidebar-nav-link"
-          :class="{ active: activeView === String(view.id) }"
-          :data-tooltip="view.name"
-          :title="view.name"
-          @click.prevent="emit('select-view', String(view.id)); emit('close-mobile')"
+          :class="{ active: activeView === String(view.id) || route.path === `/views/${view.id}` }"
+          :data-tooltip="view.shared ? `${view.name} (${view.project_name})` : view.name"
+          :title="view.shared ? `${view.name} — shared in ${view.project_name}` : view.name"
+          @click="emit('close-mobile')"
         >
-          <i class="bi bi-bookmark-star" />
+          <i :class="view.shared ? 'bi bi-people' : 'bi bi-bookmark-star'" />
           <span class="sidebar-text text-truncate">{{ view.name }}</span>
-        </a>
+        </RouterLink>
       </li>
       <li class="sidebar-nav-item d-flex align-items-center">
         <button

@@ -52,7 +52,10 @@ async function save() {
           <button type="button" class="btn-close" @click="emit('close')" />
         </div>
         <div class="modal-body py-3">
-          <p class="text-muted small mb-3">Save your current active filters into a custom named View in the sidebar.</p>
+          <p class="text-muted small mb-3">
+            Save your current filters as a query in the sidebar. Open it later to add AND/OR clauses, columns, sorting,
+            or to share it with a project.
+          </p>
           <div class="mb-3">
             <label for="new-view-name" class="form-label small fw-bold">View Name</label>
             <input

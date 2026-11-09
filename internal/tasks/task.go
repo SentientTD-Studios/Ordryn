@@ -56,6 +56,10 @@ type Task struct {
 	Recurrence *storage.TaskRecurrence
 	// BlockedByOpen counts incomplete tasks that block this one.
 	BlockedByOpen int
+	// CreatedByID, CreatedByName and CompletedDate are only filled by query runs.
+	CreatedByID   int
+	CreatedByName string
+	CompletedDate string
 }
 
 // AttachedField is a custom field value loaded for API serialization.

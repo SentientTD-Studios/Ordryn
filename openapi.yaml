@@ -52,6 +52,7 @@ tags:
   - name: Organizations
   - name: Tags
   - name: Saved Views
+  - name: Queries
   - name: Device Auth
   - name: GitHub
   - name: Live
@@ -6476,6 +6477,207 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/saved-views/{id}/results:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Saved Views]
+      summary: Run a saved query
+      description: >
+        Runs the query as the caller, never as its author: results only ever contain tasks the
+        caller can open. A shared query runs against its own project only. References the caller
+        has lost access to match nothing and are listed under `unavailable`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: page_size
+          in: query
+          description: 1-200 (default 50), or -1 to return only the total.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: One page of results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResults"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/saved-views/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Saved Views]
+      summary: Export a saved query's results as CSV
+      description: Up to 5000 rows, one column per query column.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema: { type: string }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/saved-views/{id}/dashboard:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Saved Views]
+      summary: Pin a saved query to your dashboard
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Pinned
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Saved Views]
+      summary: Unpin a saved query from your dashboard
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Unpinned
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/queries/run:
+    post:
+      tags: [Queries]
+      summary: Run a query definition without saving it
+      description: >
+        Every project, sprint, person, and custom field the definition names must be one the caller
+        can access; otherwise the request fails with `invalid_query` (the same error whether the
+        thing is missing or hidden). Project-scoped API keys are always pinned to their project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRunRequest"
+      responses:
+        "200":
+          description: One page of results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResults"
+        "400":
+          $ref: "#/components/responses/APIError"
+
+  /api/v2/queries/export:
+    post:
+      tags: [Queries]
+      summary: Export an unsaved query's results as CSV
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRunRequest"
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema: { type: string }
+        "400":
+          $ref: "#/components/responses/APIError"
+
+  /api/v2/queries/options:
+    get:
+      tags: [Queries]
+      summary: Fields, operators and picker values for the query editor
+      description: Lists only projects the caller can open and the people, statuses, tags, sprints and custom fields inside them.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: project_id
+          in: query
+          description: Narrow every list to one project (the shared-query editor).
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Editor options
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fields:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        label: { type: string }
+                        type: { type: string }
+                        operators: { type: array, items: { type: string } }
+                        sortable: { type: boolean }
+                        options:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              value: { type: string }
+                              label: { type: string }
+                  columns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        value: { type: string }
+                        label: { type: string }
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        archived: { type: boolean }
+                        view_only: { type: boolean }
+                        can_manage_queries: { type: boolean }
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                  statuses: { type: array, items: { type: string } }
+                  tags: { type: array, items: { type: string } }
+                  sprints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        project_id: { type: integer }
+                        name: { type: string }
+                        active: { type: boolean }
+                  date_macros: { type: array, items: { type: string } }
+                  limits: { type: object, additionalProperties: { type: integer } }
+
   /api/v2/task-templates:
     get:
       tags: [Task Templates]
@@ -11037,6 +11239,24 @@ components:
           type: string
         filter:
           $ref: "#/components/schemas/SavedViewFilter"
+        definition:
+          $ref: "#/components/schemas/QueryDefinition"
+        project_id:
+          type: integer
+          nullable: true
+          description: Set for a shared query, which belongs to that project.
+        project_name:
+          type: string
+        shared:
+          type: boolean
+        author_name:
+          type: string
+          description: Who created a shared query.
+        can_edit:
+          type: boolean
+          description: Personal views are editable by their owner; shared queries need queries:manage on the project.
+        on_dashboard:
+          type: boolean
         sort_order:
           type: integer
         created_at:
@@ -11048,12 +11268,18 @@ components:
 
     SavedViewCreate:
       type: object
-      required: [name, filter]
+      required: [name]
+      description: Send a `definition`, or (older clients) a `filter` that is converted to one.
       properties:
         name:
           type: string
         filter:
           $ref: "#/components/schemas/SavedViewFilter"
+        definition:
+          $ref: "#/components/schemas/QueryDefinition"
+        project_id:
+          type: integer
+          description: Create a shared query on this project (needs queries:manage). Cannot be changed later.
         sort_order:
           type: integer
 
@@ -11064,8 +11290,101 @@ components:
           type: string
         filter:
           $ref: "#/components/schemas/SavedViewFilter"
+        definition:
+          $ref: "#/components/schemas/QueryDefinition"
         sort_order:
           type: integer
+
+    QueryDefinition:
+      type: object
+      properties:
+        version:
+          type: integer
+          enum: [2]
+        scope:
+          type: object
+          properties:
+            projects:
+              type: array
+              items: { type: integer }
+              description: Empty means every project you can open.
+            include_personal:
+              type: boolean
+              description: Include your tasks without a project (default true).
+            include_archived:
+              type: boolean
+            exclude_view_only:
+              type: boolean
+        where:
+          $ref: "#/components/schemas/QueryNode"
+        mode:
+          type: string
+          enum: [flat, tree]
+        columns:
+          type: array
+          items: { type: string }
+        sort:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              dir: { type: string, enum: [asc, desc] }
+
+    QueryNode:
+      type: object
+      description: >
+        A group (`op` and `clauses`) or a clause (`field`, `operator`, `value`). Fields include id,
+        title, description, text, project, completed, workflow_status, priority, tags, due_date,
+        created_date, modified_date, completed_date, claimed_by, created_by, sprint, estimate,
+        is_subtask, has_subtasks, favorite and cf:<custom field key>. Date values accept YYYY-MM-DD
+        or macros such as @today-7, @start_of_week and @end_of_week; `between` (dates only) takes [from, to] and includes both ends; people accept @me; sprints accept @current_sprint.
+      properties:
+        op: { type: string, enum: [and, or] }
+        clauses:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueryNode"
+        field: { type: string }
+        operator:
+          type: string
+          enum: ["=", "<>", "<", "<=", ">", ">=", in, not_in, contains, not_contains, is_empty, is_not_empty, between]
+        value: {}
+
+    QueryRunRequest:
+      type: object
+      required: [definition]
+      properties:
+        definition:
+          $ref: "#/components/schemas/QueryDefinition"
+        project_id:
+          type: integer
+          description: Pin the run to one project, as a shared query would be.
+        page: { type: integer }
+        page_size: { type: integer }
+
+    QueryResults:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            type: object
+            description: A task (same fields as the task list) plus created_by, created_by_name, completed_date, and nested children in tree mode.
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+        total_pages: { type: integer }
+        mode: { type: string }
+        columns: { type: array, items: { type: string } }
+        unavailable:
+          type: object
+          properties:
+            projects: { type: array, items: { type: integer } }
+            sprints: { type: array, items: { type: integer } }
+            users: { type: array, items: { type: integer } }
+            custom_fields: { type: array, items: { type: string } }
 
     DeviceCodeResponse:
       type: object

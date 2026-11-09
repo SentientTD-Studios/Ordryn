@@ -232,6 +232,12 @@ func authorizeProjectKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) err
 			return requireTaskInProject(taskID, pid)
 		}
 
+	// /queries/run and /queries/options: the handler pins every run and
+	// listing to the key's project, whatever the body asks for.
+	case len(parts) == 2 && parts[0] == "queries" &&
+		((parts[1] == "run" && r.Method == http.MethodPost) || (parts[1] == "options" && r.Method == http.MethodGet)):
+		return require(storage.APIScopeTasksRead)
+
 	// /projects/{pid} and its read-only lookups (statuses, sprints, custom fields)
 	case parts[0] == "projects" && len(parts) >= 2 && len(parts) <= 3 && r.Method == http.MethodGet:
 		id, ok := positiveInt(parts[1])

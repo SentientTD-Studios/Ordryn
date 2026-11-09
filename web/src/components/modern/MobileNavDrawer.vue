@@ -83,7 +83,7 @@ function openSwitcher() {
 }
 
 function selectView(id: string) {
-  void router.push({ path: '/', query: { view: id } })
+  void router.push(`/views/${id}`)
   close()
 }
 
@@ -398,7 +398,7 @@ watch(isAuthenticated, (ok) => {
                 :class="{ active: activeView === String(view.id) }"
                 @click.prevent="selectView(String(view.id))"
               >
-                <i class="bi bi-bookmark-star" />
+                <i :class="view.shared ? 'bi bi-people' : 'bi bi-bookmark-star'" />
                 <span class="text-truncate">{{ view.name }}</span>
               </a>
             </li>

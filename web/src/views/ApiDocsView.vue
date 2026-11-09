@@ -54,6 +54,7 @@ onUnmounted(() => {
                             <li class="list-inline-item"><a href="#rate-limits">Rate limits</a></li>
                             <li class="list-inline-item"><a href="#tasks">Tasks</a></li>
                             <li class="list-inline-item"><a href="#saved-views">Saved views</a></li>
+                            <li class="list-inline-item"><a href="#queries">Queries</a></li>
                             <li class="list-inline-item"><a href="#projects">Projects</a></li>
                             <li class="list-inline-item"><a href="#organizations">Organizations</a></li>
                             <li class="list-inline-item"><a href="#tags">Tags</a></li>
@@ -132,6 +133,12 @@ onUnmounted(() => {
                             <tr><td><span class="badge bg-success">GET</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Get one saved view</td></tr>
                             <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-warning text-dark">PATCH</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Replace or update a saved view</td></tr>
                             <tr><td><span class="badge bg-danger">DELETE</span></td><td><a href="#saved-views"><code>/api/v2/saved-views/{id}</code></a></td><td>Delete a saved view</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#queries"><code>/api/v2/saved-views/{id}/results</code></a></td><td>Run a saved query (one page)</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#queries"><code>/api/v2/saved-views/{id}/export</code></a></td><td>Saved query results as CSV</td></tr>
+                            <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-danger">DELETE</span></td><td><a href="#queries"><code>/api/v2/saved-views/{id}/dashboard</code></a></td><td>Pin or unpin a query on your dashboard</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#queries"><code>/api/v2/queries/run</code></a></td><td>Run a query definition without saving it</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><a href="#queries"><code>/api/v2/queries/export</code></a></td><td>Unsaved query results as CSV</td></tr>
+                            <tr><td><span class="badge bg-success">GET</span></td><td><a href="#queries"><code>/api/v2/queries/options</code></a></td><td>Fields, operators, and picker values for the query editor</td></tr>
                             <tr><td><span class="badge bg-success">GET</span> <span class="badge bg-primary">POST</span></td><td><code>/api/v2/task-templates</code></td><td>List your templates (plus a project's with <code>?project_id=</code>) or create one</td></tr>
                             <tr><td><span class="badge bg-info text-dark">PUT</span> <span class="badge bg-danger">DELETE</span></td><td><code>/api/v2/task-templates/{id}</code></td><td>Replace or delete a template</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/task-templates/{id}/apply</code></td><td>Create a task and its subtasks from a template</td></tr>
@@ -594,9 +601,11 @@ Content-Type: application/json
 
                     <h2 id="saved-views" class="h4 mt-4">Saved views</h2>
                     <p>
-                        Saved views are named, reusable sets of task-list filters. They are private to the API key owner,
-                        and each user can store up to 20. Fetching a view returns its filters; apply it by passing those
-                        values as query parameters to <code>GET /api/v2/tasks</code>. Page numbers are not stored.
+                        A saved view is a named query. Personal views are private to their owner (up to 50 each);
+                        shared queries belong to a project (up to 100 each), are visible to everyone on it, and need the
+                        <code>queries:manage</code> permission to create, change, or delete. Each view carries a
+                        <code>definition</code> (see <a href="#queries">Queries</a>). Older clients can still send and read the
+                        flat <code>filter</code> below; the server converts it into a definition.
                     </p>
 
                     <h3 class="h5 mt-3">Saved view object</h3>
@@ -689,8 +698,67 @@ Content-Type: application/json
                     <h3 class="h5 mt-3">Saved view validation and conflicts</h3>
                     <p>
                         Request bodies must contain one JSON object, may be at most 1 MiB, and may not contain unknown fields.
-                        Duplicate names return <code>409 name_conflict</code>; creating a 21st view returns
+                        Duplicate names return <code>409 name_conflict</code>; going over the limit returns
                         <code>409 limit_reached</code>.
+                    </p>
+
+                    <h2 id="queries" class="h4 mt-4">Queries</h2>
+                    <p>
+                        A query definition picks a scope of projects, then filters it with a tree of AND/OR clauses.
+                        Queries always run as the caller: results only ever include tasks the caller can open, and a
+                        shared query only searches its own project. Every project, sprint, person, and custom field a
+                        definition names must be one the caller can access; otherwise the request fails with
+                        <code>400 invalid_query</code>, the same error whether it is missing or hidden. When a saved query
+                        names something the caller has since lost access to, that part matches nothing and the results
+                        list it under <code>unavailable</code>.
+                    </p>
+                    <pre class="api-docs-pre"><code>{
+  "scope": { "projects": [], "include_personal": true, "include_archived": false, "exclude_view_only": false },
+  "where": {
+    "op": "and",
+    "clauses": [
+      { "field": "workflow_status", "operator": "in", "value": ["doing", "review"] },
+      { "op": "or", "clauses": [
+        { "field": "claimed_by", "operator": "=", "value": "@me" },
+        { "field": "due_date", "operator": "between", "value": ["@start_of_week", "@end_of_week"] }
+      ] }
+    ]
+  },
+  "mode": "tree",
+  "columns": ["id", "title", "project", "workflow_status", "due_date", "claimed_by"],
+  "sort": [{ "field": "due_date", "dir": "asc" }]
+}</code></pre>
+                    <table class="table table-sm api-docs-table">
+                        <thead>
+                            <tr><th>Field</th><th>Operators</th><th>Values</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>title</code>, <code>description</code></td><td><code>contains</code>, <code>not_contains</code>, <code>=</code>, <code>&lt;&gt;</code>, <code>is_empty</code>, <code>is_not_empty</code></td><td>Text</td></tr>
+                            <tr><td><code>text</code></td><td><code>contains</code>, <code>not_contains</code></td><td>Title, description, tag name, or <code>#id</code></td></tr>
+                            <tr><td><code>id</code>, <code>priority</code>, <code>estimate</code></td><td><code>=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code> <code>in</code> <code>not_in</code> <code>is_empty</code> <code>is_not_empty</code></td><td>Numbers (priority 0–3)</td></tr>
+                            <tr><td><code>due_date</code>, <code>created_date</code>, <code>modified_date</code>, <code>completed_date</code></td><td><code>between</code> (value <code>[from, to]</code>, both included), comparisons, <code>is_empty</code>, <code>is_not_empty</code></td><td><code>YYYY-MM-DD</code> or <code>@today</code>, <code>@start_of_week</code>, <code>@end_of_week</code>, <code>@start_of_month</code>, <code>@start_of_year</code>, each with an optional <code>+N</code>/<code>-N</code> days</td></tr>
+                            <tr><td><code>completed</code>, <code>favorite</code>, <code>is_subtask</code>, <code>has_subtasks</code></td><td><code>=</code>, <code>&lt;&gt;</code></td><td><code>true</code> or <code>false</code></td></tr>
+                            <tr><td><code>project</code></td><td><code>=</code> <code>&lt;&gt;</code> <code>in</code> <code>not_in</code> <code>is_empty</code> <code>is_not_empty</code></td><td>Project IDs (<code>is_empty</code> = no project)</td></tr>
+                            <tr><td><code>claimed_by</code>, <code>created_by</code></td><td>Same as project</td><td>User IDs or <code>@me</code></td></tr>
+                            <tr><td><code>sprint</code></td><td>Same as project</td><td>Sprint IDs or <code>@current_sprint</code></td></tr>
+                            <tr><td><code>workflow_status</code></td><td>Same as project</td><td>Status names, matched across projects</td></tr>
+                            <tr><td><code>tags</code></td><td><code>in</code> (has any), <code>not_in</code> (has none), <code>is_empty</code>, <code>is_not_empty</code></td><td>Tag names</td></tr>
+                            <tr><td><code>cf:&lt;key&gt;</code></td><td>Depends on the custom field's type</td><td>Custom field values</td></tr>
+                        </tbody>
+                    </table>
+                    <p>
+                        Limits: 50 clauses, groups nested 5 deep, 50 values per list, 25 columns, 3 sort keys.
+                        <code>mode</code> is <code>flat</code> (every match) or <code>tree</code> (matching subtasks nested under
+                        matching parents; <code>total</code> counts top-level rows). Use
+                        <code>GET /api/v2/queries/options</code> to discover the fields, operators, and values available to you.
+                    </p>
+                    <p><span class="badge bg-primary">POST</span> <code>/api/v2/queries/run</code></p>
+                    <pre class="api-docs-pre"><code>{ "definition": { ... }, "page": 1, "page_size": 50 }</code></pre>
+                    <p>
+                        <code>page_size</code> is 1–200, or <code>-1</code> to get only <code>total</code>. Add
+                        <code>project_id</code> to pin the run to one project, as a shared query would be. Project-scoped
+                        API keys and agent keys are always pinned to their project. Saved queries run with
+                        <code>GET /api/v2/saved-views/{id}/results?page=1&amp;page_size=50</code>.
                     </p>
 
                     <h2 id="projects" class="h4 mt-4">Projects</h2>

@@ -208,6 +208,37 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
+		Name:  "run_query",
+		Title: "Run a task query",
+		Description: "Find tasks in your project with a query: a tree of AND/OR clauses over fields such as " +
+			"title, text, workflow_status, priority, tags, due_date, claimed_by, sprint and estimate. " +
+			"Example where: {\"op\":\"and\",\"clauses\":[{\"field\":\"workflow_status\",\"operator\":\"in\",\"value\":[\"todo\"]}," +
+			"{\"field\":\"due_date\",\"operator\":\"<=\",\"value\":\"@today+7\"}]}. 50 results per page.",
+		InputSchema: objSchema(map[string]any{
+			"where": map[string]any{"type": "object", "description": "Clause tree: {op, clauses} groups and {field, operator, value} clauses."},
+			"mode":  map[string]any{"type": "string", "enum": []string{"flat", "tree"}},
+			"sort": map[string]any{"type": "array", "items": objSchema(map[string]any{
+				"field": stringProp("Field to sort by."),
+				"dir":   map[string]any{"type": "string", "enum": []string{"asc", "desc"}},
+			}, "field")},
+			"page": idProp,
+		}, "where"),
+		call: func(args map[string]any) mcpCall {
+			def := map[string]any{"where": args["where"]}
+			if m, ok := args["mode"].(string); ok && m != "" {
+				def["mode"] = m
+			}
+			if s, ok := args["sort"]; ok {
+				def["sort"] = s
+			}
+			body := map[string]any{"definition": def}
+			if n, ok := argInt(args, "page"); ok {
+				body["page"] = n
+			}
+			return mcpCall{method: http.MethodPost, path: "/queries/run", body: body}
+		},
+	},
+	{
 		Name:        "add_comment",
 		Title:       "Comment on a task",
 		Description: "Post a comment on a task (Markdown). Use it to report what you did, ask a question, or explain why you stopped.",

@@ -29,6 +29,7 @@ const (
 	PermExtensionsWrite  = "extensions:write"
 	PermCommentsModerate = "comments:moderate"
 	PermInsightsPeople   = "insights:people"
+	PermQueriesManage    = "queries:manage"
 
 	MaxProjectRoleSlugLen = 40
 	MaxProjectRoleNameLen = 80
@@ -88,6 +89,7 @@ var projectPermCatalog = []ProjectPermInfo{
 	{ID: PermExtensionsWrite, Label: "Configure extensions", Description: "Change project extension settings and document store writes", Group: "Project"},
 	{ID: PermCommentsModerate, Label: "Moderate comments", Description: "Edit or delete other members' discussion posts", Group: "Project"},
 	{ID: PermInsightsPeople, Label: "View team workload", Description: "See per-person claimed and completed work on the Team dashboard", Group: "Project"},
+	{ID: PermQueriesManage, Label: "Manage shared queries", Description: "Create, edit, and delete the project's shared queries", Group: "Project"},
 	{ID: PermProjectManage, Label: "Manage project", Description: "Members, invites, board columns, sprints, and project settings", Group: "Project"},
 }
 
@@ -407,6 +409,53 @@ func MigrateGrantInsightsPeopleToManagers() error {
 		return err
 	}
 	InvalidateSiteRoleCache()
+	return nil
+}
+
+// MigrateGrantQueriesManageToManagers gives queries:manage to every existing
+// project, organization, and site role that has project:manage. It runs once
+// (recorded in data_migrations) so removing the permission later sticks.
+func MigrateGrantQueriesManageToManagers() error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS data_migrations (
+		name TEXT PRIMARY KEY,
+		applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	)`); err != nil {
+		return err
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `INSERT INTO data_migrations (name) VALUES ('grant_queries_manage_to_managers') ON CONFLICT DO NOTHING`)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	for _, table := range []string{"project_role_defs", "roles"} {
+		if _, err := tx.Exec(ctx, `
+			UPDATE `+table+`
+			SET permissions = array_append(permissions, $1::text)
+			WHERE $2::text = ANY(permissions) AND NOT ($1::text = ANY(permissions))`,
+			PermQueriesManage, PermProjectManage); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	InvalidateSiteRoleCache()
+	InvalidateCompanyRoleCache()
 	return nil
 }
 

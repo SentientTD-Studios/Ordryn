@@ -1,175 +1,97 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
-import type { Project, SavedView, Tag } from '@/api/types'
+import type { QueryOptions, SavedView } from '@/api/types'
 import { APIError } from '@/api/types'
-import { useTaskListFilters } from '@/composables/useTaskListFilters'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
-import { projectOptionLabel } from '@/utils/projectLabel'
-import { uniqueTagsByName } from '@/utils/tags'
+import { countClauses, describeClause, isGroup } from '@/utils/queryDefinition'
 
 const views = ref<SavedView[]>([])
-const projects = ref<Project[]>([])
-const tags = ref<Tag[]>([])
+const options = ref<QueryOptions | null>(null)
 const loading = ref(true)
-const saving = ref(false)
-const name = ref('')
-const status = ref('')
-const due = ref('')
-const project = ref('')
-const priority = ref('')
-const tag = ref('')
-const sort = ref('')
-const search = ref('')
+const filterText = ref('')
 const toast = useToast()
 const { askConfirm } = useConfirm()
-const router = useRouter()
-const { applySavedView } = useTaskListFilters()
 
-const tagOptions = computed(() => {
-  if (!project.value) return uniqueTagsByName(tags.value)
-  return tags.value
+const matches = (v: SavedView) => !filterText.value.trim() || v.name.toLowerCase().includes(filterText.value.trim().toLowerCase())
+
+const personal = computed(() => views.value.filter((v) => !v.shared && matches(v)))
+
+const sharedByProject = computed(() => {
+  const groups = new Map<string, { name: string; projectId: number; views: SavedView[] }>()
+  for (const v of views.value) {
+    if (!v.shared || !matches(v)) continue
+    const key = String(v.project_id)
+    if (!groups.has(key)) groups.set(key, { name: v.project_name || 'Project', projectId: v.project_id!, views: [] })
+    groups.get(key)!.views.push(v)
+  }
+  return [...groups.values()]
 })
 
-async function loadTags() {
-  try {
-    if (project.value === '0') {
-      tags.value = await api.listTags({ project_id: 0 })
-    } else if (project.value) {
-      const pid = parseInt(project.value, 10)
-      tags.value = Number.isNaN(pid) ? await api.listTags() : await api.listTags({ project_id: pid })
-    } else {
-      tags.value = await api.listTags()
-    }
-  } catch {
-    tags.value = []
-  }
-}
+const manageableProjects = computed(() => (options.value?.projects ?? []).filter((p) => p.can_manage_queries && !p.archived))
 
 async function load() {
   loading.value = true
   try {
-    const [viewList, projs] = await Promise.all([
-      api.listSavedViews(),
-      api.listProjects(),
-    ])
-    views.value = viewList
-    projects.value = projs
-    await loadTags()
+    const [list, opts] = await Promise.all([api.listSavedViews(), api.queryOptions()])
+    views.value = list
+    options.value = opts
   } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Failed to load saved views', 'error')
+    toast.push(err instanceof APIError ? err.message : 'Failed to load queries', 'error')
   } finally {
     loading.value = false
   }
 }
 
-watch(project, () => {
-  tag.value = ''
-  void loadTags()
-})
+/** A short plain-language summary of a query's first clauses. */
+function summary(v: SavedView): string {
+  const d = v.definition
+  const fields = options.value?.fields ?? []
+  const top = (d.where.clauses ?? []).filter((c) => !isGroup(c)).slice(0, 2)
+  const parts = top.map((c) => describeClause(c, fields, options.value ?? undefined))
+  const total = countClauses(d.where)
+  if (total > parts.length) parts.push(`+${total - parts.length} more`)
+  if (parts.length === 0) return 'Every task in scope'
+  return parts.join(' · ')
+}
 
-async function create() {
-  if (!name.value.trim()) return
-  saving.value = true
+function scopeLabel(v: SavedView): string {
+  if (v.shared) return ''
+  const n = v.definition.scope.projects.length
+  if (n === 0) return 'All projects'
+  if (n === 1) {
+    const p = options.value?.projects.find((x) => x.id === v.definition.scope.projects[0])
+    return p ? p.name : '1 project'
+  }
+  return `${n} projects`
+}
+
+async function toggleDashboard(v: SavedView) {
   try {
-    await api.createSavedView({
-      name: name.value.trim(),
-      filter: {
-        status: status.value || undefined,
-        due: due.value || undefined,
-        project: project.value || undefined,
-        priority: priority.value || undefined,
-        tag: tag.value || undefined,
-        sort: sort.value || undefined,
-        search: search.value.trim() || undefined,
-      },
-    })
-    name.value = ''
-    search.value = ''
-    toast.push('Saved view created', 'success')
-    await load()
+    await api.setSavedViewOnDashboard(v.id, !v.on_dashboard)
+    v.on_dashboard = !v.on_dashboard
   } catch (err) {
-    toast.push(err instanceof APIError ? err.message : 'Create failed', 'error')
-  } finally {
-    saving.value = false
+    toast.push(err instanceof APIError ? err.message : 'Could not update the dashboard', 'error')
   }
 }
 
-async function apply(view: SavedView) {
-  applySavedView(view.filter || {})
-  await router.push({ name: 'tasks' })
-}
-
-async function remove(view: SavedView) {
+async function remove(v: SavedView) {
   const ok = await askConfirm({
-    title: 'Delete saved view?',
-    message: `Delete saved view “${view.name}”?`,
+    title: 'Delete query?',
+    message: v.shared ? `Delete the shared query “${v.name}” for everyone on ${v.project_name}?` : `Delete the query “${v.name}”?`,
     confirmLabel: 'Delete',
     danger: true,
   })
   if (!ok) return
   try {
-    await api.deleteSavedView(view.id)
-    toast.push('Deleted', 'info')
-    await load()
+    await api.deleteSavedView(v.id)
+    views.value = views.value.filter((x) => x.id !== v.id)
+    toast.push('Query deleted', 'info')
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Delete failed', 'error')
   }
-}
-
-function statusLabel(value?: string) {
-  if (value === 'incomplete') return 'Incomplete'
-  if (value === 'complete') return 'Complete'
-  return 'All statuses'
-}
-
-function dueLabel(value?: string) {
-  if (value === 'today') return 'Today'
-  if (value === 'overdue') return 'Overdue'
-  if (value === 'week') return 'This week'
-  if (value === 'none') return 'No date'
-  return ''
-}
-
-function priorityLabel(value?: string) {
-  if (value === '1') return 'Low'
-  if (value === '2') return 'Medium'
-  if (value === '3') return 'High'
-  return ''
-}
-
-function projectLabel(value?: string) {
-  if (!value) return ''
-  if (value === '0' || value === 'none') return 'No project'
-  const pid = parseInt(value, 10)
-  const match = projects.value.find((p) => p.id === pid)
-  return match?.name || `Project #${value}`
-}
-
-function tagLabel(value?: string) {
-  if (!value) return ''
-  const match = tags.value.find(
-    (t) => String(t.id) === value || t.name.toLowerCase() === value.toLowerCase(),
-  )
-  return match?.name || value
-}
-
-function filterBadges(view: SavedView) {
-  const f = view.filter || {}
-  const badges: { text: string; class: string }[] = []
-  if (f.status) badges.push({ text: statusLabel(f.status), class: 'bg-secondary' })
-  if (f.due) badges.push({ text: dueLabel(f.due), class: 'bg-info text-dark' })
-  if (f.project) badges.push({ text: projectLabel(f.project), class: 'bg-secondary' })
-  if (f.priority) badges.push({ text: priorityLabel(f.priority), class: 'bg-warning text-dark' })
-  if (f.tag) badges.push({ text: tagLabel(f.tag), class: 'bg-primary' })
-  if (f.claimed) {
-    badges.push({ text: f.claimed === 'me' ? 'Claimed by me' : 'Unclaimed', class: 'bg-success' })
-  }
-  if (f.sort === 'priority') badges.push({ text: 'Sort: Priority', class: 'bg-light text-dark' })
-  if (f.search) badges.push({ text: `Search: ${f.search}`, class: 'bg-light text-dark' })
-  return badges
 }
 
 onMounted(load)
@@ -180,155 +102,110 @@ onMounted(load)
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
       <div>
         <h1 class="h3 mb-1">
-          <i class="bi bi-bookmark me-2" aria-hidden="true" />
-          Saved views
+          <i class="bi bi-funnel me-2" aria-hidden="true" />
+          Queries
         </h1>
-        <p class="text-muted mb-0">Named filter presets for your task list.</p>
+        <p class="text-muted mb-0">
+          Find tasks across your projects with AND/OR clauses, then save, share, export, or pin them to your dashboard.
+          Results only ever include tasks you can open.
+        </p>
       </div>
-      <RouterLink to="/" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left" /> Back to tasks
-      </RouterLink>
-    </div>
-
-    <div class="card mb-4">
-      <div class="card-header">
-        <h2 class="h5 mb-0">Create a view</h2>
-      </div>
-      <div class="card-body">
-        <form @submit.prevent="create">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label" for="view-name">Name</label>
-              <input
-                id="view-name"
-                v-model="name"
-                type="text"
-                class="form-control"
-                required
-                maxlength="80"
-                placeholder="e.g. Overdue work items"
-              />
-            </div>
-            <div class="col-md-6">
-              <label class="form-label" for="view-search">Search</label>
-              <input
-                id="view-search"
-                v-model="search"
-                type="search"
-                class="form-control search-input"
-                maxlength="500"
-                placeholder="Optional text filter"
-              />
-            </div>
-            <div class="col-sm-6 col-md-4">
-              <label class="form-label" for="view-status">Status</label>
-              <select id="view-status" v-model="status" class="form-select">
-                <option value="">All statuses</option>
-                <option value="incomplete">Incomplete</option>
-                <option value="complete">Complete</option>
-              </select>
-            </div>
-            <div class="col-sm-6 col-md-4">
-              <label class="form-label" for="view-due">Due date</label>
-              <select id="view-due" v-model="due" class="form-select">
-                <option value="">Any</option>
-                <option value="today">Today</option>
-                <option value="overdue">Overdue</option>
-                <option value="week">This week</option>
-                <option value="none">No date</option>
-              </select>
-            </div>
-            <div class="col-sm-6 col-md-4">
-              <label class="form-label" for="view-priority">Priority</label>
-              <select id="view-priority" v-model="priority" class="form-select">
-                <option value="">All priorities</option>
-                <option value="1">Low</option>
-                <option value="2">Medium</option>
-                <option value="3">High</option>
-              </select>
-            </div>
-            <div v-if="projects.length" class="col-sm-6 col-md-4">
-              <label class="form-label" for="view-project">Project</label>
-              <select id="view-project" v-model="project" class="form-select">
-                <option value="">All projects</option>
-                <option value="0">No project</option>
-                <option v-for="p in projects" :key="p.id" :value="String(p.id)">{{ projectOptionLabel(p) }}</option>
-              </select>
-            </div>
-            <div v-if="tagOptions.length" class="col-sm-6 col-md-4">
-              <label class="form-label" for="view-tag">Tag</label>
-              <select id="view-tag" v-model="tag" class="form-select">
-                <option value="">All tags</option>
-                <option
-                  v-for="t in tagOptions"
-                  :key="t.id"
-                  :value="project ? String(t.id) : t.name"
-                >{{ t.name }}</option>
-              </select>
-            </div>
-            <div class="col-sm-6 col-md-4">
-              <label class="form-label" for="view-sort">Sort</label>
-              <select id="view-sort" v-model="sort" class="form-select">
-                <option value="">Manual order</option>
-                <option value="priority">Priority (high first)</option>
-              </select>
-            </div>
-          </div>
-          <div class="mt-3">
-            <button type="submit" class="btn btn-primary" :disabled="saving">
-              <i class="bi bi-bookmark-plus me-1" />
-              {{ saving ? 'Saving…' : 'Save view' }}
-            </button>
-          </div>
-        </form>
+      <div class="d-flex gap-2">
+        <RouterLink to="/views/new" class="btn btn-primary btn-sm">
+          <i class="bi bi-plus-lg" /> New query
+        </RouterLink>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h2 class="h5 mb-0">Your views</h2>
-        <span v-if="views.length" class="badge bg-secondary">{{ views.length }}</span>
+    <div v-if="loading" class="text-muted">Loading…</div>
+    <template v-else>
+      <div class="mb-3" style="max-width: 20rem">
+        <label for="query-filter" class="visually-hidden">Filter queries</label>
+        <input id="query-filter" v-model="filterText" type="search" class="form-control form-control-sm" placeholder="Filter by name…" />
       </div>
 
-      <p v-if="loading" class="card-body text-muted mb-0">Loading…</p>
-
-      <ul v-else-if="views.length" class="list-group list-group-flush">
-        <li
-          v-for="view in views"
-          :key="view.id"
-          class="list-group-item d-flex flex-wrap gap-2 align-items-center py-3"
-        >
-          <div class="flex-grow-1 min-w-0">
-            <div class="fw-semibold">
-              <i class="bi bi-bookmark-fill me-1 text-warning" aria-hidden="true" />
-              {{ view.name }}
+      <section class="mb-4" aria-labelledby="my-queries-heading">
+        <h2 id="my-queries-heading" class="h6 text-uppercase text-muted">My queries</h2>
+        <p v-if="personal.length === 0" class="text-muted small">
+          No personal queries yet. <RouterLink to="/views/new">Create one</RouterLink>, or use <strong>+ View</strong> in the
+          sidebar to save your current task-list filters.
+        </p>
+        <ul v-else class="list-group">
+          <li v-for="v in personal" :key="v.id" class="list-group-item d-flex flex-wrap align-items-center gap-2">
+            <div class="me-auto min-w-0">
+              <RouterLink :to="`/views/${v.id}`" class="fw-semibold">{{ v.name }}</RouterLink>
+              <span class="badge text-bg-light border ms-2 fw-normal">{{ scopeLabel(v) }}</span>
+              <span v-if="v.definition.mode === 'tree'" class="badge text-bg-light border ms-1 fw-normal">Tree</span>
+              <div class="small text-muted text-truncate">{{ summary(v) }}</div>
             </div>
-            <div v-if="filterBadges(view).length" class="d-flex flex-wrap gap-1 mt-2">
-              <span
-                v-for="(badge, idx) in filterBadges(view)"
-                :key="idx"
-                class="badge"
-                :class="badge.class"
-              >{{ badge.text }}</span>
-            </div>
-            <p v-else class="text-muted small mb-0 mt-1">All tasks (no filters)</p>
-          </div>
-          <div class="d-flex gap-2 flex-shrink-0">
-            <button type="button" class="btn btn-sm btn-primary" @click="apply(view)">
-              <i class="bi bi-box-arrow-in-right" /> Open
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="v.on_dashboard ? 'btn-secondary' : 'btn-outline-secondary'"
+              :aria-pressed="v.on_dashboard"
+              :title="v.on_dashboard ? 'Remove from dashboard' : 'Pin to dashboard'"
+              @click="toggleDashboard(v)"
+            >
+              <i class="bi bi-pin-angle" /><span class="visually-hidden">Pin to dashboard</span>
             </button>
-            <button type="button" class="btn btn-sm btn-outline-danger" @click="remove(view)">
-              <i class="bi bi-trash" /> Delete
+            <button type="button" class="btn btn-sm btn-outline-danger" :aria-label="`Delete ${v.name}`" @click="remove(v)">
+              <i class="bi bi-trash" />
             </button>
-          </div>
-        </li>
-      </ul>
+          </li>
+        </ul>
+      </section>
 
-      <div v-else class="card-body text-center py-5">
-        <i class="bi bi-bookmark empty-state-icon text-muted" style="font-size: 2.5rem" aria-hidden="true" />
-        <h3 class="h5 mt-3">No saved views yet</h3>
-        <p class="text-muted mb-0">Create a preset above to quickly return to a filtered task list.</p>
-      </div>
-    </div>
+      <section aria-labelledby="shared-queries-heading">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h2 id="shared-queries-heading" class="h6 text-uppercase text-muted mb-0">Shared queries</h2>
+          <div v-if="manageableProjects.length" class="dropdown ms-auto">
+            <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-people" /> New shared query
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li v-for="p in manageableProjects" :key="p.id">
+                <RouterLink class="dropdown-item" :to="{ path: '/views/new', query: { project: String(p.id) } }">{{ p.name }}</RouterLink>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <p v-if="sharedByProject.length === 0" class="text-muted small">
+          Queries shared on your projects appear here. Anyone on a project can run its shared queries; people with the
+          <em>Manage shared queries</em> permission can create and change them.
+        </p>
+        <div v-for="g in sharedByProject" :key="g.projectId" class="mb-3">
+          <div class="small fw-semibold mb-1">{{ g.name }}</div>
+          <ul class="list-group">
+            <li v-for="v in g.views" :key="v.id" class="list-group-item d-flex flex-wrap align-items-center gap-2">
+              <div class="me-auto min-w-0">
+                <RouterLink :to="`/views/${v.id}`" class="fw-semibold">{{ v.name }}</RouterLink>
+                <span v-if="v.author_name" class="small text-muted ms-2">by {{ v.author_name }}</span>
+                <span v-if="!v.can_edit" class="badge text-bg-light border ms-2 fw-normal"><i class="bi bi-lock" /> Read only</span>
+                <div class="small text-muted text-truncate">{{ summary(v) }}</div>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="v.on_dashboard ? 'btn-secondary' : 'btn-outline-secondary'"
+                :aria-pressed="v.on_dashboard"
+                :title="v.on_dashboard ? 'Remove from dashboard' : 'Pin to dashboard'"
+                @click="toggleDashboard(v)"
+              >
+                <i class="bi bi-pin-angle" /><span class="visually-hidden">Pin to dashboard</span>
+              </button>
+              <button v-if="v.can_edit" type="button" class="btn btn-sm btn-outline-danger" :aria-label="`Delete ${v.name}`" @click="remove(v)">
+                <i class="bi bi-trash" />
+              </button>
+            </li>
+          </ul>
+        </div>
+      </section>
+    </template>
   </div>
 </template>
+
+<style scoped>
+.min-w-0 {
+  min-width: 0;
+}
+</style>
