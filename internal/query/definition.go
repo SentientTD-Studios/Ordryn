@@ -88,9 +88,11 @@ type Definition struct {
 
 // Scope picks which tasks a query starts from, before its clauses.
 type Scope struct {
-	// Projects limits the query to these projects; empty means every project
-	// the caller can open.
-	Projects []int `json:"projects"`
+	// Projects limits the query to these projects. Organizations adds every
+	// project of these organizations that the caller can open. With both
+	// empty, the query covers every project the caller can open.
+	Projects      []int `json:"projects"`
+	Organizations []int `json:"organizations,omitempty"`
 	// IncludePersonal adds the caller's tasks that have no project. Nil means true.
 	IncludePersonal *bool `json:"include_personal,omitempty"`
 	// IncludeArchived adds archived projects and archived tasks.
@@ -249,6 +251,19 @@ func (z *normalizer) run(d Definition, out Definition) (Definition, error) {
 	}
 	if len(out.Scope.Projects) > MaxScopeProjs {
 		return out, invalid("scope.projects may list at most %d projects.", MaxScopeProjs)
+	}
+	seenOrg := map[int]bool{}
+	for _, id := range d.Scope.Organizations {
+		if id <= 0 {
+			return out, invalid("scope.organizations must contain positive organization ids.")
+		}
+		if !seenOrg[id] {
+			seenOrg[id] = true
+			out.Scope.Organizations = append(out.Scope.Organizations, id)
+		}
+	}
+	if len(out.Scope.Organizations) > MaxScopeProjs {
+		return out, invalid("scope.organizations may list at most %d organizations.", MaxScopeProjs)
 	}
 	personal := d.Scope.Personal()
 	out.Scope.IncludePersonal = &personal
@@ -756,10 +771,11 @@ func Walk(n Node, fn func(Node)) {
 
 // References lists the ids a definition refers to, by kind.
 type References struct {
-	Projects     []int
-	Sprints      []int
-	Users        []int
-	CustomFields []string
+	Projects      []int
+	Organizations []int
+	Sprints       []int
+	Users         []int
+	CustomFields  []string
 }
 
 // Refs collects the references in d. ft resolves custom field types so ids in
@@ -776,6 +792,9 @@ func Refs(d Definition, ft FieldTypes) References {
 	}
 	for _, p := range d.Scope.Projects {
 		add("p", p, &r.Projects)
+	}
+	for _, o := range d.Scope.Organizations {
+		add("o", o, &r.Organizations)
 	}
 	Walk(d.Where, func(n Node) {
 		if strings.HasPrefix(n.Field, "cf:") {

@@ -11,15 +11,16 @@ import (
 // Unavailable lists references in a saved query the caller can no longer use.
 // They match nothing when the query runs.
 type Unavailable struct {
-	Projects     []int    `json:"projects,omitempty"`
-	Sprints      []int    `json:"sprints,omitempty"`
-	Users        []int    `json:"users,omitempty"`
-	CustomFields []string `json:"custom_fields,omitempty"`
+	Projects      []int    `json:"projects,omitempty"`
+	Organizations []int    `json:"organizations,omitempty"`
+	Sprints       []int    `json:"sprints,omitempty"`
+	Users         []int    `json:"users,omitempty"`
+	CustomFields  []string `json:"custom_fields,omitempty"`
 }
 
 // Empty reports whether nothing is unavailable.
 func (u Unavailable) Empty() bool {
-	return len(u.Projects) == 0 && len(u.Sprints) == 0 && len(u.Users) == 0 && len(u.CustomFields) == 0
+	return len(u.Projects) == 0 && len(u.Organizations) == 0 && len(u.Sprints) == 0 && len(u.Users) == 0 && len(u.CustomFields) == 0
 }
 
 // ErrUnknownReference is the one error for a reference that does not exist or
@@ -32,6 +33,12 @@ type Loader struct {
 	CustomFields       func(projectIDs []int) (map[string]CustomField, error)
 	VisibleSprints     func(ids, projectIDs []int) (map[int]bool, error)
 	VisiblePeople      func(userID int, ids, projectIDs []int) (map[int]bool, error)
+	// VisibleOrganizations returns which of ids the caller may name: those
+	// they belong to. ProjectOrganizations maps projects to their
+	// organization. Both are only called when a scope names organizations;
+	// nil means none are visible.
+	VisibleOrganizations func(userID int, ids []int) (map[int]bool, error)
+	ProjectOrganizations func(projectIDs []int) (map[int]int, error)
 }
 
 // DBLoader reads access from the database.
@@ -58,7 +65,9 @@ var DBLoader = Loader{
 		}
 		return out, nil
 	},
-	VisibleSprints: storage.VisibleSprintIDs,
+	VisibleSprints:       storage.VisibleSprintIDs,
+	VisibleOrganizations: storage.VisibleQueryOrganizations,
+	ProjectOrganizations: storage.ProjectOrganizationIDs,
 	VisiblePeople: func(userID int, ids, projectIDs []int) (map[int]bool, error) {
 		people, err := storage.VisibleQueryPeople(userID, ids, projectIDs)
 		if err != nil {
@@ -144,6 +153,28 @@ func (l Loader) Prepare(req Request, d Definition) (Definition, Context, Unavail
 	for _, id := range refs.Projects {
 		if !ctx.Projects[id] {
 			unavailable.Projects = append(unavailable.Projects, id)
+		}
+	}
+	if len(refs.Organizations) > 0 {
+		ctx.Orgs = map[int]bool{}
+		ctx.ProjectOrgs = map[int]int{}
+		var ok map[int]bool
+		if l.VisibleOrganizations != nil {
+			if ok, err = l.VisibleOrganizations(req.UserID, refs.Organizations); err != nil {
+				return norm, ctx, unavailable, err
+			}
+		}
+		for _, id := range refs.Organizations {
+			if ok[id] {
+				ctx.Orgs[id] = true
+			} else {
+				unavailable.Organizations = append(unavailable.Organizations, id)
+			}
+		}
+		if len(ctx.Orgs) > 0 && l.ProjectOrganizations != nil && len(refProjects) > 0 {
+			if ctx.ProjectOrgs, err = l.ProjectOrganizations(refProjects); err != nil {
+				return norm, ctx, unavailable, err
+			}
 		}
 	}
 	if len(refs.Sprints) > 0 {

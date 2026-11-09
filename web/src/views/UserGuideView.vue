@@ -176,10 +176,14 @@ onUnmounted(() => {
             your dashboard.
           </li>
           <li>
-            Shared queries belong to a project: everyone on it can run them, and people with the
-            <strong>Manage shared queries</strong> permission can create and change them. A query only ever returns
-            tasks you can open, and if it mentions a project, sprint, or person you've lost access to, that part
-            simply matches nothing.
+            <strong>Who can use it</strong> decides who sees a query: <em>Myself</em>, <em>Members of</em> one of
+            your organizations, or <em>All users site-wide</em> (needs the <strong>Manage site-wide queries</strong>
+            site permission). Any member can share a query with their organization; its owner, organization
+            managers, and people with the <strong>Manage shared queries</strong> permission can change it. Anyone
+            else can save a personal copy. Which projects a query searches (all, an organization's projects, or
+            chosen ones) is part of the query itself. A query only ever returns tasks the person running it can
+            open, and if it mentions a project, organization, sprint, or person they can't access, that part simply
+            matches nothing.
           </li>
         </ul>
 

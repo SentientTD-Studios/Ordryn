@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { QueryField, QueryNode } from '../api/types.ts'
 import {
+  audienceIcon,
+  audienceLabel,
   countClauses,
   definitionProblems,
   describeClause,
@@ -169,5 +171,15 @@ describe('queryDefinition', () => {
     ])
     assert.deepEqual(d.sort, [{ field: 'priority', dir: 'desc' }])
     assert.deepEqual(filterToDefinition({}, () => undefined).where.clauses, [])
+  })
+})
+
+describe('audienceLabel', () => {
+  it('names who can open a saved query', () => {
+    assert.equal(audienceLabel({ scope: 'personal' }), 'Only me')
+    assert.equal(audienceLabel({ scope: 'organization', organization_name: 'Platform' }), 'Members of Platform')
+    assert.equal(audienceLabel({ scope: 'site' }), 'Everyone')
+    assert.equal(audienceIcon({ scope: 'site' }), 'bi bi-globe2')
+    assert.equal(audienceIcon({ scope: 'organization' }), 'bi bi-people')
   })
 })

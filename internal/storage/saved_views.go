@@ -9,14 +9,30 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
 	// MaxSavedViewsPerUser caps a user's personal saved views.
 	MaxSavedViewsPerUser = 50
-	// MaxSharedViewsPerProject caps shared queries on one project.
-	MaxSharedViewsPerProject = 100
+	// MaxSharedViewsPerOrg caps queries shared with one organization.
+	MaxSharedViewsPerOrg = 100
+	// MaxSiteViews caps queries shared with the whole site.
+	MaxSiteViews = 100
 )
+
+// Who a saved view is shared with. Project filtering lives in the query
+// definition; the scope only decides who can open the view.
+const (
+	SavedViewScopePersonal = "personal"
+	SavedViewScopeOrg      = "organization"
+	SavedViewScopeSite     = "site"
+)
+
+// ValidSavedViewScope reports whether s is a known scope.
+func ValidSavedViewScope(s string) bool {
+	return s == SavedViewScopePersonal || s == SavedViewScopeOrg || s == SavedViewScopeSite
+}
 
 var (
 	ErrSavedViewNotFound     = errors.New("saved view not found")
@@ -41,29 +57,42 @@ type SavedViewFilter struct {
 	DueTo   string `json:"due_to,omitempty"`
 }
 
-// SavedView is a named query. A personal view (ProjectID nil) belongs to
-// UserID alone; a shared view belongs to ProjectID, and UserID is its author.
+// SavedView is a named query. UserID is its owner (author). A personal view is
+// seen only by its owner; an organization view by the organization's members;
+// a site view by everyone. Each viewer runs it with their own access.
 type SavedView struct {
-	ID        int
-	UserID    int
-	ProjectID *int
-	Name      string
-	Filter    SavedViewFilter
+	ID     int
+	UserID int
+	Scope  string
+	// OrganizationID is set for organization views only.
+	OrganizationID *int
+	Name           string
+	Filter         SavedViewFilter
 	// Definition is the query definition JSON, or nil for a version 1 view
 	// that only has Filter.
 	Definition json.RawMessage
 	SortOrder  int
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
-	// AuthorName and ProjectName are filled by listings.
-	AuthorName  string
-	ProjectName string
+	// AuthorName and OrganizationName are filled by listings.
+	AuthorName       string
+	OrganizationName string
 	// OnDashboard reports whether the listing user pinned it to their dashboard.
 	OnDashboard bool
 }
 
-// IsShared reports whether the view belongs to a project.
-func (v SavedView) IsShared() bool { return v.ProjectID != nil && *v.ProjectID > 0 }
+// IsShared reports whether people other than the owner can open the view.
+func (v SavedView) IsShared() bool {
+	return v.Scope == SavedViewScopeOrg || v.Scope == SavedViewScopeSite
+}
+
+// OrgID returns the organization of an organization view, or 0.
+func (v SavedView) OrgID() int {
+	if v.Scope == SavedViewScopeOrg && v.OrganizationID != nil {
+		return *v.OrganizationID
+	}
+	return 0
+}
 
 // CreateSavedViewsTable ensures the saved_views table exists.
 func CreateSavedViewsTable() error {
@@ -95,12 +124,13 @@ func CreateSavedViewsTable() error {
 	if err != nil {
 		return fmt.Errorf("failed to create saved_views index: %w", err)
 	}
-	return MigrateSavedViewsForQueries()
+	return nil
 }
 
-// MigrateSavedViewsForQueries adds query definitions, shared (project) views,
-// and dashboard pins. Names are unique per user among personal views and per
-// project among shared ones. Safe to re-run.
+// MigrateSavedViewsForQueries adds query definitions, sharing scopes, and
+// dashboard pins. Names are unique per owner among personal views, per
+// organization among organization views, and site-wide among site views.
+// Safe to re-run.
 func MigrateSavedViewsForQueries() error {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -110,13 +140,18 @@ func MigrateSavedViewsForQueries() error {
 
 	stmts := []string{
 		`ALTER TABLE saved_views ADD COLUMN IF NOT EXISTS definition JSONB`,
-		`ALTER TABLE saved_views ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE`,
+		`ALTER TABLE saved_views ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'personal'`,
+		`ALTER TABLE saved_views ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE`,
 		`ALTER TABLE saved_views DROP CONSTRAINT IF EXISTS saved_views_user_id_name_key`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_views_personal_name
-			ON saved_views (user_id, name) WHERE project_id IS NULL`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_views_project_name
-			ON saved_views (project_id, name) WHERE project_id IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_saved_views_project_id ON saved_views(project_id) WHERE project_id IS NOT NULL`,
+		// Replaced by idx_saved_views_personal_name_v2, keyed on scope.
+		`DROP INDEX IF EXISTS idx_saved_views_personal_name`,
+		`DO $$ BEGIN
+			ALTER TABLE saved_views ADD CONSTRAINT saved_views_scope_check CHECK (
+				(scope = 'personal' AND organization_id IS NULL)
+				OR (scope = 'organization' AND organization_id IS NOT NULL)
+				OR (scope = 'site' AND organization_id IS NULL));
+		EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+		`CREATE INDEX IF NOT EXISTS idx_saved_views_org_id ON saved_views(organization_id) WHERE organization_id IS NOT NULL`,
 		`CREATE TABLE IF NOT EXISTS saved_view_dashboard (
 			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			saved_view_id INTEGER NOT NULL REFERENCES saved_views(id) ON DELETE CASCADE,
@@ -130,32 +165,159 @@ func MigrateSavedViewsForQueries() error {
 			return fmt.Errorf("saved views for queries: %w", err)
 		}
 	}
+	if err := migrateProjectSharedViews(pool); err != nil {
+		return err
+	}
+	for _, s := range []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_views_personal_name_v2
+			ON saved_views (user_id, name) WHERE scope = 'personal'`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_views_org_name
+			ON saved_views (organization_id, name) WHERE scope = 'organization'`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_views_site_name
+			ON saved_views (name) WHERE scope = 'site'`,
+	} {
+		if _, err := pool.Exec(context.Background(), s); err != nil {
+			return fmt.Errorf("saved views for queries: %w", err)
+		}
+	}
 	return nil
 }
 
-const savedViewCols = `sv.id, sv.user_id, sv.project_id, sv.name, sv.filter_json, sv.definition, sv.sort_order, sv.created_at, sv.updated_at`
+// migrateProjectSharedViews converts views shared on a project (the old
+// saved_views.project_id) into the scope model: the project moves into the
+// definition's scope, and the view is shared with the project's organization,
+// or becomes its author's personal view when the project has none. Names that
+// collide in their new scope get a suffix. The project_id column is dropped
+// once every row is converted.
+func migrateProjectSharedViews(pool *pgxpool.Pool) error {
+	ctx := context.Background()
+	var hasColumn bool
+	if err := pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = 'saved_views' AND column_name = 'project_id')`).Scan(&hasColumn); err != nil {
+		return fmt.Errorf("check saved_views.project_id: %w", err)
+	}
+	if !hasColumn {
+		return nil
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `
+		SELECT sv.id, sv.user_id, sv.project_id, sv.name, sv.definition, p.organization_id, COALESCE(p.name, '')
+		FROM saved_views sv JOIN projects p ON p.id = sv.project_id
+		WHERE sv.project_id IS NOT NULL ORDER BY sv.id`)
+	if err != nil {
+		return fmt.Errorf("list project shared views: %w", err)
+	}
+	type legacyView struct {
+		id, userID, projectID int
+		name, projectName     string
+		def                   []byte
+		orgID                 *int
+	}
+	var list []legacyView
+	for rows.Next() {
+		var v legacyView
+		if err := rows.Scan(&v.id, &v.userID, &v.projectID, &v.name, &v.def, &v.orgID, &v.projectName); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, v)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, v := range list {
+		def := map[string]any{}
+		if len(v.def) > 0 {
+			_ = json.Unmarshal(v.def, &def)
+		}
+		scope, _ := def["scope"].(map[string]any)
+		if scope == nil {
+			scope = map[string]any{}
+		}
+		scope["projects"] = []int{v.projectID}
+		scope["include_personal"] = false
+		delete(scope, "organizations")
+		def["scope"] = scope
+		rawDef, err := json.Marshal(def)
+		if err != nil {
+			return err
+		}
+		newScope, nameTaken := SavedViewScopePersonal, `SELECT EXISTS (SELECT 1 FROM saved_views WHERE scope = 'personal' AND project_id IS NULL AND user_id = $1 AND name = $2 AND id <> $3)`
+		var key any = v.userID
+		if v.orgID != nil {
+			newScope = SavedViewScopeOrg
+			key = *v.orgID
+			nameTaken = `SELECT EXISTS (SELECT 1 FROM saved_views WHERE scope = 'organization' AND organization_id = $1 AND name = $2 AND id <> $3)`
+		}
+		name := v.name
+		for i := 1; ; i++ {
+			var taken bool
+			if err := tx.QueryRow(ctx, nameTaken, key, name, v.id).Scan(&taken); err != nil {
+				return err
+			}
+			if !taken {
+				break
+			}
+			label := truncateRunes(v.projectName, 30)
+			suffix := " (" + label + ")"
+			if i > 1 {
+				suffix = fmt.Sprintf(" (%s %d)", label, i)
+			}
+			name = truncateRunes(v.name, 80-len([]rune(suffix))) + suffix
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE saved_views SET scope = $2, organization_id = $3, name = $4, definition = $5, project_id = NULL
+			WHERE id = $1`, v.id, newScope, v.orgID, name, rawDef); err != nil {
+			return fmt.Errorf("convert shared view %d: %w", v.id, err)
+		}
+	}
+	for _, s := range []string{
+		`DROP INDEX IF EXISTS idx_saved_views_project_name`,
+		`DROP INDEX IF EXISTS idx_saved_views_project_id`,
+		`ALTER TABLE saved_views DROP COLUMN project_id`,
+	} {
+		if _, err := tx.Exec(ctx, s); err != nil {
+			return fmt.Errorf("drop saved_views.project_id: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+const savedViewCols = `sv.id, sv.user_id, sv.scope, sv.organization_id, sv.name, sv.filter_json, sv.definition, sv.sort_order, sv.created_at, sv.updated_at`
 
 // savedViewVisibleSQL matches views user $1 can open: their own personal
-// views, and shared views of projects they own or are a member of.
+// views, views shared with an organization they belong to, and site views.
 const savedViewVisibleSQL = `(
-	(sv.project_id IS NULL AND sv.user_id = $1)
-	OR (sv.project_id IS NOT NULL AND EXISTS (
-		SELECT 1 FROM projects svp
-		WHERE svp.id = sv.project_id AND (svp.user_id = $1 OR EXISTS (
-			SELECT 1 FROM project_members svm WHERE svm.project_id = svp.id AND svm.user_id = $1))
-	))
+	(sv.scope = 'personal' AND sv.user_id = $1)
+	OR (sv.scope = 'organization' AND EXISTS (
+		SELECT 1 FROM organization_members svm
+		WHERE svm.organization_id = sv.organization_id AND svm.user_id = $1))
+	OR sv.scope = 'site'
 )`
 
 // ListSavedViewsForUser returns a user's personal views ordered by sort_order then name.
 func ListSavedViewsForUser(userID int) ([]SavedView, error) {
-	return listSavedViews(userID, `sv.project_id IS NULL AND sv.user_id = $1`)
+	return listSavedViews(userID, `sv.scope = 'personal' AND sv.user_id = $1`)
 }
 
-// ListVisibleSavedViews returns the user's personal views, then shared views
-// of every project they can open.
+// ListVisibleSavedViews returns the user's personal views, then views shared
+// with their organizations, then site views.
 func ListVisibleSavedViews(userID int) ([]SavedView, error) {
 	return listSavedViews(userID, savedViewVisibleSQL)
 }
+
+const savedViewJoins = `
+		 FROM saved_views sv
+		 LEFT JOIN users u ON u.id = sv.user_id
+		 LEFT JOIN organizations o ON o.id = sv.organization_id`
+
+const savedViewAuthorCols = `COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''), COALESCE(o.name, '')`
 
 func listSavedViews(userID int, where string) ([]SavedView, error) {
 	pool, err := OpenDatabase()
@@ -165,15 +327,12 @@ func listSavedViews(userID int, where string) ([]SavedView, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT `+savedViewCols+`,
-			COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''),
-			COALESCE(p.name, ''),
+		`SELECT `+savedViewCols+`, `+savedViewAuthorCols+`,
 			EXISTS (SELECT 1 FROM saved_view_dashboard d WHERE d.saved_view_id = sv.id AND d.user_id = $1)
-		 FROM saved_views sv
-		 LEFT JOIN users u ON u.id = sv.user_id
-		 LEFT JOIN projects p ON p.id = sv.project_id
+		`+savedViewJoins+`
 		 WHERE `+where+`
-		 ORDER BY (sv.project_id IS NOT NULL), LOWER(COALESCE(p.name, '')), sv.project_id,
+		 ORDER BY CASE sv.scope WHEN 'personal' THEN 0 WHEN 'organization' THEN 1 ELSE 2 END,
+		          LOWER(COALESCE(o.name, '')), sv.organization_id,
 		          sv.sort_order ASC, LOWER(sv.name) ASC, sv.id ASC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list saved views: %w", err)
@@ -184,13 +343,12 @@ func listSavedViews(userID int, where string) ([]SavedView, error) {
 	for rows.Next() {
 		var view SavedView
 		var rawFilter, rawDef []byte
-		var pid *int
-		if err := rows.Scan(&view.ID, &view.UserID, &pid, &view.Name, &rawFilter, &rawDef,
+		if err := rows.Scan(&view.ID, &view.UserID, &view.Scope, &view.OrganizationID, &view.Name, &rawFilter, &rawDef,
 			&view.SortOrder, &view.CreatedAt, &view.UpdatedAt,
-			&view.AuthorName, &view.ProjectName, &view.OnDashboard); err != nil {
+			&view.AuthorName, &view.OrganizationName, &view.OnDashboard); err != nil {
 			return nil, err
 		}
-		if err := finishSavedView(&view, pid, rawFilter, rawDef); err != nil {
+		if err := finishSavedView(&view, rawFilter, rawDef); err != nil {
 			return nil, err
 		}
 		out = append(out, view)
@@ -211,7 +369,7 @@ func CountSavedViewsForUser(userID int) (int, error) {
 
 	var count int
 	err = pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM saved_views WHERE user_id = $1 AND project_id IS NULL`, userID).Scan(&count)
+		`SELECT COUNT(*) FROM saved_views WHERE user_id = $1 AND scope = 'personal'`, userID).Scan(&count)
 	return count, err
 }
 
@@ -221,7 +379,7 @@ func GetSavedViewByID(id, userID int) (*SavedView, error) {
 	if err != nil {
 		return nil, err
 	}
-	if view.IsShared() || view.UserID != userID {
+	if view.Scope != SavedViewScopePersonal || view.UserID != userID {
 		return nil, ErrSavedViewNotFound
 	}
 	return view, nil
@@ -265,29 +423,26 @@ func GetSavedView(id int) (*SavedView, error) {
 
 	var view SavedView
 	var rawFilter, rawDef []byte
-	var pid *int
 	err = pool.QueryRow(context.Background(),
-		`SELECT `+savedViewCols+`,
-			COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''), COALESCE(p.name, '')
-		 FROM saved_views sv
-		 LEFT JOIN users u ON u.id = sv.user_id
-		 LEFT JOIN projects p ON p.id = sv.project_id
-		 WHERE sv.id = $1`, id).Scan(&view.ID, &view.UserID, &pid, &view.Name, &rawFilter, &rawDef,
-		&view.SortOrder, &view.CreatedAt, &view.UpdatedAt, &view.AuthorName, &view.ProjectName)
+		`SELECT `+savedViewCols+`, `+savedViewAuthorCols+savedViewJoins+`
+		 WHERE sv.id = $1`, id).Scan(&view.ID, &view.UserID, &view.Scope, &view.OrganizationID, &view.Name, &rawFilter, &rawDef,
+		&view.SortOrder, &view.CreatedAt, &view.UpdatedAt, &view.AuthorName, &view.OrganizationName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSavedViewNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get saved view: %w", err)
 	}
-	if err := finishSavedView(&view, pid, rawFilter, rawDef); err != nil {
+	if err := finishSavedView(&view, rawFilter, rawDef); err != nil {
 		return nil, err
 	}
 	return &view, nil
 }
 
-func finishSavedView(view *SavedView, pid *int, rawFilter, rawDef []byte) error {
-	view.ProjectID = pid
+func finishSavedView(view *SavedView, rawFilter, rawDef []byte) error {
+	if view.Scope != SavedViewScopeOrg {
+		view.OrganizationID = nil
+	}
 	if err := json.Unmarshal(rawFilter, &view.Filter); err != nil {
 		return fmt.Errorf("failed to decode saved view filter: %w", err)
 	}
@@ -299,11 +454,14 @@ func finishSavedView(view *SavedView, pid *int, rawFilter, rawDef []byte) error 
 
 // SavedViewInput creates a view.
 type SavedViewInput struct {
-	UserID     int
-	ProjectID  *int // nil for a personal view
-	Name       string
-	Filter     SavedViewFilter
-	Definition json.RawMessage
+	UserID int
+	// Scope is personal when empty; OrganizationID is required for an
+	// organization view.
+	Scope          string
+	OrganizationID int
+	Name           string
+	Filter         SavedViewFilter
+	Definition     json.RawMessage
 	// SortOrder nil places the view after the others.
 	SortOrder *int
 }
@@ -318,8 +476,8 @@ func CreateSavedViewWithSort(userID int, name string, filter SavedViewFilter, so
 	return CreateSavedViewFull(SavedViewInput{UserID: userID, Name: name, Filter: filter, SortOrder: sortOrder})
 }
 
-// CreateSavedViewFull inserts a view and atomically enforces the per-user
-// (personal) or per-project (shared) limit.
+// CreateSavedViewFull inserts a view and atomically enforces the limit of
+// its scope: per owner (personal), per organization, or site-wide.
 func CreateSavedViewFull(in SavedViewInput) (*SavedView, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
@@ -334,34 +492,13 @@ func CreateSavedViewFull(in SavedViewInput) (*SavedView, error) {
 	}
 	defer tx.Rollback(ctx)
 
-	var count, limit int
-	if in.ProjectID != nil {
-		var pid int
-		if err := tx.QueryRow(ctx, "SELECT id FROM projects WHERE id = $1 FOR UPDATE", *in.ProjectID).Scan(&pid); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, ErrSavedViewNotFound
-			}
-			return nil, fmt.Errorf("failed to lock saved view project: %w", err)
-		}
-		if err := tx.QueryRow(ctx,
-			"SELECT COUNT(*) FROM saved_views WHERE project_id = $1", pid).Scan(&count); err != nil {
-			return nil, fmt.Errorf("failed to count saved views: %w", err)
-		}
-		limit = MaxSharedViewsPerProject
-	} else {
-		var ownerID int
-		if err := tx.QueryRow(ctx,
-			"SELECT id FROM users WHERE id = $1 FOR UPDATE", in.UserID).Scan(&ownerID); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, ErrSavedViewNotFound
-			}
-			return nil, fmt.Errorf("failed to lock saved view owner: %w", err)
-		}
-		if err := tx.QueryRow(ctx,
-			"SELECT COUNT(*) FROM saved_views WHERE user_id = $1 AND project_id IS NULL", in.UserID).Scan(&count); err != nil {
-			return nil, fmt.Errorf("failed to count saved views: %w", err)
-		}
-		limit = MaxSavedViewsPerUser
+	scope := in.Scope
+	if scope == "" {
+		scope = SavedViewScopePersonal
+	}
+	count, limit, err := lockSavedViewScope(ctx, tx, in.UserID, scope, in.OrganizationID)
+	if err != nil {
+		return nil, err
 	}
 	if count >= limit {
 		return nil, ErrSavedViewLimit
@@ -379,12 +516,16 @@ func CreateSavedViewFull(in SavedViewInput) (*SavedView, error) {
 	if len(in.Definition) > 0 {
 		rawDef = []byte(in.Definition)
 	}
+	var orgID any
+	if scope == SavedViewScopeOrg {
+		orgID = in.OrganizationID
+	}
 
 	var id int
 	err = tx.QueryRow(ctx,
-		`INSERT INTO saved_views (user_id, project_id, name, filter_json, definition, sort_order)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		in.UserID, in.ProjectID, in.Name, rawFilter, rawDef, nextSortOrder).Scan(&id)
+		`INSERT INTO saved_views (user_id, scope, organization_id, name, filter_json, definition, sort_order)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		in.UserID, scope, orgID, in.Name, rawFilter, rawDef, nextSortOrder).Scan(&id)
 	if err != nil {
 		if isSavedViewUniqueViolation(err) {
 			return nil, ErrSavedViewNameConflict
@@ -393,6 +534,91 @@ func CreateSavedViewFull(in SavedViewInput) (*SavedView, error) {
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("failed to commit saved view: %w", err)
+	}
+	return GetSavedView(id)
+}
+
+// savedViewSiteLockKey serializes site-view creation so the cap holds.
+const savedViewSiteLockKey = 0x5157_5349 // "QWSI"
+
+// lockSavedViewScope locks the row a scope's limit counts against (the owner,
+// the organization, or a site-wide advisory lock) and returns how many views
+// the scope has and its limit.
+func lockSavedViewScope(ctx context.Context, tx pgx.Tx, userID int, scope string, orgID int) (int, int, error) {
+	var count int
+	switch scope {
+	case SavedViewScopePersonal:
+		var id int
+		if err := tx.QueryRow(ctx, "SELECT id FROM users WHERE id = $1 FOR UPDATE", userID).Scan(&id); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return 0, 0, ErrSavedViewNotFound
+			}
+			return 0, 0, fmt.Errorf("failed to lock saved view owner: %w", err)
+		}
+		err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM saved_views WHERE user_id = $1 AND scope = 'personal'", userID).Scan(&count)
+		return count, MaxSavedViewsPerUser, err
+	case SavedViewScopeOrg:
+		var id int
+		if err := tx.QueryRow(ctx, "SELECT id FROM organizations WHERE id = $1 FOR UPDATE", orgID).Scan(&id); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return 0, 0, ErrSavedViewNotFound
+			}
+			return 0, 0, fmt.Errorf("failed to lock saved view organization: %w", err)
+		}
+		err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM saved_views WHERE scope = 'organization' AND organization_id = $1", orgID).Scan(&count)
+		return count, MaxSharedViewsPerOrg, err
+	case SavedViewScopeSite:
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", savedViewSiteLockKey); err != nil {
+			return 0, 0, fmt.Errorf("failed to lock site views: %w", err)
+		}
+		err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM saved_views WHERE scope = 'site'").Scan(&count)
+		return count, MaxSiteViews, err
+	}
+	return 0, 0, fmt.Errorf("unknown saved view scope %q", scope)
+}
+
+// MoveSavedView changes who a view is shared with, enforcing the new scope's
+// limit and name uniqueness. Callers must authorize it.
+func MoveSavedView(id int, scope string, orgID int) (*SavedView, error) {
+	view, err := GetSavedView(id)
+	if err != nil {
+		return nil, err
+	}
+	if view.Scope == scope && view.OrgID() == orgID {
+		return view, nil
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	count, limit, err := lockSavedViewScope(ctx, tx, view.UserID, scope, orgID)
+	if err != nil {
+		return nil, err
+	}
+	if count >= limit {
+		return nil, ErrSavedViewLimit
+	}
+	var orgArg any
+	if scope == SavedViewScopeOrg {
+		orgArg = orgID
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE saved_views SET scope = $2, organization_id = $3, updated_at = NOW() WHERE id = $1`,
+		id, scope, orgArg); err != nil {
+		if isSavedViewUniqueViolation(err) {
+			return nil, ErrSavedViewNameConflict
+		}
+		return nil, fmt.Errorf("failed to move saved view: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 	return GetSavedView(id)
 }

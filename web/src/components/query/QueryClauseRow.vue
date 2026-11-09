@@ -18,8 +18,6 @@ const props = defineProps<{
   fields: QueryField[]
   options: QueryOptions
   readonly?: boolean
-  /** Shared queries are pinned to one project, so the project field is hidden. */
-  hideProjectField?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,9 +32,6 @@ const type = computed(() => field.value?.type)
 const listOp = computed(() => isListOperator(props.node.operator))
 const fieldMissing = computed(() => !!props.node.field && !field.value)
 
-const selectableFields = computed(() =>
-  props.fields.filter((f) => !(props.hideProjectField && f.id === 'project') || f.id === props.node.field),
-)
 
 function setField(id: string) {
   emit('update:node', newClause(props.fields.find((f) => f.id === id)))
@@ -153,7 +148,7 @@ const rangeInvalid = (s: string) => s !== '' && !isValidDateValue(s)
       @change="setField(($event.target as HTMLSelectElement).value)"
     >
       <option v-if="fieldMissing" :value="node.field">{{ node.field }} (unavailable)</option>
-      <option v-for="f in selectableFields" :key="f.id" :value="f.id">{{ f.label }}</option>
+      <option v-for="f in fields" :key="f.id" :value="f.id">{{ f.label }}</option>
     </select>
 
     <label :for="`${uid}-op`" class="visually-hidden">Operator</label>

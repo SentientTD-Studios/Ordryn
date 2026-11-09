@@ -89,7 +89,7 @@ var projectPermCatalog = []ProjectPermInfo{
 	{ID: PermExtensionsWrite, Label: "Configure extensions", Description: "Change project extension settings and document store writes", Group: "Project"},
 	{ID: PermCommentsModerate, Label: "Moderate comments", Description: "Edit or delete other members' discussion posts", Group: "Project"},
 	{ID: PermInsightsPeople, Label: "View team workload", Description: "See per-person claimed and completed work on the Team dashboard", Group: "Project"},
-	{ID: PermQueriesManage, Label: "Manage shared queries", Description: "Create, edit, and delete the project's shared queries", Group: "Project"},
+	{ID: PermQueriesManage, Label: "Manage shared queries", Description: "Edit and delete queries other people shared with the organization or team. Applies through organization roles, or through the site role on a company site", Group: "Project"},
 	{ID: PermProjectManage, Label: "Manage project", Description: "Members, invites, board columns, sprints, and project settings", Group: "Project"},
 }
 

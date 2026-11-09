@@ -8,6 +8,7 @@ import { useSite } from '@/composables/useSite'
 import { useToast } from '@/composables/useToast'
 import { useProjectNav } from '@/composables/useProjectNav'
 import { sidebarProjectSections } from '@/utils/projectNav'
+import { audienceIcon } from '@/utils/queryDefinition'
 import SidebarProjectLink from '@/components/modern/SidebarProjectLink.vue'
 
 const props = defineProps<{
@@ -398,7 +399,7 @@ watch(isAuthenticated, (ok) => {
                 :class="{ active: activeView === String(view.id) }"
                 @click.prevent="selectView(String(view.id))"
               >
-                <i :class="view.shared ? 'bi bi-people' : 'bi bi-bookmark-star'" />
+                <i :class="audienceIcon(view)" />
                 <span class="text-truncate">{{ view.name }}</span>
               </a>
             </li>

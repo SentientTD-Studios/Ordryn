@@ -498,6 +498,11 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSiteSettingsAddCompanyHome failed: %v\n", err)
 		errCount++
 	}
+	// Needs organizations and projects.organization_id, so it runs after them.
+	if err := MigrateSavedViewsForQueries(); err != nil {
+		fmt.Printf("migration: MigrateSavedViewsForQueries failed: %v\n", err)
+		errCount++
+	}
 
 	if errCount == 0 {
 		return nil

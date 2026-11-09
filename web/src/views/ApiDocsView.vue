@@ -601,11 +601,15 @@ Content-Type: application/json
 
                     <h2 id="saved-views" class="h4 mt-4">Saved views</h2>
                     <p>
-                        A saved view is a named query. Personal views are private to their owner (up to 50 each);
-                        shared queries belong to a project (up to 100 each), are visible to everyone on it, and need the
-                        <code>queries:manage</code> permission to create, change, or delete. Each view carries a
-                        <code>definition</code> (see <a href="#queries">Queries</a>). Older clients can still send and read the
-                        flat <code>filter</code> below; the server converts it into a definition.
+                        A saved view is a named query. Its <code>scope</code> says who can open it:
+                        <code>personal</code> (only its owner, up to 50 each), <code>organization</code> (the members of
+                        <code>organization_id</code>, up to 100 per organization), or <code>site</code> (everyone, up to 100).
+                        Any member can share a query with their organization; its owner, admins, people who manage the
+                        organization, and members whose role has <code>queries:manage</code> can change it. Site queries need
+                        the <code>queries:site</code> site permission. Only the owner can move a query to another scope.
+                        Which projects a query searches is part of its <code>definition</code>
+                        (see <a href="#queries">Queries</a>), and everyone runs it with their own access. Older clients can
+                        still send and read the flat <code>filter</code> below; the server converts it into a definition.
                     </p>
 
                     <h3 class="h5 mt-3">Saved view object</h3>
@@ -622,13 +626,20 @@ Content-Type: application/json
     "sort": "priority",
     "search": "release"
   },
+  "scope": "organization",
+  "organization_id": 4,
+  "organization_name": "Platform team",
+  "shared": true,
+  "is_owner": true,
+  "can_edit": true,
   "sort_order": 0,
   "created_at": "2026-07-14T15:44:17Z",
   "updated_at": "2026-07-14T15:44:17Z"
 }</code></pre>
                     <p>
                         <code>id</code>, <code>created_at</code>, and <code>updated_at</code> are server-managed.
-                        Names are trimmed, limited to 80 characters, and unique per user.
+                        Names are trimmed, limited to 80 characters, and unique within their scope (per owner, per
+                        organization, or site-wide).
                         <code>sort_order</code> must be between 0 and 2147483647.
                     </p>
 
@@ -705,15 +716,17 @@ Content-Type: application/json
                     <h2 id="queries" class="h4 mt-4">Queries</h2>
                     <p>
                         A query definition picks a scope of projects, then filters it with a tree of AND/OR clauses.
-                        Queries always run as the caller: results only ever include tasks the caller can open, and a
-                        shared query only searches its own project. Every project, sprint, person, and custom field a
+                        Queries always run as the caller: results only ever include tasks the caller can open. A scope
+                        lists <code>projects</code>, <code>organizations</code> (every project of theirs the caller can
+                        open; the caller must belong to each), both, or neither for every project the caller can open.
+                        Every project, organization, sprint, person, and custom field a
                         definition names must be one the caller can access; otherwise the request fails with
                         <code>400 invalid_query</code>, the same error whether it is missing or hidden. When a saved query
                         names something the caller has since lost access to, that part matches nothing and the results
                         list it under <code>unavailable</code>.
                     </p>
                     <pre class="api-docs-pre"><code>{
-  "scope": { "projects": [], "include_personal": true, "include_archived": false, "exclude_view_only": false },
+  "scope": { "projects": [], "organizations": [4], "include_personal": false, "include_archived": false, "exclude_view_only": false },
   "where": {
     "op": "and",
     "clauses": [
@@ -763,7 +776,7 @@ Content-Type: application/json
                     <pre class="api-docs-pre"><code>{ "definition": { ... }, "page": 1, "page_size": 50 }</code></pre>
                     <p>
                         <code>page_size</code> is 1–200, or <code>-1</code> to get only <code>total</code>. Add
-                        <code>project_id</code> to pin the run to one project, as a shared query would be. Project-scoped
+                        <code>project_id</code> to pin the run to one project, ignoring the definition's scope. Project-scoped
                         API keys and agent keys are always pinned to their project. Saved queries run with
                         <code>GET /api/v2/saved-views/{id}/results?page=1&amp;page_size=50</code>.
                     </p>

@@ -7,6 +7,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { useProjectNav } from '@/composables/useProjectNav'
 import { sidebarProjectSections } from '@/utils/projectNav'
+import { audienceIcon, audienceLabel } from '@/utils/queryDefinition'
 import SidebarProjectLink from '@/components/modern/SidebarProjectLink.vue'
 
 const props = defineProps<{
@@ -392,11 +393,11 @@ onBeforeUnmount(() => {
           :to="`/views/${view.id}`"
           class="sidebar-nav-link"
           :class="{ active: activeView === String(view.id) || route.path === `/views/${view.id}` }"
-          :data-tooltip="view.shared ? `${view.name} (${view.project_name})` : view.name"
-          :title="view.shared ? `${view.name} — shared in ${view.project_name}` : view.name"
+          :data-tooltip="view.shared ? `${view.name} (${audienceLabel(view)})` : view.name"
+          :title="view.shared ? `${view.name} — shared with ${audienceLabel(view).toLowerCase()}` : view.name"
           @click="emit('close-mobile')"
         >
-          <i :class="view.shared ? 'bi bi-people' : 'bi bi-bookmark-star'" />
+          <i :class="audienceIcon(view)" />
           <span class="sidebar-text text-truncate">{{ view.name }}</span>
         </RouterLink>
       </li>

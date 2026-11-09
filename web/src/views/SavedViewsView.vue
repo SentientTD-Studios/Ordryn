@@ -6,7 +6,7 @@ import type { QueryOptions, SavedView } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
-import { countClauses, describeClause, isGroup } from '@/utils/queryDefinition'
+import { audienceIcon, audienceLabel, countClauses, describeClause, isGroup } from '@/utils/queryDefinition'
 
 const views = ref<SavedView[]>([])
 const options = ref<QueryOptions | null>(null)
@@ -19,18 +19,25 @@ const matches = (v: SavedView) => !filterText.value.trim() || v.name.toLowerCase
 
 const personal = computed(() => views.value.filter((v) => !v.shared && matches(v)))
 
-const sharedByProject = computed(() => {
-  const groups = new Map<string, { name: string; projectId: number; views: SavedView[] }>()
+/** Shared queries grouped by audience: each organization, then site-wide. */
+const sharedGroups = computed(() => {
+  const groups = new Map<string, { key: string; label: string; icon: string; views: SavedView[] }>()
   for (const v of views.value) {
     if (!v.shared || !matches(v)) continue
-    const key = String(v.project_id)
-    if (!groups.has(key)) groups.set(key, { name: v.project_name || 'Project', projectId: v.project_id!, views: [] })
+    const key = v.scope === 'site' ? 'site' : `org:${v.organization_id}`
+    if (!groups.has(key)) groups.set(key, { key, label: audienceLabel(v), icon: audienceIcon(v), views: [] })
     groups.get(key)!.views.push(v)
   }
+  // The server lists organization queries before site ones.
   return [...groups.values()]
 })
 
-const manageableProjects = computed(() => (options.value?.projects ?? []).filter((p) => p.can_manage_queries && !p.archived))
+/** Where the caller can start a shared query. */
+const shareTargets = computed(() => {
+  const out = (options.value?.organizations ?? []).map((o) => ({ share: `org:${o.id}`, label: `Members of ${o.name}` }))
+  if (options.value?.can_share_site) out.push({ share: 'site', label: 'All users site-wide' })
+  return out
+})
 
 async function load() {
   loading.value = true
@@ -57,15 +64,24 @@ function summary(v: SavedView): string {
   return parts.join(' · ')
 }
 
+/** Which projects a query searches. */
 function scopeLabel(v: SavedView): string {
-  if (v.shared) return ''
+  const orgs = v.definition.scope.organizations ?? []
   const n = v.definition.scope.projects.length
-  if (n === 0) return 'All projects'
+  const parts: string[] = []
+  if (orgs.length === 1) {
+    const o = options.value?.organizations.find((x) => x.id === orgs[0])
+    parts.push(o ? `${o.name} projects` : '1 organization')
+  } else if (orgs.length > 1) {
+    parts.push(`${orgs.length} organizations`)
+  }
   if (n === 1) {
     const p = options.value?.projects.find((x) => x.id === v.definition.scope.projects[0])
-    return p ? p.name : '1 project'
+    parts.push(p ? p.name : '1 project')
+  } else if (n > 1) {
+    parts.push(`${n} projects`)
   }
-  return `${n} projects`
+  return parts.length ? parts.join(' + ') : 'All projects'
 }
 
 async function toggleDashboard(v: SavedView) {
@@ -80,7 +96,9 @@ async function toggleDashboard(v: SavedView) {
 async function remove(v: SavedView) {
   const ok = await askConfirm({
     title: 'Delete query?',
-    message: v.shared ? `Delete the shared query “${v.name}” for everyone on ${v.project_name}?` : `Delete the query “${v.name}”?`,
+    message: v.shared
+      ? `Delete the shared query “${v.name}”? ${audienceLabel(v)} will lose it.`
+      : `Delete the query “${v.name}”?`,
     confirmLabel: 'Delete',
     danger: true,
   })
@@ -158,28 +176,30 @@ onMounted(load)
       <section aria-labelledby="shared-queries-heading">
         <div class="d-flex align-items-center gap-2 mb-2">
           <h2 id="shared-queries-heading" class="h6 text-uppercase text-muted mb-0">Shared queries</h2>
-          <div v-if="manageableProjects.length" class="dropdown ms-auto">
+          <div v-if="shareTargets.length" class="dropdown ms-auto">
             <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
               <i class="bi bi-people" /> New shared query
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
-              <li v-for="p in manageableProjects" :key="p.id">
-                <RouterLink class="dropdown-item" :to="{ path: '/views/new', query: { project: String(p.id) } }">{{ p.name }}</RouterLink>
+              <li v-for="t in shareTargets" :key="t.share">
+                <RouterLink class="dropdown-item" :to="{ path: '/views/new', query: { share: t.share } }">{{ t.label }}</RouterLink>
               </li>
             </ul>
           </div>
         </div>
-        <p v-if="sharedByProject.length === 0" class="text-muted small">
-          Queries shared on your projects appear here. Anyone on a project can run its shared queries; people with the
-          <em>Manage shared queries</em> permission can create and change them.
+        <p v-if="sharedGroups.length === 0" class="text-muted small">
+          Queries shared with your organizations, or with everyone, appear here. Any member can share a query with their
+          organization; its owner and people with the <em>Manage shared queries</em> permission can change it.
         </p>
-        <div v-for="g in sharedByProject" :key="g.projectId" class="mb-3">
-          <div class="small fw-semibold mb-1">{{ g.name }}</div>
+        <div v-for="g in sharedGroups" :key="g.key" class="mb-3">
+          <div class="small fw-semibold mb-1"><i :class="`${g.icon} me-1`" aria-hidden="true" />{{ g.label }}</div>
           <ul class="list-group">
             <li v-for="v in g.views" :key="v.id" class="list-group-item d-flex flex-wrap align-items-center gap-2">
               <div class="me-auto min-w-0">
                 <RouterLink :to="`/views/${v.id}`" class="fw-semibold">{{ v.name }}</RouterLink>
-                <span v-if="v.author_name" class="small text-muted ms-2">by {{ v.author_name }}</span>
+                <span class="badge text-bg-light border ms-2 fw-normal">{{ scopeLabel(v) }}</span>
+                <span v-if="v.is_owner" class="small text-muted ms-2">by you</span>
+                <span v-else-if="v.author_name" class="small text-muted ms-2">by {{ v.author_name }}</span>
                 <span v-if="!v.can_edit" class="badge text-bg-light border ms-2 fw-normal"><i class="bi bi-lock" /> Read only</span>
                 <div class="small text-muted text-truncate">{{ summary(v) }}</div>
               </div>

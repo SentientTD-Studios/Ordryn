@@ -37,6 +37,64 @@ func VisibleSprintIDs(ids, projectIDs []int) (map[int]bool, error) {
 	return out, rows.Err()
 }
 
+// VisibleQueryOrganizations returns which of ids are organizations callerID
+// belongs to. The company organization is left out: a site-wide query covers it.
+func VisibleQueryOrganizations(callerID int, ids []int) (map[int]bool, error) {
+	out := map[int]bool{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	rows, err := pool.Query(context.Background(), `
+		SELECT o.id FROM organizations o
+		JOIN organization_members om ON om.organization_id = o.id AND om.user_id = $1
+		WHERE o.id = ANY($2) AND NOT COALESCE(o.is_company, FALSE)`, callerID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("visible organizations: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// ProjectOrganizationIDs maps each of projectIDs that belongs to an
+// organization to that organization's id.
+func ProjectOrganizationIDs(projectIDs []int) (map[int]int, error) {
+	out := map[int]int{}
+	if len(projectIDs) == 0 {
+		return out, nil
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, organization_id FROM projects WHERE id = ANY($1) AND organization_id IS NOT NULL`, projectIDs)
+	if err != nil {
+		return nil, fmt.Errorf("project organizations: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pid, oid int
+		if err := rows.Scan(&pid, &oid); err != nil {
+			return nil, err
+		}
+		out[pid] = oid
+	}
+	return out, rows.Err()
+}
+
 // QueryPerson is someone a caller may name in a query.
 type QueryPerson struct {
 	ID   int

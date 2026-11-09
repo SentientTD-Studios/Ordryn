@@ -679,16 +679,22 @@ export type TrashEntry = {
   purge_at: string
 }
 
+export type SavedViewScope = 'personal' | 'organization' | 'site'
+
 export type SavedView = {
   id: number
   name: string
   /** Version 1 filter. Kept for older clients; `definition` is the query. */
   filter: SavedViewFilter
   definition: QueryDefinition
-  /** Set for a shared query, which belongs to that project. */
-  project_id: number | null
-  project_name?: string
+  /** Who can open it. Which projects it searches is in `definition.scope`. */
+  scope: SavedViewScope
+  /** Set when `scope` is `organization`. */
+  organization_id: number | null
+  organization_name?: string
+  /** True for organization and site queries. */
   shared: boolean
+  is_owner: boolean
   author_name?: string
   can_edit: boolean
   on_dashboard: boolean
@@ -726,8 +732,10 @@ export type QueryNode = {
 }
 
 export type QueryScope = {
-  /** Empty means every project you can open. */
+  /** Limit to these projects. With both lists empty: every project you can open. */
   projects: number[]
+  /** Add every project of these organizations that you can open. */
+  organizations?: number[]
   include_personal?: boolean
   include_archived?: boolean
   exclude_view_only?: boolean
@@ -769,7 +777,11 @@ export type QueryField = {
 export type QueryOptions = {
   fields: QueryField[]
   columns: { value: string; label: string }[]
-  projects: { id: number; name: string; archived: boolean; view_only: boolean; can_manage_queries: boolean }[]
+  projects: { id: number; name: string; archived: boolean; view_only: boolean; organization_id: number | null }[]
+  /** Organizations you belong to: searchable in a scope and shareable with. */
+  organizations: { id: number; name: string; can_manage_queries: boolean }[]
+  /** You may share queries with everyone on the site. */
+  can_share_site: boolean
   people: { id: number; name: string }[]
   statuses: string[]
   tags: string[]
@@ -790,6 +802,7 @@ export type QueryTask = Omit<Task, 'children'> & {
 
 export type QueryUnavailable = {
   projects?: number[]
+  organizations?: number[]
   sprints?: number[]
   users?: number[]
   custom_fields?: string[]

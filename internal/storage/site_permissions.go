@@ -32,6 +32,10 @@ const (
 	SitePermRolesManage = "roles:manage"
 	// SitePermSettingsManage changes site settings and extensions.
 	SitePermSettingsManage = "settings:manage"
+
+	// SitePermQueriesSite shares queries with everyone on the site and edits
+	// or deletes the ones shared there.
+	SitePermQueriesSite = "queries:site"
 )
 
 // MemberRoleName is the site role every non-admin account gets.

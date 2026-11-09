@@ -12,7 +12,6 @@ const props = defineProps<{
   readonly?: boolean
   depth?: number
   maxDepth?: number
-  hideProjectField?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -122,7 +121,6 @@ const hasOr = () => clauses().some((_, i) => rowJoin(props.node, i) === 'or')
             :readonly="readonly"
             :depth="depth() + 1"
             :max-depth="maxDepth"
-            :hide-project-field="hideProjectField"
             @update:node="replaceAt(i, $event)"
             @remove="removeAt(i)"
           />
@@ -132,7 +130,6 @@ const hasOr = () => clauses().some((_, i) => rowJoin(props.node, i) === 'or')
             :fields="fields"
             :options="options"
             :readonly="readonly"
-            :hide-project-field="hideProjectField"
             @update:node="replaceAt(i, $event)"
             @remove="removeAt(i)"
           />

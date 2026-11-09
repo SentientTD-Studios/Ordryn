@@ -6485,8 +6485,8 @@ paths:
       summary: Run a saved query
       description: >
         Runs the query as the caller, never as its author: results only ever contain tasks the
-        caller can open. A shared query runs against its own project only. References the caller
-        has lost access to match nothing and are listed under `unavailable`.
+        caller can open. References the caller cannot use (projects, organizations, sprints,
+        people, or fields) match nothing and are listed under `unavailable`.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -6656,7 +6656,24 @@ paths:
                         name: { type: string }
                         archived: { type: boolean }
                         view_only: { type: boolean }
-                        can_manage_queries: { type: boolean }
+                        organization_id: { type: integer, nullable: true }
+                  organizations:
+                    type: array
+                    description: >
+                      Organizations you belong to: a query can search their projects
+                      (`scope.organizations`) and be shared with their members. The
+                      company of a company-mode site is left out; share site-wide instead.
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        can_manage_queries:
+                          type: boolean
+                          description: You may edit and delete any query shared with this organization.
+                  can_share_site:
+                    type: boolean
+                    description: You hold `queries:site` and may share queries with everyone.
                   people:
                     type: array
                     items:
@@ -11241,20 +11258,33 @@ components:
           $ref: "#/components/schemas/SavedViewFilter"
         definition:
           $ref: "#/components/schemas/QueryDefinition"
-        project_id:
+        scope:
+          type: string
+          enum: [personal, organization, site]
+          description: >
+            Who can open the query: only its owner, the members of `organization_id`,
+            or everyone on the site. Each viewer runs it with their own access, so a
+            shared query never shows anyone a task they could not already open.
+        organization_id:
           type: integer
           nullable: true
-          description: Set for a shared query, which belongs to that project.
-        project_name:
+          description: Set when `scope` is `organization`.
+        organization_name:
           type: string
         shared:
+          type: boolean
+          description: True for organization and site queries.
+        is_owner:
           type: boolean
         author_name:
           type: string
           description: Who created a shared query.
         can_edit:
           type: boolean
-          description: Personal views are editable by their owner; shared queries need queries:manage on the project.
+          description: >
+            Personal queries: their owner. Organization queries: their owner while a
+            member, admins, people who manage the organization, and members whose role
+            has `queries:manage`. Site queries: holders of `queries:site`.
         on_dashboard:
           type: boolean
         sort_order:
@@ -11277,9 +11307,15 @@ components:
           $ref: "#/components/schemas/SavedViewFilter"
         definition:
           $ref: "#/components/schemas/QueryDefinition"
-        project_id:
+        scope:
+          type: string
+          enum: [personal, organization, site]
+          default: personal
+          description: >
+            `organization` needs `organization_id` and membership of it; `site` needs
+            `queries:site`. Limit which projects it searches in `definition.scope`.
+        organization_id:
           type: integer
-          description: Create a shared query on this project (needs queries:manage). Cannot be changed later.
         sort_order:
           type: integer
 
@@ -11292,6 +11328,12 @@ components:
           $ref: "#/components/schemas/SavedViewFilter"
         definition:
           $ref: "#/components/schemas/QueryDefinition"
+        scope:
+          type: string
+          enum: [personal, organization, site]
+          description: Move the query to another audience. Only its owner can, and only to one they may share with.
+        organization_id:
+          type: integer
         sort_order:
           type: integer
 
@@ -11307,7 +11349,15 @@ components:
             projects:
               type: array
               items: { type: integer }
-              description: Empty means every project you can open.
+              description: >
+                Limit to these projects. With `organizations` the two lists add up; with
+                both empty the query covers every project you can open.
+            organizations:
+              type: array
+              items: { type: integer }
+              description: >
+                Add every project of these organizations that you can open. You must
+                belong to each one.
             include_personal:
               type: boolean
               description: Include your tasks without a project (default true).
@@ -11364,7 +11414,7 @@ components:
           $ref: "#/components/schemas/QueryDefinition"
         project_id:
           type: integer
-          description: Pin the run to one project, as a shared query would be.
+          description: Pin the run to one project, ignoring the definition's scope.
         page: { type: integer }
         page_size: { type: integer }
 
