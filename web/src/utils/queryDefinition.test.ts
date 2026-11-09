@@ -17,7 +17,7 @@ import {
 const fields: QueryField[] = [
   { id: 'title', label: 'Title', type: 'text', operators: ['contains', 'not_contains', '=', '<>', 'is_empty', 'is_not_empty'], sortable: true },
   { id: 'workflow_status', label: 'Status', type: 'status', operators: ['=', '<>', 'in', 'not_in', 'is_empty', 'is_not_empty'], sortable: true },
-  { id: 'due_date', label: 'Due date', type: 'date', operators: ['=', '<>', '<', '<=', '>', '>=', 'is_empty', 'is_not_empty'], sortable: true },
+  { id: 'due_date', label: 'Due date', type: 'date', operators: ['between', '=', '<>', '<', '<=', '>', '>=', 'is_empty', 'is_not_empty'], sortable: true },
   { id: 'claimed_by', label: 'Claimed by', type: 'user', operators: ['=', '<>', 'in', 'not_in', 'is_empty', 'is_not_empty'], sortable: true },
   { id: 'completed', label: 'Completed', type: 'boolean', operators: ['=', '<>'], sortable: true },
 ]
@@ -33,7 +33,7 @@ describe('queryDefinition', () => {
 
   it('picks a natural operator and value for a new clause', () => {
     assert.deepEqual(newClause(fields[1]), { field: 'workflow_status', operator: 'in', value: [] })
-    assert.deepEqual(newClause(fields[2]), { field: 'due_date', operator: '<=', value: '@today' })
+    assert.deepEqual(newClause(fields[2]), { field: 'due_date', operator: 'between', value: ['@start_of_week', '@end_of_week'] })
     assert.deepEqual(newClause(fields[3]), { field: 'claimed_by', operator: '=', value: '@me' })
     assert.deepEqual(newClause(fields[4]), { field: 'completed', operator: '=', value: true })
   })
@@ -65,6 +65,29 @@ describe('queryDefinition', () => {
     })
   })
 
+  it('keeps a date as the start of a range and back', () => {
+    assert.deepEqual(fixClause({ field: 'due_date', operator: 'between', value: '2026-11-01' }, fields[2]), {
+      field: 'due_date',
+      operator: 'between',
+      value: ['2026-11-01', '@end_of_week'],
+    })
+    assert.deepEqual(fixClause({ field: 'due_date', operator: '<=', value: ['@today', '@today+7'] }, fields[2]), {
+      field: 'due_date',
+      operator: '<=',
+      value: '@today',
+    })
+  })
+
+  it('flags a range with a bad or missing end', () => {
+    const d = emptyDefinition()
+    d.where.clauses = [
+      { field: 'due_date', operator: 'between', value: ['@start_of_week', ''] },
+      { field: 'due_date', operator: 'between', value: ['@today', 'soon'] },
+      { field: 'due_date', operator: 'between', value: ['@start_of_week', '@end_of_week'] },
+    ]
+    assert.equal(definitionProblems(d).length, 2)
+  })
+
   it('counts clauses and depth', () => {
     const tree: QueryNode = {
       op: 'and',
@@ -93,10 +116,14 @@ describe('queryDefinition', () => {
     assert.equal(describeClause({ field: 'claimed_by', operator: 'in', value: ['@me', 5, 9] }, fields, opts), 'Claimed by is any of Me, Ada, Unavailable person')
     assert.equal(describeClause({ field: 'due_date', operator: '<', value: '@today' }, fields, opts), 'Due date is before @today')
     assert.equal(describeClause({ field: 'title', operator: 'is_empty' }, fields, opts), 'Title is empty')
+    assert.equal(
+      describeClause({ field: 'due_date', operator: 'between', value: ['@start_of_week', '@end_of_week'] }, fields, opts),
+      'Due date is between @start_of_week and @end_of_week',
+    )
   })
 
   it('validates date inputs', () => {
-    for (const ok of ['@today', '@today-7', '@START_OF_WEEK+6', '2024-02-29']) assert.ok(isValidDateValue(ok), ok)
+    for (const ok of ['@today', '@today-7', '@START_OF_WEEK+6', '@end_of_week', '2024-02-29']) assert.ok(isValidDateValue(ok), ok)
     for (const bad of ['@yesterday', '2023-02-29', '2024-13-01', 'today']) assert.ok(!isValidDateValue(bad), bad)
   })
 

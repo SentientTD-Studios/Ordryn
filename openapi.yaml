@@ -11339,7 +11339,7 @@ components:
         title, description, text, project, completed, workflow_status, priority, tags, due_date,
         created_date, modified_date, completed_date, claimed_by, created_by, sprint, estimate,
         is_subtask, has_subtasks, favorite and cf:<custom field key>. Date values accept YYYY-MM-DD
-        or macros such as @today-7 and @start_of_week; people accept @me; sprints accept @current_sprint.
+        or macros such as @today-7, @start_of_week and @end_of_week; `between` (dates only) takes [from, to] and includes both ends; people accept @me; sprints accept @current_sprint.
       properties:
         op: { type: string, enum: [and, or] }
         clauses:
@@ -11349,7 +11349,7 @@ components:
         field: { type: string }
         operator:
           type: string
-          enum: ["=", "<>", "<", "<=", ">", ">=", in, not_in, contains, not_contains, is_empty, is_not_empty]
+          enum: ["=", "<>", "<", "<=", ">", ">=", in, not_in, contains, not_contains, is_empty, is_not_empty, between]
         value: {}
 
     QueryRunRequest:

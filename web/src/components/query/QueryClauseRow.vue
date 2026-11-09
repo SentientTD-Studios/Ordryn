@@ -5,6 +5,7 @@ import {
   PRIORITY_LABELS,
   fixClause,
   isListOperator,
+  isRangeOperator,
   isValidDateValue,
   newClause,
   operatorLabel,
@@ -125,6 +126,20 @@ function isSelected(v: string | number): boolean {
 const textValue = computed(() => (typeof props.node.value === 'string' ? props.node.value : ''))
 const numberListText = computed(() => (Array.isArray(props.node.value) ? props.node.value.join(', ') : ''))
 const dateInvalid = computed(() => type.value === 'date' && textValue.value !== '' && !isValidDateValue(textValue.value))
+
+const rangeOp = computed(() => isRangeOperator(props.node.operator))
+const rangeValue = computed<[string, string]>(() => {
+  const v = props.node.value
+  return Array.isArray(v) ? [String(v[0] ?? ''), String(v[1] ?? '')] : ['', '']
+})
+
+function setRangeEnd(i: 0 | 1, s: string) {
+  const next: [string, string] = [...rangeValue.value]
+  next[i] = s.trim()
+  setValue(next)
+}
+
+const rangeInvalid = (s: string) => s !== '' && !isValidDateValue(s)
 </script>
 
 <template>
@@ -217,6 +232,40 @@ const dateInvalid = computed(() => type.value === 'date' && textValue.value !== 
         <option value="false">No</option>
       </select>
 
+      <template v-else-if="type === 'date' && rangeOp">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <label :for="`${uid}-from`" class="visually-hidden">From</label>
+          <input
+            :id="`${uid}-from`"
+            type="text"
+            class="form-control form-control-sm query-date"
+            :class="{ 'is-invalid': rangeInvalid(rangeValue[0]) }"
+            :value="rangeValue[0]"
+            :list="`${uid}-macros`"
+            placeholder="From: YYYY-MM-DD or @start_of_week"
+            :disabled="readonly"
+            @input="setRangeEnd(0, ($event.target as HTMLInputElement).value)"
+          />
+          <span class="small text-muted">and</span>
+          <label :for="`${uid}-to`" class="visually-hidden">To</label>
+          <input
+            :id="`${uid}-to`"
+            type="text"
+            class="form-control form-control-sm query-date"
+            :class="{ 'is-invalid': rangeInvalid(rangeValue[1]) }"
+            :value="rangeValue[1]"
+            :list="`${uid}-macros`"
+            placeholder="To: YYYY-MM-DD or @end_of_week"
+            :disabled="readonly"
+            @input="setRangeEnd(1, ($event.target as HTMLInputElement).value)"
+          />
+        </div>
+        <datalist :id="`${uid}-macros`">
+          <option v-for="m in options.date_macros" :key="m" :value="m" />
+        </datalist>
+        <div class="form-text small mt-0">Both dates are included.</div>
+      </template>
+
       <template v-else-if="type === 'date'">
         <input
           :id="`${uid}-val`"
@@ -297,6 +346,10 @@ const dateInvalid = computed(() => type.value === 'date' && textValue.value !== 
 }
 .query-value {
   min-width: 12rem;
+}
+.query-date {
+  width: 11rem;
+  max-width: 100%;
 }
 @media (max-width: 576px) {
   .query-field,

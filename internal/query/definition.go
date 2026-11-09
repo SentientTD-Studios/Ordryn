@@ -66,6 +66,8 @@ const (
 	OpNotContains = "not_contains"
 	OpEmpty       = "is_empty"
 	OpNotEmpty    = "is_not_empty"
+	// OpBetween takes [from, to] and matches both ends (dates only).
+	OpBetween = "between"
 )
 
 // Macros usable as values.
@@ -392,6 +394,23 @@ func normalizeClause(n Node, ft FieldTypes) (Node, error) {
 	if len(n.Value) == 0 || string(n.Value) == "null" {
 		return Node{}, invalid("%s %s needs a value.", field, op)
 	}
+	if op == OpBetween {
+		var raw []json.RawMessage
+		if err := json.Unmarshal(n.Value, &raw); err != nil || len(raw) != 2 {
+			return Node{}, invalid("%s between needs two values: [from, to].", field)
+		}
+		vals := make([]any, 0, 2)
+		for _, r := range raw {
+			v, err := kind.normalizeValue(field, r)
+			if err != nil {
+				return Node{}, err
+			}
+			vals = append(vals, v)
+		}
+		enc, _ := json.Marshal(vals)
+		out.Value = enc
+		return out, nil
+	}
 	if op == OpIn || op == OpNotIn {
 		var raw []json.RawMessage
 		if err := json.Unmarshal(n.Value, &raw); err != nil {
@@ -451,7 +470,7 @@ type fieldKindInfo struct {
 var opsByKind = map[kindID][]string{
 	kText:    {OpContains, OpNotContains, OpEq, OpNe, OpEmpty, OpNotEmpty},
 	kNumber:  {OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpIn, OpNotIn, OpEmpty, OpNotEmpty},
-	kDate:    {OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpEmpty, OpNotEmpty},
+	kDate:    {OpBetween, OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpEmpty, OpNotEmpty},
 	kBool:    {OpEq, OpNe},
 	kProject: {OpEq, OpNe, OpIn, OpNotIn, OpEmpty, OpNotEmpty},
 	kUser:    {OpEq, OpNe, OpIn, OpNotIn, OpEmpty, OpNotEmpty},
@@ -564,7 +583,7 @@ func validColumn(c string, ft FieldTypes) bool {
 	return columnOnly[c]
 }
 
-var dateMacroRe = regexp.MustCompile(`^@(today|start_of_week|start_of_month|start_of_year)([+-]\d{1,4})?$`)
+var dateMacroRe = regexp.MustCompile(`^@(today|start_of_week|end_of_week|start_of_month|start_of_year)([+-]\d{1,4})?$`)
 var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
 func (k fieldKindInfo) normalizeValue(field string, raw json.RawMessage) (any, error) {
@@ -684,7 +703,7 @@ func clauseValues(n Node) []any {
 	if len(n.Value) == 0 {
 		return nil
 	}
-	if n.Operator == OpIn || n.Operator == OpNotIn {
+	if n.Operator == OpIn || n.Operator == OpNotIn || n.Operator == OpBetween {
 		var vals []any
 		_ = json.Unmarshal(n.Value, &vals)
 		return vals

@@ -47,11 +47,9 @@ func FromLegacyFilter(f storage.SavedViewFilter, tagName func(id int) (string, b
 	case "today":
 		add("due_date", OpEq, "@today")
 	case "week":
-		add("due_date", OpGe, "@today")
-		add("due_date", OpLe, "@today+7")
+		add("due_date", OpBetween, []string{"@today", "@today+7"})
 	case "through_week":
-		add("due_date", OpGe, "@today")
-		add("due_date", OpLe, "@start_of_week+6")
+		add("due_date", OpBetween, []string{"@today", "@end_of_week"})
 		add("completed", OpEq, false)
 	case "none":
 		add("due_date", OpEmpty, nil)

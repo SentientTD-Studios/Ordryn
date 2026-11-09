@@ -710,6 +710,7 @@ export type QueryOperator =
   | 'not_contains'
   | 'is_empty'
   | 'is_not_empty'
+  | 'between'
 
 export type QueryValue = string | number | boolean | (string | number)[] | null
 

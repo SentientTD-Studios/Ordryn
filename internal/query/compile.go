@@ -385,6 +385,20 @@ func (b *builder) date(expr string, n Node, vals []any) string {
 		return expr + " IS NULL"
 	case OpNotEmpty:
 		return expr + " IS NOT NULL"
+	case OpBetween:
+		if len(vals) != 2 {
+			return "FALSE"
+		}
+		from, ok1 := ResolveDate(stringAt(vals, 0), b.ctx.Today)
+		to, ok2 := ResolveDate(stringAt(vals, 1), b.ctx.Today)
+		if !ok1 || !ok2 {
+			return "FALSE"
+		}
+		// Either order works: "between @end_of_week and @start_of_week" still means this week.
+		if to.Before(from) {
+			from, to = to, from
+		}
+		return expr + " BETWEEN " + b.arg(from.Format("2006-01-02")) + "::date AND " + b.arg(to.Format("2006-01-02")) + "::date"
 	}
 	d, ok := ResolveDate(firstString(vals), b.ctx.Today)
 	if !ok {
@@ -565,6 +579,10 @@ func ResolveDate(s string, today time.Time) (time.Time, bool) {
 			// Weeks start on Monday, as Postgres date_trunc('week') does.
 			offset := (int(base.Weekday()) + 6) % 7
 			base = base.AddDate(0, 0, -offset)
+		case "end_of_week":
+			// The Sunday that ends the Monday-first week.
+			offset := (7 - int(base.Weekday())) % 7
+			base = base.AddDate(0, 0, offset)
 		case "start_of_month":
 			base = time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, time.UTC)
 		case "start_of_year":
@@ -610,6 +628,14 @@ func firstValue(vals []any) any {
 		return nil
 	}
 	return vals[0]
+}
+
+func stringAt(vals []any, i int) string {
+	if i >= len(vals) {
+		return ""
+	}
+	s, _ := vals[i].(string)
+	return s
 }
 
 func firstString(vals []any) string {

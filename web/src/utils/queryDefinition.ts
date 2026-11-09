@@ -23,6 +23,7 @@ export const OPERATOR_LABELS: Record<QueryOperator, string> = {
   not_contains: 'does not contain',
   is_empty: 'is empty',
   is_not_empty: 'is not empty',
+  between: 'is between',
 }
 
 /** Operator labels that read better for a field type. */
@@ -67,6 +68,14 @@ export function isListOperator(op?: QueryOperator): boolean {
   return op === 'in' || op === 'not_in'
 }
 
+/** "between" takes a [from, to] pair. */
+export function isRangeOperator(op?: QueryOperator): boolean {
+  return op === 'between'
+}
+
+/** The range a new "between" clause starts with: this week. */
+export const DEFAULT_DATE_RANGE: [string, string] = ['@start_of_week', '@end_of_week']
+
 export function takesValue(op?: QueryOperator): boolean {
   return !!op && op !== 'is_empty' && op !== 'is_not_empty'
 }
@@ -84,6 +93,7 @@ export function groupDepth(n: QueryNode): number {
 /** A sensible starting value when a field or operator changes. */
 export function defaultValue(type: QueryFieldType | undefined, op: QueryOperator | undefined): QueryValue {
   if (!takesValue(op)) return null
+  if (isRangeOperator(op)) return [...DEFAULT_DATE_RANGE]
   if (isListOperator(op)) return []
   switch (type) {
     case 'boolean':
@@ -116,7 +126,7 @@ function preferredOperator(field: QueryField): QueryOperator {
     search: 'contains',
     tags: 'in',
     status: 'in',
-    date: '<=',
+    date: 'between',
   }
   const p = prefer[field.type]
   if (p && field.operators.includes(p)) return p
@@ -134,6 +144,15 @@ export function fixClause(n: QueryNode, field: QueryField | undefined): QueryNod
   let value = n.value ?? null
   if (!takesValue(op)) {
     value = null
+  } else if (isRangeOperator(op)) {
+    // Keep a single date as the start of the range.
+    const from = Array.isArray(value) ? value[0] : value
+    value =
+      Array.isArray(value) && value.length === 2
+        ? value
+        : typeof from === 'string' && from !== ''
+          ? [from, DEFAULT_DATE_RANGE[1]]
+          : [...DEFAULT_DATE_RANGE]
   } else if (isListOperator(op)) {
     if (!Array.isArray(value)) value = value === null || value === '' ? [] : [value as string | number]
   } else if (Array.isArray(value)) {
@@ -158,7 +177,11 @@ export function definitionProblems(d: QueryDefinition, limits: Record<string, nu
     }
     if (!takesValue(n.operator)) return
     const v = n.value
-    if (isListOperator(n.operator)) {
+    if (isRangeOperator(n.operator)) {
+      if (!Array.isArray(v) || v.length !== 2 || v.some((x) => typeof x !== 'string' || !isValidDateValue(x))) {
+        out.push(`Enter a valid from and to date for “${n.field}”.`)
+      }
+    } else if (isListOperator(n.operator)) {
       if (!Array.isArray(v) || v.length === 0) out.push(`Pick at least one value for “${n.field}”.`)
     } else if (v === null || v === undefined || v === '') {
       out.push(`Enter a value for “${n.field}”.`)
@@ -198,13 +221,14 @@ export function describeClause(n: QueryNode, fields: QueryField[], opts?: Pick<Q
   const label = field?.label ?? n.field ?? ''
   const op = operatorLabel(n.operator as QueryOperator, field?.type)
   if (!takesValue(n.operator)) return `${label} ${op}`
+  if (isRangeOperator(n.operator) && Array.isArray(n.value)) return `${label} ${op} ${n.value[0]} and ${n.value[1]}`
   return `${label} ${op} ${valueLabel(field, n.value ?? null, opts)}`
 }
 
 /** Parse a date-field text input: a date or a macro like @today-7. */
 export function isValidDateValue(s: string): boolean {
   const v = s.trim().toLowerCase()
-  if (/^@(today|start_of_week|start_of_month|start_of_year)([+-]\d{1,4})?$/.test(v)) return true
+  if (/^@(today|start_of_week|end_of_week|start_of_month|start_of_year)([+-]\d{1,4})?$/.test(v)) return true
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
   const d = new Date(`${v}T00:00:00Z`)
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v

@@ -417,7 +417,7 @@ func apiV1QueryOptions(w http.ResponseWriter, r *http.Request, userID int) {
 		Columns:    []queryOptionJSON{},
 		Projects:   []queryProjectJSON{},
 		People:     []queryPersonJSON{},
-		DateMacros: []string{"@today", "@today-7", "@today+7", "@start_of_week", "@start_of_month", "@start_of_year"},
+		DateMacros: []string{"@today", "@today-7", "@today+7", "@start_of_week", "@end_of_week", "@start_of_month", "@start_of_year"},
 		Limits: map[string]int{
 			"clauses": query.MaxClauses, "depth": query.MaxDepth, "list_values": query.MaxListValues,
 			"columns": query.MaxColumns, "sort_keys": query.MaxSortKeys, "page_size": tasks.QueryMaxPageSize,

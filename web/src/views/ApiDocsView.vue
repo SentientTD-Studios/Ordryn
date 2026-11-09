@@ -720,7 +720,7 @@ Content-Type: application/json
       { "field": "workflow_status", "operator": "in", "value": ["doing", "review"] },
       { "op": "or", "clauses": [
         { "field": "claimed_by", "operator": "=", "value": "@me" },
-        { "field": "due_date", "operator": "&lt;=", "value": "@today+3" }
+        { "field": "due_date", "operator": "between", "value": ["@start_of_week", "@end_of_week"] }
       ] }
     ]
   },
@@ -736,7 +736,7 @@ Content-Type: application/json
                             <tr><td><code>title</code>, <code>description</code></td><td><code>contains</code>, <code>not_contains</code>, <code>=</code>, <code>&lt;&gt;</code>, <code>is_empty</code>, <code>is_not_empty</code></td><td>Text</td></tr>
                             <tr><td><code>text</code></td><td><code>contains</code>, <code>not_contains</code></td><td>Title, description, tag name, or <code>#id</code></td></tr>
                             <tr><td><code>id</code>, <code>priority</code>, <code>estimate</code></td><td><code>=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code> <code>in</code> <code>not_in</code> <code>is_empty</code> <code>is_not_empty</code></td><td>Numbers (priority 0–3)</td></tr>
-                            <tr><td><code>due_date</code>, <code>created_date</code>, <code>modified_date</code>, <code>completed_date</code></td><td>Comparisons, <code>is_empty</code>, <code>is_not_empty</code></td><td><code>YYYY-MM-DD</code> or <code>@today</code>, <code>@start_of_week</code>, <code>@start_of_month</code>, <code>@start_of_year</code>, each with an optional <code>+N</code>/<code>-N</code> days</td></tr>
+                            <tr><td><code>due_date</code>, <code>created_date</code>, <code>modified_date</code>, <code>completed_date</code></td><td><code>between</code> (value <code>[from, to]</code>, both included), comparisons, <code>is_empty</code>, <code>is_not_empty</code></td><td><code>YYYY-MM-DD</code> or <code>@today</code>, <code>@start_of_week</code>, <code>@end_of_week</code>, <code>@start_of_month</code>, <code>@start_of_year</code>, each with an optional <code>+N</code>/<code>-N</code> days</td></tr>
                             <tr><td><code>completed</code>, <code>favorite</code>, <code>is_subtask</code>, <code>has_subtasks</code></td><td><code>=</code>, <code>&lt;&gt;</code></td><td><code>true</code> or <code>false</code></td></tr>
                             <tr><td><code>project</code></td><td><code>=</code> <code>&lt;&gt;</code> <code>in</code> <code>not_in</code> <code>is_empty</code> <code>is_not_empty</code></td><td>Project IDs (<code>is_empty</code> = no project)</td></tr>
                             <tr><td><code>claimed_by</code>, <code>created_by</code></td><td>Same as project</td><td>User IDs or <code>@me</code></td></tr>

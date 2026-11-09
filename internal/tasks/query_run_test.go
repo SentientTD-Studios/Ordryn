@@ -261,6 +261,8 @@ func TestQueryFieldsAndMacros(t *testing.T) {
 		{"claimed by me", `{"where":{"clauses":[{"field":"claimed_by","operator":"=","value":"@me"}]}}`, []string{"Q parent"}},
 		{"current sprint", `{"where":{"clauses":[{"field":"sprint","operator":"=","value":"@current_sprint"}]}}`, []string{"Q parent"}},
 		{"overdue", `{"where":{"clauses":[{"field":"due_date","operator":"<","value":"@today"},{"field":"completed","operator":"=","value":false}]}}`, []string{"Q other"}},
+		{"due between excludes earlier", `{"where":{"clauses":[{"field":"due_date","operator":"between","value":["@today","@end_of_week+7"]}]}}`, []string{}},
+		{"due between includes ends", `{"where":{"clauses":[{"field":"due_date","operator":"between","value":["@today-1","@today"]}]}}`, []string{"Q other"}},
 		{"priority in", `{"where":{"clauses":[{"field":"priority","operator":"in","value":[3]}]}}`, []string{"Q child open"}},
 		{"is subtask", `{"where":{"clauses":[{"field":"is_subtask","operator":"=","value":true}]}}`, []string{"Q child done", "Q child open"}},
 		{"has subtasks", `{"where":{"clauses":[{"field":"has_subtasks","operator":"=","value":true}]}}`, []string{"Q parent"}},

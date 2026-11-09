@@ -62,6 +62,11 @@ func TestNormalizeRejectsBadDefinitions(t *testing.T) {
 		"user not id":         `{"where":{"clauses":[{"field":"claimed_by","operator":"=","value":"@you"}]}}`,
 		"clause also a group": `{"where":{"clauses":[{"field":"title","operator":"contains","value":"x","op":"or"}]}}`,
 		"version":             `{"version":3}`,
+		"between one value":   `{"where":{"clauses":[{"field":"due_date","operator":"between","value":["@today"]}]}}`,
+		"between three":       `{"where":{"clauses":[{"field":"due_date","operator":"between","value":["@today","@today","@today"]}]}}`,
+		"between scalar":      `{"where":{"clauses":[{"field":"due_date","operator":"between","value":"@today"}]}}`,
+		"between bad date":    `{"where":{"clauses":[{"field":"due_date","operator":"between","value":["@today","soon"]}]}}`,
+		"between on text":     `{"where":{"clauses":[{"field":"title","operator":"between","value":["a","b"]}]}}`,
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -283,6 +288,8 @@ func TestResolveDate(t *testing.T) {
 		"@today+30":         "2026-12-11",
 		"@start_of_week":    "2026-11-09",
 		"@start_of_week+6":  "2026-11-15",
+		"@end_of_week":      "2026-11-15",
+		"@end_of_week+1":    "2026-11-16",
 		"@start_of_month":   "2026-11-01",
 		"@start_of_year-1":  "2025-12-31",
 		"2024-02-29":        "2024-02-29",
@@ -380,5 +387,34 @@ func TestPrepareStrictRejectsHiddenReferences(t *testing.T) {
 	loader.AccessibleProjects = func(int) ([]int, error) { return []int{1, 2}, nil }
 	if _, _, _, err := loader.Prepare(req, mustParse(t, `{"where":{"clauses":[{"field":"project","operator":"=","value":2}]}}`)); !errors.Is(err, ErrUnknownReference) {
 		t.Fatalf("a shared query may not reference another project: %v", err)
+	}
+}
+
+func TestEndOfWeekOnSunday(t *testing.T) {
+	sunday := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	monday := sunday.AddDate(0, 0, 1)
+	if got, _ := ResolveDate("@end_of_week", sunday); got.Format("2006-01-02") != "2026-11-15" {
+		t.Fatalf("on a Sunday @end_of_week is that day, got %s", got.Format("2006-01-02"))
+	}
+	if got, _ := ResolveDate("@end_of_week", monday); got.Format("2006-01-02") != "2026-11-22" {
+		t.Fatalf("on a Monday @end_of_week is the coming Sunday, got %s", got.Format("2006-01-02"))
+	}
+}
+
+func TestCompileBetweenDates(t *testing.T) {
+	ctx := testCtx() // Wednesday 2026-11-11
+	c := compileRaw(t, `{"where":{"clauses":[{"field":"due_date","operator":"between","value":["@start_of_week","@end_of_week"]}]}}`, ctx)
+	if !strings.Contains(c.Where, "t.due_date BETWEEN $") {
+		t.Fatalf("expected a BETWEEN:\n%s", c.Where)
+	}
+	n := len(c.Args)
+	if c.Args[n-2] != "2026-11-09" || c.Args[n-1] != "2026-11-15" {
+		t.Fatalf("expected this week's Monday..Sunday, got %v", c.Args[n-2:])
+	}
+	// Reversed ends still mean the same range.
+	c = compileRaw(t, `{"where":{"clauses":[{"field":"due_date","operator":"between","value":["@end_of_week","@start_of_week"]}]}}`, ctx)
+	n = len(c.Args)
+	if c.Args[n-2] != "2026-11-09" || c.Args[n-1] != "2026-11-15" {
+		t.Fatalf("reversed range not reordered: %v", c.Args[n-2:])
 	}
 }
