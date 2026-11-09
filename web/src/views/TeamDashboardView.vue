@@ -200,7 +200,7 @@ const burndownStatus = computed(() => {
       @select-project="selectProject"
       @add-project="router.push('/projects')"
       @edit-project="() => router.push('/projects')"
-      @add-view="router.push('/views')"
+      @add-view="router.push('/views/new')"
     />
 
     <div class="flex-grow-1 p-3 p-md-4 overflow-auto d-flex flex-column justify-content-between">

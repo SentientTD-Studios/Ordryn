@@ -6,12 +6,14 @@ import {
   definitionProblems,
   describeClause,
   emptyDefinition,
+  filterToDefinition,
   fixClause,
   groupDepth,
   isValidDateValue,
   newClause,
   parseNumberList,
   pruneEmptyGroups,
+  rowJoin,
 } from './queryDefinition.ts'
 
 const fields: QueryField[] = [
@@ -97,7 +99,10 @@ describe('queryDefinition', () => {
     assert.equal(groupDepth(tree), 3)
     assert.deepEqual(pruneEmptyGroups(tree), {
       op: 'and',
-      clauses: [{ field: 'title', operator: 'contains', value: 'x' }, { op: 'or', clauses: [{ field: 'completed', operator: '=', value: true }] }],
+      clauses: [
+        { field: 'title', operator: 'contains', value: 'x' },
+        { join: 'and', op: 'or', clauses: [{ field: 'completed', operator: '=', value: true }] },
+      ],
     })
   })
 
@@ -129,5 +134,40 @@ describe('queryDefinition', () => {
 
   it('parses number lists', () => {
     assert.deepEqual(parseNumberList('1, 2,,x,3'), [1, 2, 3])
+  })
+
+  it('gives every row but the first a connector', () => {
+    const group: QueryNode = {
+      op: 'or',
+      clauses: [
+        { field: 'title', operator: 'contains', value: 'a' },
+        { field: 'title', operator: 'contains', value: 'b' },
+        { join: 'and', field: 'title', operator: 'contains', value: 'c' },
+      ],
+    }
+    assert.equal(rowJoin(group, 0), undefined)
+    assert.equal(rowJoin(group, 1), 'or')
+    assert.equal(rowJoin(group, 2), 'and')
+    // Removing the first row must not leave a leading connector behind.
+    const pruned = pruneEmptyGroups({ op: 'and', clauses: [{ op: 'and', clauses: [] }, { join: 'or', field: 'title', operator: 'contains', value: 'x' }] })
+    assert.deepEqual(pruned.clauses, [{ field: 'title', operator: 'contains', value: 'x' }])
+  })
+
+  it('turns task-list filters into a starting query', () => {
+    const d = filterToDefinition(
+      { project: '4', status: 'incomplete', due: 'through_week', tag: '7,Urgent', claimed: 'me', sort: 'priority' },
+      (id) => (id === 7 ? 'Work' : undefined),
+    )
+    assert.deepEqual(d.scope.projects, [4])
+    assert.equal(d.scope.include_personal, false)
+    assert.deepEqual(d.where.clauses, [
+      { field: 'completed', operator: '=', value: false },
+      { join: 'and', field: 'due_date', operator: 'between', value: ['@today', '@end_of_week'] },
+      { join: 'and', field: 'completed', operator: '=', value: false },
+      { join: 'and', field: 'tags', operator: 'in', value: ['work', 'urgent'] },
+      { join: 'and', field: 'claimed_by', operator: '=', value: '@me' },
+    ])
+    assert.deepEqual(d.sort, [{ field: 'priority', dir: 'desc' }])
+    assert.deepEqual(filterToDefinition({}, () => undefined).where.clauses, [])
   })
 })

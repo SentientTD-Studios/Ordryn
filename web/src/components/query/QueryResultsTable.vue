@@ -101,6 +101,10 @@ function cell(t: QueryTask, col: string): string {
       return shortDate(t.modified_at)
     case 'completed_date':
       return t.completed_date ?? ''
+    case 'status_changed_date':
+      return t.status_changed_date ?? ''
+    case 'days_in_status':
+      return t.days_in_status != null ? String(t.days_in_status) : ''
     case 'claimed_by':
       return t.claimed_by_name ?? ''
     case 'created_by':

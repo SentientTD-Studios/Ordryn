@@ -11335,12 +11335,16 @@ components:
     QueryNode:
       type: object
       description: >
-        A group (`op` and `clauses`) or a clause (`field`, `operator`, `value`). Fields include id,
+        A group (`op` and `clauses`) or a clause (`field`, `operator`, `value`). Every row in a group
+        but the first has a `join` ("and" or "or") connecting it to the row above; AND binds tighter
+        than OR, so "A and B or C" is "(A and B) or C" (nest a group to change that). A row without a
+        join uses its group's `op`. Fields include id,
         title, description, text, project, completed, workflow_status, priority, tags, due_date,
-        created_date, modified_date, completed_date, claimed_by, created_by, sprint, estimate,
+        created_date, modified_date, completed_date, status_changed_date, days_in_status, claimed_by, created_by, sprint, estimate,
         is_subtask, has_subtasks, favorite and cf:<custom field key>. Date values accept YYYY-MM-DD
         or macros such as @today-7, @start_of_week and @end_of_week; `between` (dates only) takes [from, to] and includes both ends; people accept @me; sprints accept @current_sprint.
       properties:
+        join: { type: string, enum: [and, or] }
         op: { type: string, enum: [and, or] }
         clauses:
           type: array

@@ -1,4 +1,5 @@
 import type {
+  SavedViewFilter,
   QueryDefinition,
   QueryField,
   QueryFieldType,
@@ -195,8 +196,88 @@ export function definitionProblems(d: QueryDefinition, limits: Record<string, nu
 /** Drop empty groups so the saved form matches what the server stores. */
 export function pruneEmptyGroups(n: QueryNode): QueryNode {
   if (!isGroup(n)) return n
-  const clauses = (n.clauses || []).map(pruneEmptyGroups).filter((c) => !isGroup(c) || (c.clauses || []).length > 0)
-  return { op: n.op || 'and', clauses }
+  const kept = (n.clauses || []).map(pruneEmptyGroups).filter((c) => !isGroup(c) || (c.clauses || []).length > 0)
+  const clauses = kept.map((c, i) => withJoin(c, i === 0 ? undefined : (c.join ?? n.op ?? 'and')))
+  const out: QueryNode = { op: n.op || 'and', clauses }
+  if (n.join) out.join = n.join
+  return out
+}
+
+/** The connector a row shows: its own, else its group's op. The first row has none. */
+export function rowJoin(group: QueryNode, index: number): 'and' | 'or' | undefined {
+  if (index === 0) return undefined
+  return group.clauses?.[index]?.join ?? group.op ?? 'and'
+}
+
+/** n with its connector set (or removed). */
+export function withJoin(n: QueryNode, join: 'and' | 'or' | undefined): QueryNode {
+  const { join: _old, ...rest } = n
+  return join ? { join, ...rest } : rest
+}
+
+/**
+ * Turn task-list filters into a starting query, mirroring the server's own
+ * conversion. tagName resolves a tag id to its name.
+ */
+export function filterToDefinition(f: SavedViewFilter, tagName: (id: number) => string | undefined): QueryDefinition {
+  const d = emptyDefinition()
+  const add = (field: string, operator: QueryOperator, value: QueryValue = null) =>
+    d.where.clauses!.push(d.where.clauses!.length ? { join: 'and', field, operator, value } : { field, operator, value })
+  const project = (f.project || '').trim().toLowerCase()
+  if (project === 'none' || project === '0') add('project', 'is_empty')
+  else if (/^\d+$/.test(project)) d.scope = { ...d.scope, projects: [Number(project)], include_personal: false }
+
+  if (f.status === 'complete' || f.status === 'completed') add('completed', '=', true)
+  else if (f.status === 'incomplete') add('completed', '=', false)
+
+  switch (f.due) {
+    case 'overdue':
+      add('due_date', '<', '@today')
+      add('completed', '=', false)
+      break
+    case 'today':
+      add('due_date', '=', '@today')
+      break
+    case 'week':
+      add('due_date', 'between', ['@today', '@today+7'])
+      break
+    case 'through_week':
+      add('due_date', 'between', ['@today', '@end_of_week'])
+      add('completed', '=', false)
+      break
+    case 'none':
+      add('due_date', 'is_empty')
+      break
+  }
+  if (f.due_from) add('due_date', '>=', f.due_from)
+  if (f.due_to) add('due_date', '<=', f.due_to)
+  if (f.completed === 'week') {
+    add('completed', '=', true)
+    add('completed_date', '>=', '@start_of_week')
+  }
+
+  const priorities = (f.priority || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => /^[0-3]$/.test(p))
+    .map(Number)
+  if (priorities.length === 1) add('priority', '=', priorities[0])
+  else if (priorities.length > 1) add('priority', 'in', priorities)
+
+  const tags = (f.tag || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => (/^\d+$/.test(t) ? tagName(Number(t)) : t))
+    .filter((t): t is string => !!t)
+    .map((t) => t.toLowerCase())
+  if (tags.length) add('tags', 'in', tags)
+
+  if (f.claimed === 'me') add('claimed_by', '=', '@me')
+  else if (f.claimed === 'none') add('claimed_by', 'is_empty')
+  if (f.search?.trim()) add('text', 'contains', f.search.trim())
+  if (f.sort === 'priority') d.sort = [{ field: 'priority', dir: 'desc' }]
+  return d
 }
 
 /** A human-readable label for a clause value. */

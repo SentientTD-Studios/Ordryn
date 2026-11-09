@@ -151,7 +151,9 @@ func queryTaskRows(ctx context.Context, tx pgx.Tx, where, orderBy, limit string,
 		COALESCE(t.user_id, 0), COALESCE(NULLIF(qcr.full_name, ''), NULLIF(qcr.user_name, ''), qcr.email, ''),
 		CASE WHEN COALESCE(t.completed, false) THEN TO_CHAR(((COALESCE(
 			(SELECT MAX(qte.created_at) FROM task_events qte WHERE qte.task_id = t.id AND qte.event_type = 'completed'),
-			t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE ` + tz + `), 'YYYY-MM-DD') ELSE '' END
+			t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE ` + tz + `), 'YYYY-MM-DD') ELSE '' END,
+		COALESCE(TO_CHAR(((` + query.StatusEnteredSQL + ` AT TIME ZONE 'UTC') AT TIME ZONE ` + tz + `), 'YYYY-MM-DD'), ''),
+		((NOW() AT TIME ZONE ` + tz + `)::date - ((` + query.StatusEnteredSQL + ` AT TIME ZONE 'UTC') AT TIME ZONE ` + tz + `)::date)
 		FROM tasks t` + query.SelectJoins + ` WHERE ` + where + ` ORDER BY ` + orderBy + limit
 	rows, err := tx.Query(ctx, sqlText, args...)
 	if err != nil {
@@ -161,12 +163,16 @@ func queryTaskRows(ctx context.Context, tx pgx.Tx, where, orderBy, limit string,
 	out := make([]Task, 0)
 	for rows.Next() {
 		var t Task
-		var pid, parentID sql.NullInt64
+		var pid, parentID, days sql.NullInt64
 		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Completed,
 			&t.DateAdded, &t.DueDate, &t.DateCreated, &t.DateModified,
 			&t.IsFavorite, &t.Position, &t.Priority, &pid, &t.ProjectName, &parentID,
-			&t.CreatedByID, &t.CreatedByName, &t.CompletedDate); err != nil {
+			&t.CreatedByID, &t.CreatedByName, &t.CompletedDate, &t.StatusChangedDate, &days); err != nil {
 			return nil, err
+		}
+		if days.Valid {
+			d := int(days.Int64)
+			t.DaysInStatus = &d
 		}
 		if pid.Valid {
 			t.ProjectID = int(pid.Int64)

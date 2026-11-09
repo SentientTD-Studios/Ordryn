@@ -105,7 +105,13 @@ func (s Scope) Personal() bool {
 }
 
 // Node is either a group (Op + Clauses) or a clause (Field + Operator + Value).
+//
+// Join ("and" or "or") connects a node to the sibling before it, so every row
+// in a group picks its own connector; the first row has none. A row without a
+// Join uses its group's Op. AND binds tighter than OR: "A and B or C" is
+// "(A and B) or C"; nest a group to change that.
 type Node struct {
+	Join     string          `json:"join,omitempty"`
 	Op       string          `json:"op,omitempty"`
 	Clauses  []Node          `json:"clauses,omitempty"`
 	Field    string          `json:"field,omitempty"`
@@ -337,6 +343,13 @@ func (z *normalizer) node(n Node, depth int) (Node, error) {
 		}
 		out := Node{Op: op, Clauses: []Node{}}
 		for _, c := range n.Clauses {
+			join := strings.ToLower(strings.TrimSpace(c.Join))
+			if join == "" {
+				join = op
+			}
+			if join != GroupAnd && join != GroupOr {
+				return Node{}, invalid("join must be \"and\" or \"or\".")
+			}
 			nc, err := z.node(c, depth+1)
 			if err != nil {
 				return Node{}, err
@@ -344,6 +357,12 @@ func (z *normalizer) node(n Node, depth int) (Node, error) {
 			// Drop empty groups so they never compile to "()".
 			if nc.IsGroup() && len(nc.Clauses) == 0 {
 				continue
+			}
+			// Every row but the first states its connector explicitly.
+			if len(out.Clauses) > 0 {
+				nc.Join = join
+			} else {
+				nc.Join = ""
 			}
 			out.Clauses = append(out.Clauses, nc)
 		}
@@ -492,26 +511,28 @@ func (k fieldKindInfo) allows(op string) bool {
 
 // builtinFields maps each built-in field to its kind.
 var builtinFields = map[string]fieldKindInfo{
-	"id":              {id: kNumber},
-	"title":           {id: kText},
-	"description":     {id: kText},
-	"text":            {id: kSearch},
-	"project":         {id: kProject},
-	"completed":       {id: kBool},
-	"workflow_status": {id: kStatus},
-	"priority":        {id: kNumber, priority: true},
-	"tags":            {id: kTags},
-	"due_date":        {id: kDate},
-	"created_date":    {id: kDate},
-	"modified_date":   {id: kDate},
-	"completed_date":  {id: kDate},
-	"claimed_by":      {id: kUser},
-	"created_by":      {id: kUser},
-	"sprint":          {id: kSprint},
-	"estimate":        {id: kNumber},
-	"is_subtask":      {id: kBool},
-	"has_subtasks":    {id: kBool},
-	"favorite":        {id: kBool},
+	"id":                  {id: kNumber},
+	"title":               {id: kText},
+	"description":         {id: kText},
+	"text":                {id: kSearch},
+	"project":             {id: kProject},
+	"completed":           {id: kBool},
+	"workflow_status":     {id: kStatus},
+	"priority":            {id: kNumber, priority: true},
+	"tags":                {id: kTags},
+	"due_date":            {id: kDate},
+	"created_date":        {id: kDate},
+	"modified_date":       {id: kDate},
+	"completed_date":      {id: kDate},
+	"status_changed_date": {id: kDate},
+	"days_in_status":      {id: kNumber},
+	"claimed_by":          {id: kUser},
+	"created_by":          {id: kUser},
+	"sprint":              {id: kSprint},
+	"estimate":            {id: kNumber},
+	"is_subtask":          {id: kBool},
+	"has_subtasks":        {id: kBool},
+	"favorite":            {id: kBool},
 }
 
 // BuiltinFieldNames lists the built-in queryable fields, sorted for display.
@@ -519,7 +540,7 @@ func BuiltinFieldNames() []string {
 	return []string{
 		"id", "title", "description", "text", "project", "completed", "workflow_status",
 		"priority", "tags", "due_date", "created_date", "modified_date", "completed_date",
-		"claimed_by", "created_by", "sprint", "estimate", "is_subtask", "has_subtasks", "favorite",
+		"status_changed_date", "days_in_status", "claimed_by", "created_by", "sprint", "estimate", "is_subtask", "has_subtasks", "favorite",
 	}
 }
 
@@ -618,7 +639,7 @@ func (k fieldKindInfo) normalizeValue(field string, raw json.RawMessage) (any, e
 			}
 			return int(f), nil
 		}
-		if field == "id" || field == "estimate" {
+		if field == "id" || field == "estimate" || field == "days_in_status" {
 			if f != float64(int64(f)) {
 				return nil, invalid("%s must be a whole number.", field)
 			}

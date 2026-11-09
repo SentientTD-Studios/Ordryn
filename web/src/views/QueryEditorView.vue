@@ -85,7 +85,7 @@ async function load() {
       const fromQuery = Number(route.query.project)
       sharedProjectId.value = Number.isFinite(fromQuery) && fromQuery > 0 ? fromQuery : null
       name.value = ''
-      def.value = emptyDefinition()
+      def.value = draftFromHistory() ?? emptyDefinition()
       if (sharedProjectId.value) narrowToSharedProject()
       await loadOptions(sharedProjectId.value)
       editorOpen.value = true
@@ -105,6 +105,18 @@ async function load() {
     loadError.value = err instanceof APIError && err.status === 404 ? 'This query does not exist or you cannot open it.' : 'Failed to load the query.'
   } finally {
     loading.value = false
+  }
+}
+
+/** A starting query handed over by "+ View" on the task list (current filters). */
+function draftFromHistory(): QueryDefinition | null {
+  try {
+    const raw = (window.history.state as { draft?: string } | null)?.draft
+    if (!raw) return null
+    const d = JSON.parse(raw) as QueryDefinition
+    return d && d.where && d.scope ? { ...emptyDefinition(), ...d } : null
+  } catch {
+    return null
   }
 }
 

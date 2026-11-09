@@ -418,3 +418,44 @@ func TestCompileBetweenDates(t *testing.T) {
 		t.Fatalf("reversed range not reordered: %v", c.Args[n-2:])
 	}
 }
+
+func TestPerRowJoins(t *testing.T) {
+	// Old definitions (no joins) take their group's op; the first row has none.
+	d, err := Normalize(mustParse(t, `{"where":{"op":"or","clauses":[
+		{"field":"id","operator":"=","value":1},
+		{"field":"id","operator":"=","value":2}]}}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Where.Clauses[0].Join != "" || d.Where.Clauses[1].Join != "or" {
+		t.Fatalf("joins not filled from op: %+v", d.Where.Clauses)
+	}
+
+	// A and B or C and D  =>  (A AND B) OR (C AND D)
+	c := compileRaw(t, `{"where":{"clauses":[
+		{"field":"id","operator":"=","value":1},
+		{"join":"and","field":"id","operator":"=","value":2},
+		{"join":"OR","field":"id","operator":"=","value":3},
+		{"join":"and","field":"id","operator":"=","value":4}]}}`, testCtx())
+	want := "(((t.id = $3) AND (t.id = $4)) OR ((t.id = $5) AND (t.id = $6)))"
+	if !strings.HasSuffix(c.Where, want) {
+		t.Fatalf("AND must bind tighter than OR, want suffix %s:\n%s", want, c.Where)
+	}
+
+	// The first row's join is meaningless and dropped, also after an empty group is removed.
+	d, err = Normalize(mustParse(t, `{"where":{"clauses":[
+		{"op":"and","clauses":[]},
+		{"join":"or","field":"id","operator":"=","value":1}]}}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Where.Clauses) != 1 || d.Where.Clauses[0].Join != "" {
+		t.Fatalf("first row should have no join: %+v", d.Where.Clauses)
+	}
+
+	if _, err := Normalize(mustParse(t, `{"where":{"clauses":[
+		{"field":"id","operator":"=","value":1},
+		{"join":"xor","field":"id","operator":"=","value":2}]}}`), nil); err == nil {
+		t.Fatal("bad join accepted")
+	}
+}

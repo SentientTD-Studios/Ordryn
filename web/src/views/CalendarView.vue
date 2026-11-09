@@ -215,7 +215,7 @@ useLiveUpdates((event, batch) => {
       @select-project="selectProject"
       @add-project="router.push('/projects')"
       @edit-project="() => router.push('/projects')"
-      @add-view="router.push('/views')"
+      @add-view="router.push('/views/new')"
     />
 
     <!-- Main Content Area -->

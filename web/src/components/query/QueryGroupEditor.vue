@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { QueryField, QueryNode, QueryOptions } from '@/api/types'
-import { isGroup, newClause } from '@/utils/queryDefinition'
+import { isGroup, newClause, rowJoin, withJoin } from '@/utils/queryDefinition'
 import QueryClauseRow from './QueryClauseRow.vue'
 
 defineOptions({ name: 'QueryGroupEditor' })
@@ -20,74 +20,66 @@ const emit = defineEmits<{
   remove: []
 }>()
 
+const uid = `qg-${Math.random().toString(36).slice(2, 9)}`
 const depth = () => props.depth ?? 1
 
 function clauses(): QueryNode[] {
   return props.node.clauses ?? []
 }
 
-function update(clauses: QueryNode[]) {
-  emit('update:node', { op: props.node.op ?? 'and', clauses })
+/** Emit the group with its rows; every row but the first states its connector. */
+function update(next: QueryNode[]) {
+  const fixed = next.map((c, i) => withJoin(c, i === 0 ? undefined : (c.join ?? 'and')))
+  const out: QueryNode = { op: props.node.op ?? 'and', clauses: fixed }
+  if (props.node.join) out.join = props.node.join
+  emit('update:node', out)
 }
 
-function setOp(op: 'and' | 'or') {
-  emit('update:node', { op, clauses: clauses() })
+/** Rows with every connector made explicit (older queries rely on the group's op). */
+function explicitRows(): QueryNode[] {
+  return clauses().map((c, i) => withJoin(c, rowJoin(props.node, i)))
+}
+
+function setJoin(i: number, join: 'and' | 'or') {
+  const next = explicitRows()
+  next[i] = withJoin(next[i], join)
+  update(next)
 }
 
 function replaceAt(i: number, n: QueryNode) {
-  const next = [...clauses()]
-  next[i] = n
+  const next = explicitRows()
+  // Child editors don't know their connector; keep the one this row had.
+  next[i] = withJoin(n, rowJoin(props.node, i))
   update(next)
 }
 
 function removeAt(i: number) {
-  const next = [...clauses()]
+  const next = explicitRows()
   next.splice(i, 1)
   update(next)
 }
 
+function firstField() {
+  return props.fields.find((f) => f.id === 'title') ?? props.fields[0]
+}
+
 function addClause() {
-  const firstField = props.fields.find((f) => f.id === 'title') ?? props.fields[0]
-  update([...clauses(), newClause(firstField)])
+  update([...explicitRows(), { join: 'and', ...newClause(firstField()) }])
 }
 
 function addGroup() {
-  const firstField = props.fields.find((f) => f.id === 'title') ?? props.fields[0]
-  // A new group starts with the opposite join so it is useful straight away.
-  update([...clauses(), { op: props.node.op === 'or' ? 'and' : 'or', clauses: [newClause(firstField)] }])
+  update([...explicitRows(), { join: 'and', op: 'and', clauses: [newClause(firstField())] }])
 }
+
+const hasOr = () => clauses().some((_, i) => rowJoin(props.node, i) === 'or')
 </script>
 
 <template>
   <div class="query-group" :class="{ 'query-group-nested': depth() > 1 }">
-    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-      <div class="btn-group btn-group-sm" role="group" :aria-label="'Join clauses with'">
-        <button
-          type="button"
-          class="btn"
-          :class="node.op !== 'or' ? 'btn-primary' : 'btn-outline-primary'"
-          :disabled="readonly"
-          :aria-pressed="node.op !== 'or'"
-          @click="setOp('and')"
-        >
-          All (AND)
-        </button>
-        <button
-          type="button"
-          class="btn"
-          :class="node.op === 'or' ? 'btn-primary' : 'btn-outline-primary'"
-          :disabled="readonly"
-          :aria-pressed="node.op === 'or'"
-          @click="setOp('or')"
-        >
-          Any (OR)
-        </button>
-      </div>
-      <span class="small text-muted">
-        {{ node.op === 'or' ? 'Match tasks where any of these is true' : 'Match tasks where all of these are true' }}
-      </span>
+    <div v-if="depth() > 1" class="d-flex align-items-center mb-2">
+      <span class="small text-muted fw-semibold">Group</span>
       <button
-        v-if="depth() > 1 && !readonly"
+        v-if="!readonly"
         type="button"
         class="btn btn-sm btn-outline-secondary border-0 ms-auto"
         title="Remove group"
@@ -103,31 +95,55 @@ function addGroup() {
     </p>
 
     <ul class="list-unstyled mb-2 d-flex flex-column gap-2">
-      <li v-for="(child, i) in clauses()" :key="i">
-        <QueryGroupEditor
-          v-if="isGroup(child)"
-          :node="child"
-          :fields="fields"
-          :options="options"
-          :readonly="readonly"
-          :depth="depth() + 1"
-          :max-depth="maxDepth"
-          :hide-project-field="hideProjectField"
-          @update:node="replaceAt(i, $event)"
-          @remove="removeAt(i)"
-        />
-        <QueryClauseRow
-          v-else
-          :node="child"
-          :fields="fields"
-          :options="options"
-          :readonly="readonly"
-          :hide-project-field="hideProjectField"
-          @update:node="replaceAt(i, $event)"
-          @remove="removeAt(i)"
-        />
+      <li v-for="(child, i) in clauses()" :key="i" class="d-flex align-items-start gap-2">
+        <div class="query-join flex-shrink-0">
+          <span v-if="i === 0" class="small text-muted d-inline-block pt-1">Where</span>
+          <template v-else>
+            <label :for="`${uid}-join-${i}`" class="visually-hidden">Connect row {{ i + 1 }} with</label>
+            <select
+              :id="`${uid}-join-${i}`"
+              class="form-select form-select-sm"
+              :class="rowJoin(node, i) === 'or' ? 'query-join-or' : ''"
+              :value="rowJoin(node, i)"
+              :disabled="readonly"
+              @change="setJoin(i, ($event.target as HTMLSelectElement).value as 'and' | 'or')"
+            >
+              <option value="and">And</option>
+              <option value="or">Or</option>
+            </select>
+          </template>
+        </div>
+        <div class="flex-grow-1 min-w-0">
+          <QueryGroupEditor
+            v-if="isGroup(child)"
+            :node="child"
+            :fields="fields"
+            :options="options"
+            :readonly="readonly"
+            :depth="depth() + 1"
+            :max-depth="maxDepth"
+            :hide-project-field="hideProjectField"
+            @update:node="replaceAt(i, $event)"
+            @remove="removeAt(i)"
+          />
+          <QueryClauseRow
+            v-else
+            :node="child"
+            :fields="fields"
+            :options="options"
+            :readonly="readonly"
+            :hide-project-field="hideProjectField"
+            @update:node="replaceAt(i, $event)"
+            @remove="removeAt(i)"
+          />
+        </div>
       </li>
     </ul>
+
+    <p v-if="hasOr() && clauses().length > 2" class="small text-muted mb-2">
+      <i class="bi bi-info-circle" aria-hidden="true" />
+      “And” is applied before “Or”: <em>A and B or C</em> means <em>(A and B) or C</em>. Add a group to change the order.
+    </p>
 
     <div v-if="!readonly" class="d-flex gap-2">
       <button type="button" class="btn btn-sm btn-outline-primary" @click="addClause">
@@ -149,6 +165,15 @@ function addGroup() {
 .query-group-nested {
   border-left: 3px solid var(--bs-primary-border-subtle, #9ec5fe);
   padding-left: 0.75rem;
-  margin-left: 0.25rem;
+}
+.query-join {
+  width: 5rem;
+}
+.query-join-or {
+  font-weight: 600;
+  color: var(--bs-warning-text-emphasis, #997404);
+}
+.min-w-0 {
+  min-width: 0;
 }
 </style>

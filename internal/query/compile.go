@@ -186,15 +186,31 @@ func (b *builder) node(n Node) string {
 	if len(n.Clauses) == 0 {
 		return "TRUE"
 	}
-	joiner := " AND "
-	if n.Op == GroupOr {
-		joiner = " OR "
+	// AND binds tighter than OR: split the rows into runs at each OR, AND
+	// each run together, then OR the runs.
+	var runs [][]string
+	for i, c := range n.Clauses {
+		join := c.Join
+		if join == "" {
+			join = n.Op
+		}
+		if i == 0 || join == GroupOr {
+			runs = append(runs, nil)
+		}
+		runs[len(runs)-1] = append(runs[len(runs)-1], "("+b.node(c)+")")
 	}
-	parts := make([]string, 0, len(n.Clauses))
-	for _, c := range n.Clauses {
-		parts = append(parts, "("+b.node(c)+")")
+	if len(runs) == 1 {
+		return strings.Join(runs[0], " AND ")
 	}
-	return strings.Join(parts, joiner)
+	ors := make([]string, 0, len(runs))
+	for _, r := range runs {
+		if len(r) == 1 {
+			ors = append(ors, r[0])
+		} else {
+			ors = append(ors, "("+strings.Join(r, " AND ")+")")
+		}
+	}
+	return strings.Join(ors, " OR ")
 }
 
 // ---- clause compilation ----
@@ -235,6 +251,14 @@ func (b *builder) clause(n Node) string {
 		tz := b.tzArg()
 		expr := "(CASE WHEN COALESCE(t.completed, false) THEN ((COALESCE((SELECT MAX(qte.created_at) FROM task_events qte WHERE qte.task_id = t.id AND qte.event_type = 'completed'), t.date_modified, t.time_stamp) AT TIME ZONE 'UTC') AT TIME ZONE " + tz + ")::date END)"
 		return b.date(expr, n, vals)
+	case "status_changed_date":
+		return b.date("(("+StatusEnteredSQL+" AT TIME ZONE 'UTC') AT TIME ZONE "+b.tzArg()+")::date", n, vals)
+	case "days_in_status":
+		// Whole days between the caller's today and the day the task entered
+		// its status, in the caller's timezone.
+		today := b.arg(b.ctx.Today.Format("2006-01-02"))
+		expr := "(" + today + "::date - ((" + StatusEnteredSQL + " AT TIME ZONE 'UTC') AT TIME ZONE " + b.tzArg() + ")::date)"
+		return b.scalar(expr, n, int64Values(vals), "bigint")
 	case "project":
 		return b.idSet("t.project_id", n, b.allowed(vals, b.ctx.Projects), nil)
 	case "claimed_by":
@@ -525,6 +549,14 @@ func (b *builder) customClause(n Node) string {
 	return "FALSE"
 }
 
+// StatusEnteredSQL is when task t entered its current workflow status: its
+// last status move, or its creation if it never moved (the same rule the
+// automation "in status for N days" trigger uses). It is NULL for tasks with
+// no workflow status. The value is a UTC timestamp.
+const StatusEnteredSQL = `(CASE WHEN t.status_id IS NOT NULL THEN COALESCE(
+	(SELECT MAX(qse.created_at) FROM task_events qse WHERE qse.task_id = t.id AND qse.event_type = 'status_changed'),
+	t.time_stamp) END)`
+
 // ---- sorting ----
 
 var sortExprs = map[string]string{
@@ -541,12 +573,15 @@ var sortExprs = map[string]string{
 	"claimed_by":      "LOWER(COALESCE(NULLIF(quc.full_name, ''), NULLIF(quc.user_name, ''), quc.email))",
 	"created_by":      "LOWER(COALESCE(NULLIF(qcr.full_name, ''), NULLIF(qcr.user_name, ''), qcr.email))",
 	"sprint":          "qsp.start_date",
+	// Longest in status first when descending.
+	"status_changed_date": StatusEnteredSQL,
+	"days_in_status":      "(NOW() AT TIME ZONE 'UTC') - " + StatusEnteredSQL,
 }
 
 // SortableFields lists the fields results can be sorted by.
 func SortableFields() []string {
 	return []string{"id", "title", "project", "priority", "due_date", "created_date", "modified_date",
-		"completed", "workflow_status", "estimate", "claimed_by", "created_by", "sprint"}
+		"completed", "workflow_status", "status_changed_date", "days_in_status", "estimate", "claimed_by", "created_by", "sprint"}
 }
 
 func orderBy(keys []SortKey) string {
