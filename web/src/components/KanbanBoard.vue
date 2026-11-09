@@ -18,12 +18,19 @@
     <div
       v-else
       class="kanban-columns d-flex gap-3 overflow-auto pb-2"
+      :class="{ 'is-resizing': resizingId !== null }"
+      :style="{ '--kanban-col-width': `${columnWidth}px` }"
     >
       <div
         v-for="col in statuses"
         :key="col.id"
         class="kanban-column flex-shrink-0"
-        :class="{ 'is-collapsed': isCollapsed(col.id), 'is-over-wip': isOverWip(col) }"
+        :class="{
+          'is-collapsed': isCollapsed(col.id),
+          'is-over-wip': isOverWip(col),
+          'is-resizing': resizingId === col.id || resizingId === 'all',
+        }"
+        :style="columnStyle(col.id)"
         role="region"
         :aria-label="columnAriaLabel(col)"
       >
@@ -40,6 +47,22 @@
           <span class="kanban-column-count" :class="{ 'is-over': isOverWip(col) }">{{ countLabel(col) }}</span>
           <span class="kanban-collapsed-title">{{ col.name }}</span>
         </button>
+        <div
+          v-if="!isCollapsed(col.id)"
+          class="kanban-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          :aria-valuenow="widthFor(col.id)"
+          :aria-valuemin="COLUMN_WIDTH_MIN"
+          :aria-valuemax="COLUMN_WIDTH_MAX"
+          :aria-label="`Resize column ${col.name}`"
+          title="Drag to resize this column · Shift+drag to resize all · double-click to reset (Shift: all)"
+          tabindex="0"
+          @pointerdown="startColumnResize($event, col.id)"
+          @dblclick="resetColumnWidth($event, col.id)"
+          @keydown.left.prevent="nudgeColumnWidth($event, col.id, -20)"
+          @keydown.right.prevent="nudgeColumnWidth($event, col.id, 20)"
+        />
         <div v-show="!isCollapsed(col.id)" class="kanban-column-header mb-2 px-1">
           <div class="d-flex align-items-center justify-content-between gap-2">
             <div class="d-flex align-items-center gap-1 min-w-0">
@@ -141,7 +164,19 @@
               </div>
 
               <div class="flex-grow-1 min-w-0">
+                <input
+                  v-if="renamingId === task.id"
+                  :ref="setRenameInputEl"
+                  v-model="renameVal"
+                  type="text"
+                  class="inline-edit-input kanban-card-title"
+                  :aria-label="`Rename task ${task.title}`"
+                  @keydown.enter.prevent="saveRename(task)"
+                  @keydown.esc.stop.prevent="cancelRename"
+                  @blur="saveRename(task)"
+                />
                 <button
+                  v-else
                   type="button"
                   class="btn btn-link text-start text-decoration-none p-0 kanban-card-title task-title fw-semibold"
                   @click="emit('open-task', task.id)"
@@ -265,6 +300,16 @@
                   </button>
                 </div>
               </div>
+              <button
+                v-if="canEditTasks && renamingId !== task.id"
+                type="button"
+                class="btn btn-sm text-muted border-0 p-1 flex-shrink-0 hover-reveal kanban-rename-btn"
+                title="Rename task"
+                aria-label="Rename task"
+                @click.stop="startRename(task)"
+              >
+                <i class="bi bi-input-cursor-text" />
+              </button>
             </div>
           </div>
         </div>
@@ -385,6 +430,43 @@ const canDrag = computed(
 )
 const canClaim = computed(() => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_CLAIM))
 const canReorder = computed(() => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_REORDER))
+const canEditTasks = computed(() => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_EDIT))
+
+// Inline rename. Clicking the title still opens task details; renaming goes
+// through the explicit hover action so the two don't compete for one click.
+const renamingId = ref<number | null>(null)
+const renameVal = ref('')
+let renameInputEl: HTMLInputElement | null = null
+
+function setRenameInputEl(el: unknown) {
+  renameInputEl = el instanceof HTMLInputElement ? el : null
+}
+
+async function startRename(task: Task) {
+  if (!canEditTasks.value) return
+  renameVal.value = task.title
+  renamingId.value = task.id
+  await nextTick()
+  renameInputEl?.focus()
+  renameInputEl?.select()
+}
+
+function cancelRename() {
+  renamingId.value = null
+}
+
+async function saveRename(task: Task) {
+  if (renamingId.value !== task.id) return
+  renamingId.value = null
+  const trimmed = renameVal.value.trim()
+  if (!trimmed || trimmed === task.title) return
+  try {
+    emit('task-updated', await api.patchTask(task.id, { title: trimmed }))
+    toast.push('Task updated', 'success')
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
+  }
+}
 const canCreate = computed(
   () => hasProjectPerm(boardProject.value, PROJECT_PERMS.TASKS_CREATE) && !boardProject.value?.archived,
 )
@@ -734,10 +816,143 @@ function toggleCollapsed(statusId: number) {
   saveCollapsed()
 }
 
+// Column widths are a per-person view preference kept in this browser.
+// There's a board-wide width (shared by every board, since it tracks screen
+// size) plus optional per-column overrides stored per project. A plain drag
+// resizes one column; Shift+drag sets the shared width and clears overrides.
+const COLUMN_WIDTH_DEFAULT = 280
+const COLUMN_WIDTH_MIN = 240
+const COLUMN_WIDTH_MAX = 640
+const COLUMN_WIDTH_KEY = 'ordryn.kanbanColumnWidth'
+
+function columnWidthsStorageKey(projectId: number) {
+  return `ordryn.kanbanColumnWidths.${projectId}`
+}
+
+function clampColumnWidth(w: number) {
+  return Math.round(Math.min(COLUMN_WIDTH_MAX, Math.max(COLUMN_WIDTH_MIN, w)))
+}
+
+function loadColumnWidth(): number {
+  try {
+    const n = Number(localStorage.getItem(COLUMN_WIDTH_KEY))
+    return Number.isFinite(n) && n > 0 ? clampColumnWidth(n) : COLUMN_WIDTH_DEFAULT
+  } catch {
+    return COLUMN_WIDTH_DEFAULT
+  }
+}
+
+function loadColumnWidths(): Record<number, number> {
+  try {
+    const raw = localStorage.getItem(columnWidthsStorageKey(props.projectId))
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null
+    const out: Record<number, number> = {}
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        const id = Number(k)
+        if (Number.isInteger(id) && typeof v === 'number' && Number.isFinite(v)) out[id] = clampColumnWidth(v)
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+const columnWidth = ref(loadColumnWidth())
+const columnWidths = ref<Record<number, number>>(loadColumnWidths())
+const resizingId = ref<number | 'all' | null>(null)
+
+function widthFor(statusId: number): number {
+  return columnWidths.value[statusId] ?? columnWidth.value
+}
+
+function columnStyle(statusId: number) {
+  const w = columnWidths.value[statusId]
+  return w === undefined ? undefined : { '--kanban-col-width': `${w}px` }
+}
+
+function saveColumnWidths() {
+  try {
+    if (columnWidth.value === COLUMN_WIDTH_DEFAULT) localStorage.removeItem(COLUMN_WIDTH_KEY)
+    else localStorage.setItem(COLUMN_WIDTH_KEY, String(columnWidth.value))
+
+    // Drop overrides for columns that no longer exist.
+    const live = new Set(statuses.value.map((s) => s.id))
+    const entries = Object.entries(columnWidths.value).filter(([id]) => live.size === 0 || live.has(Number(id)))
+    const key = columnWidthsStorageKey(props.projectId)
+    if (entries.length) localStorage.setItem(key, JSON.stringify(Object.fromEntries(entries)))
+    else localStorage.removeItem(key)
+  } catch {
+    // Storage unavailable; widths still apply for this session.
+  }
+}
+
+function setColumnWidth(statusId: number, w: number) {
+  const next = { ...columnWidths.value }
+  // An override equal to the shared width is redundant.
+  if (w === columnWidth.value) delete next[statusId]
+  else next[statusId] = w
+  columnWidths.value = next
+}
+
+function setAllColumnWidths(w: number) {
+  columnWidth.value = w
+  columnWidths.value = {}
+}
+
+function startColumnResize(e: PointerEvent, statusId: number) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  const handle = e.currentTarget as HTMLElement
+  const all = e.shiftKey
+  const startX = e.clientX
+  const startWidth = widthFor(statusId)
+  resizingId.value = all ? 'all' : statusId
+  handle.setPointerCapture(e.pointerId)
+
+  const onMove = (ev: PointerEvent) => {
+    const w = clampColumnWidth(startWidth + ev.clientX - startX)
+    if (all) setAllColumnWidths(w)
+    else setColumnWidth(statusId, w)
+  }
+  const onEnd = () => {
+    handle.removeEventListener('pointermove', onMove)
+    handle.removeEventListener('pointerup', onEnd)
+    handle.removeEventListener('pointercancel', onEnd)
+    resizingId.value = null
+    saveColumnWidths()
+  }
+  handle.addEventListener('pointermove', onMove)
+  handle.addEventListener('pointerup', onEnd)
+  handle.addEventListener('pointercancel', onEnd)
+}
+
+function nudgeColumnWidth(e: KeyboardEvent, statusId: number, delta: number) {
+  const w = clampColumnWidth(widthFor(statusId) + delta)
+  if (e.shiftKey) setAllColumnWidths(w)
+  else setColumnWidth(statusId, w)
+  saveColumnWidths()
+}
+
+function resetColumnWidth(e: MouseEvent, statusId: number) {
+  if (e.shiftKey) {
+    setAllColumnWidths(COLUMN_WIDTH_DEFAULT)
+  } else {
+    const next = { ...columnWidths.value }
+    delete next[statusId]
+    columnWidths.value = next
+  }
+  saveColumnWidths()
+}
+
 loadCollapsed()
 watch(
   () => props.projectId,
-  () => loadCollapsed(),
+  () => {
+    loadCollapsed()
+    columnWidths.value = loadColumnWidths()
+  },
 )
 
 async function loadStatuses(quiet = false) {
@@ -911,7 +1126,8 @@ onBeforeUnmount(destroySortables)
 }
 
 .kanban-column {
-  width: min(280px, 85vw);
+  position: relative;
+  width: min(var(--kanban-col-width, 280px), 85vw);
   scroll-snap-align: start;
   background: var(--ordryn-muted-bg, var(--bs-tertiary-bg, #f8f9fa));
   border: 1px solid var(--ordryn-card-border, var(--bs-border-color, #dee2e6));
@@ -921,6 +1137,47 @@ onBeforeUnmount(destroySortables)
   display: flex;
   flex-direction: column;
   max-height: min(70vh, 42rem);
+}
+
+/* Sits in the gap to the column's right; drag it to widen every column. */
+.kanban-resize-handle {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  right: calc(-0.5rem - 4px);
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+  border-radius: 4px;
+}
+
+.kanban-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.kanban-resize-handle:hover::after,
+.kanban-resize-handle:focus-visible::after,
+.kanban-column.is-resizing > .kanban-resize-handle::after {
+  background: var(--ordryn-accent, #0d6efd);
+}
+
+.kanban-resize-handle:focus-visible {
+  outline: none;
+}
+
+.kanban-columns.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+  scroll-snap-type: none;
 }
 
 .kanban-column.is-over-wip {
@@ -1122,6 +1379,14 @@ onBeforeUnmount(destroySortables)
   color: var(--ordryn-muted, #6c757d) !important;
 }
 
+.kanban-rename-btn {
+  line-height: 1;
+}
+
+.kanban-rename-btn:hover {
+  color: var(--ordryn-accent) !important;
+}
+
 .kanban-card.density-dense .kanban-card-title {
   font-size: 0.85rem;
 }
@@ -1165,6 +1430,13 @@ onBeforeUnmount(destroySortables)
 
 :deep(.kanban-sortable-drag) {
   opacity: 0.95;
+}
+
+@media (pointer: coarse), (max-width: 767.98px) {
+  /* Columns already fill most of a phone screen; resizing is a desktop affordance. */
+  .kanban-resize-handle {
+    display: none;
+  }
 }
 
 @media (pointer: coarse) {

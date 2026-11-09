@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import type { Task } from '@/api/types'
 import TaskFieldBadges from '@/components/TaskFieldBadges.vue'
 import type { ViewDensity } from '@/composables/useViewDensity'
@@ -47,7 +47,34 @@ const childProgress = () => {
   return `${done}/${total}`
 }
 
-// Inline Editing State (Desktop) — description only; title opens task details
+// Inline editing. Clicking the title opens task details; renaming in place goes
+// through the explicit "Rename" action so the two don't fight over one click.
+const isEditingTitle = ref(false)
+const titleVal = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
+
+async function startEditTitle() {
+  if (!props.canWrite) return
+  titleVal.value = props.task.title
+  isEditingTitle.value = true
+  await nextTick()
+  titleInput.value?.focus()
+  titleInput.value?.select()
+}
+
+function saveTitle() {
+  if (!isEditingTitle.value) return
+  isEditingTitle.value = false
+  const trimmed = titleVal.value.trim()
+  if (trimmed && trimmed !== props.task.title) {
+    emit('patch-task', { id: props.task.id, title: trimmed })
+  }
+}
+
+function cancelEditTitle() {
+  isEditingTitle.value = false
+}
+
 const isEditingDesc = ref(false)
 const descVal = ref('')
 
@@ -190,8 +217,21 @@ function formatMinutes(total: number) {
         <!-- Title & Badges Container -->
         <div class="d-flex flex-column gap-1 min-w-0 flex-grow-1 ms-1">
           <div class="d-flex align-items-center gap-2 flex-wrap">
+            <!-- Inline title editor (via Rename action) -->
+            <input
+              v-if="isEditingTitle && canWrite"
+              ref="titleInput"
+              v-model="titleVal"
+              type="text"
+              class="inline-edit-input"
+              :aria-label="`Rename task ${task.title}`"
+              @blur="saveTitle"
+              @keydown.enter.prevent="saveTitle"
+              @keydown.escape.stop.prevent="cancelEditTitle"
+            />
             <!-- Title — click opens task details -->
             <span
+              v-else
               class="task-title fw-semibold text-truncate"
               style="color: var(--ordryn-text); cursor: pointer;"
               title="Open task details"
@@ -337,6 +377,15 @@ function formatMinutes(total: number) {
           <button
             type="button"
             class="btn btn-sm btn-icon text-muted hover-accent border-0 p-1"
+            title="Rename task"
+            aria-label="Rename task"
+            @click="startEditTitle"
+          >
+            <i class="bi bi-input-cursor-text" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-icon text-muted hover-accent border-0 p-1"
             title="Open task details editor"
             @click="emit('edit')"
           >
@@ -395,6 +444,15 @@ function formatMinutes(total: number) {
             @click="emit('add-subtask')"
           >
             <i class="bi bi-node-plus" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary ordryn-icon-btn"
+            title="Rename task"
+            aria-label="Rename task"
+            @click="startEditTitle"
+          >
+            <i class="bi bi-input-cursor-text" />
           </button>
           <button
             type="button"
