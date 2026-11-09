@@ -462,6 +462,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateGrantInsightsPeopleToManagers failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateGrantQueriesManageToManagers(); err != nil {
+		fmt.Printf("migration: MigrateGrantQueriesManageToManagers failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateGrantSiteCreatePermissions(); err != nil {
 		fmt.Printf("migration: MigrateGrantSiteCreatePermissions failed: %v\n", err)
 		errCount++

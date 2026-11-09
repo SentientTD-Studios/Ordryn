@@ -260,7 +260,7 @@ func seedCompanySiteRoles() error {
 	manager := append([]string{
 		SitePermProjectsCreate, SitePermTeamPeople,
 		PermTasksDelete, PermTasksArchive, PermTasksRestore, PermProjectManage, PermProjectTags,
-		PermCommentsModerate, PermInsightsPeople,
+		PermCommentsModerate, PermInsightsPeople, PermQueriesManage,
 	}, companyMemberPerms...)
 	defaults := []struct {
 		name  string

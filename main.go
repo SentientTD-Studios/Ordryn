@@ -2,6 +2,7 @@ package main
 
 import (
 	"GoTodo/internal/config"
+	"GoTodo/internal/query"
 	"GoTodo/internal/server"
 	"GoTodo/internal/storage"
 	"fmt"
@@ -15,6 +16,9 @@ func main() {
 	storage.CreateDatabase()
 	if err := storage.RunMigrations(); err != nil {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
+	}
+	if err := query.BackfillSavedViews(); err != nil {
+		fmt.Printf("Warning: saved view backfill failed: %v\n", err)
 	}
 
 	err := server.StartServer()

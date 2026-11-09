@@ -65,6 +65,9 @@ import type {
   StatusGates,
   SavedView,
   SavedViewFilter,
+  QueryDefinition,
+  QueryOptions,
+  QueryResults,
   TaskAttachment,
   TaskTemplate,
   TaskTemplateInput,
@@ -159,8 +162,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T
 }
 
-async function download(path: string, fallbackName: string): Promise<void> {
-  const res = await fetch(withBase(path), { credentials: 'include' })
+async function download(path: string, fallbackName: string, init: RequestInit = {}): Promise<void> {
+  const res = await fetch(withBase(path), { credentials: 'include', ...init })
   if (!res.ok) {
     let message = res.statusText || 'Download failed'
     try {
@@ -181,6 +184,14 @@ async function download(path: string, fallbackName: string): Promise<void> {
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function downloadPost(path: string, body: unknown, fallbackName: string): Promise<void> {
+  return download(path, fallbackName, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
 
 async function upload<T>(path: string, field: string, file: Blob | File): Promise<T> {
@@ -1498,19 +1509,69 @@ export const api = {
     return request<SavedView[]>('/api/v2/saved-views')
   },
 
-  createSavedView(payload: { name: string; filter: SavedViewFilter; sort_order?: number }) {
+  getSavedView(id: number) {
+    return request<SavedView>(`/api/v2/saved-views/${id}`)
+  },
+
+  createSavedView(payload: {
+    name: string
+    filter?: SavedViewFilter
+    definition?: QueryDefinition
+    project_id?: number | null
+    sort_order?: number
+  }) {
     return request<SavedView>('/api/v2/saved-views', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
-  updateSavedView(id: number, payload: { name?: string; filter?: SavedViewFilter }) {
+  updateSavedView(
+    id: number,
+    payload: { name?: string; filter?: SavedViewFilter; definition?: QueryDefinition; sort_order?: number },
+  ) {
     return request<SavedView>(`/api/v2/saved-views/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
   },
 
   deleteSavedView(id: number) {
     return request<void>(`/api/v2/saved-views/${id}`, { method: 'DELETE' })
+  },
+
+  /** page_size -1 returns only the total. */
+  savedViewResults(id: number, page = 1, pageSize = 50) {
+    return request<QueryResults>(`/api/v2/saved-views/${id}/results?page=${page}&page_size=${pageSize}`)
+  },
+
+  downloadSavedViewExport(id: number) {
+    return download(`/api/v2/saved-views/${id}/export`, 'query.csv')
+  },
+
+  setSavedViewOnDashboard(id: number, on: boolean) {
+    return request<void>(`/api/v2/saved-views/${id}/dashboard`, { method: on ? 'PUT' : 'DELETE' })
+  },
+
+  runQuery(definition: QueryDefinition, opts: { page?: number; pageSize?: number; projectId?: number | null } = {}) {
+    return request<QueryResults>('/api/v2/queries/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        definition,
+        page: opts.page ?? 1,
+        page_size: opts.pageSize ?? 50,
+        ...(opts.projectId ? { project_id: opts.projectId } : {}),
+      }),
+    })
+  },
+
+  downloadQueryExport(definition: QueryDefinition, projectId?: number | null) {
+    return downloadPost(
+      '/api/v2/queries/export',
+      { definition, ...(projectId ? { project_id: projectId } : {}) },
+      'query.csv',
+    )
+  },
+
+  queryOptions(projectId?: number | null) {
+    return request<QueryOptions>(`/api/v2/queries/options${projectId ? `?project_id=${projectId}` : ''}`)
   },
 
   async listTaskTemplates(projectId?: number | null) {

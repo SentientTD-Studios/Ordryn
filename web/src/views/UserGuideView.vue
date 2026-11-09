@@ -170,8 +170,16 @@ onUnmounted(() => {
           </li>
           <li>
             Save the current filter set as a view so you can reopen it later from the sidebar or
-            <RouterLink to="/views">Views</RouterLink>. If a view is limited to a project that was deleted or that you
-            left, opening it shows a notice where you can switch it to all projects or delete it.
+            <RouterLink to="/views">Queries</RouterLink>. Opening a view shows its results and a query editor, where you
+            can combine clauses with AND/OR groups (status, people, dates like <code>@today-7</code>, sprints, tags,
+            custom fields, and more), pick columns and sorting, show subtasks as a tree, export CSV, or pin a count to
+            your dashboard.
+          </li>
+          <li>
+            Shared queries belong to a project: everyone on it can run them, and people with the
+            <strong>Manage shared queries</strong> permission can create and change them. A query only ever returns
+            tasks you can open, and if it mentions a project, sprint, or person you've lost access to, that part
+            simply matches nothing.
           </li>
         </ul>
 

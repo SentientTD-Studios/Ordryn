@@ -219,3 +219,32 @@ func TestProjectKeyRespectsBasePath(t *testing.T) {
 		t.Fatalf("base-path /me: status %d", got)
 	}
 }
+
+func TestProjectKeyQueryRoutes(t *testing.T) {
+	p := projectKey(allScopes...)
+	allowed := []struct{ method, target string }{
+		{http.MethodPost, "/api/v2/queries/run"},
+		{http.MethodGet, "/api/v2/queries/options"},
+	}
+	for _, c := range allowed {
+		if got := scopedStatus(t, p, c.method, c.target, ""); got != http.StatusOK {
+			t.Errorf("%s %s: status %d, want allowed", c.method, c.target, got)
+		}
+	}
+	// Exports and saved views stay personal: a project key cannot reach them.
+	denied := []struct{ method, target string }{
+		{http.MethodPost, "/api/v2/queries/export"},
+		{http.MethodGet, "/api/v2/queries/run"},
+		{http.MethodGet, "/api/v2/saved-views"},
+		{http.MethodGet, "/api/v2/saved-views/1/results"},
+		{http.MethodPost, "/api/v2/saved-views"},
+	}
+	for _, c := range denied {
+		if got := scopedStatus(t, p, c.method, c.target, ""); got != http.StatusForbidden {
+			t.Errorf("%s %s: status %d, want forbidden", c.method, c.target, got)
+		}
+	}
+	if got := scopedStatus(t, projectKey(storage.APIScopeCommentsWrite), http.MethodPost, "/api/v2/queries/run", ""); got != http.StatusForbidden {
+		t.Errorf("query run without tasks:read: status %d, want forbidden", got)
+	}
+}

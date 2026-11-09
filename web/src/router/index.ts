@@ -139,6 +139,18 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/views/new',
+      name: 'query-new',
+      component: () => import('@/views/QueryEditorView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/views/:id(\\d+)',
+      name: 'query',
+      component: () => import('@/views/QueryEditorView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/calendar',
       name: 'calendar',
       component: () => import('@/views/CalendarView.vue'),

@@ -55,7 +55,16 @@ func TestMain(m *testing.M) {
 			workflow_mode VARCHAR(16) NOT NULL DEFAULT 'classic',
 			organization_id INTEGER,
 			org_managed BOOLEAN NOT NULL DEFAULT FALSE,
-			org_import VARCHAR(16)
+			org_import VARCHAR(16),
+			position INTEGER NOT NULL DEFAULT 0,
+			archived BOOLEAN NOT NULL DEFAULT FALSE,
+			backlog_name TEXT NOT NULL DEFAULT 'Backlog',
+			backlog_description TEXT NOT NULL DEFAULT '',
+			auto_create_next_sprint BOOLEAN NOT NULL DEFAULT FALSE,
+			auto_sprint_length_days INTEGER,
+			auto_sprint_lock_days_before INTEGER,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 		CREATE TABLE organizations (
 			id SERIAL PRIMARY KEY,
@@ -242,6 +251,10 @@ func TestMain(m *testing.M) {
 	pool.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "schema: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateSavedViewsForQueries(); err != nil {
+		fmt.Fprintf(os.Stderr, "saved views migration: %v\n", err)
 		os.Exit(1)
 	}
 

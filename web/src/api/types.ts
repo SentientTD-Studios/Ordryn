@@ -682,10 +682,123 @@ export type TrashEntry = {
 export type SavedView = {
   id: number
   name: string
+  /** Version 1 filter. Kept for older clients; `definition` is the query. */
   filter: SavedViewFilter
+  definition: QueryDefinition
+  /** Set for a shared query, which belongs to that project. */
+  project_id: number | null
+  project_name?: string
+  shared: boolean
+  author_name?: string
+  can_edit: boolean
+  on_dashboard: boolean
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+export type QueryOperator =
+  | '='
+  | '<>'
+  | '<'
+  | '<='
+  | '>'
+  | '>='
+  | 'in'
+  | 'not_in'
+  | 'contains'
+  | 'not_contains'
+  | 'is_empty'
+  | 'is_not_empty'
+
+export type QueryValue = string | number | boolean | (string | number)[] | null
+
+/** A group (`op` + `clauses`) or a clause (`field` + `operator` + `value`). */
+export type QueryNode = {
+  op?: 'and' | 'or'
+  clauses?: QueryNode[]
+  field?: string
+  operator?: QueryOperator
+  value?: QueryValue
+}
+
+export type QueryScope = {
+  /** Empty means every project you can open. */
+  projects: number[]
+  include_personal?: boolean
+  include_archived?: boolean
+  exclude_view_only?: boolean
+}
+
+export type QuerySortKey = { field: string; dir: 'asc' | 'desc' }
+
+export type QueryDefinition = {
+  version?: number
+  scope: QueryScope
+  where: QueryNode
+  mode: 'flat' | 'tree'
+  columns: string[]
+  sort: QuerySortKey[]
+}
+
+export type QueryFieldType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'boolean'
+  | 'project'
+  | 'user'
+  | 'sprint'
+  | 'status'
+  | 'tags'
+  | 'search'
+  | 'enum'
+
+export type QueryField = {
+  id: string
+  label: string
+  type: QueryFieldType
+  operators: QueryOperator[]
+  sortable: boolean
+  options?: { value: string; label: string }[]
+}
+
+export type QueryOptions = {
+  fields: QueryField[]
+  columns: { value: string; label: string }[]
+  projects: { id: number; name: string; archived: boolean; view_only: boolean; can_manage_queries: boolean }[]
+  people: { id: number; name: string }[]
+  statuses: string[]
+  tags: string[]
+  sprints: { id: number; project_id: number; name: string; active: boolean }[]
+  date_macros: string[]
+  limits: Record<string, number>
+}
+
+export type QueryTask = Omit<Task, 'children'> & {
+  created_by?: number | null
+  created_by_name?: string
+  completed_date?: string
+  is_favorite?: boolean
+  children?: QueryTask[]
+}
+
+export type QueryUnavailable = {
+  projects?: number[]
+  sprints?: number[]
+  users?: number[]
+  custom_fields?: string[]
+}
+
+export type QueryResults = {
+  tasks: QueryTask[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+  mode: 'flat' | 'tree'
+  columns: string[]
+  unavailable?: QueryUnavailable
 }
 
 export type DashboardStats = {

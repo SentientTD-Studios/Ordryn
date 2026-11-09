@@ -17,6 +17,7 @@ export const PROJECT_PERMS = {
   EXTENSIONS_WRITE: 'extensions:write',
   COMMENTS_MODERATE: 'comments:moderate',
   INSIGHTS_PEOPLE: 'insights:people',
+  QUERIES_MANAGE: 'queries:manage',
 } as const
 
 export const WRITE_TASK_PERMS = [

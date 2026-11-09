@@ -990,7 +990,6 @@ onUnmounted(() => {
       @toggle-collapse="toggleSidebar"
       @select-home="selectHome"
       @select-project="selectProjectFilter"
-      @select-view="selectSavedViewFilter"
       @add-project="showAddProjectModal = true"
       @edit-project="openEditProject"
       @add-view="showSaveViewModal = true"

@@ -6,6 +6,7 @@ import type { DashboardStats, Project, SavedView, Task } from '@/api/types'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import AppFooter from '@/components/AppFooter.vue'
+import QueryTiles from '@/components/query/QueryTiles.vue'
 import { useToast } from '@/composables/useToast'
 import { useSidebarState } from '@/composables/useSidebarState'
 import { useAuth } from '@/composables/useAuth'
@@ -36,9 +37,6 @@ function selectProject(id: string) {
   void router.push({ path: '/', query: { project: id } })
 }
 
-function selectView(id: string) {
-  void router.push({ path: '/', query: { view: id } })
-}
 
 function taskMetaLine(task: Task): string {
   const parts: string[] = []
@@ -75,9 +73,13 @@ async function loadSectionLists() {
   doneThisWeekTasks.value = [...doneList.tasks]
 }
 
+/** Bumped on refresh so pinned query counts reload too. */
+const tilesRefresh = ref(0)
+
 async function refreshDashboard() {
   const [dashStats] = await Promise.all([api.dashboard(), loadSectionLists()])
   stats.value = dashStats
+  tilesRefresh.value++
   if (overdueCount) overdueCount.value = dashStats.overdue_count
 }
 
@@ -168,7 +170,6 @@ useLiveUpdates((event, batch) => {
       @toggle-collapse="toggleSidebar"
       @select-home="selectHome"
       @select-project="selectProject"
-      @select-view="selectView"
       @add-project="router.push('/projects')"
       @edit-project="() => router.push('/projects')"
       @add-view="router.push('/views')"
@@ -234,6 +235,8 @@ useLiveUpdates((event, batch) => {
               </button>
             </div>
           </div>
+
+          <QueryTiles :saved-views="savedViews" :refresh-key="tilesRefresh" />
 
           <div id="overdue" class="card border-0 shadow-xs mb-4">
             <div class="card-header bg-transparent border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">

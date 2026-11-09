@@ -40,9 +40,6 @@ function selectProject(id: string) {
   void router.push({ path: '/', query: { project: id } })
 }
 
-function selectView(id: string) {
-  void router.push({ path: '/', query: { view: id } })
-}
 
 function todayInTZ(): string {
   try {
@@ -216,7 +213,6 @@ useLiveUpdates((event, batch) => {
       @toggle-collapse="toggleSidebar"
       @select-home="selectHome"
       @select-project="selectProject"
-      @select-view="selectView"
       @add-project="router.push('/projects')"
       @edit-project="() => router.push('/projects')"
       @add-view="router.push('/views')"
