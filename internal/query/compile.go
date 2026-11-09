@@ -19,6 +19,11 @@ type Context struct {
 	Today time.Time
 	// Projects the caller can open.
 	Projects map[int]bool
+	// ProjectOrgs maps each project in Projects that belongs to an
+	// organization to it; Orgs lists the organizations the caller may name.
+	// Both are only loaded when the scope names organizations.
+	ProjectOrgs map[int]int
+	Orgs        map[int]bool
 	// Sprints and Users the caller may reference.
 	Sprints map[int]bool
 	Users   map[int]bool
@@ -128,16 +133,35 @@ func (b *builder) scopeSQL(s Scope) string {
 	// every project with a task they once created: task visibility alone
 	// still shows a creator their tasks in projects they have since left.
 	ids := make([]int, 0, len(b.ctx.Projects))
-	if len(s.Projects) == 0 {
+	if len(s.Projects) == 0 && len(s.Organizations) == 0 {
 		for id := range b.ctx.Projects {
 			ids = append(ids, id)
 		}
 		sort.Ints(ids)
 	} else {
+		picked := map[int]bool{}
 		for _, id := range s.Projects {
-			if b.ctx.Projects[id] {
+			if b.ctx.Projects[id] && !picked[id] {
+				picked[id] = true
 				ids = append(ids, id)
 			}
+		}
+		if len(s.Organizations) > 0 {
+			orgs := map[int]bool{}
+			for _, o := range s.Organizations {
+				if b.ctx.Orgs[o] {
+					orgs[o] = true
+				}
+			}
+			var fromOrgs []int
+			for id := range b.ctx.Projects {
+				if org, ok := b.ctx.ProjectOrgs[id]; ok && orgs[org] && !picked[id] {
+					picked[id] = true
+					fromOrgs = append(fromOrgs, id)
+				}
+			}
+			sort.Ints(fromOrgs)
+			ids = append(ids, fromOrgs...)
 		}
 	}
 	// A list that lost every project matches nothing: it must never fall back

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
 import type { SavedView } from '@/api/types'
+import { audienceIcon, audienceLabel } from '@/utils/queryDefinition'
 
 /** Count tiles for the queries the user pinned to their dashboard. */
 const props = defineProps<{ savedViews: SavedView[]; refreshKey?: number }>()
@@ -42,14 +43,14 @@ watch(
         <RouterLink :to="`/views/${v.id}`" class="card border-0 shadow-xs h-100 text-decoration-none text-reset">
           <div class="card-body py-3">
             <div class="small text-muted fw-medium text-truncate" :title="v.name">
-              <i :class="v.shared ? 'bi bi-people me-1' : 'bi bi-funnel me-1'" aria-hidden="true" />{{ v.name }}
+              <i :class="v.shared ? `${audienceIcon(v)} me-1` : 'bi bi-funnel me-1'" aria-hidden="true" />{{ v.name }}
             </div>
             <div class="fs-3 fw-bold">
               <span v-if="counts[v.id] === undefined" class="placeholder col-3" aria-label="Loading" />
               <span v-else-if="counts[v.id] === null" class="text-muted small" title="Could not run this query">—</span>
               <template v-else>{{ counts[v.id] }}</template>
             </div>
-            <div v-if="v.shared" class="small text-muted text-truncate">{{ v.project_name }}</div>
+            <div v-if="v.shared" class="small text-muted text-truncate">{{ audienceLabel(v) }}</div>
           </div>
         </RouterLink>
       </div>

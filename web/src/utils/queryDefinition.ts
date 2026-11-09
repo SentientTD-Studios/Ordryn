@@ -1,4 +1,5 @@
 import type {
+  SavedView,
   SavedViewFilter,
   QueryDefinition,
   QueryField,
@@ -323,4 +324,18 @@ export function parseNumberList(s: string): number[] {
     .filter((p) => p !== '')
     .map(Number)
     .filter((n) => Number.isFinite(n))
+}
+
+/** Who can open a saved query, in words. */
+export function audienceLabel(v: Pick<SavedView, 'scope' | 'organization_name'>): string {
+  if (v.scope === 'site') return 'Everyone'
+  if (v.scope === 'organization') return `Members of ${v.organization_name || 'an organization'}`
+  return 'Only me'
+}
+
+/** Bootstrap icon for a saved query's audience. */
+export function audienceIcon(v: Pick<SavedView, 'scope'>): string {
+  if (v.scope === 'site') return 'bi bi-globe2'
+  if (v.scope === 'organization') return 'bi bi-people'
+  return 'bi bi-bookmark-star'
 }

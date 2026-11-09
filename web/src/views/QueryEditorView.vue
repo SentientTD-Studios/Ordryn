@@ -2,13 +2,15 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { QueryDefinition, QueryNode, QueryOptions, QueryResults, QuerySortKey, SavedView } from '@/api/types'
+import type { QueryDefinition, QueryNode, QueryOptions, QueryResults, QuerySortKey, SavedView, SavedViewScope } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import QueryGroupEditor from '@/components/query/QueryGroupEditor.vue'
 import QueryResultsTable from '@/components/query/QueryResultsTable.vue'
 import {
+  audienceIcon,
+  audienceLabel,
   cloneDefinition,
   definitionProblems,
   emptyDefinition,
@@ -24,8 +26,11 @@ const view = ref<SavedView | null>(null)
 const options = ref<QueryOptions | null>(null)
 const name = ref('')
 const def = ref<QueryDefinition>(emptyDefinition())
-/** The project a shared query belongs to (chosen on a new query only). */
-const sharedProjectId = ref<number | null>(null)
+/**
+ * Who can open the query: "personal", "site", or "org:<id>". Which projects
+ * it searches is part of the definition's scope, not of who can open it.
+ */
+const audience = ref('personal')
 const savedSnapshot = ref('')
 const loading = ref(true)
 const loadError = ref('')
@@ -39,13 +44,64 @@ const editorOpen = ref(true)
 const isNew = computed(() => route.name === 'query-new')
 const viewId = computed(() => (isNew.value ? null : Number(route.params.id)))
 const canEdit = computed(() => isNew.value || !!view.value?.can_edit)
-const isShared = computed(() => !!sharedProjectId.value)
-const sharedProjectName = computed(
-  () => view.value?.project_name || options.value?.projects.find((p) => p.id === sharedProjectId.value)?.name || '',
+const audienceScope = computed<SavedViewScope>(() =>
+  audience.value === 'site' ? 'site' : audience.value.startsWith('org:') ? 'organization' : 'personal',
 )
-const manageableProjects = computed(() => (options.value?.projects ?? []).filter((p) => p.can_manage_queries && !p.archived))
+const audienceOrgId = computed(() => (audience.value.startsWith('org:') ? Number(audience.value.slice(4)) || null : null))
+const audienceInfo = computed(() => ({
+  scope: audienceScope.value,
+  organization_name:
+    options.value?.organizations.find((o) => o.id === audienceOrgId.value)?.name || view.value?.organization_name || '',
+}))
+const isShared = computed(() => audienceScope.value !== 'personal')
+/** Only the owner (or the author of a new query) picks who can open it. */
+const canChooseAudience = computed(() => isNew.value || (!!view.value?.is_owner && canEdit.value))
+/** The audience the saved copy has, kept as a choice even if you could no longer pick it. */
+const audienceChoices = computed(() => {
+  const out: { value: string; label: string }[] = [{ value: 'personal', label: 'Myself' }]
+  for (const o of options.value?.organizations ?? []) out.push({ value: `org:${o.id}`, label: `Members of ${o.name}` })
+  if (options.value?.can_share_site) out.push({ value: 'site', label: 'All users site-wide' })
+  if (!out.some((c) => c.value === audience.value)) out.push({ value: audience.value, label: audienceLabel(audienceInfo.value) })
+  return out
+})
+const audienceHelp = computed(() => {
+  if (audienceScope.value === 'site') return 'Everyone on the site can run it. Only people who manage site-wide queries can change it.'
+  if (audienceScope.value === 'organization')
+    return "The organization's members can run it; you, and people who manage the organization's queries, can change it."
+  return 'Only you can see it.'
+})
 
-const snapshot = () => JSON.stringify({ n: name.value.trim(), d: def.value, p: sharedProjectId.value })
+function audienceOf(v: SavedView): string {
+  if (v.scope === 'site') return 'site'
+  if (v.scope === 'organization' && v.organization_id) return `org:${v.organization_id}`
+  return 'personal'
+}
+
+/** "All my projects", "Organizations", or "Selected projects". */
+const scopeMode = computed(() =>
+  def.value.scope.organizations?.length ? 'orgs' : def.value.scope.projects.length ? 'projects' : 'all',
+)
+
+function setScopeMode(mode: 'all' | 'orgs' | 'projects') {
+  const opts = options.value
+  if (mode === 'all') {
+    def.value.scope = { ...def.value.scope, projects: [], organizations: [] }
+  } else if (mode === 'orgs') {
+    const first = audienceOrgId.value ?? opts?.organizations[0]?.id
+    def.value.scope = { ...def.value.scope, projects: [], organizations: first ? [first] : [] }
+  } else {
+    def.value.scope = { ...def.value.scope, organizations: [], projects: (opts?.projects ?? []).slice(0, 1).map((p) => p.id) }
+  }
+}
+
+function toggleScopeOrg(id: number, on: boolean) {
+  const set = new Set(def.value.scope.organizations ?? [])
+  if (on) set.add(id)
+  else set.delete(id)
+  def.value.scope.organizations = [...set]
+}
+
+const snapshot = () => JSON.stringify({ n: name.value.trim(), d: def.value, a: audience.value })
 const dirty = computed(() => snapshot() !== savedSnapshot.value)
 const problems = computed(() => definitionProblems(def.value, options.value?.limits))
 const fields = computed(() => options.value?.fields ?? [])
@@ -63,14 +119,16 @@ const unavailableNote = computed(() => {
   if (!u) return ''
   const parts: string[] = []
   if (u.projects?.length) parts.push(`${u.projects.length} project${u.projects.length === 1 ? '' : 's'}`)
+  if (u.organizations?.length)
+    parts.push(`${u.organizations.length} organization${u.organizations.length === 1 ? '' : 's'}`)
   if (u.sprints?.length) parts.push(`${u.sprints.length} sprint${u.sprints.length === 1 ? '' : 's'}`)
   if (u.users?.length) parts.push(`${u.users.length} ${u.users.length === 1 ? 'person' : 'people'}`)
   if (u.custom_fields?.length) parts.push(`${u.custom_fields.length} custom field${u.custom_fields.length === 1 ? '' : 's'}`)
   return parts.join(', ')
 })
 
-async function loadOptions(projectId: number | null) {
-  options.value = await api.queryOptions(projectId)
+async function loadOptions() {
+  options.value = await api.queryOptions()
 }
 
 async function load() {
@@ -82,20 +140,18 @@ async function load() {
   try {
     if (isNew.value) {
       view.value = null
-      const fromQuery = Number(route.query.project)
-      sharedProjectId.value = Number.isFinite(fromQuery) && fromQuery > 0 ? fromQuery : null
       name.value = ''
       def.value = draftFromHistory() ?? emptyDefinition()
-      if (sharedProjectId.value) narrowToSharedProject()
-      await loadOptions(sharedProjectId.value)
+      await loadOptions()
+      audience.value = audienceFromRoute()
       editorOpen.value = true
     } else {
       const v = await api.getSavedView(viewId.value!)
       view.value = v
-      sharedProjectId.value = v.project_id
+      audience.value = audienceOf(v)
       name.value = v.name
       def.value = cloneDefinition(v.definition)
-      await loadOptions(v.project_id)
+      await loadOptions()
       // Open queries straight to their results; the editor is a click away.
       editorOpen.value = false
     }
@@ -120,15 +176,21 @@ function draftFromHistory(): QueryDefinition | null {
   }
 }
 
-function narrowToSharedProject() {
-  def.value.scope = { projects: [], include_personal: false, include_archived: false, exclude_view_only: false }
+/** "?share=site" or "?share=org:<id>" opens a new query already shared. */
+function audienceFromRoute(): string {
+  const want = typeof route.query.share === 'string' ? route.query.share : ''
+  if (want === 'site' && options.value?.can_share_site) return 'site'
+  const org = want.startsWith('org:') ? Number(want.slice(4)) : NaN
+  if (options.value?.organizations.some((o) => o.id === org)) return `org:${org}`
+  return 'personal'
 }
 
-watch(sharedProjectId, async (pid, prev) => {
-  if (!isNew.value || pid === prev || loading.value) return
-  if (pid) narrowToSharedProject()
-  else def.value.scope.include_personal = true
-  await loadOptions(pid)
+// Personal tasks without a project mean "the viewer's own", which rarely fits
+// a shared query, so sharing a new query turns them off (it can be turned back on).
+watch(audience, (to, from) => {
+  if (!isNew.value || loading.value || to === from) return
+  if (to !== 'personal' && from === 'personal') def.value.scope.include_personal = false
+  else if (to === 'personal') def.value.scope.include_personal = true
 })
 
 watch(() => route.fullPath, (to, from) => {
@@ -149,7 +211,7 @@ async function run(goToPage = page.value) {
     if (view.value && !dirty.value) {
       results.value = await api.savedViewResults(view.value.id, goToPage)
     } else {
-      results.value = await api.runQuery(clean, { page: goToPage, projectId: sharedProjectId.value })
+      results.value = await api.runQuery(clean, { page: goToPage })
     }
     page.value = goToPage
   } catch (err) {
@@ -218,14 +280,21 @@ async function save() {
       const created = await api.createSavedView({
         name: trimmed,
         definition: payloadDefinition(),
-        project_id: sharedProjectId.value,
+        scope: audienceScope.value,
+        organization_id: audienceOrgId.value,
       })
       savedSnapshot.value = snapshot()
       toast.push('Query saved', 'success')
       await router.replace(`/views/${created.id}`)
     } else {
-      const updated = await api.updateSavedView(view.value!.id, { name: trimmed, definition: payloadDefinition() })
+      const moved = audience.value !== audienceOf(view.value!)
+      const updated = await api.updateSavedView(view.value!.id, {
+        name: trimmed,
+        definition: payloadDefinition(),
+        ...(moved ? { scope: audienceScope.value, organization_id: audienceOrgId.value } : {}),
+      })
       view.value = updated
+      audience.value = audienceOf(updated)
       def.value = cloneDefinition(updated.definition)
       savedSnapshot.value = snapshot()
       toast.push('Query saved', 'success')
@@ -242,9 +311,6 @@ async function save() {
 async function saveCopy() {
   const base = name.value.trim() || 'Query'
   const copy = cloneDefinition(payloadDefinition())
-  if (sharedProjectId.value) {
-    copy.scope = { projects: [sharedProjectId.value], include_personal: false, include_archived: false, exclude_view_only: false }
-  }
   saving.value = true
   try {
     const created = await api.createSavedView({ name: `${base} (copy)`.slice(0, 80), definition: copy })
@@ -263,7 +329,7 @@ async function remove() {
   const ok = await askConfirm({
     title: 'Delete query?',
     message: view.value.shared
-      ? `Delete the shared query “${view.value.name}” for everyone on ${view.value.project_name}?`
+      ? `Delete the shared query “${view.value.name}”? ${audienceLabel(view.value)} will lose it.`
       : `Delete the query “${view.value.name}”?`,
     confirmLabel: 'Delete',
     danger: true,
@@ -294,7 +360,7 @@ async function toggleDashboard() {
 async function exportCsv() {
   try {
     if (view.value && !dirty.value) await api.downloadSavedViewExport(view.value.id)
-    else await api.downloadQueryExport(payloadDefinition(), sharedProjectId.value)
+    else await api.downloadQueryExport(payloadDefinition())
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Export failed', 'error')
   }
@@ -325,9 +391,9 @@ onMounted(load)
         <i class="bi bi-arrow-left" /> <span class="d-none d-sm-inline">Queries</span>
       </RouterLink>
       <h1 class="h4 mb-0 me-auto text-truncate">
-        <i :class="isShared ? 'bi bi-people me-1' : 'bi bi-funnel me-1'" aria-hidden="true" />
+        <i :class="isShared ? `${audienceIcon(audienceInfo)} me-1` : 'bi bi-funnel me-1'" aria-hidden="true" />
         {{ isNew ? 'New query' : view?.name || 'Query' }}
-        <span v-if="isShared && sharedProjectName" class="badge text-bg-info fw-normal ms-1">Shared · {{ sharedProjectName }}</span>
+        <span v-if="isShared" class="badge text-bg-info fw-normal ms-1">Shared · {{ audienceLabel(audienceInfo) }}</span>
         <span v-if="dirty && !isNew && canEdit" class="badge text-bg-warning fw-normal ms-1">Unsaved changes</span>
       </h1>
       <div v-if="!loading && !loadError" class="d-flex flex-wrap gap-2">
@@ -368,8 +434,11 @@ onMounted(load)
     <template v-else-if="options">
       <p v-if="view && !canEdit" class="alert alert-light border small py-2">
         <i class="bi bi-lock me-1" aria-hidden="true" />
-        Shared by {{ view.author_name || 'a project member' }}. You can run and tweak it here, but only people who can manage
-        {{ view.project_name }}'s shared queries can save changes. Use <strong>Save a personal copy</strong> to keep your version.
+        Shared with {{ view.scope === 'site' ? 'everyone' : `the members of ${view.organization_name}` }} by
+        {{ view.author_name || 'another user' }}.
+        You can run and tweak it here, but
+        {{ view.scope === 'site' ? 'only people who manage site-wide queries' : "only its owner and people who manage the organization's queries" }}
+        can save changes. Use <strong>Save a personal copy</strong> to keep your version.
       </p>
 
       <div class="card mb-3">
@@ -399,23 +468,20 @@ onMounted(load)
                 :disabled="!canEdit"
               />
             </div>
-            <div v-if="isNew" class="col-12 col-md-6">
-              <label for="query-owner" class="form-label small fw-semibold">Who can use it</label>
-              <select
-                id="query-owner"
-                class="form-select form-select-sm"
-                :value="sharedProjectId ?? ''"
-                @change="sharedProjectId = Number(($event.target as HTMLSelectElement).value) || null"
-              >
-                <option value="">Only me (personal, any of my projects)</option>
-                <option v-for="p in manageableProjects" :key="p.id" :value="p.id">Shared with everyone on {{ p.name }}</option>
+            <div v-if="canChooseAudience" class="col-12 col-md-6">
+              <label for="query-audience" class="form-label small fw-semibold">Who can use it</label>
+              <select id="query-audience" v-model="audience" class="form-select form-select-sm">
+                <option v-for="c in audienceChoices" :key="c.value" :value="c.value">{{ c.label }}</option>
               </select>
-              <div v-if="isShared" class="form-text">A shared query only ever searches its own project, and runs with each viewer's own access.</div>
+              <div class="form-text">
+                {{ audienceHelp }}
+                <template v-if="isShared">Each person runs it with their own access, so it never shows anyone a task they can't already open.</template>
+              </div>
             </div>
           </div>
 
           <!-- Scope -->
-          <fieldset v-if="!isShared" class="mb-3">
+          <fieldset class="mb-3">
             <legend class="small fw-semibold mb-1">Search in</legend>
             <div class="d-flex flex-wrap gap-3 mb-2">
               <div class="form-check">
@@ -423,25 +489,58 @@ onMounted(load)
                   id="scope-all"
                   class="form-check-input"
                   type="radio"
-                  :checked="def.scope.projects.length === 0"
+                  :checked="scopeMode === 'all'"
                   :disabled="!canEdit"
-                  @change="def.scope.projects = []"
+                  @change="setScopeMode('all')"
                 />
-                <label class="form-check-label small" for="scope-all">All my projects</label>
+                <label class="form-check-label small" for="scope-all">{{ isShared ? "All of the viewer's projects" : 'All my projects' }}</label>
+              </div>
+              <div v-if="options.organizations.length || scopeMode === 'orgs'" class="form-check">
+                <input
+                  id="scope-orgs"
+                  class="form-check-input"
+                  type="radio"
+                  :checked="scopeMode === 'orgs'"
+                  :disabled="!canEdit || options.organizations.length === 0"
+                  @change="setScopeMode('orgs')"
+                />
+                <label class="form-check-label small" for="scope-orgs">Projects in organizations</label>
               </div>
               <div class="form-check">
                 <input
                   id="scope-some"
                   class="form-check-input"
                   type="radio"
-                  :checked="def.scope.projects.length > 0"
+                  :checked="scopeMode === 'projects'"
                   :disabled="!canEdit || options.projects.length === 0"
-                  @change="def.scope.projects = options.projects.slice(0, 1).map((p) => p.id)"
+                  @change="setScopeMode('projects')"
                 />
                 <label class="form-check-label small" for="scope-some">Selected projects</label>
               </div>
             </div>
-            <div v-if="def.scope.projects.length > 0" class="scope-projects border rounded p-2 mb-2">
+            <div v-if="scopeMode === 'orgs'" class="scope-projects border rounded p-2 mb-2">
+              <div v-for="o in options.organizations" :key="o.id" class="form-check">
+                <input
+                  :id="`scope-o-${o.id}`"
+                  class="form-check-input"
+                  type="checkbox"
+                  :checked="(def.scope.organizations ?? []).includes(o.id)"
+                  :disabled="!canEdit"
+                  @change="toggleScopeOrg(o.id, ($event.target as HTMLInputElement).checked)"
+                />
+                <label class="form-check-label small" :for="`scope-o-${o.id}`">{{ o.name }}</label>
+              </div>
+              <div
+                v-for="id in (def.scope.organizations ?? []).filter((id) => !options!.organizations.some((o) => o.id === id))"
+                :key="`gone-o-${id}`"
+                class="small text-warning"
+              >
+                An organization you don't belong to is in this list; it matches nothing for you.
+                <button v-if="canEdit" type="button" class="btn btn-link btn-sm p-0" @click="toggleScopeOrg(id, false)">Remove</button>
+              </div>
+              <div class="form-text mt-1">Every project of these organizations that the person running the query can open.</div>
+            </div>
+            <div v-if="scopeMode === 'projects'" class="scope-projects border rounded p-2 mb-2">
               <div v-for="p in options.projects" :key="p.id" class="form-check">
                 <input
                   :id="`scope-p-${p.id}`"
@@ -469,7 +568,7 @@ onMounted(load)
             <div class="d-flex flex-wrap gap-3">
               <div class="form-check form-switch">
                 <input id="scope-personal" v-model="def.scope.include_personal" class="form-check-input" type="checkbox" :disabled="!canEdit" />
-                <label class="form-check-label small" for="scope-personal">My tasks without a project</label>
+                <label class="form-check-label small" for="scope-personal">{{ isShared ? "The viewer's tasks without a project" : 'My tasks without a project' }}</label>
               </div>
               <div class="form-check form-switch">
                 <input id="scope-archived" v-model="def.scope.include_archived" class="form-check-input" type="checkbox" :disabled="!canEdit" />
@@ -491,7 +590,6 @@ onMounted(load)
               :options="options"
               :readonly="false"
               :max-depth="options.limits.depth"
-              :hide-project-field="isShared"
               @update:node="setWhere"
             />
           </fieldset>

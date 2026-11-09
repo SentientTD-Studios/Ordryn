@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"GoTodo/internal/domain"
 	"GoTodo/internal/extensions"
 	"GoTodo/internal/query"
 	"GoTodo/internal/server/utils"
@@ -358,10 +359,18 @@ type queryOptionJSON struct {
 }
 
 type queryProjectJSON struct {
+	ID             int    `json:"id"`
+	Name           string `json:"name"`
+	Archived       bool   `json:"archived"`
+	ViewOnly       bool   `json:"view_only"`
+	OrganizationID *int   `json:"organization_id"`
+}
+
+// queryOrgJSON is an organization the caller belongs to: a query can search
+// its projects and be shared with its members.
+type queryOrgJSON struct {
 	ID               int    `json:"id"`
 	Name             string `json:"name"`
-	Archived         bool   `json:"archived"`
-	ViewOnly         bool   `json:"view_only"`
 	CanManageQueries bool   `json:"can_manage_queries"`
 }
 
@@ -378,15 +387,19 @@ type querySprintJSON struct {
 }
 
 type queryOptionsJSON struct {
-	Fields     []queryFieldJSON   `json:"fields"`
-	Columns    []queryOptionJSON  `json:"columns"`
-	Projects   []queryProjectJSON `json:"projects"`
-	People     []queryPersonJSON  `json:"people"`
-	Statuses   []string           `json:"statuses"`
-	Tags       []string           `json:"tags"`
-	Sprints    []querySprintJSON  `json:"sprints"`
-	DateMacros []string           `json:"date_macros"`
-	Limits     map[string]int     `json:"limits"`
+	Fields   []queryFieldJSON   `json:"fields"`
+	Columns  []queryOptionJSON  `json:"columns"`
+	Projects []queryProjectJSON `json:"projects"`
+	// Organizations lists where the caller can share queries; CanShareSite
+	// says whether they may share with everyone.
+	Organizations []queryOrgJSON    `json:"organizations"`
+	CanShareSite  bool              `json:"can_share_site"`
+	People        []queryPersonJSON `json:"people"`
+	Statuses      []string          `json:"statuses"`
+	Tags          []string          `json:"tags"`
+	Sprints       []querySprintJSON `json:"sprints"`
+	DateMacros    []string          `json:"date_macros"`
+	Limits        map[string]int    `json:"limits"`
 }
 
 var queryFieldLabels = map[string]string{
@@ -425,11 +438,12 @@ func apiV1QueryOptions(w http.ResponseWriter, r *http.Request, userID int) {
 	}
 
 	out := queryOptionsJSON{
-		Fields:     []queryFieldJSON{},
-		Columns:    []queryOptionJSON{},
-		Projects:   []queryProjectJSON{},
-		People:     []queryPersonJSON{},
-		DateMacros: []string{"@today", "@today-7", "@today+7", "@start_of_week", "@end_of_week", "@start_of_month", "@start_of_year"},
+		Fields:        []queryFieldJSON{},
+		Columns:       []queryOptionJSON{},
+		Projects:      []queryProjectJSON{},
+		Organizations: []queryOrgJSON{},
+		People:        []queryPersonJSON{},
+		DateMacros:    []string{"@today", "@today-7", "@today+7", "@start_of_week", "@end_of_week", "@start_of_month", "@start_of_year"},
 		Limits: map[string]int{
 			"clauses": query.MaxClauses, "depth": query.MaxDepth, "list_values": query.MaxListValues,
 			"columns": query.MaxColumns, "sort_keys": query.MaxSortKeys, "page_size": tasks.QueryMaxPageSize,
@@ -443,12 +457,30 @@ func apiV1QueryOptions(w http.ResponseWriter, r *http.Request, userID int) {
 		}
 		ids = append(ids, p.ID)
 		out.Projects = append(out.Projects, queryProjectJSON{
-			ID:               p.ID,
-			Name:             p.Name,
-			Archived:         p.Archived,
-			ViewOnly:         p.Role == "viewer" || p.Role == storage.CompanyViewRoleSlug,
-			CanManageQueries: storage.HasProjectPerm(p.ID, p.Role, storage.PermQueriesManage),
+			ID:             p.ID,
+			Name:           p.Name,
+			Archived:       p.Archived,
+			ViewOnly:       p.Role == "viewer" || p.Role == storage.CompanyViewRoleSlug,
+			OrganizationID: p.OrganizationID,
 		})
+	}
+	// A project-scoped key only ever sees its own project, so it gets no
+	// organizations to search or share with.
+	if force == 0 {
+		orgs, err := storage.ListOrganizationsForUser(userID)
+		if err != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load organizations.")
+			return
+		}
+		for _, o := range orgs {
+			if o.IsCompany {
+				continue
+			}
+			out.Organizations = append(out.Organizations, queryOrgJSON{
+				ID: o.ID, Name: o.Name, CanManageQueries: domain.CanManageOrgQueries(userID, o.ID),
+			})
+		}
+		out.CanShareSite = domain.CanManageSiteQueries(userID)
 	}
 
 	people, err := storage.VisibleQueryPeople(userID, nil, ids)

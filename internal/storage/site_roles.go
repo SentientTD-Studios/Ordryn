@@ -86,6 +86,7 @@ var sitePermCatalog = []SitePermInfo{
 	{ID: SitePermOrgsCreate, Label: "Create organizations", Description: "Start new organizations", Group: "Create"},
 	{ID: SitePermCreateInvites, Label: "Send site invites", Description: "Invite people to join this site, even when user invites are turned off", Group: "Invites"},
 	{ID: SitePermUsersManage, Label: "Manage people", Description: "Create accounts, put people on any team, and deactivate or reactivate accounts. Accounts of admins and other people managers stay with admins", Group: "People"},
+	{ID: SitePermQueriesSite, Label: "Manage site-wide queries", Description: "Share queries with everyone on the site, and edit or delete the ones shared there", Group: "Queries"},
 }
 
 // companySitePermCatalog is what a company-mode site role holds beyond the project
@@ -97,6 +98,7 @@ var companySitePermCatalog = []SitePermInfo{
 	{ID: SitePermAuditView, Label: "View audit logs", Description: "Read the audit log, email log, and comment history", Group: "Site"},
 	{ID: SitePermRolesManage, Label: "Manage roles", Description: "Create, rename, and change roles. Unless you're an admin, only roles and permissions your own role has, and never your own role", Group: "Site"},
 	{ID: SitePermSettingsManage, Label: "Manage site settings", Description: "Change site settings and extensions. The site mode and what new accounts can create stay with admins", Group: "Site"},
+	{ID: SitePermQueriesSite, Label: "Manage site-wide queries", Description: "Share queries with everyone in the company, and edit or delete the ones shared there", Group: "Site"},
 	{ID: SitePermTeamsManage, Label: "Manage teams", Description: "Create, rename, and delete teams, and choose who is on them", Group: "People"},
 	{ID: SitePermUsersManage, Label: "Manage people", Description: "Create accounts and deactivate or reactivate anyone's account. Accounts of admins and other people managers stay with admins", Group: "People"},
 	{ID: SitePermTeamPeople, Label: "Manage team members' accounts", Description: "Create accounts for the teams you're on, and deactivate or reactivate their members. The Company team doesn't count", Group: "People"},

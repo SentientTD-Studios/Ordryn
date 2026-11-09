@@ -65,6 +65,7 @@ import type {
   StatusGates,
   SavedView,
   SavedViewFilter,
+  SavedViewScope,
   QueryDefinition,
   QueryOptions,
   QueryResults,
@@ -1517,7 +1518,8 @@ export const api = {
     name: string
     filter?: SavedViewFilter
     definition?: QueryDefinition
-    project_id?: number | null
+    scope?: SavedViewScope
+    organization_id?: number | null
     sort_order?: number
   }) {
     return request<SavedView>('/api/v2/saved-views', {
@@ -1528,7 +1530,14 @@ export const api = {
 
   updateSavedView(
     id: number,
-    payload: { name?: string; filter?: SavedViewFilter; definition?: QueryDefinition; sort_order?: number },
+    payload: {
+      name?: string
+      filter?: SavedViewFilter
+      definition?: QueryDefinition
+      scope?: SavedViewScope
+      organization_id?: number | null
+      sort_order?: number
+    },
   ) {
     return request<SavedView>(`/api/v2/saved-views/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
   },
