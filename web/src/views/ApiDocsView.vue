@@ -718,9 +718,9 @@ Content-Type: application/json
     "op": "and",
     "clauses": [
       { "field": "workflow_status", "operator": "in", "value": ["doing", "review"] },
-      { "op": "or", "clauses": [
+      { "join": "and", "op": "or", "clauses": [
         { "field": "claimed_by", "operator": "=", "value": "@me" },
-        { "field": "due_date", "operator": "between", "value": ["@start_of_week", "@end_of_week"] }
+        { "join": "or", "field": "due_date", "operator": "between", "value": ["@start_of_week", "@end_of_week"] }
       ] }
     ]
   },
@@ -735,8 +735,8 @@ Content-Type: application/json
                         <tbody>
                             <tr><td><code>title</code>, <code>description</code></td><td><code>contains</code>, <code>not_contains</code>, <code>=</code>, <code>&lt;&gt;</code>, <code>is_empty</code>, <code>is_not_empty</code></td><td>Text</td></tr>
                             <tr><td><code>text</code></td><td><code>contains</code>, <code>not_contains</code></td><td>Title, description, tag name, or <code>#id</code></td></tr>
-                            <tr><td><code>id</code>, <code>priority</code>, <code>estimate</code></td><td><code>=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code> <code>in</code> <code>not_in</code> <code>is_empty</code> <code>is_not_empty</code></td><td>Numbers (priority 0–3)</td></tr>
-                            <tr><td><code>due_date</code>, <code>created_date</code>, <code>modified_date</code>, <code>completed_date</code></td><td><code>between</code> (value <code>[from, to]</code>, both included), comparisons, <code>is_empty</code>, <code>is_not_empty</code></td><td><code>YYYY-MM-DD</code> or <code>@today</code>, <code>@start_of_week</code>, <code>@end_of_week</code>, <code>@start_of_month</code>, <code>@start_of_year</code>, each with an optional <code>+N</code>/<code>-N</code> days</td></tr>
+                            <tr><td><code>id</code>, <code>priority</code>, <code>estimate</code>, <code>days_in_status</code></td><td><code>=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code> <code>in</code> <code>not_in</code> <code>is_empty</code> <code>is_not_empty</code></td><td>Numbers (priority 0–3)</td></tr>
+                            <tr><td><code>due_date</code>, <code>created_date</code>, <code>modified_date</code>, <code>completed_date</code>, <code>status_changed_date</code></td><td><code>between</code> (value <code>[from, to]</code>, both included), comparisons, <code>is_empty</code>, <code>is_not_empty</code></td><td><code>YYYY-MM-DD</code> or <code>@today</code>, <code>@start_of_week</code>, <code>@end_of_week</code>, <code>@start_of_month</code>, <code>@start_of_year</code>, each with an optional <code>+N</code>/<code>-N</code> days</td></tr>
                             <tr><td><code>completed</code>, <code>favorite</code>, <code>is_subtask</code>, <code>has_subtasks</code></td><td><code>=</code>, <code>&lt;&gt;</code></td><td><code>true</code> or <code>false</code></td></tr>
                             <tr><td><code>project</code></td><td><code>=</code> <code>&lt;&gt;</code> <code>in</code> <code>not_in</code> <code>is_empty</code> <code>is_not_empty</code></td><td>Project IDs (<code>is_empty</code> = no project)</td></tr>
                             <tr><td><code>claimed_by</code>, <code>created_by</code></td><td>Same as project</td><td>User IDs or <code>@me</code></td></tr>
@@ -746,6 +746,13 @@ Content-Type: application/json
                             <tr><td><code>cf:&lt;key&gt;</code></td><td>Depends on the custom field's type</td><td>Custom field values</td></tr>
                         </tbody>
                     </table>
+                    <p>
+                        Every row in a group except the first has a <code>join</code> (<code>and</code> or <code>or</code>)
+                        connecting it to the row above. “And” binds tighter than “or”: <em>A and B or C</em> means
+                        <em>(A and B) or C</em>; nest a group to change that. <code>days_in_status</code> and
+                        <code>status_changed_date</code> count from the task's last status move (or its creation if it
+                        never moved) and are empty for tasks without a workflow status.
+                    </p>
                     <p>
                         Limits: 50 clauses, groups nested 5 deep, 50 values per list, 25 columns, 3 sort keys.
                         <code>mode</code> is <code>flat</code> (every match) or <code>tree</code> (matching subtasks nested under

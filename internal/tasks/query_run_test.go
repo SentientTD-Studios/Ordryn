@@ -269,6 +269,10 @@ func TestQueryFieldsAndMacros(t *testing.T) {
 		{"created by", `{"where":{"clauses":[{"field":"created_by","operator":"=","value":50},{"field":"completed","operator":"=","value":true}]}}`, []string{"Q child done"}},
 		{"text search", `{"where":{"clauses":[{"field":"text","operator":"contains","value":"child"}]}}`, []string{"Q child done", "Q child open"}},
 		{"like wildcards are literal", `{"where":{"clauses":[{"field":"title","operator":"contains","value":"Q%"}]}}`, []string{}},
+		{"per-row joins: and binds before or", `{"where":{"clauses":[
+			{"field":"title","operator":"contains","value":"child"},
+			{"join":"and","field":"completed","operator":"=","value":true},
+			{"join":"or","field":"due_date","operator":"is_not_empty"}]}}`, []string{"Q child done", "Q other"}},
 		{"or group", `{"where":{"op":"or","clauses":[{"field":"priority","operator":"=","value":3},{"field":"due_date","operator":"is_not_empty"}]}}`,
 			[]string{"Q other", "Q child open"}},
 	}
@@ -512,5 +516,69 @@ func TestQueryHidesTasksInProjectsTheCreatorLeft(t *testing.T) {
 			t.Fatal(err)
 		}
 		expectTitles(t, res.Tasks, "Q secret")
+	}
+}
+
+func TestQueryTimeInStatus(t *testing.T) {
+	setupQueryFixtures(t)
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ids := []int{}
+	add := func(title string, movedDaysAgo int) {
+		var id int
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO tasks (title, description, user_id, project_id, status_id, time_stamp)
+			VALUES ($1, '', 50, 30, 300, (NOW() AT TIME ZONE 'UTC') - INTERVAL '30 days') RETURNING id`, title).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO task_events (task_id, user_id, event_type, created_at)
+			VALUES ($1, 50, 'status_changed', (NOW() AT TIME ZONE 'UTC') - make_interval(days => $2))`, id, movedDaysAgo); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	add("Q stale", 12)
+	add("Q fresh", 1)
+	storage.CloseDatabase(pool)
+	t.Cleanup(func() {
+		pool, _ := storage.OpenDatabase()
+		_, _ = pool.Exec(context.Background(), `DELETE FROM tasks WHERE id = ANY($1)`, ids)
+		storage.CloseDatabase(pool)
+	})
+
+	cases := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{"days in status", `{"where":{"clauses":[
+			{"field":"workflow_status","operator":"=","value":"doing"},
+			{"field":"days_in_status","operator":">","value":10}]}}`, []string{"Q stale"}},
+		{"entered status before", `{"where":{"clauses":[
+			{"field":"status_changed_date","operator":"<","value":"@today-10"}]}}`, []string{"Q stale"}},
+		// Q parent never moved, so it entered "Doing" when it was created today.
+		{"never moved counts from creation", `{"where":{"clauses":[
+			{"field":"days_in_status","operator":"<=","value":1}]}}`, []string{"Q parent", "Q fresh"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res, _, err := runQueryFor(t, 51, c.raw, query.Request{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectTitles(t, res.Tasks, c.want...)
+		})
+	}
+
+	res, _, err := runQueryFor(t, 51, `{"where":{"clauses":[{"field":"title","operator":"=","value":"Q stale"}]}}`, query.Request{})
+	if err != nil || len(res.Tasks) != 1 {
+		t.Fatalf("lookup: %v %+v", err, res)
+	}
+	if d := res.Tasks[0].DaysInStatus; d == nil || *d != 12 {
+		t.Fatalf("days in status column: %v", d)
 	}
 }

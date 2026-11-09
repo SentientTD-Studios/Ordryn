@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { Organization, Project, SavedView, SavedViewFilter, Tag, Task } from '@/api/types'
+import { filterToDefinition } from '@/utils/queryDefinition'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
@@ -18,7 +19,6 @@ import ProjectSettingsModal from '@/components/ProjectSettingsModal.vue'
 import TasksToolbar from '@/components/tasks/TasksToolbar.vue'
 import BoardSprintBar from '@/components/tasks/BoardSprintBar.vue'
 import TaskBulkBar from '@/components/tasks/TaskBulkBar.vue'
-import SaveViewModal from '@/components/tasks/SaveViewModal.vue'
 import AddProjectModal from '@/components/tasks/AddProjectModal.vue'
 import HomeProjectsPanel from '@/components/tasks/HomeProjectsPanel.vue'
 import TaskTemplatesMenu from '@/components/tasks/TaskTemplatesMenu.vue'
@@ -84,7 +84,6 @@ const loadedProjectKey = ref<string | null>(null)
 /** Monotonic counter so out-of-order reloadInitial responses are ignored. */
 let reloadGeneration = 0
 
-const showSaveViewModal = ref(false)
 const showAddProjectModal = ref(false)
 const showEditProjectModal = ref(false)
 const editingProject = ref<Project | null>(null)
@@ -838,10 +837,10 @@ async function deleteActiveView() {
   }
 }
 
-async function onViewSaved(view: SavedView) {
-  activeViewId.value = String(view.id)
-  showSaveViewModal.value = false
-  await loadMeta()
+/** "+ View" opens the query editor, starting from the filters applied right now. */
+function openNewQuery() {
+  const draft = filterToDefinition(currentViewFilter.value, (id) => tags.value.find((t) => t.id === id)?.name)
+  void router.push({ name: 'query-new', state: { draft: JSON.stringify(draft) } })
 }
 
 async function onProjectCreated() {
@@ -992,7 +991,7 @@ onUnmounted(() => {
       @select-project="selectProjectFilter"
       @add-project="showAddProjectModal = true"
       @edit-project="openEditProject"
-      @add-view="showSaveViewModal = true"
+      @add-view="openNewQuery"
     />
 
     <div class="ordryn-main-pane flex-grow-1 p-2 p-sm-3 p-md-4 overflow-auto d-flex flex-column justify-content-between">
@@ -1280,12 +1279,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <SaveViewModal
-        :open="showSaveViewModal"
-        :filter="currentViewFilter"
-        @close="showSaveViewModal = false"
-        @saved="onViewSaved"
-      />
 
       <AddProjectModal
         :open="showAddProjectModal"

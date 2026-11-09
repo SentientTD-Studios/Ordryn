@@ -404,8 +404,8 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="sidebar-nav-link text-start w-100 border-0 bg-transparent"
-          data-tooltip="Save View"
-          title="Save current filters as a new View"
+          data-tooltip="New query"
+          title="New query (starts from the task list's current filters)"
           @click="emit('add-view')"
         >
           <i class="bi bi-plus-lg" />

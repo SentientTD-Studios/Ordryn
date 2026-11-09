@@ -60,6 +60,10 @@ type Task struct {
 	CreatedByID   int
 	CreatedByName string
 	CompletedDate string
+	// StatusChangedDate (YYYY-MM-DD) and DaysInStatus say when the task entered
+	// its workflow status; empty/nil without one. Query runs only.
+	StatusChangedDate string
+	DaysInStatus      *int
 }
 
 // AttachedField is a custom field value loaded for API serialization.

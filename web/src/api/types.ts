@@ -716,6 +716,8 @@ export type QueryValue = string | number | boolean | (string | number)[] | null
 
 /** A group (`op` + `clauses`) or a clause (`field` + `operator` + `value`). */
 export type QueryNode = {
+  /** Connector to the row above ("and" binds tighter than "or"); the first row has none. */
+  join?: 'and' | 'or'
   op?: 'and' | 'or'
   clauses?: QueryNode[]
   field?: string
@@ -781,6 +783,8 @@ export type QueryTask = Omit<Task, 'children'> & {
   created_by_name?: string
   completed_date?: string
   is_favorite?: boolean
+  status_changed_date?: string
+  days_in_status?: number
   children?: QueryTask[]
 }
 

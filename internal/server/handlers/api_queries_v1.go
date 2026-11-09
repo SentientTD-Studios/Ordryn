@@ -31,6 +31,9 @@ type queryTaskJSON struct {
 	CreatedByName string          `json:"created_by_name,omitempty"`
 	CompletedDate string          `json:"completed_date,omitempty"`
 	IsFavorite    bool            `json:"is_favorite,omitempty"`
+	// When the task entered its workflow status, and whole days since.
+	StatusChangedDate string `json:"status_changed_date,omitempty"`
+	DaysInStatus      *int   `json:"days_in_status,omitempty"`
 }
 
 type queryResultsJSON struct {
@@ -198,7 +201,8 @@ func queryResultsResponse(def query.Definition, res tasks.QueryResult, page, pag
 func queryTaskToJSON(t tasks.Task) queryTaskJSON {
 	children := t.Children
 	t.Children = nil
-	out := queryTaskJSON{apiTaskJSON: taskToAPIJSONOpts(t, false), CompletedDate: t.CompletedDate, IsFavorite: t.IsFavorite}
+	out := queryTaskJSON{apiTaskJSON: taskToAPIJSONOpts(t, false), CompletedDate: t.CompletedDate, IsFavorite: t.IsFavorite,
+		StatusChangedDate: t.StatusChangedDate, DaysInStatus: t.DaysInStatus}
 	if t.CreatedByID > 0 {
 		id := t.CreatedByID
 		out.CreatedBy = &id
@@ -283,6 +287,13 @@ func queryColumnText(t tasks.Task, col string) string {
 		return t.DateModified
 	case "completed_date":
 		return t.CompletedDate
+	case "status_changed_date":
+		return t.StatusChangedDate
+	case "days_in_status":
+		if t.DaysInStatus != nil {
+			return strconv.Itoa(*t.DaysInStatus)
+		}
+		return ""
 	case "claimed_by":
 		return t.ClaimedByName
 	case "created_by":
@@ -382,7 +393,8 @@ var queryFieldLabels = map[string]string{
 	"id": "ID", "title": "Title", "description": "Description", "text": "Title, description or tag",
 	"project": "Project", "completed": "Completed", "workflow_status": "Status", "priority": "Priority",
 	"tags": "Tags", "due_date": "Due date", "created_date": "Created date", "modified_date": "Changed date",
-	"completed_date": "Completed date", "claimed_by": "Claimed by", "created_by": "Created by",
+	"completed_date":      "Completed date",
+	"status_changed_date": "Entered status on", "days_in_status": "Days in status", "claimed_by": "Claimed by", "created_by": "Created by",
 	"sprint": "Sprint", "estimate": "Estimate", "is_subtask": "Is a subtask", "has_subtasks": "Has subtasks",
 	"favorite": "Favorite", "parent": "Parent",
 }

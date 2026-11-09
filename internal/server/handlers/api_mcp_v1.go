@@ -211,7 +211,8 @@ var mcpTools = []mcpTool{
 		Name:  "run_query",
 		Title: "Run a task query",
 		Description: "Find tasks in your project with a query: a tree of AND/OR clauses over fields such as " +
-			"title, text, workflow_status, priority, tags, due_date, claimed_by, sprint and estimate. " +
+			"title, text, workflow_status, days_in_status, priority, tags, due_date, claimed_by, sprint and estimate. " +
+			"Rows after the first take a join (\"and\"/\"or\"; and binds tighter). " +
 			"Example where: {\"op\":\"and\",\"clauses\":[{\"field\":\"workflow_status\",\"operator\":\"in\",\"value\":[\"todo\"]}," +
 			"{\"field\":\"due_date\",\"operator\":\"<=\",\"value\":\"@today+7\"}]}. 50 results per page.",
 		InputSchema: objSchema(map[string]any{
