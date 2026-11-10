@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import type { Project } from '@/api/types'
 import { projectNavLabel, projectOptionLabel } from '@/utils/projectLabel'
+import { projectRoute } from '@/utils/projectRoute'
 
 const props = defineProps<{
   project: Project
@@ -18,6 +20,16 @@ const emit = defineEmits<{
   'toggle-pin': []
   edit: []
 }>()
+
+const router = useRouter()
+const href = computed(() => router.resolve(projectRoute(props.project)).href)
+
+function onClick(e: MouseEvent) {
+  // Let the browser handle new-tab/window clicks on the real link.
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  e.preventDefault()
+  emit('select')
+}
 
 const tooltip = computed(() =>
   props.project.description
@@ -43,13 +55,13 @@ const tooltip = computed(() =>
         <i class="bi bi-grip-vertical" style="font-size: 0.85rem;" />
       </span>
       <a
-        href="#"
+        :href="href"
         class="sidebar-nav-link flex-grow-1 min-w-0"
         :class="{ active }"
         :data-tooltip="tooltip"
         :title="tooltip"
         :aria-current="active ? 'page' : undefined"
-        @click.prevent="emit('select')"
+        @click="onClick"
       >
         <i class="bi bi-folder2-open" />
         <span class="sidebar-text text-truncate">{{ projectNavLabel(project) }}</span>

@@ -26,7 +26,8 @@ import { insertMarkdownAtCursor } from '@/utils/taskCommentBody'
 import { dropHasFiles, imageFileFromClipboard, imageFileFromDrop, shouldIgnoreTaskOverlayClose } from '@/utils/imageUpload'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
-import { useTaskSidebar } from '@/composables/useTaskSidebar'
+import { allowTaskRouteNavigation, useTaskSidebar } from '@/composables/useTaskSidebar'
+import { taskPageRoute } from '@/utils/projectRoute'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
@@ -62,9 +63,35 @@ const { enabled: imageEnabled, uploadImageFile } = useImageUpload()
 const router = useRouter()
 const showTaskNumber = computed(() => (mode.value === 'edit' || mode.value === 'view') && !!taskId.value)
 
+// The task's link: its project's board with the task open (/p/{slug}/tasks/{id}).
+const taskPageHref = computed(() =>
+  taskId.value ? router.resolve(taskPageRoute(taskId.value, savedTaskProject.value)).href : '',
+)
+
+/**
+ * The #id link: go to the task's project board with the task still open (the
+ * same modal, so unsaved edits stay). Modified clicks open a new tab as usual.
+ */
+function goToTaskInProject(e: MouseEvent) {
+  if (!taskId.value || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  e.preventDefault()
+  const target = router.resolve(taskPageRoute(taskId.value, savedTaskProject.value))
+  if (target.fullPath === router.currentRoute.value.fullPath) return
+  // Task URLs otherwise just open the modal in place; this one should navigate.
+  allowTaskRouteNavigation(taskId.value)
+  void router.push(target)
+}
+
+/** The task's project (as saved, not the unsaved form value), for its page URL. */
+const savedTaskProject = computed(() => {
+  const pid = currentTask.value?.project_id
+  if (pid == null) return null
+  return projects.value.find((p) => p.id === pid) ?? { id: pid }
+})
+
 async function copyPermalink() {
   if (!taskId.value) return
-  const href = router.resolve({ name: 'task', params: { id: String(taskId.value) } }).href
+  const href = router.resolve(taskPageRoute(taskId.value, savedTaskProject.value)).href
   const url = new URL(href, window.location.origin).href
   try {
     await navigator.clipboard.writeText(url)
@@ -1228,7 +1255,13 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0 flex-wrap">
               <h5 class="modal-title fw-bold mb-0">
                 {{ kanbanHeaderTitle }}
-                <span v-if="showTaskNumber" class="text-muted fw-normal">#{{ taskId }}</span>
+                <a
+                v-if="showTaskNumber"
+                :href="taskPageHref"
+                class="text-muted fw-normal task-page-link"
+                title="Go to this task in its project"
+                @click="goToTaskInProject"
+              >#{{ taskId }}</a>
               </h5>
               <button
                 v-if="showTaskNumber"
@@ -1321,7 +1354,13 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
           <template v-else>
             <h5 class="modal-title fw-bold d-flex align-items-center gap-2 flex-wrap">
               {{ sidebarTitle }}
-              <span v-if="showTaskNumber" class="text-muted fw-normal">#{{ taskId }}</span>
+              <a
+                v-if="showTaskNumber"
+                :href="taskPageHref"
+                class="text-muted fw-normal task-page-link"
+                title="Go to this task in its project"
+                @click="goToTaskInProject"
+              >#{{ taskId }}</a>
               <button
                 v-if="showTaskNumber"
                 type="button"
@@ -1783,6 +1822,13 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
 </template>
 
 <style scoped>
+.task-page-link {
+  text-decoration: none;
+}
+.task-page-link:hover,
+.task-page-link:focus-visible {
+  text-decoration: underline;
+}
 textarea.task-description-input {
   height: auto;
   min-height: 80px;

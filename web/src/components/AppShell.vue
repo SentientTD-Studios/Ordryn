@@ -18,8 +18,10 @@ import ShortcutsModal from '@/components/ShortcutsModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import ProjectSwitcher from '@/components/modern/ProjectSwitcher.vue'
 import { resetProjectNav, useProjectNav } from '@/composables/useProjectNav'
+import { useTaskUrlSync } from '@/composables/useTaskUrlSync'
 
 const route = useRoute()
+useTaskUrlSync()
 const { isAuthenticated } = useAuth()
 const { siteInfo, refresh: refreshSite } = useSite()
 const { initKeyboardShortcuts, destroyKeyboardShortcuts } = useKeyboardShortcuts()

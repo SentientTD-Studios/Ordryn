@@ -1,29 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { api } from '@/api/client'
-import { useTaskSidebar } from '@/composables/useTaskSidebar'
-import { hasAnyProjectWrite } from '@/utils/projectPerms'
-
-const route = useRoute()
-const router = useRouter()
-const { openEdit, openView } = useTaskSidebar()
-
-onMounted(async () => {
-  const id = Number(route.params.id)
-  if (id > 0) {
-    try {
-      const [task, projects] = await Promise.all([api.getTask(id), api.listProjects()])
-      const project =
-        task.project_id != null ? projects.find((p) => p.id === task.project_id) : undefined
-      if (project && hasAnyProjectWrite(project)) openEdit(id)
-      else openView(id)
-    } catch {
-      openView(id)
-    }
-  }
-  await router.replace({ name: 'tasks' })
-})
+// /tasks/:id never renders: the router redirects it to the task's project board
+// with the task open (/p/{slug}/tasks/{id}), or opens it in place in the app.
 </script>
 
 <template>

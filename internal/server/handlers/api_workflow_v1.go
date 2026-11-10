@@ -150,6 +150,7 @@ func projectToAPIJSON(p *storage.ProjectWithAccess) apiProjectJSON {
 		OrganizationID:           p.OrganizationID,
 		OrganizationName:         p.OrganizationName,
 		OrgManaged:               p.OrgManaged,
+		Slug:                     p.Slug,
 	}
 }
 
@@ -180,6 +181,7 @@ func projectStorageToAPIJSON(p *storage.Project, role string) apiProjectJSON {
 		OrganizationID:           p.OrganizationID,
 		OrganizationName:         "",
 		OrgManaged:               p.OrgManaged,
+		Slug:                     p.Slug,
 	}
 }
 

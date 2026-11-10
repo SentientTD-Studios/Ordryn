@@ -2,8 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { appBase } from '@/base'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
+import { consumeTaskRoutePass, useTaskSidebar } from '@/composables/useTaskSidebar'
+import { api } from '@/api/client'
 import { isDeviceAuthPath, stashDeviceAuthReturn } from '@/deviceAuthReturn'
 import { isProfileSectionHash } from '@/utils/profileSections'
+
+const IndexView = () => import('@/views/IndexView.vue')
 
 const router = createRouter({
   history: createWebHistory(appBase()),
@@ -98,9 +102,25 @@ const router = createRouter({
     {
       path: '/',
       name: 'tasks',
-      component: () => import('@/views/IndexView.vue'),
+      component: IndexView,
       // Views that use the sidebar layout render AppFooter themselves.
       meta: { ownFooter: true },
+    },
+    {
+      // A project's board, by slug (or id / former slug, which redirect to the current slug).
+      // Shares the home component so switching projects doesn't remount the board.
+      path: '/p/:ref',
+      name: 'project',
+      component: IndexView,
+      meta: { ownFooter: true, requiresAuth: true },
+    },
+    {
+      // A task's link: its project's board with the task open as a modal. The id
+      // decides the task; a stale project in the path is corrected when it loads.
+      path: '/p/:ref/tasks/:id(\\d+)',
+      name: 'project-task',
+      component: IndexView,
+      meta: { ownFooter: true, requiresAuth: true },
     },
     {
       path: '/tasks/:id',
@@ -349,6 +369,41 @@ router.beforeEach(async (to) => {
     return { name: 'tasks' }
   }
   return true
+})
+
+// Task links always end in the task modal, never a separate page:
+// - in the app, following one opens the modal over the current page, so closing
+//   it returns the user to where they were;
+// - loading /p/{slug}/tasks/{id} shows that project's board with the task open;
+// - /tasks/{id} is the short form and redirects there (tasks without a project
+//   open over home).
+router.beforeEach(async (to, from) => {
+  if (to.name !== 'task' && to.name !== 'project-task') return true
+  const id = Number(to.params.id)
+  if (!(id > 0) || !useAuth().isAuthenticated.value) return true
+  // The app moving the URL for a task that's already open.
+  if (consumeTaskRoutePass(id)) return true
+  const inApp = from.matched.length > 0 && from.name !== 'share'
+  if (inApp) {
+    void useTaskSidebar().openTask(id)
+    return false
+  }
+  if (to.name === 'project-task') return true
+  try {
+    const task = await api.getTask(id)
+    if (task.project_id != null) {
+      const project = await api.getProject(task.project_id).catch(() => null)
+      return {
+        name: 'project-task',
+        params: { ref: project?.slug || String(task.project_id), id: String(id) },
+        query: to.query,
+        hash: to.hash,
+      }
+    }
+  } catch {
+    // Unknown or hidden task: the modal shows the error.
+  }
+  return { name: 'tasks', query: { ...to.query, task: String(id) }, hash: to.hash }
 })
 
 export default router

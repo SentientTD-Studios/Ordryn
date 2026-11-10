@@ -9,6 +9,7 @@ import { useSite } from '@/composables/useSite'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { usePageActivity } from '@/composables/usePageActivity'
+import { projectRoute } from '@/utils/projectRoute'
 
 const emit = defineEmits<{
   'toggle-mobile-nav': []
@@ -103,7 +104,7 @@ async function openNotification(n: Notification) {
     return
   }
   if (n.project_id) {
-    await router.push({ name: 'tasks', query: { project: String(n.project_id) } })
+    await router.push(projectRoute(n.project_id))
   }
 }
 

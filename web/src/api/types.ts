@@ -88,6 +88,8 @@ export type Project = {
   organization_id?: number | null
   organization_name?: string
   org_managed?: boolean
+  /** Site-unique URL name: the board lives at /p/{slug}. */
+  slug?: string
   /** Caller pinned this project to their sidebar (set on project lists). */
   pinned?: boolean
   pin_position?: number

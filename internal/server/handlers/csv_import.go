@@ -593,6 +593,9 @@ func importTasksFromCSV(userID int, cols importColumnMap, rows [][]string) (impo
 					if err != nil {
 						return imported, skipped, err
 					}
+					if _, err := storage.AssignProjectSlug(ctx, tx, foundID, projectName); err != nil {
+						return imported, skipped, err
+					}
 					newProjects = append(newProjects, foundID)
 				}
 				pid = foundID
