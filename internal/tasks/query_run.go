@@ -197,6 +197,9 @@ func decorateQueryTasks(list []Task) error {
 	if err := attachChildCounts(list); err != nil {
 		return err
 	}
+	if err := attachBacklogNames(list); err != nil {
+		return err
+	}
 	missing := make([]Task, 0)
 	for _, t := range list {
 		if t.ParentID > 0 && t.ParentTitle == "" {
@@ -232,6 +235,65 @@ func decorateQueryLevel(list []Task) error {
 		}
 	}
 	return attachTagsToTasks(list)
+}
+
+// attachBacklogNames labels kanban tasks with no sprint by their project's
+// backlog name, so the sprint column reads "Backlog" (or its rename) instead
+// of blank. Only query results get this; boards key off an empty SprintName.
+func attachBacklogNames(list []Task) error {
+	needs := func(t *Task) bool {
+		return t.SprintID == 0 && t.ProjectID > 0 && t.ProjectWorkflow == "kanban"
+	}
+	seen := map[int]bool{}
+	ids := make([]int, 0)
+	var collect func(ts []Task)
+	collect = func(ts []Task) {
+		for i := range ts {
+			if needs(&ts[i]) && !seen[ts[i].ProjectID] {
+				seen[ts[i].ProjectID] = true
+				ids = append(ids, ts[i].ProjectID)
+			}
+			collect(ts[i].Children)
+		}
+	}
+	collect(list)
+	if len(ids) == 0 {
+		return nil
+	}
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer storage.CloseDatabase(pool)
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, COALESCE(NULLIF(backlog_name, ''), 'Backlog') FROM projects WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	names := make(map[int]string, len(ids))
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		names[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var apply func(ts []Task)
+	apply = func(ts []Task) {
+		for i := range ts {
+			if needs(&ts[i]) {
+				ts[i].SprintName = names[ts[i].ProjectID]
+			}
+			apply(ts[i].Children)
+		}
+	}
+	apply(list)
+	return nil
 }
 
 // attachChildCounts fills ChildCount and ChildrenCompleted from every live

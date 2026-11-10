@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Sortable from 'sortablejs'
 import { RouterLink, onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { QueryDefinition, QueryNode, QueryOptions, QueryResults, QuerySortKey, SavedView, SavedViewScope } from '@/api/types'
@@ -278,6 +279,42 @@ function moveColumn(i: number, delta: number) {
   ;[cols[i], cols[j]] = [cols[j], cols[i]]
   def.value.columns = cols
 }
+
+// Drag-and-drop column ordering. The list can unmount (collapsed definition),
+// so the function ref creates and tears down Sortable with the element.
+let columnSortable: Sortable | null = null
+function bindColumnSortable(el: unknown) {
+  if (el instanceof HTMLElement) {
+    if (columnSortable?.el === el) return
+    columnSortable?.destroy()
+    columnSortable = Sortable.create(el, {
+      draggable: '.query-column-chip',
+      filter: 'button',
+      preventOnFilter: false,
+      animation: 150,
+      ghostClass: 'query-column-ghost',
+      onEnd(evt) {
+        const from = evt.oldIndex
+        const to = evt.newIndex
+        if (from == null || to == null || from === to) return
+        // Put the node back so Vue stays the only one reordering the DOM.
+        const anchor = evt.from.children[from > to ? from + 1 : from] ?? null
+        evt.from.insertBefore(evt.item, anchor)
+        const cols = [...def.value.columns]
+        const [moved] = cols.splice(from, 1)
+        cols.splice(to, 0, moved)
+        def.value.columns = cols
+      },
+    })
+  } else if (!el) {
+    columnSortable?.destroy()
+    columnSortable = null
+  }
+}
+onBeforeUnmount(() => {
+  columnSortable?.destroy()
+  columnSortable = null
+})
 
 function removeColumn(i: number) {
   def.value.columns = def.value.columns.filter((_, k) => k !== i)
@@ -613,8 +650,9 @@ onMounted(load)
           <div class="row g-3">
             <div class="col-12 col-lg-6">
               <div class="small fw-semibold mb-1">Columns</div>
-              <ol class="list-unstyled d-flex flex-wrap gap-1 mb-2" aria-label="Columns in order">
-                <li v-for="(c, i) in def.columns" :key="c" class="badge text-bg-light border d-inline-flex align-items-center gap-1 fw-normal">
+              <ol :ref="bindColumnSortable" class="list-unstyled d-flex flex-wrap gap-1 mb-2" aria-label="Columns in order (drag to reorder)">
+                <li v-for="(c, i) in def.columns" :key="c" class="query-column-chip badge text-bg-light border d-inline-flex align-items-center gap-1 fw-normal" :title="`Drag to reorder ${columnLabel(c)}`">
+                  <i class="bi bi-grip-vertical text-body-secondary" aria-hidden="true" />
                   <button type="button" class="btn btn-link btn-sm p-0 text-reset" :aria-label="`Move ${columnLabel(c)} left`" :disabled="i === 0" @click="moveColumn(i, -1)">
                     <i class="bi bi-chevron-left" />
                   </button>
@@ -707,6 +745,15 @@ onMounted(load)
 </template>
 
 <style scoped>
+.query-column-chip {
+  cursor: grab;
+}
+.query-column-chip:active {
+  cursor: grabbing;
+}
+.query-column-ghost {
+  opacity: 0.4;
+}
 .scope-projects {
   max-height: 12rem;
   overflow-y: auto;

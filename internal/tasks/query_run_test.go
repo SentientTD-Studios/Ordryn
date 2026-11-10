@@ -51,8 +51,8 @@ func setupQueryFixtures(t *testing.T) {
 			INSERT INTO project_statuses (id, project_id, name, position) VALUES
 				(300, 30, 'Doing', 1), (301, 31, 'Doing', 1);
 			INSERT INTO project_sprints (id, project_id, name, start_date, end_date) VALUES
-				(400, 30, 'Now', CURRENT_DATE - 3, CURRENT_DATE + 3),
-				(401, 31, 'Secret sprint', CURRENT_DATE - 3, CURRENT_DATE + 3);
+				(400, 30, 'Now', (NOW() AT TIME ZONE 'UTC')::date - 3, (NOW() AT TIME ZONE 'UTC')::date + 3),
+				(401, 31, 'Secret sprint', (NOW() AT TIME ZONE 'UTC')::date - 3, (NOW() AT TIME ZONE 'UTC')::date + 3);
 		`)
 		if err != nil {
 			t.Fatalf("fixture: %v", err)
@@ -67,7 +67,7 @@ func setupQueryFixtures(t *testing.T) {
 			queryIDs[key] = id
 		}
 		insert("parent", "Q parent", 50, 30, "claimed_by=51,status_id=300,sprint_id=400")
-		insert("other", "Q other", 50, 30, "due_date=CURRENT_DATE - 1")
+		insert("other", "Q other", 50, 30, "due_date=(NOW() AT TIME ZONE 'UTC')::date - 1")
 		insert("secret", "Q secret", 53, 31, "status_id=301,sprint_id=401")
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO tasks (title, description, user_id, project_id, parent_id, completed) VALUES
