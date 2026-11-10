@@ -65,9 +65,8 @@ const audienceChoices = computed(() => {
   return out
 })
 const audienceHelp = computed(() => {
-  if (audienceScope.value === 'site') return 'Everyone on the site can run it. Only people who manage site-wide queries can change it.'
-  if (audienceScope.value === 'organization')
-    return "The organization's members can run it; you, and people who manage the organization's queries, can change it."
+  if (audienceScope.value === 'site') return 'Everyone can run it; each person only sees tasks they can open.'
+  if (audienceScope.value === 'organization') return 'Members can run it; each person only sees tasks they can open.'
   return 'Only you can see it.'
 })
 
@@ -77,29 +76,57 @@ function audienceOf(v: SavedView): string {
   return 'personal'
 }
 
-/** "All my projects", "Organizations", or "Selected projects". */
-const scopeMode = computed(() =>
-  def.value.scope.organizations?.length ? 'orgs' : def.value.scope.projects.length ? 'projects' : 'all',
-)
+/**
+ * The "Search in" choice: "all", "org:<id>" (one organization's projects),
+ * "projects" (picked by hand), or "custom" for a saved scope that mixes
+ * several organizations and projects, which the menu keeps as it is.
+ */
+const searchIn = computed(() => {
+  const orgs = def.value.scope.organizations ?? []
+  const projects = def.value.scope.projects
+  if (orgs.length === 0) return projects.length ? 'projects' : 'all'
+  if (orgs.length === 1 && projects.length === 0) return `org:${orgs[0]}`
+  return 'custom'
+})
+const searchInHelp = computed(() => {
+  if (searchIn.value.startsWith('org:')) return 'Every project in the organization that the person running it can open.'
+  if (searchIn.value === 'projects') return 'Only the projects you tick below.'
+  if (searchIn.value === 'custom') return 'A mix of organizations and projects, saved earlier.'
+  return isShared.value ? 'Every project the person running it can open.' : 'Every project you can open.'
+})
+const customScopeLabel = computed(() => {
+  const o = def.value.scope.organizations?.length ?? 0
+  const p = def.value.scope.projects.length
+  return [o && `${o} organization${o === 1 ? '' : 's'}`, p && `${p} project${p === 1 ? '' : 's'}`].filter(Boolean).join(' + ')
+})
 
-function setScopeMode(mode: 'all' | 'orgs' | 'projects') {
-  const opts = options.value
-  if (mode === 'all') {
-    def.value.scope = { ...def.value.scope, projects: [], organizations: [] }
-  } else if (mode === 'orgs') {
-    const first = audienceOrgId.value ?? opts?.organizations[0]?.id
-    def.value.scope = { ...def.value.scope, projects: [], organizations: first ? [first] : [] }
-  } else {
-    def.value.scope = { ...def.value.scope, organizations: [], projects: (opts?.projects ?? []).slice(0, 1).map((p) => p.id) }
-  }
+function setSearchIn(value: string) {
+  if (value === 'custom') return
+  const scope = { ...def.value.scope, projects: [] as number[], organizations: [] as number[] }
+  if (value.startsWith('org:')) scope.organizations = [Number(value.slice(4))]
+  else if (value === 'projects') scope.projects = (options.value?.projects ?? []).filter((p) => !p.archived).slice(0, 1).map((p) => p.id)
+  def.value.scope = scope
 }
 
-function toggleScopeOrg(id: number, on: boolean) {
-  const set = new Set(def.value.scope.organizations ?? [])
-  if (on) set.add(id)
-  else set.delete(id)
-  def.value.scope.organizations = [...set]
-}
+/** Filter for the project checklist. */
+const projectFilter = ref('')
+const pickableProjects = computed(() => {
+  const q = projectFilter.value.trim().toLowerCase()
+  const list = options.value?.projects ?? []
+  return q ? list.filter((p) => p.name.toLowerCase().includes(q) || def.value.scope.projects.includes(p.id)) : list
+})
+const lostProjects = computed(() => def.value.scope.projects.filter((id) => !options.value?.projects.some((p) => p.id === id)))
+
+/** The rarely used scope switches, summarized while folded away. */
+const moreOpen = ref(false)
+const moreSummary = computed(() => {
+  const sc = def.value.scope
+  const on: string[] = []
+  if (sc.include_personal !== false) on.push('tasks without a project')
+  if (sc.include_archived) on.push('archived')
+  if (sc.exclude_view_only) on.push('skipping view-only projects')
+  return on.length ? `Including ${on.join(', ')}` : 'Project tasks only'
+})
 
 const snapshot = () => JSON.stringify({ n: name.value.trim(), d: def.value, a: audience.value })
 const dirty = computed(() => snapshot() !== savedSnapshot.value)
@@ -185,12 +212,14 @@ function audienceFromRoute(): string {
   return 'personal'
 }
 
-// Personal tasks without a project mean "the viewer's own", which rarely fits
-// a shared query, so sharing a new query turns them off (it can be turned back on).
+// Sensible defaults when a new query is shared: tasks without a project are
+// each person's own, so they are left out, and sharing with an organization
+// searches that organization's projects unless you already picked a scope.
 watch(audience, (to, from) => {
   if (!isNew.value || loading.value || to === from) return
   if (to !== 'personal' && from === 'personal') def.value.scope.include_personal = false
   else if (to === 'personal') def.value.scope.include_personal = true
+  if (searchIn.value === 'all' || searchIn.value === from) setSearchIn(to.startsWith('org:') ? to : 'all')
 })
 
 watch(() => route.fullPath, (to, from) => {
@@ -455,8 +484,8 @@ onMounted(load)
           </button>
         </div>
         <div v-show="editorOpen" id="query-editor-body" class="card-body">
-          <div class="row g-3 mb-3">
-            <div class="col-12 col-md-6">
+          <div class="row g-3 mb-2">
+            <div class="col-12 col-lg-4">
               <label for="query-name" class="form-label small fw-semibold">Name</label>
               <input
                 id="query-name"
@@ -464,84 +493,58 @@ onMounted(load)
                 type="text"
                 class="form-control form-control-sm"
                 maxlength="80"
-                placeholder="e.g. My open bugs due this week"
+                placeholder="e.g. Open bugs due this week"
                 :disabled="!canEdit"
               />
             </div>
-            <div v-if="canChooseAudience" class="col-12 col-md-6">
+            <div class="col-12 col-md-6 col-lg-4">
               <label for="query-audience" class="form-label small fw-semibold">Who can use it</label>
-              <select id="query-audience" v-model="audience" class="form-select form-select-sm">
+              <select id="query-audience" v-model="audience" class="form-select form-select-sm" :disabled="!canChooseAudience">
                 <option v-for="c in audienceChoices" :key="c.value" :value="c.value">{{ c.label }}</option>
               </select>
-              <div class="form-text">
-                {{ audienceHelp }}
-                <template v-if="isShared">Each person runs it with their own access, so it never shows anyone a task they can't already open.</template>
-              </div>
+              <div class="form-text">{{ audienceHelp }}</div>
+            </div>
+            <div class="col-12 col-md-6 col-lg-4">
+              <label for="query-search-in" class="form-label small fw-semibold">Search in</label>
+              <select
+                id="query-search-in"
+                class="form-select form-select-sm"
+                :value="searchIn"
+                :disabled="!canEdit"
+                @change="setSearchIn(($event.target as HTMLSelectElement).value)"
+              >
+                <option value="all">All projects</option>
+                <optgroup v-if="options.organizations.length" label="Organization">
+                  <option v-for="o in options.organizations" :key="o.id" :value="`org:${o.id}`">{{ o.name }} projects</option>
+                </optgroup>
+                <option
+                  v-if="searchIn.startsWith('org:') && !options.organizations.some((o) => `org:${o.id}` === searchIn)"
+                  :value="searchIn"
+                >
+                  An organization you're not in
+                </option>
+                <option value="projects" :disabled="options.projects.length === 0">Specific projects…</option>
+                <option v-if="searchIn === 'custom'" value="custom">{{ customScopeLabel }}</option>
+              </select>
+              <div class="form-text">{{ searchInHelp }}</div>
             </div>
           </div>
 
-          <!-- Scope -->
-          <fieldset class="mb-3">
-            <legend class="small fw-semibold mb-1">Search in</legend>
-            <div class="d-flex flex-wrap gap-3 mb-2">
-              <div class="form-check">
-                <input
-                  id="scope-all"
-                  class="form-check-input"
-                  type="radio"
-                  :checked="scopeMode === 'all'"
-                  :disabled="!canEdit"
-                  @change="setScopeMode('all')"
-                />
-                <label class="form-check-label small" for="scope-all">{{ isShared ? "All of the viewer's projects" : 'All my projects' }}</label>
-              </div>
-              <div v-if="options.organizations.length || scopeMode === 'orgs'" class="form-check">
-                <input
-                  id="scope-orgs"
-                  class="form-check-input"
-                  type="radio"
-                  :checked="scopeMode === 'orgs'"
-                  :disabled="!canEdit || options.organizations.length === 0"
-                  @change="setScopeMode('orgs')"
-                />
-                <label class="form-check-label small" for="scope-orgs">Projects in organizations</label>
-              </div>
-              <div class="form-check">
-                <input
-                  id="scope-some"
-                  class="form-check-input"
-                  type="radio"
-                  :checked="scopeMode === 'projects'"
-                  :disabled="!canEdit || options.projects.length === 0"
-                  @change="setScopeMode('projects')"
-                />
-                <label class="form-check-label small" for="scope-some">Selected projects</label>
-              </div>
+          <!-- Project picker, only for "Specific projects" -->
+          <div v-if="searchIn === 'projects' || searchIn === 'custom'" class="border rounded p-2 mb-2">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <label for="query-project-filter" class="visually-hidden">Filter projects</label>
+              <input
+                id="query-project-filter"
+                v-model="projectFilter"
+                type="search"
+                class="form-control form-control-sm project-filter"
+                placeholder="Filter projects…"
+              />
+              <span class="small text-muted ms-auto">{{ def.scope.projects.length }} selected</span>
             </div>
-            <div v-if="scopeMode === 'orgs'" class="scope-projects border rounded p-2 mb-2">
-              <div v-for="o in options.organizations" :key="o.id" class="form-check">
-                <input
-                  :id="`scope-o-${o.id}`"
-                  class="form-check-input"
-                  type="checkbox"
-                  :checked="(def.scope.organizations ?? []).includes(o.id)"
-                  :disabled="!canEdit"
-                  @change="toggleScopeOrg(o.id, ($event.target as HTMLInputElement).checked)"
-                />
-                <label class="form-check-label small" :for="`scope-o-${o.id}`">{{ o.name }}</label>
-              </div>
-              <div
-                v-for="id in (def.scope.organizations ?? []).filter((id) => !options!.organizations.some((o) => o.id === id))"
-                :key="`gone-o-${id}`"
-                class="small text-warning"
-              >
-                An organization you don't belong to is in this list; it matches nothing for you.
-                <button v-if="canEdit" type="button" class="btn btn-link btn-sm p-0" @click="toggleScopeOrg(id, false)">Remove</button>
-              </div>
-              <div class="form-text mt-1">Every project of these organizations that the person running the query can open.</div>
-            </div>
-            <div v-if="scopeMode === 'projects'" class="scope-projects border rounded p-2 mb-2">
-              <div v-for="p in options.projects" :key="p.id" class="form-check">
+            <div class="scope-projects">
+              <div v-for="p in pickableProjects" :key="p.id" class="form-check">
                 <input
                   :id="`scope-p-${p.id}`"
                   class="form-check-input"
@@ -556,30 +559,42 @@ onMounted(load)
                   <span v-if="p.view_only" class="text-muted">(view only)</span>
                 </label>
               </div>
-              <div
-                v-for="id in def.scope.projects.filter((id) => !options!.projects.some((p) => p.id === id))"
-                :key="`gone-${id}`"
-                class="small text-warning"
-              >
-                A project you can no longer open is in this list; it matches nothing.
-                <button v-if="canEdit" type="button" class="btn btn-link btn-sm p-0" @click="toggleScopeProject(id, false)">Remove</button>
-              </div>
+              <p v-if="pickableProjects.length === 0" class="small text-muted mb-0">No projects match.</p>
             </div>
-            <div class="d-flex flex-wrap gap-3">
+            <div v-for="id in lostProjects" :key="`gone-${id}`" class="small text-warning">
+              A project you can no longer open is selected; it matches nothing.
+              <button v-if="canEdit" type="button" class="btn btn-link btn-sm p-0" @click="toggleScopeProject(id, false)">Remove</button>
+            </div>
+          </div>
+
+          <!-- Rarely used scope switches -->
+          <div class="mb-3">
+            <button
+              type="button"
+              class="btn btn-link btn-sm p-0 text-decoration-none"
+              :aria-expanded="moreOpen"
+              aria-controls="query-more-options"
+              @click="moreOpen = !moreOpen"
+            >
+              <i :class="moreOpen ? 'bi bi-chevron-down' : 'bi bi-chevron-right'" aria-hidden="true" />
+              More options
+            </button>
+            <span v-if="!moreOpen" class="small text-muted ms-1">· {{ moreSummary }}</span>
+            <div v-if="moreOpen" id="query-more-options" class="d-flex flex-wrap gap-3 mt-1">
               <div class="form-check form-switch">
                 <input id="scope-personal" v-model="def.scope.include_personal" class="form-check-input" type="checkbox" :disabled="!canEdit" />
-                <label class="form-check-label small" for="scope-personal">{{ isShared ? "The viewer's tasks without a project" : 'My tasks without a project' }}</label>
+                <label class="form-check-label small" for="scope-personal">Include tasks without a project</label>
               </div>
               <div class="form-check form-switch">
                 <input id="scope-archived" v-model="def.scope.include_archived" class="form-check-input" type="checkbox" :disabled="!canEdit" />
-                <label class="form-check-label small" for="scope-archived">Archived projects and tasks</label>
+                <label class="form-check-label small" for="scope-archived">Include archived projects and tasks</label>
               </div>
               <div class="form-check form-switch">
                 <input id="scope-viewonly" v-model="def.scope.exclude_view_only" class="form-check-input" type="checkbox" :disabled="!canEdit" />
-                <label class="form-check-label small" for="scope-viewonly">Skip projects I can only view</label>
+                <label class="form-check-label small" for="scope-viewonly">Skip view-only projects</label>
               </div>
             </div>
-          </fieldset>
+          </div>
 
           <!-- Clauses -->
           <fieldset class="mb-3">
@@ -695,5 +710,8 @@ onMounted(load)
 .scope-projects {
   max-height: 12rem;
   overflow-y: auto;
+}
+.project-filter {
+  max-width: 16rem;
 }
 </style>
