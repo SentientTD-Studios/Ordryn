@@ -31,6 +31,7 @@ type Project struct {
 	UpdatedAt                time.Time
 	OrganizationID           *int
 	OrgManaged               bool
+	Slug                     string
 }
 
 // ProjectPatch is a partial update for a project owned by the user.
@@ -53,7 +54,7 @@ const projectSelectCols = `id, user_id, name, COALESCE(description, ''), COALESC
 		        COALESCE(position, 0), COALESCE(archived, false), COALESCE(backlog_name, 'Backlog'),
 		        COALESCE(backlog_description, ''), COALESCE(auto_create_next_sprint, false),
 		        auto_sprint_length_days, auto_sprint_lock_days_before, created_at, updated_at,
-		        organization_id, COALESCE(org_managed, false)`
+		        organization_id, COALESCE(org_managed, false), COALESCE(slug, '')`
 
 func nullIntPtr(n sql.NullInt32) *int {
 	if !n.Valid {
@@ -69,7 +70,7 @@ func scanProject(row interface{ Scan(dest ...any) error }, p *Project) error {
 	if err := row.Scan(
 		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position, &p.Archived,
 		&p.BacklogName, &p.BacklogDescription, &p.AutoCreateNextSprint, &length, &lock,
-		&p.CreatedAt, &p.UpdatedAt, &orgID, &p.OrgManaged,
+		&p.CreatedAt, &p.UpdatedAt, &orgID, &p.OrgManaged, &p.Slug,
 	); err != nil {
 		return err
 	}
@@ -123,6 +124,11 @@ func CreateProjectWithOrg(userID int, name, description string, spec *OrgImportS
 		userID, name, description, orgArg, orgManaged, orgImport), &p); err != nil {
 		return nil, fmt.Errorf("failed to create project: %v", err)
 	}
+	slug, err := AssignProjectSlug(context.Background(), pool, p.ID, p.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to assign project slug: %v", err)
+	}
+	p.Slug = slug
 	if err := EnsureProjectOwnerMember(p.ID, userID); err != nil {
 		return nil, fmt.Errorf("failed to create project owner membership: %v", err)
 	}

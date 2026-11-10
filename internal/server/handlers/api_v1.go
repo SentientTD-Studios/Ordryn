@@ -205,6 +205,7 @@ type apiProjectJSON struct {
 	OrganizationID           *int     `json:"organization_id,omitempty"`
 	OrganizationName         string   `json:"organization_name,omitempty"`
 	OrgManaged               bool     `json:"org_managed"`
+	Slug                     string   `json:"slug,omitempty"`
 	Pinned                   bool     `json:"pinned"`
 	PinPosition              *int     `json:"pin_position,omitempty"`
 }
@@ -244,6 +245,7 @@ type apiProjectPatchRequest struct {
 	OrganizationID           *int                 `json:"organization_id"`
 	OrgImport                string               `json:"org_import"`
 	OrgImportMembers         []apiOrgImportMember `json:"org_import_members"`
+	Slug                     *string              `json:"slug"`
 }
 
 func orgImportMembersFromAPI(in []apiOrgImportMember) []storage.OrgImportMember {
@@ -1156,6 +1158,14 @@ func APIV1ProjectsRouter(w http.ResponseWriter, r *http.Request) {
 		apiV1SetProjectPins(w, r)
 		return
 	}
+	if slug, ok := strings.CutPrefix(sub, "by-slug/"); ok {
+		if r.Method != http.MethodGet {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		apiV1GetProjectBySlug(w, r, slug)
+		return
+	}
 	if handleProjectSubResource(w, r, sub) {
 		return
 	}
@@ -1225,6 +1235,27 @@ func apiV1GetProject(w http.ResponseWriter, r *http.Request, projectID int) {
 	json.NewEncoder(w).Encode(projectToAPIJSON(p))
 }
 
+// apiV1GetProjectBySlug resolves a current or former project slug, so renamed
+// slugs keep working. Projects the caller cannot access are reported as not found.
+func apiV1GetProjectBySlug(w http.ResponseWriter, r *http.Request, slug string) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	p, err := domain.ProjectBySlug(r.Context(), userID, slug)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
+			return
+		}
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to look up project.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(projectToAPIJSON(p))
+}
+
 func apiV1CreateProject(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -1281,7 +1312,7 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 	}
 	hasOther := req.Name != nil || req.Description != nil || req.WorkflowMode != nil || req.BacklogName != nil || req.BacklogDescription != nil ||
 		req.AutoCreateNextSprint != nil || req.AutoSprintLengthDays.Set || req.AutoSprintLockDaysBefore.Set
-	if req.OrganizationID == nil && !hasOther {
+	if req.OrganizationID == nil && req.Slug == nil && !hasOther {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 		return
 	}
@@ -1295,6 +1326,12 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 	if hasOther {
 		project, err = domain.UpdateProject(r.Context(), userID, projectID, req.Name, req.Description, req.WorkflowMode, req.BacklogName, req.BacklogDescription, auto)
 		if err != nil {
+			writeProjectPatchError(w, err)
+			return
+		}
+	}
+	if req.Slug != nil {
+		if _, err = domain.SetProjectSlug(r.Context(), userID, projectID, *req.Slug); err != nil {
 			writeProjectPatchError(w, err)
 			return
 		}
@@ -1313,6 +1350,10 @@ func apiV1PatchProject(w http.ResponseWriter, r *http.Request, projectID int) {
 	if accessed, accErr := storage.GetAccessibleProjectByID(projectID, userID); accErr == nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(projectToAPIJSON(accessed))
+		return
+	}
+	if project == nil {
+		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Project not found.")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

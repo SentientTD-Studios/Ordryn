@@ -7,6 +7,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useProjectNav } from '@/composables/useProjectNav'
 import { projectNavLabel, isProjectOwner } from '@/utils/projectLabel'
 import { searchProjects } from '@/utils/projectNav'
+import { projectRoute } from '@/utils/projectRoute'
 
 type Row =
   | { kind: 'none'; key: string }
@@ -96,11 +97,11 @@ function choose(row: Row | undefined) {
   if (row.kind === 'project') nav.touchRecent(row.project.id)
   close()
   const inPlace = nav.inPlaceSelectHandler()
-  if (inPlace && route.path === '/') {
+  if (inPlace && (route.name === 'tasks' || route.name === 'project')) {
     inPlace(id)
     return
   }
-  void router.push({ path: '/', query: { project: id } })
+  void router.push(row.kind === 'project' ? projectRoute(row.project) : projectRoute(id))
 }
 
 function scrollHighlightIntoView() {

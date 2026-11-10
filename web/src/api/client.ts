@@ -894,12 +894,22 @@ export const api = {
       organization_id: number
       org_import?: OrgImportMode
       org_import_members?: OrgImportMember[]
+      slug: string
     }>,
   ) {
     return request<Project>(`/api/v2/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
+  },
+
+  getProject(id: number) {
+    return request<Project>(`/api/v2/projects/${id}`)
+  },
+
+  /** Resolve a current or former project slug (404 when unknown or not accessible). */
+  getProjectBySlug(slug: string) {
+    return request<Project>(`/api/v2/projects/by-slug/${encodeURIComponent(slug)}`)
   },
 
   reorderProjects(projectIds: number[]) {

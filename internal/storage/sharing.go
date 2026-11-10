@@ -42,6 +42,7 @@ type ProjectWithAccess struct {
 	OrganizationID           *int
 	OrgManaged               bool
 	OrganizationName         string
+	Slug                     string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }
@@ -319,7 +320,7 @@ const projectAccessSelectCols = `p.id, p.user_id, p.name, COALESCE(p.description
 		       COALESCE(p.position, 0), COALESCE(p.archived, false), COALESCE(p.backlog_name, 'Backlog'),
 		       COALESCE(p.backlog_description, ''), COALESCE(p.auto_create_next_sprint, false),
 		       p.auto_sprint_length_days, p.auto_sprint_lock_days_before, p.created_at, p.updated_at,
-		       p.organization_id, COALESCE(p.org_managed, false), COALESCE(o.name, '')`
+		       p.organization_id, COALESCE(p.org_managed, false), COALESCE(o.name, ''), COALESCE(p.slug, '')`
 
 func scanProjectWithAccess(row interface{ Scan(dest ...any) error }, p *ProjectWithAccess) error {
 	var length, lock sql.NullInt32
@@ -327,7 +328,7 @@ func scanProjectWithAccess(row interface{ Scan(dest ...any) error }, p *ProjectW
 	if err := row.Scan(
 		&p.ID, &p.UserID, &p.Name, &p.Description, &p.WorkflowMode, &p.Position,
 		&p.Archived, &p.BacklogName, &p.BacklogDescription, &p.AutoCreateNextSprint, &length, &lock,
-		&p.CreatedAt, &p.UpdatedAt, &orgID, &p.OrgManaged, &p.OrganizationName,
+		&p.CreatedAt, &p.UpdatedAt, &orgID, &p.OrgManaged, &p.OrganizationName, &p.Slug,
 		&p.Role, &p.OwnerEmail, &p.OwnerUserName, &p.OwnerUserID,
 	); err != nil {
 		return err

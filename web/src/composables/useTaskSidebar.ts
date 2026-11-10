@@ -1,5 +1,7 @@
 import { ref } from 'vue'
 import type { Task } from '@/api/types'
+import { api } from '@/api/client'
+import { hasAnyProjectWrite } from '@/utils/projectPerms'
 
 const open = ref(false)
 const mode = ref<'add' | 'edit' | 'view'>('add')
@@ -12,8 +14,25 @@ const defaultSprintId = ref<number | null | undefined>(undefined)
 const lastSavedTask = ref<Task | null>(null)
 const lastDeletedTask = ref<{ id: number; mode: 'cascade' | 'reparent' } | null>(null)
 
+// One-shot pass for the next navigation to a task URL, which the router
+// otherwise cancels in favour of opening the modal in place. Used when the app
+// itself moves the URL to /p/{slug}/tasks/{id} for an already-open task.
+let taskRoutePass: number | null = null
+
 type CloseGuard = () => boolean | Promise<boolean>
 let closeGuard: CloseGuard | null = null
+
+/** Let the next navigation to this task's URL through the router's in-place guard. */
+export function allowTaskRouteNavigation(id: number) {
+  taskRoutePass = id
+}
+
+/** Router guard helper: true (once) when the app itself is moving to this task's URL. */
+export function consumeTaskRoutePass(id: number): boolean {
+  const ok = taskRoutePass === id
+  taskRoutePass = null
+  return ok
+}
 
 export function useTaskSidebar() {
   function openAdd(
@@ -58,6 +77,20 @@ export function useTaskSidebar() {
     open.value = true
   }
 
+  /** Open a task by id, in edit mode when the user can write to its project, view mode otherwise. */
+  async function openTask(id: number): Promise<Task | null> {
+    try {
+      const [task, projects] = await Promise.all([api.getTask(id), api.listProjects()])
+      const project = task.project_id != null ? projects.find((p) => p.id === task.project_id) : undefined
+      if (project && hasAnyProjectWrite(project)) openEdit(id)
+      else openView(id)
+      return task
+    } catch {
+      openView(id)
+      return null
+    }
+  }
+
   function close() {
     open.value = false
   }
@@ -97,6 +130,7 @@ export function useTaskSidebar() {
     openAdd,
     openEdit,
     openView,
+    openTask,
     close,
     requestClose,
     setCloseGuard,

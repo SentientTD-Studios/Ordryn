@@ -56,6 +56,7 @@ func TestMain(m *testing.M) {
 			organization_id INTEGER,
 			org_managed BOOLEAN NOT NULL DEFAULT FALSE,
 			org_import VARCHAR(16),
+			slug TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
 			archived BOOLEAN NOT NULL DEFAULT FALSE,
 			backlog_name TEXT NOT NULL DEFAULT 'Backlog',

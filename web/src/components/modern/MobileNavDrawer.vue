@@ -9,6 +9,7 @@ import { useToast } from '@/composables/useToast'
 import { useProjectNav } from '@/composables/useProjectNav'
 import { sidebarProjectSections } from '@/utils/projectNav'
 import { audienceIcon } from '@/utils/queryDefinition'
+import { projectRoute } from '@/utils/projectRoute'
 import SidebarProjectLink from '@/components/modern/SidebarProjectLink.vue'
 
 const props = defineProps<{
@@ -40,7 +41,14 @@ const canViewInvites = computed(
     !isCompanyMode.value &&
     (hasPermission('admin') || hasPermission('createinvites') || !!siteInfo.value?.allow_user_invites),
 )
-const activeProject = computed(() => (typeof route.query.project === 'string' ? route.query.project : ''))
+const activeProject = computed(() => {
+  if (route.name === 'project') {
+    const ref = String(route.params.ref || '')
+    const p = projects.value.find((x) => x.slug === ref || String(x.id) === ref)
+    return p ? String(p.id) : ''
+  }
+  return typeof route.query.project === 'string' ? route.query.project : ''
+})
 const activeView = computed(() => (typeof route.query.view === 'string' ? route.query.view : ''))
 
 const sections = computed(() =>
@@ -71,11 +79,12 @@ function selectProject(id: string) {
   if (numeric > 0) nav.touchRecent(numeric)
   close()
   const inPlace = nav.inPlaceSelectHandler()
-  if (inPlace && route.path === '/') {
+  if (inPlace && (route.name === 'tasks' || route.name === 'project')) {
     inPlace(id)
     return
   }
-  void router.push({ path: '/', query: { project: id } })
+  const proj = projects.value.find((p) => String(p.id) === id)
+  void router.push(projectRoute(proj ?? id))
 }
 
 function openSwitcher() {

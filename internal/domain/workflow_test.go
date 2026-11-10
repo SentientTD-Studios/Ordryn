@@ -122,6 +122,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "project org_import: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateProjectSlugTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "project slugs: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateTasksTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "tasks: %v\n", err)
 		os.Exit(1)

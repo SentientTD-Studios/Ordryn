@@ -28,7 +28,7 @@ import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { useKanbanSurfaces } from '@/composables/useKanbanSurfaces'
 import { useTaskListFilters } from '@/composables/useTaskListFilters'
 import { useTaskListState } from '@/composables/useTaskListState'
-import { useTaskSidebar } from '@/composables/useTaskSidebar'
+import { allowTaskRouteNavigation, useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useTaskSortable } from '@/composables/useTaskSortable'
 import { useToast } from '@/composables/useToast'
 import { useProjectNav } from '@/composables/useProjectNav'
@@ -43,6 +43,7 @@ import { hasAnyProjectWrite, hasProjectPerm, PROJECT_PERMS } from '@/utils/proje
 import { kanbanSprintQueryValue, kanbanWorkflowClaimScope } from '@/utils/kanbanTaskQuery'
 import { uniqueTagsByName, isArchivedTask } from '@/utils/tags'
 import { filterHas, parseFilterList } from '@/utils/filterValues'
+import { projectRoute } from '@/utils/projectRoute'
 
 const route = useRoute()
 const router = useRouter()
@@ -405,36 +406,115 @@ async function loadTags() {
   }
 }
 
-function syncFiltersFromRoute() {
+/** Find the project a /p/:ref value names: an id, a current slug, or a former slug. */
+// The project list may not be loaded yet (fresh page load, or a route change
+// racing loadMeta), so anything not found locally is looked up through the API,
+// which also enforces access.
+async function resolveProjectRef(ref: string): Promise<Project | null> {
+  const numeric = /^\d+$/.test(ref)
+  const local = projects.value.find((p) => (numeric ? String(p.id) === ref : p.slug === ref))
+  if (local) return local
+  try {
+    const found = numeric ? await api.getProject(Number(ref)) : await api.getProjectBySlug(ref)
+    return projects.value.find((p) => p.id === found.id) ?? found
+  } catch {
+    return null
+  }
+}
+
+/** On /p/:ref/tasks/:id, let the next URL rewrite past the router's in-place task guard. */
+function allowTaskUrlRewrite() {
+  if (route.name === 'project-task') allowTaskRouteNavigation(Number(route.params.id))
+}
+
+function isBoardRoute() {
+  return route.name === 'tasks' || route.name === 'project' || route.name === 'project-task'
+}
+
+/**
+ * Apply the project or saved view the URL names. The URL is the source of truth
+ * for which project is shown: /p/:ref is a project board, and a bare / keeps the
+ * project already open (moving the URL to its board). Returns true when filters
+ * changed and the list needs reloading.
+ */
+async function syncFiltersFromRoute(): Promise<boolean> {
+  if (!isBoardRoute()) return false
+  if (route.name === 'project' || route.name === 'project-task') {
+    const ref = String(route.params.ref || '')
+    const proj = await resolveProjectRef(ref)
+    if (!isBoardRoute() || String(route.params.ref || '') !== ref) return false // navigated away meanwhile
+    if (!proj) {
+      toast.push('Project not found, or you no longer have access to it.', 'error')
+      activeViewId.value = null
+      setFilter('project', '')
+      void router.replace({ name: 'tasks' })
+      return true
+    }
+    if (proj.slug && proj.slug !== ref) {
+      // Ids and former slugs redirect to the current slug.
+      allowTaskUrlRewrite()
+      void router.replace({ name: route.name, params: { ...route.params, ref: proj.slug }, query: route.query, hash: route.hash })
+    }
+    const id = String(proj.id)
+    if (filters.project === id && !activeViewId.value) return false
+    activeViewId.value = null
+    setFilter('project', id)
+    ensureKanbanBoardDefault()
+    return true
+  }
+
   const qView = typeof route.query.view === 'string' ? route.query.view : null
   const qProject = typeof route.query.project === 'string' ? route.query.project : null
 
   if (qView) {
     const view = savedViews.value.find((v) => String(v.id) === qView)
     if (view) {
+      if (activeViewId.value === String(view.id)) return false
       activeViewId.value = String(view.id)
       applySavedViewFilters(view.filter || {})
       search.value = filters.search
       ensureKanbanBoardDefault()
-      return
+      return true
     }
   }
 
+  if (qProject !== null && qProject !== '' && qProject !== '0') {
+    // Old /?project=12 links move to the project's board.
+    const query = { ...route.query }
+    delete query.project
+    const proj = projects.value.find((p) => String(p.id) === qProject)
+    const target = router.resolve(projectRoute(proj ?? qProject))
+    void router.replace({ path: target.path, query, hash: route.hash })
+    return false
+  }
+
   if (qProject !== null) {
+    if (filters.project === qProject && !activeViewId.value) return false
     activeViewId.value = null
     setFilter('project', qProject)
     ensureKanbanBoardDefault()
+    return true
   }
+
+  // Bare "/": keep the open project, but show it in the URL.
+  if (!activeViewId.value && filters.project && filters.project !== '0') {
+    void router.replace({ ...projectLocation(filters.project), query: route.query, hash: route.hash })
+  }
+  return false
 }
 
-async function consumeTaskQuery() {
-  const raw = Array.isArray(route.query.task) ? route.query.task[0] : route.query.task
-  const id = Number(raw)
-  if (!Number.isFinite(id) || id <= 0) return
-  const nextQuery = { ...route.query }
-  delete nextQuery.task
-  await router.replace({ query: nextQuery })
-  openTaskDetails(id)
+/** Where the URL should point for a project filter value ('' home, '0' no project). */
+function projectLocation(id: string) {
+  const proj = projects.value.find((p) => String(p.id) === id)
+  return projectRoute(proj ?? id)
+}
+
+/** Move the URL to the board for the current project filter, keeping ?task. */
+function syncUrlToProject() {
+  if (!isBoardRoute()) return
+  const query = route.query.task ? { task: route.query.task } : {}
+  const target = router.resolve({ ...projectLocation(filters.project), query })
+  if (target.fullPath !== route.fullPath) void router.push(target)
 }
 
 async function reloadInitial() {
@@ -548,18 +628,29 @@ watch(lastDeletedTask, async (payload) => {
   refreshSortable()
 })
 
+function routeKeyWithoutTask() {
+  const rest = { ...route.query }
+  delete rest.task
+  return JSON.stringify([route.name, route.params.ref ?? '', rest])
+}
+
+watch(routeKeyWithoutTask, async () => {
+  if (await syncFiltersFromRoute()) void reloadInitial()
+})
+
+// Keep the URL on the current slug when the open project's slug is changed.
+// Only a rename counts: the same project, a new slug, and the URL still on the old
+// one. The project list loading (or the active project switching) also changes this
+// slug, and must not override the project the URL names — e.g. remounting on
+// /p/b/tasks/1 while the shared filter state still holds the previous project.
 watch(
-  () => route.query,
-  (next, prev) => {
-    const nextRest = { ...next }
-    const prevRest = { ...(prev || {}) }
-    delete nextRest.task
-    delete prevRest.task
-    if (JSON.stringify(nextRest) !== JSON.stringify(prevRest)) {
-      syncFiltersFromRoute()
-      void reloadInitial()
+  () => [activeProjectObj.value?.id, activeProjectObj.value?.slug] as const,
+  ([id, slug], [prevId, prevSlug]) => {
+    if (!slug || !prevSlug || id !== prevId || slug === prevSlug) return
+    if ((route.name === 'project' || route.name === 'project-task') && route.params.ref === prevSlug) {
+      allowTaskUrlRewrite()
+      void router.replace({ name: route.name, params: { ...route.params, ref: slug }, query: route.query, hash: route.hash })
     }
-    if (next.task) void consumeTaskQuery()
   },
 )
 
@@ -761,17 +852,21 @@ function selectProjectFilter(id: string) {
   activeViewId.value = null
   if (filters.project === id) {
     setFilterAndReload('project', '')
+    syncUrlToProject()
     return
   }
   setFilter('project', id)
   // Switch to board before reload so claim-scope=all is used for kanban projects.
   ensureKanbanBoardDefault()
   void reloadInitial()
+  syncUrlToProject()
 }
 
 function selectSavedViewFilter(id: string) {
   const view = savedViews.value.find((v) => String(v.id) === id)
   if (!view) return
+  // A saved view isn't a project board; leave /p/:ref so the URL doesn't claim one.
+  if (route.name === 'project') void router.push({ name: 'tasks' })
   activeViewId.value = String(view.id)
   applySavedViewFilters(view.filter || {})
   search.value = filters.search
@@ -829,6 +924,7 @@ async function deleteActiveView() {
     await api.deleteSavedView(view.id)
     activeViewId.value = null
     setFilter('project', '')
+    syncUrlToProject()
     await loadMeta()
     void reloadInitial()
   } catch (err) {
@@ -894,6 +990,7 @@ watch(
 function selectHome() {
   activeViewId.value = null
   if (filters.project) setFilterAndReload('project', '')
+  syncUrlToProject()
 }
 
 useInfiniteScroll(loadMoreSentinel, loadMore, hasMore)
@@ -947,9 +1044,8 @@ onMounted(async () => {
   })
   showShortcutsHintOnce()
   await loadMeta()
-  syncFiltersFromRoute()
+  await syncFiltersFromRoute()
   await reloadInitial()
-  await consumeTaskQuery()
 })
 
 useLiveUpdates((event, batch) => {

@@ -2897,6 +2897,30 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/by-slug/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Projects]
+      summary: Look up a project by its current or former slug
+      description: Former slugs (from renames) resolve to the project too. Projects the caller cannot access return 404.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/projects/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -2939,7 +2963,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Cannot disable kanban while the project has tasks
+          description: Cannot disable kanban while the project has tasks, or the slug is used by another project
     delete:
       tags: [Projects]
       summary: Delete a project (owner only)
@@ -9547,6 +9571,9 @@ components:
         org_managed:
           type: boolean
           description: When true, imported members and roles are locked to the organization. Organization role changes update this board, and project sharing/roles cannot be edited here.
+        slug:
+          type: string
+          description: Site-unique URL name used in /p/{slug}. Set from the name at creation; does not follow renames.
         pinned:
           type: boolean
           description: True when the caller pinned this project to their sidebar (set on GET /api/v2/projects)
@@ -9621,6 +9648,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OrgImportMember"
+        slug:
+          type: string
+          minLength: 2
+          maxLength: 48
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          description: Change the project's URL name (project managers). Lowercased; may not be only digits. The previous slug keeps resolving via GET /api/v2/projects/by-slug/{slug}. 409 when another project uses it.
       description: At least one field required. Disabling kanban fails with 409 if the project has tasks.
 
     ProjectStatus:

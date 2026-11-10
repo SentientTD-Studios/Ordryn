@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { pathPrefix } from '@/base'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = withDefaults(
@@ -14,6 +16,24 @@ const props = withDefaults(
 const emit = defineEmits<{
   'open-task': [id: number]
 }>()
+
+const router = useRouter()
+
+/** Task id when href is a link to a task in this app (same origin, /tasks/:id). */
+function appTaskLinkId(href: string): number | null {
+  let url: URL
+  try {
+    url = new URL(href, window.location.href)
+  } catch {
+    return null
+  }
+  if (url.origin !== window.location.origin) return null
+  const prefix = pathPrefix()
+  if (prefix && !url.pathname.startsWith(`${prefix}/`)) return null
+  const m = url.pathname.slice(prefix.length).match(/^(?:\/p\/[^/]+)?\/tasks\/(\d+)\/?$/)
+  const id = m ? Number(m[1]) : 0
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
 
 const renderedHtml = computed(() => {
   return renderMarkdown(props.body || '', {
@@ -31,6 +51,18 @@ function onContainerClick(e: MouseEvent) {
       e.stopPropagation()
       emit('open-task', id)
     }
+    return
+  }
+  // Markdown links to a task in this app open in place rather than in a new tab
+  // (the router intercepts in-app task navigation). Modified clicks keep the browser default.
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  if (router.currentRoute.value.name === 'share') return
+  const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.rich-body-link')
+  const id = anchor ? appTaskLinkId(anchor.getAttribute('href') || '') : null
+  if (id) {
+    e.preventDefault()
+    e.stopPropagation()
+    void router.push({ name: 'task', params: { id: String(id) } })
   }
 }
 </script>

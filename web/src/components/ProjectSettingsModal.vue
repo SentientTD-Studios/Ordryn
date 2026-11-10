@@ -22,6 +22,7 @@ import ProjectMemberRoster from '@/components/ProjectMemberRoster.vue'
 import { isArchivedProject } from '@/utils/projectLabel'
 import { useSite } from '@/composables/useSite'
 import { canManageProject } from '@/utils/projectPerms'
+import { pathPrefix } from '@/base'
 
 type SettingsTab =
   | 'details'
@@ -53,6 +54,8 @@ const toast = useToast()
 const { askConfirm } = useConfirm()
 const name = ref('')
 const description = ref('')
+const slug = ref('')
+const slugPrefix = `${window.location.origin}${pathPrefix()}/p/`
 const saving = ref(false)
 const archiving = ref(false)
 const attachingOrg = ref(false)
@@ -100,6 +103,7 @@ watch(
     if (!open || !props.project) return
     name.value = props.project.name
     description.value = props.project.description || ''
+    slug.value = props.project.slug || ''
     attachOrgId.value = props.project.organization_id || 0
     attachMode.value = 'copy'
     attachMembers.value = []
@@ -115,6 +119,7 @@ watch(
     if (!props.open || !props.project) return
     name.value = props.project.name
     description.value = props.project.description || ''
+    slug.value = props.project.slug || ''
     attachOrgId.value = props.project.organization_id || 0
     const prevId = Array.isArray(prev) ? prev[0] : undefined
     if (prevId !== undefined && next[0] !== prevId) tab.value = 'details'
@@ -192,9 +197,11 @@ async function saveBasics() {
   if (!props.project || !name.value.trim() || !isOwner.value) return
   saving.value = true
   try {
+    const nextSlug = slug.value.trim().toLowerCase()
     await api.updateProject(props.project.id, {
       name: name.value.trim(),
       description: description.value.trim(),
+      ...(nextSlug && nextSlug !== props.project.slug ? { slug: nextSlug } : {}),
     })
     toast.push('Project updated', 'success')
     emit('saved')
@@ -326,6 +333,25 @@ async function archiveOrRestore() {
                 <small class="form-hint">Max 50 characters</small>
                 <small class="text-muted">{{ name.length }}/50</small>
               </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="edit-project-slug" class="form-label small fw-bold">URL</label>
+              <div class="input-group input-group-sm">
+                <span class="input-group-text text-truncate" style="max-width: 60%;" :title="slugPrefix">{{ slugPrefix }}</span>
+                <input
+                  id="edit-project-slug"
+                  v-model="slug"
+                  type="text"
+                  class="form-control"
+                  maxlength="48"
+                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :readonly="!isOwner"
+                />
+              </div>
+              <small class="form-hint">Lowercase letters, digits and hyphens. Old links keep working after a change.</small>
             </div>
 
             <div class="mb-3">
