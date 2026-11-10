@@ -17,8 +17,15 @@ const (
 )
 
 // GitHubConnection is a user's linked GitHub credentials (token encrypted at rest).
+//
+// A user may hold several connections, one per OwnerScope. An empty OwnerScope
+// is the catch-all connection (OAuth or classic token, which cover every owner
+// the GitHub account can reach). A non-empty OwnerScope (stored lowercase) is a
+// token limited to that user or organization, e.g. a fine-grained PAT whose
+// resource owner is that account.
 type GitHubConnection struct {
 	UserID         int
+	OwnerScope     string
 	AccessTokenEnc string
 	GitHubUserID   int64
 	GitHubLogin    string
@@ -29,26 +36,26 @@ type GitHubConnection struct {
 
 // ProjectGitHubRepo links a kanban/classic project to one GitHub repository.
 type ProjectGitHubRepo struct {
-	ProjectID       int
-	GitHubOwner     string
-	GitHubRepo      string
-	GitHubRepoID    int64
-	LinkedByUserID  int
-	WebhookSecret   string
-	LinkedAt        time.Time
-	UpdatedAt       time.Time
+	ProjectID      int
+	GitHubOwner    string
+	GitHubRepo     string
+	GitHubRepoID   int64
+	LinkedByUserID int
+	WebhookSecret  string
+	LinkedAt       time.Time
+	UpdatedAt      time.Time
 }
 
 // TaskGitHubIssue is the persisted link from an Ordryn task to a GitHub issue.
 type TaskGitHubIssue struct {
-	TaskID            int
-	IssueID           int64
-	IssueNumber       int
-	IssueURL          string
-	IssueState        string
-	IssueTitle        string
-	LastSyncedAt      *time.Time
-	LastSyncError     string
+	TaskID        int
+	IssueID       int64
+	IssueNumber   int
+	IssueURL      string
+	IssueState    string
+	IssueTitle    string
+	LastSyncedAt  *time.Time
+	LastSyncError string
 }
 
 // CreateGitHubTables creates GitHub integration tables.
@@ -61,15 +68,31 @@ func CreateGitHubTables() error {
 
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS github_connections (
-			user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			owner_scope VARCHAR(255) NOT NULL DEFAULT '',
 			access_token_enc TEXT NOT NULL,
 			github_user_id BIGINT NOT NULL DEFAULT 0,
 			github_login VARCHAR(255) NOT NULL DEFAULT '',
 			auth_method VARCHAR(16) NOT NULL,
 			connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (user_id, owner_scope),
 			CHECK (auth_method IN ('oauth', 'pat'))
 		)`,
+		// Migrate single-connection tables (PK user_id) to per-owner connections.
+		// Existing rows become the catch-all connection (owner_scope '').
+		`ALTER TABLE github_connections ADD COLUMN IF NOT EXISTS owner_scope VARCHAR(255) NOT NULL DEFAULT ''`,
+		`DO $$
+		BEGIN
+			IF EXISTS (
+				SELECT 1 FROM pg_index i
+				JOIN pg_class c ON c.oid = i.indrelid
+				WHERE c.relname = 'github_connections' AND i.indisprimary AND i.indnatts = 1
+			) THEN
+				ALTER TABLE github_connections DROP CONSTRAINT github_connections_pkey;
+				ALTER TABLE github_connections ADD PRIMARY KEY (user_id, owner_scope);
+			END IF;
+		END $$`,
 		`CREATE TABLE IF NOT EXISTS project_github_repos (
 			project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
 			github_owner VARCHAR(255) NOT NULL,
@@ -104,8 +127,24 @@ func CreateGitHubTables() error {
 	return nil
 }
 
-// UpsertGitHubConnection stores or replaces the user's GitHub connection.
-func UpsertGitHubConnection(userID int, tokenEnc, login, method string, githubUserID int64) (*GitHubConnection, error) {
+const githubConnectionCols = `user_id, owner_scope, access_token_enc, github_user_id, github_login, auth_method, connected_at, updated_at`
+
+func scanGitHubConnection(row pgx.Row) (*GitHubConnection, error) {
+	var c GitHubConnection
+	if err := row.Scan(&c.UserID, &c.OwnerScope, &c.AccessTokenEnc, &c.GitHubUserID, &c.GitHubLogin,
+		&c.AuthMethod, &c.ConnectedAt, &c.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// NormalizeGitHubOwnerScope lowercases and trims an owner scope ("" = catch-all).
+func NormalizeGitHubOwnerScope(owner string) string {
+	return strings.ToLower(strings.TrimSpace(owner))
+}
+
+// UpsertGitHubConnection stores or replaces the user's connection for ownerScope.
+func UpsertGitHubConnection(userID int, ownerScope, tokenEnc, login, method string, githubUserID int64) (*GitHubConnection, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -117,50 +156,93 @@ func UpsertGitHubConnection(userID int, tokenEnc, login, method string, githubUs
 		return nil, fmt.Errorf("invalid auth method")
 	}
 
-	var c GitHubConnection
-	err = pool.QueryRow(context.Background(), `
+	c, err := scanGitHubConnection(pool.QueryRow(context.Background(), `
 		INSERT INTO github_connections (
-			user_id, access_token_enc, github_user_id, github_login, auth_method, connected_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-		ON CONFLICT (user_id) DO UPDATE SET
+			user_id, owner_scope, access_token_enc, github_user_id, github_login, auth_method, connected_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+		ON CONFLICT (user_id, owner_scope) DO UPDATE SET
 			access_token_enc = EXCLUDED.access_token_enc,
 			github_user_id = EXCLUDED.github_user_id,
 			github_login = EXCLUDED.github_login,
 			auth_method = EXCLUDED.auth_method,
 			updated_at = NOW()
-		RETURNING user_id, access_token_enc, github_user_id, github_login, auth_method, connected_at, updated_at`,
-		userID, tokenEnc, githubUserID, strings.TrimSpace(login), method,
-	).Scan(&c.UserID, &c.AccessTokenEnc, &c.GitHubUserID, &c.GitHubLogin, &c.AuthMethod, &c.ConnectedAt, &c.UpdatedAt)
+		RETURNING `+githubConnectionCols,
+		userID, NormalizeGitHubOwnerScope(ownerScope), tokenEnc, githubUserID, strings.TrimSpace(login), method,
+	))
 	if err != nil {
 		return nil, fmt.Errorf("upsert github connection: %w", err)
 	}
-	return &c, nil
+	return c, nil
 }
 
-// GetGitHubConnection returns the connection for a user, or nil if none.
-func GetGitHubConnection(userID int) (*GitHubConnection, error) {
+// ListGitHubConnections returns all of a user's connections, catch-all first.
+func ListGitHubConnections(userID int) ([]GitHubConnection, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
 	}
 	defer CloseDatabase(pool)
 
-	var c GitHubConnection
-	err = pool.QueryRow(context.Background(), `
-		SELECT user_id, access_token_enc, github_user_id, github_login, auth_method, connected_at, updated_at
-		FROM github_connections WHERE user_id = $1`, userID,
-	).Scan(&c.UserID, &c.AccessTokenEnc, &c.GitHubUserID, &c.GitHubLogin, &c.AuthMethod, &c.ConnectedAt, &c.UpdatedAt)
+	rows, err := pool.Query(context.Background(), `
+		SELECT `+githubConnectionCols+`
+		FROM github_connections WHERE user_id = $1
+		ORDER BY owner_scope`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GitHubConnection
+	for rows.Next() {
+		c, err := scanGitHubConnection(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
+// GetGitHubConnectionForOwner returns the user's connection that should be used
+// for repositories owned by owner: an exact owner-scoped connection first, else
+// the catch-all connection. Returns nil if neither exists.
+func GetGitHubConnectionForOwner(userID int, owner string) (*GitHubConnection, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	c, err := scanGitHubConnection(pool.QueryRow(context.Background(), `
+		SELECT `+githubConnectionCols+`
+		FROM github_connections
+		WHERE user_id = $1 AND owner_scope IN ($2, '')
+		ORDER BY owner_scope DESC
+		LIMIT 1`, userID, NormalizeGitHubOwnerScope(owner),
+	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return &c, nil
+	return c, nil
 }
 
-// DeleteGitHubConnection removes the user's GitHub connection.
-func DeleteGitHubConnection(userID int) error {
+// DeleteGitHubConnection removes the user's connection for ownerScope ("" = catch-all).
+func DeleteGitHubConnection(userID int, ownerScope string) error {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return err
+	}
+	defer CloseDatabase(pool)
+	_, err = pool.Exec(context.Background(),
+		`DELETE FROM github_connections WHERE user_id = $1 AND owner_scope = $2`,
+		userID, NormalizeGitHubOwnerScope(ownerScope))
+	return err
+}
+
+// DeleteAllGitHubConnections removes every GitHub connection for the user.
+func DeleteAllGitHubConnections(userID int) error {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return err

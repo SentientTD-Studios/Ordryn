@@ -31,6 +31,8 @@ const (
 
 type apiGitHubPATRequest struct {
 	Token string `json:"token"`
+	// Owner optionally limits the token to one GitHub user/organization.
+	Owner string `json:"owner"`
 }
 
 type apiProjectGitHubLinkRequest struct {
@@ -102,6 +104,8 @@ func taskGitHubToAPIJSON(p *domain.TaskGitHubIssuePublic) *apiTaskGitHubJSON {
 }
 
 // APIV1MeGitHub handles GET/DELETE /api/v2/me/github.
+// DELETE without ?owner removes every connection; ?owner=<name> removes the
+// token for that owner and ?owner= (empty) removes the catch-all token.
 func APIV1MeGitHub(w http.ResponseWriter, r *http.Request) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -118,7 +122,12 @@ func APIV1MeGitHub(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(conn)
 	case http.MethodDelete:
-		if err := domain.DisconnectGitHub(r.Context(), userID); err != nil {
+		var owner *string
+		if q := r.URL.Query(); q.Has("owner") {
+			o := q.Get("owner")
+			owner = &o
+		}
+		if err := domain.DisconnectGitHub(r.Context(), userID, owner); err != nil {
 			writeGitHubDomainError(w, err)
 			return
 		}
@@ -145,7 +154,7 @@ func APIV1MeGitHubPAT(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
-	conn, err := domain.ConnectGitHubWithPAT(r.Context(), userID, req.Token)
+	conn, err := domain.ConnectGitHubWithPAT(r.Context(), userID, req.Token, req.Owner)
 	if err != nil {
 		writeGitHubDomainError(w, err)
 		return

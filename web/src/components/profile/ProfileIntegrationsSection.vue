@@ -15,6 +15,9 @@ const { siteInfo, refresh: refreshSite } = useSite()
 
 const github = ref<GitHubConnection | null>(null)
 const githubPAT = ref('')
+const githubPATOwner = ref('')
+const githubTokens = computed(() => github.value?.connections ?? [])
+const hasCatchAllToken = computed(() => githubTokens.value.some((t) => !t.owner))
 const githubBusy = ref(false)
 const githubOAuthEnabled = computed(() => !!siteInfo.value?.github_oauth_configured)
 
@@ -209,9 +212,11 @@ async function connectGitHubPAT() {
   if (!githubPAT.value.trim()) return
   githubBusy.value = true
   try {
-    github.value = await api.connectGitHubPAT(githubPAT.value.trim())
+    github.value = await api.connectGitHubPAT(githubPAT.value.trim(), githubPATOwner.value.trim())
     githubPAT.value = ''
+    githubPATOwner.value = ''
     push('GitHub connected', 'success')
+    if (github.value.warning) push(github.value.warning, 'info')
   } catch (err) {
     push(err instanceof APIError ? err.message : 'GitHub connect failed', 'error')
   } finally {
@@ -230,19 +235,20 @@ async function connectGitHubOAuth() {
   }
 }
 
-async function disconnectGitHub() {
+async function disconnectGitHub(owner: string) {
+  const label = owner || 'all other owners'
   const ok = await askConfirm({
-    title: 'Disconnect GitHub?',
-    message: 'You will need to reconnect before linking repositories or creating issues.',
-    confirmLabel: 'Disconnect',
+    title: 'Remove GitHub token?',
+    message: `Repositories for ${label} will no longer be reachable with this token. Linking repositories and syncing issues need a token that covers their owner.`,
+    confirmLabel: 'Remove',
     danger: true,
   })
   if (!ok) return
   githubBusy.value = true
   try {
-    await api.disconnectGitHub()
-    github.value = { connected: false }
-    push('GitHub disconnected', 'info')
+    await api.disconnectGitHub(owner)
+    github.value = await api.getGitHubConnection()
+    push('GitHub token removed', 'info')
   } catch (err) {
     push(err instanceof APIError ? err.message : 'Disconnect failed', 'error')
   } finally {
@@ -297,52 +303,82 @@ onMounted(() => {
       <p class="text-muted small">
         Connect GitHub to link repositories on projects you own and create or attach issues from board tasks.
       </p>
-      <div v-if="github?.connected" class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <span class="badge text-bg-success">Connected as @{{ github.github_login }}</span>
-        <span v-if="github.auth_method" class="text-muted small">via {{ github.auth_method }}</span>
+      <div v-if="githubTokens.length" class="mb-3">
+        <ul class="list-group mb-2">
+          <li
+            v-for="t in githubTokens"
+            :key="t.owner || '__all__'"
+            class="list-group-item d-flex flex-wrap align-items-center gap-2"
+          >
+            <span class="fw-semibold">{{ t.owner ? t.owner : 'All other owners' }}</span>
+            <span class="badge text-bg-success">@{{ t.github_login }}</span>
+            <span class="text-muted small">via {{ t.auth_method === 'oauth' ? 'OAuth' : 'token' }}</span>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger ms-auto"
+              :disabled="githubBusy"
+              @click="disconnectGitHub(t.owner)"
+            >
+              Remove
+            </button>
+          </li>
+        </ul>
+        <div class="form-text">
+          Repositories use the token for their owner, or the “All other owners” token if no owner-specific one exists.
+        </div>
+        <div v-if="github?.warning" class="alert alert-warning small mt-2 mb-0">{{ github.warning }}</div>
+      </div>
+      <div v-if="githubOAuthEnabled && !hasCatchAllToken" class="mb-3">
         <button
           type="button"
-          class="btn btn-sm btn-outline-danger"
+          class="btn btn-primary"
           :disabled="githubBusy"
-          @click="disconnectGitHub"
+          @click="connectGitHubOAuth"
         >
-          Disconnect
+          {{ githubBusy ? 'Redirecting…' : 'Connect with GitHub' }}
         </button>
       </div>
-      <template v-else>
-        <div v-if="githubOAuthEnabled" class="mb-3">
-          <button
-            type="button"
-            class="btn btn-primary"
+      <form class="row g-2" @submit.prevent="connectGitHubPAT">
+        <div class="col-12">
+          <h4 v-if="githubTokens.length" class="h6 mb-2">Add a token</h4>
+          <label class="form-label" for="github-pat">Personal access token</label>
+          <input
+            id="github-pat"
+            v-model="githubPAT"
+            type="password"
+            class="form-control"
+            autocomplete="off"
+            placeholder="ghp_… or github_pat_…"
             :disabled="githubBusy"
-            @click="connectGitHubOAuth"
-          >
-            {{ githubBusy ? 'Redirecting…' : 'Connect with GitHub' }}
+          />
+          <div class="form-text">
+            Classic tokens need the <code>repo</code> scope for private repositories (<code>public_repo</code> only covers public ones)
+            and can cover all your owners at once. Fine-grained tokens are limited by GitHub to one resource owner, so add one per
+            user or organization, select the repositories under Repository access, and grant Issues read/write.
+          </div>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label" for="github-pat-owner">Owner <span class="text-muted">(optional)</span></label>
+          <input
+            id="github-pat-owner"
+            v-model="githubPATOwner"
+            type="text"
+            class="form-control"
+            autocomplete="off"
+            placeholder="e.g. my-org"
+            :disabled="githubBusy"
+          />
+          <div class="form-text">
+            The user or organization this token is for. Leave blank to use a classic token for all owners;
+            a fine-grained token defaults to your own account.
+          </div>
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-outline-primary" :disabled="githubBusy || !githubPAT.trim()">
+            {{ githubBusy ? 'Connecting…' : githubTokens.length ? 'Add token' : 'Connect with token' }}
           </button>
         </div>
-        <form class="row g-2" @submit.prevent="connectGitHubPAT">
-          <div class="col-12">
-            <label class="form-label" for="github-pat">Personal access token</label>
-            <input
-              id="github-pat"
-              v-model="githubPAT"
-              type="password"
-              class="form-control"
-              autocomplete="off"
-              placeholder="ghp_… or github_pat_…"
-              :disabled="githubBusy"
-            />
-            <div class="form-text">
-              Needs access to the repositories you will link (fine-grained: Contents metadata + Issues read/write; classic: <code>repo</code>).
-            </div>
-          </div>
-          <div class="col-12">
-            <button type="submit" class="btn btn-outline-primary" :disabled="githubBusy || !githubPAT.trim()">
-              {{ githubBusy ? 'Connecting…' : 'Connect with token' }}
-            </button>
-          </div>
-        </form>
-      </template>
+      </form>
     </div>
   </div>
 

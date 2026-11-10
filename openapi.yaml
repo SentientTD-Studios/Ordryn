@@ -1159,6 +1159,15 @@ paths:
     delete:
       tags: [GitHub]
       summary: Disconnect GitHub
+      description: |
+        Without `owner`, removes every stored GitHub token. With `owner=<name>`, removes only the
+        token used for that user/organization; `owner=` (empty) removes the catch-all token.
+      parameters:
+        - name: owner
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: Disconnected
@@ -1173,6 +1182,11 @@ paths:
     post:
       tags: [GitHub]
       summary: Connect GitHub with a personal access token
+      description: |
+        Adds or replaces a token. Tokens are stored per owner: a token with an `owner` is used for
+        repositories of that user/organization, and a token without one is the catch-all for every
+        other owner. Fine-grained tokens are bound to one resource owner by GitHub, so when `owner`
+        is omitted they are stored for the token's own login.
       requestBody:
         required: true
         content:
@@ -1183,6 +1197,9 @@ paths:
               properties:
                 token:
                   type: string
+                owner:
+                  type: string
+                  description: GitHub user or organization this token is for (optional).
       responses:
         "200":
           description: Connected
@@ -10554,6 +10571,25 @@ components:
         connected_at:
           type: string
           format: date-time
+        connections:
+          type: array
+          items:
+            type: object
+            properties:
+              owner:
+                type: string
+                description: User/organization this token is used for; empty for the catch-all token.
+              github_login:
+                type: string
+              auth_method:
+                type: string
+                enum: [oauth, pat]
+              connected_at:
+                type: string
+                format: date-time
+        warning:
+          type: string
+          description: Set on connect when the token cannot reach private repositories (e.g. classic token without the repo scope).
 
     ProjectGitHubRepo:
       type: object
