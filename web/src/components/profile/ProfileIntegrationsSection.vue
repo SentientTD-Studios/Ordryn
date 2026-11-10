@@ -212,6 +212,7 @@ async function connectGitHubPAT() {
     github.value = await api.connectGitHubPAT(githubPAT.value.trim())
     githubPAT.value = ''
     push('GitHub connected', 'success')
+    if (github.value.warning) push(github.value.warning, 'info')
   } catch (err) {
     push(err instanceof APIError ? err.message : 'GitHub connect failed', 'error')
   } finally {
@@ -308,6 +309,7 @@ onMounted(() => {
         >
           Disconnect
         </button>
+        <div v-if="github.warning" class="alert alert-warning small w-100 mb-0">{{ github.warning }}</div>
       </div>
       <template v-else>
         <div v-if="githubOAuthEnabled" class="mb-3">
@@ -333,7 +335,9 @@ onMounted(() => {
               :disabled="githubBusy"
             />
             <div class="form-text">
-              Needs access to the repositories you will link (fine-grained: Contents metadata + Issues read/write; classic: <code>repo</code>).
+              Needs access to the repositories you will link. Classic tokens need the <code>repo</code> scope for private repositories
+              (<code>public_repo</code> only covers public ones). Fine-grained tokens: set the resource owner to the user or organization
+              that owns the repository, select it under Repository access, and grant Issues read/write.
             </div>
           </div>
           <div class="col-12">

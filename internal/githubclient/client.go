@@ -48,6 +48,12 @@ func New(token string) *Client {
 type User struct {
 	ID    int64  `json:"id"`
 	Login string `json:"login"`
+
+	// Scopes holds the token's OAuth scopes (X-OAuth-Scopes). Only classic
+	// PATs and OAuth tokens report scopes; ScopesKnown is false otherwise
+	// (fine-grained PATs, GitHub App tokens).
+	Scopes      []string `json:"-"`
+	ScopesKnown bool     `json:"-"`
 }
 
 // Repo is a subset of the repository payload.
@@ -83,6 +89,14 @@ type APIError struct {
 	Status  int
 	Message string
 	Body    string
+
+	// OAuthScopes is the raw X-OAuth-Scopes header; HasOAuthScopes reports
+	// whether GitHub sent it at all (classic PAT / OAuth tokens only).
+	OAuthScopes    string
+	HasOAuthScopes bool
+	// SSO is the raw X-GitHub-SSO header, set when an org enforces SAML SSO
+	// and the token has not been authorized for it.
+	SSO string
 }
 
 func (e *APIError) Error() string {
@@ -93,11 +107,16 @@ func (e *APIError) Error() string {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
+	_, err := c.doWithHeaders(ctx, method, path, body, out)
+	return err
+}
+
+func (c *Client) doWithHeaders(ctx context.Context, method, path string, body any, out any) (http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		reader = bytes.NewReader(b)
 	}
@@ -107,7 +126,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(base, "/")+path, reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -124,12 +143,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg := ""
@@ -138,19 +157,29 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		}
 		_ = json.Unmarshal(raw, &parsed)
 		msg = parsed.Message
-		return &APIError{Status: resp.StatusCode, Message: msg, Body: string(raw)}
+		apiErr := &APIError{Status: resp.StatusCode, Message: msg, Body: string(raw), SSO: resp.Header.Get("X-GitHub-SSO")}
+		if vals, ok := resp.Header[http.CanonicalHeaderKey("X-OAuth-Scopes")]; ok {
+			apiErr.HasOAuthScopes = true
+			apiErr.OAuthScopes = strings.Join(vals, ",")
+		}
+		return resp.Header, apiErr
 	}
 	if out == nil || len(raw) == 0 || resp.StatusCode == http.StatusNoContent {
-		return nil
+		return resp.Header, nil
 	}
-	return json.Unmarshal(raw, out)
+	return resp.Header, json.Unmarshal(raw, out)
 }
 
 // GetAuthenticatedUser returns the token owner.
 func (c *Client) GetAuthenticatedUser(ctx context.Context) (*User, error) {
 	var u User
-	if err := c.do(ctx, http.MethodGet, "/user", nil, &u); err != nil {
+	hdr, err := c.doWithHeaders(ctx, http.MethodGet, "/user", nil, &u)
+	if err != nil {
 		return nil, err
+	}
+	if vals, ok := hdr[http.CanonicalHeaderKey("X-OAuth-Scopes")]; ok {
+		u.ScopesKnown = true
+		u.Scopes = ParseScopes(strings.Join(vals, ","))
 	}
 	return &u, nil
 }
@@ -310,6 +339,58 @@ func ParseIssueRef(raw string) (owner, repo string, number int, err error) {
 		return "", "", 0, fmt.Errorf("use an issue number or GitHub issue URL")
 	}
 	return "", "", n, nil
+}
+
+// ParseScopes splits an X-OAuth-Scopes header value ("repo, read:org").
+func ParseScopes(raw string) []string {
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ScopesAllowPrivateRepos reports whether classic OAuth scopes grant access to
+// private repositories (the "repo" scope; "public_repo" does not).
+func ScopesAllowPrivateRepos(scopes []string) bool {
+	for _, s := range scopes {
+		if strings.EqualFold(s, "repo") {
+			return true
+		}
+	}
+	return false
+}
+
+// TokenKind classifies a GitHub token by its prefix.
+// Returns "fine_grained", "classic", "oauth", "app", or "unknown".
+func TokenKind(token string) string {
+	token = strings.TrimSpace(token)
+	switch {
+	case strings.HasPrefix(token, "github_pat_"):
+		return "fine_grained"
+	case strings.HasPrefix(token, "ghp_"):
+		return "classic"
+	case strings.HasPrefix(token, "gho_"):
+		return "oauth"
+	case strings.HasPrefix(token, "ghu_"), strings.HasPrefix(token, "ghs_"):
+		return "app"
+	default:
+		return "unknown"
+	}
+}
+
+// SSOAuthorizeURL extracts the authorization URL from an X-GitHub-SSO header
+// ("required; url=https://github.com/orgs/x/sso?authorization_request=...").
+func SSOAuthorizeURL(header string) string {
+	for _, part := range strings.Split(header, ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "url=") {
+			return strings.TrimPrefix(part, "url=")
+		}
+	}
+	return ""
 }
 
 // HasAdminAccess reports whether the authenticated user has admin on the repo.

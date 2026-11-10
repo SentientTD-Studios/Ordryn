@@ -25,6 +25,9 @@ type GitHubConnectionPublic struct {
 	GitHubLogin string `json:"github_login,omitempty"`
 	AuthMethod  string `json:"auth_method,omitempty"`
 	ConnectedAt string `json:"connected_at,omitempty"`
+	// Warning is set on connect when the token is valid but cannot reach
+	// private repositories (e.g. a classic token without the repo scope).
+	Warning string `json:"warning,omitempty"`
 }
 
 // ProjectGitHubRepoPublic is the safe view of a project↔repo link.
@@ -111,7 +114,19 @@ func connectGitHubToken(ctx context.Context, userID int, token, method string) (
 		GitHubLogin: conn.GitHubLogin,
 		AuthMethod:  conn.AuthMethod,
 		ConnectedAt: formatTimeRFC3339(conn.ConnectedAt),
+		Warning:     githubTokenScopeWarning(user),
 	}, nil
+}
+
+// githubTokenScopeWarning explains when a classic/OAuth token lacks the repo
+// scope GitHub requires for private repositories. Fine-grained tokens report
+// no scopes, so nothing can be checked up front for them.
+func githubTokenScopeWarning(user *githubclient.User) string {
+	if user == nil || !user.ScopesKnown || githubclient.ScopesAllowPrivateRepos(user.Scopes) {
+		return ""
+	}
+	return "This token does not have the \"repo\" scope, so only public repositories can be linked. " +
+		"To use private repositories, create a classic token with the \"repo\" scope or a fine-grained token with access to those repositories."
 }
 
 // DisconnectGitHub removes the user's stored GitHub credentials.
@@ -189,7 +204,7 @@ func LinkProjectGitHubRepo(ctx context.Context, userID, projectID int, repoRef s
 	}
 	repo, err := client.GetRepo(ctx, owner, name)
 	if err != nil {
-		return nil, mapGitHubErr(err, "Repository not found or inaccessible.")
+		return nil, mapGitHubRepoErr(err, client.Token, owner, name, "Repository not found or inaccessible.")
 	}
 	if !githubclient.HasAdminAccess(repo) {
 		return nil, fmt.Errorf("%w: you must have admin access on %s to link it", ErrForbidden, repo.FullName)
@@ -328,7 +343,7 @@ func CreateGitHubIssueForTask(ctx context.Context, userID, taskID int, title, bo
 	}
 	issue, err := client.CreateIssue(ctx, repo.GitHubOwner, repo.GitHubRepo, title, body)
 	if err != nil {
-		return nil, mapGitHubErr(err, "Failed to create GitHub issue.")
+		return nil, mapGitHubRepoErr(err, client.Token, repo.GitHubOwner, repo.GitHubRepo, "Failed to create GitHub issue.")
 	}
 	saved, err := storage.UpsertTaskGitHubIssue(taskID, issue.ID, issue.Number, issue.HTMLURL, issue.State, issue.Title)
 	if err != nil {
@@ -567,6 +582,54 @@ func secureEqual(a, b string) bool {
 		v |= a[i] ^ b[i]
 	}
 	return v == 0
+}
+
+// mapGitHubRepoErr maps a repo-scoped GitHub error, replacing GitHub's
+// deliberately vague 404 for private repositories with the likely cause.
+func mapGitHubRepoErr(err error, token, owner, repo, fallback string) error {
+	if apiErr, ok := err.(*githubclient.APIError); ok {
+		if hint := githubRepoAccessHint(apiErr, token, owner, repo); hint != "" {
+			if apiErr.Status == http.StatusNotFound {
+				return fmt.Errorf("%w: %s", ErrNotFound, hint)
+			}
+			return fmt.Errorf("%w: %s", ErrForbidden, hint)
+		}
+	}
+	return mapGitHubErr(err, fallback)
+}
+
+// githubRepoAccessHint returns an actionable message for access failures on
+// owner/repo, or "" when the error is not an access problem.
+func githubRepoAccessHint(apiErr *githubclient.APIError, token, owner, repo string) string {
+	full := owner + "/" + repo
+	// SAML SSO: org requires the token to be authorized for SSO.
+	if apiErr.SSO != "" {
+		msg := fmt.Sprintf("The %s organization uses SAML single sign-on and your GitHub token is not authorized for it.", owner)
+		if u := githubclient.SSOAuthorizeURL(apiErr.SSO); u != "" {
+			return msg + " Authorize it here, then try again: " + u
+		}
+		return msg + " Authorize the token for SSO in your GitHub token settings, then try again."
+	}
+	if apiErr.Status == http.StatusForbidden &&
+		strings.Contains(strings.ToLower(apiErr.Message), "oauth app access restrictions") {
+		return fmt.Sprintf("The %s organization restricts OAuth app access. An organization owner must approve this app "+
+			"(GitHub → Settings → Applications), or connect with a personal access token instead.", owner)
+	}
+	if apiErr.Status != http.StatusNotFound {
+		return ""
+	}
+	// GitHub returns 404 (not 403) for private repositories the token cannot see.
+	if apiErr.HasOAuthScopes && !githubclient.ScopesAllowPrivateRepos(githubclient.ParseScopes(apiErr.OAuthScopes)) {
+		return fmt.Sprintf("Could not access %s. Your GitHub token lacks the \"repo\" scope required for private repositories; "+
+			"reconnect GitHub with a token that has the \"repo\" scope.", full)
+	}
+	if githubclient.TokenKind(token) == "fine_grained" {
+		return fmt.Sprintf("Could not access %s. If it is private, make sure your fine-grained token's resource owner is %q "+
+			"and the repository is selected under Repository access, with Issues read/write permission. "+
+			"Organizations may also need to approve fine-grained tokens.", full, owner)
+	}
+	return fmt.Sprintf("Could not access %s. Check the name; if it is private, the connected GitHub account must be a "+
+		"collaborator or member with access to it.", full)
 }
 
 func mapGitHubErr(err error, fallback string) error {

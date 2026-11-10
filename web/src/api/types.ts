@@ -466,6 +466,7 @@ export type GitHubConnection = {
   github_login?: string
   auth_method?: 'oauth' | 'pat' | string
   connected_at?: string
+  warning?: string
 }
 
 export type ProjectGitHubRepo = {

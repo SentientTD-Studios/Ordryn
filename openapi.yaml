@@ -10554,6 +10554,9 @@ components:
         connected_at:
           type: string
           format: date-time
+        warning:
+          type: string
+          description: Set on connect when the token cannot reach private repositories (e.g. classic token without the repo scope).
 
     ProjectGitHubRepo:
       type: object
