@@ -707,17 +707,16 @@ async function bulk(action: string, extra: Record<string, unknown> = {}) {
     toast.push(`Bulk ${action}: ${res.affected ?? affectedIds.length}`, 'success')
     if (action === 'delete') {
       for (const id of affectedIds) {
-        const task = tasks.value.find((t) => t.id === id)
+        // Selected subtasks live under their parent, not at the root.
+        const task = findTaskInTree(id)?.task
         if (task) list.removeTaskLocally(task)
       }
       await nextTick()
       refreshSortable()
-    } else if (action === 'complete' || action === 'incomplete') {
-      for (const id of affectedIds) {
-        const task = tasks.value.find((t) => t.id === id)
-        if (task) applyTaskUpdate({ ...task, completed: action === 'complete' })
-      }
     } else {
+      // Complete/incomplete also has server side effects a local patch can't
+      // mirror (kanban status moves to Done/default, recurring tasks spawn the
+      // next occurrence, subtasks live under their parent), so reload.
       await reloadInitial()
     }
     selected.value = []
