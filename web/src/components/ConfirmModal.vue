@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useConfirm } from '@/composables/useConfirm'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
 
 const { state, accept, cancel, discard } = useConfirm()
 
@@ -13,36 +14,16 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-function syncBodyModalState(open: boolean) {
-  const taskOpen = !!document.getElementById('taskModal')
-  if (open || taskOpen) {
-    document.body.classList.add('modal-open')
-    document.body.style.overflow = 'hidden'
-    return
-  }
-  document.body.classList.remove('modal-open')
-  document.body.style.overflow = ''
-}
-
-watch(
-  () => state.open,
-  (open) => {
-    syncBodyModalState(open)
-  },
-)
+// Counted lock: the task modal (or any other) holds its own, so closing this
+// dialog never unlocks the page under it, and never leaves it locked after.
+useBodyScrollLock(() => state.open)
 
 onMounted(() => {
-  // Clear any leftover Bootstrap modal body state from prior broken attempts.
-  document.body.classList.remove('modal-open')
-  document.body.style.overflow = ''
-  document.body.style.paddingRight = ''
   window.addEventListener('keydown', onKeydown, true)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown, true)
-  document.body.classList.remove('modal-open')
-  document.body.style.overflow = ''
 })
 </script>
 

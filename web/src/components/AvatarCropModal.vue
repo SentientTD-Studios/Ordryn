@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
 
 const props = defineProps<{
   imageFile: File | null
 }>()
 
 const open = defineModel<boolean>({ default: false })
+useBodyScrollLock(open)
 
 const emit = defineEmits<{
   cropped: [blob: Blob]
@@ -200,8 +202,6 @@ function onKeydown(e: KeyboardEvent) {
 watch(
   () => open.value,
   (val) => {
-    document.body.classList.toggle('modal-open', val)
-    document.body.style.overflow = val ? 'hidden' : ''
     if (!val) {
       imageUrl.value = ''
     }
@@ -215,8 +215,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   imageUrl.value = ''
-  document.body.classList.remove('modal-open')
-  document.body.style.overflow = ''
 })
 </script>
 

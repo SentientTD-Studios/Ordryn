@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
 import QRCode from 'qrcode'
 
 const open = defineModel<boolean>({ default: false })
@@ -187,9 +188,9 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+useBodyScrollLock(open)
+
 watch(open, (isOpen) => {
-  document.body.classList.toggle('modal-open', isOpen)
-  document.body.style.overflow = isOpen ? 'hidden' : ''
   if (isOpen) void onOpen()
 })
 
@@ -199,8 +200,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
-  document.body.classList.remove('modal-open')
-  document.body.style.overflow = ''
 })
 </script>
 

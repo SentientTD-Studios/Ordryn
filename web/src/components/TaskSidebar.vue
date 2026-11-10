@@ -29,6 +29,7 @@ import { useSite } from '@/composables/useSite'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
 import { canMoveTaskStatus, hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
 import { isArchivedProject, isProjectOwner, projectOptionLabel } from '@/utils/projectLabel'
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
@@ -53,6 +54,7 @@ const {
   openEdit,
   openView,
 } = useTaskSidebar()
+useBodyScrollLock(open)
 const toast = useToast()
 const { askConfirm, askUnsaved, state: confirmState } = useConfirm()
 const { user } = useAuth()
