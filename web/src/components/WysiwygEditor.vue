@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { nextTick, ref } from 'vue'
 import { applyFormat, handleListEnter, type FormatAction } from '@/utils/markdown'
 import { insertMarkdownAtCursor } from '@/utils/taskCommentBody'
 import { useImageUpload } from '@/composables/useImageUpload'
 import { IMAGE_ACCEPT, armTaskOverlayFileGuard, dropHasFiles, imageFileFromClipboard, imageFileFromDrop } from '@/utils/imageUpload'
 import RichBody from '@/components/RichBody.vue'
 import { useToast } from '@/composables/useToast'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
 
 const props = withDefaults(
   defineProps<{
@@ -56,25 +57,7 @@ const linkTitleInputEl = ref<HTMLInputElement | null>(null)
 const savedSelectionStart = ref(0)
 const savedSelectionEnd = ref(0)
 
-watch(showLinkModal, (open) => {
-  if (open) {
-    document.body.classList.add('modal-open')
-  } else {
-    const anyOtherModal = document.querySelector('.modal.show:not(.wysiwyg-link-modal)')
-    if (!anyOtherModal) {
-      document.body.classList.remove('modal-open')
-    }
-  }
-})
-
-onUnmounted(() => {
-  if (showLinkModal.value) {
-    const anyOtherModal = document.querySelector('.modal.show:not(.wysiwyg-link-modal)')
-    if (!anyOtherModal) {
-      document.body.classList.remove('modal-open')
-    }
-  }
-})
+useBodyScrollLock(showLinkModal)
 
 function updateValue(next: string, cursorStart?: number, cursorEnd?: number) {
   if (props.maxlength && next.length > props.maxlength) {
