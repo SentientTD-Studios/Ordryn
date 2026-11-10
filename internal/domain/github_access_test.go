@@ -17,7 +17,7 @@ func TestMapGitHubRepoErrPrivateRepoHints(t *testing.T) {
 		wantSub string
 	}{
 		{"classic without repo scope", &githubclient.APIError{Status: 404, Message: "Not Found", HasOAuthScopes: true, OAuthScopes: "public_repo"}, "ghp_x", ErrNotFound, `lacks the "repo" scope`},
-		{"fine-grained", &githubclient.APIError{Status: 404, Message: "Not Found"}, "github_pat_x", ErrNotFound, "resource owner is \"acme\""},
+		{"fine-grained", &githubclient.APIError{Status: 404, Message: "Not Found"}, "github_pat_x", ErrNotFound, "has \"acme\" as its resource owner"},
 		{"classic with repo scope", &githubclient.APIError{Status: 404, Message: "Not Found", HasOAuthScopes: true, OAuthScopes: "repo"}, "ghp_x", ErrNotFound, "collaborator or member"},
 		{"saml sso", &githubclient.APIError{Status: 403, Message: "Resource protected by organization SAML enforcement.", SSO: "required; url=https://github.com/orgs/acme/sso?x=1"}, "gho_x", ErrForbidden, "https://github.com/orgs/acme/sso?x=1"},
 		{"oauth restrictions", &githubclient.APIError{Status: 403, Message: "Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions"}, "gho_x", ErrForbidden, "approve this app"},
@@ -51,5 +51,18 @@ func TestGitHubTokenScopeWarning(t *testing.T) {
 	}
 	if w := githubTokenScopeWarning(&githubclient.User{}); w != "" {
 		t.Errorf("fine-grained tokens should not warn, got %q", w)
+	}
+}
+
+func TestGitHubOwnerRe(t *testing.T) {
+	for _, ok := range []string{"acme", "Acme-Inc", "a", "user123"} {
+		if !githubOwnerRe.MatchString(ok) {
+			t.Errorf("%q should be valid", ok)
+		}
+	}
+	for _, bad := range []string{"-acme", "acme/repo", "ac me", "", strings.Repeat("a", 40)} {
+		if githubOwnerRe.MatchString(bad) {
+			t.Errorf("%q should be invalid", bad)
+		}
 	}
 }

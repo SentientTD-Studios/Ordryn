@@ -466,7 +466,16 @@ export type GitHubConnection = {
   github_login?: string
   auth_method?: 'oauth' | 'pat' | string
   connected_at?: string
+  connections?: GitHubToken[]
   warning?: string
+}
+
+/** One stored GitHub token; empty owner = catch-all for any other owner. */
+export type GitHubToken = {
+  owner: string
+  github_login: string
+  auth_method: 'oauth' | 'pat' | string
+  connected_at?: string
 }
 
 export type ProjectGitHubRepo = {

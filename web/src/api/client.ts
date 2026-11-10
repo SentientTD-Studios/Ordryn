@@ -689,15 +689,17 @@ export const api = {
     return request<GitHubConnection>('/api/v2/me/github')
   },
 
-  connectGitHubPAT(token: string) {
+  connectGitHubPAT(token: string, owner = '') {
     return request<GitHubConnection>('/api/v2/me/github/pat', {
       method: 'POST',
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, owner }),
     })
   },
 
-  disconnectGitHub() {
-    return request<{ ok: boolean }>('/api/v2/me/github', { method: 'DELETE' })
+  /** Without `owner`, removes all tokens; with it, only that owner's token ('' = catch-all). */
+  disconnectGitHub(owner?: string) {
+    const q = owner === undefined ? '' : `?owner=${encodeURIComponent(owner)}`
+    return request<{ ok: boolean }>(`/api/v2/me/github${q}`, { method: 'DELETE' })
   },
 
   startGitHubOAuth() {

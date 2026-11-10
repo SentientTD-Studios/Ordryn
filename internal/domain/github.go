@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,16 +20,31 @@ import (
 // GitHubOAuthScope is the OAuth scope requested for repo admin + issues.
 const GitHubOAuthScope = "repo"
 
-// GitHubConnectionPublic is the safe view of a user's GitHub connection.
+// GitHubConnectionPublic is the safe view of a user's GitHub connections.
+// The top-level login/method/date fields describe the primary connection
+// (catch-all if present, else the first owner-scoped one).
 type GitHubConnectionPublic struct {
-	Connected   bool   `json:"connected"`
-	GitHubLogin string `json:"github_login,omitempty"`
-	AuthMethod  string `json:"auth_method,omitempty"`
-	ConnectedAt string `json:"connected_at,omitempty"`
+	Connected   bool                `json:"connected"`
+	GitHubLogin string              `json:"github_login,omitempty"`
+	AuthMethod  string              `json:"auth_method,omitempty"`
+	ConnectedAt string              `json:"connected_at,omitempty"`
+	Connections []GitHubTokenPublic `json:"connections"`
 	// Warning is set on connect when the token is valid but cannot reach
 	// private repositories (e.g. a classic token without the repo scope).
 	Warning string `json:"warning,omitempty"`
 }
+
+// GitHubTokenPublic is one stored token. Owner is the user or organization
+// the token is used for; empty means it is used for any owner not covered by
+// a more specific token.
+type GitHubTokenPublic struct {
+	Owner       string `json:"owner"`
+	GitHubLogin string `json:"github_login"`
+	AuthMethod  string `json:"auth_method"`
+	ConnectedAt string `json:"connected_at,omitempty"`
+}
+
+var githubOwnerRe = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
 
 // ProjectGitHubRepoPublic is the safe view of a project↔repo link.
 type ProjectGitHubRepoPublic struct {
@@ -63,32 +79,44 @@ func formatTimeRFC3339(t time.Time) string {
 // GetGitHubConnectionPublic returns connection status for the user.
 func GetGitHubConnectionPublic(ctx context.Context, userID int) (*GitHubConnectionPublic, error) {
 	_ = ctx
-	conn, err := storage.GetGitHubConnection(userID)
+	conns, err := storage.ListGitHubConnections(userID)
 	if err != nil {
 		return nil, err
 	}
-	if conn == nil {
-		return &GitHubConnectionPublic{Connected: false}, nil
+	out := &GitHubConnectionPublic{Connections: []GitHubTokenPublic{}}
+	for _, c := range conns {
+		out.Connections = append(out.Connections, GitHubTokenPublic{
+			Owner:       c.OwnerScope,
+			GitHubLogin: c.GitHubLogin,
+			AuthMethod:  c.AuthMethod,
+			ConnectedAt: formatTimeRFC3339(c.ConnectedAt),
+		})
 	}
-	return &GitHubConnectionPublic{
-		Connected:   true,
-		GitHubLogin: conn.GitHubLogin,
-		AuthMethod:  conn.AuthMethod,
-		ConnectedAt: formatTimeRFC3339(conn.ConnectedAt),
-	}, nil
+	if len(conns) > 0 {
+		// ListGitHubConnections orders catch-all ("") first.
+		out.Connected = true
+		out.GitHubLogin = conns[0].GitHubLogin
+		out.AuthMethod = conns[0].AuthMethod
+		out.ConnectedAt = formatTimeRFC3339(conns[0].ConnectedAt)
+	}
+	return out, nil
 }
 
 // ConnectGitHubWithPAT validates a personal access token and stores it encrypted.
-func ConnectGitHubWithPAT(ctx context.Context, userID int, token string) (*GitHubConnectionPublic, error) {
-	return connectGitHubToken(ctx, userID, token, storage.GitHubAuthPAT)
+// owner optionally limits the token to repositories of that user/organization.
+// Fine-grained tokens are always owner-scoped (default: the token's own login),
+// because GitHub binds each one to a single resource owner.
+func ConnectGitHubWithPAT(ctx context.Context, userID int, token, owner string) (*GitHubConnectionPublic, error) {
+	return connectGitHubToken(ctx, userID, token, owner, storage.GitHubAuthPAT)
 }
 
-// ConnectGitHubWithOAuthToken stores a token obtained via GitHub OAuth.
+// ConnectGitHubWithOAuthToken stores a token obtained via GitHub OAuth as the
+// catch-all connection.
 func ConnectGitHubWithOAuthToken(ctx context.Context, userID int, token string) (*GitHubConnectionPublic, error) {
-	return connectGitHubToken(ctx, userID, token, storage.GitHubAuthOAuth)
+	return connectGitHubToken(ctx, userID, token, "", storage.GitHubAuthOAuth)
 }
 
-func connectGitHubToken(ctx context.Context, userID int, token, method string) (*GitHubConnectionPublic, error) {
+func connectGitHubToken(ctx context.Context, userID int, token, owner, method string) (*GitHubConnectionPublic, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return nil, fmt.Errorf("%w: token is required", ErrValidation)
@@ -96,26 +124,31 @@ func connectGitHubToken(ctx context.Context, userID int, token, method string) (
 	if len(token) > 255 {
 		return nil, fmt.Errorf("%w: token is too long", ErrValidation)
 	}
+	owner = strings.TrimSpace(owner)
+	if owner != "" && !githubOwnerRe.MatchString(owner) {
+		return nil, fmt.Errorf("%w: owner must be a GitHub user or organization name", ErrValidation)
+	}
 	client := githubclient.New(token)
 	user, err := client.GetAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, mapGitHubErr(err, "Invalid or expired GitHub token.")
 	}
+	if owner == "" && githubclient.TokenKind(token) == "fine_grained" {
+		owner = user.Login
+	}
 	enc, err := secret.Encrypt(token)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt token: %w", err)
 	}
-	conn, err := storage.UpsertGitHubConnection(userID, enc, user.Login, method, user.ID)
+	if _, err := storage.UpsertGitHubConnection(userID, owner, enc, user.Login, method, user.ID); err != nil {
+		return nil, err
+	}
+	out, err := GetGitHubConnectionPublic(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return &GitHubConnectionPublic{
-		Connected:   true,
-		GitHubLogin: conn.GitHubLogin,
-		AuthMethod:  conn.AuthMethod,
-		ConnectedAt: formatTimeRFC3339(conn.ConnectedAt),
-		Warning:     githubTokenScopeWarning(user),
-	}, nil
+	out.Warning = githubTokenScopeWarning(user)
+	return out, nil
 }
 
 // githubTokenScopeWarning explains when a classic/OAuth token lacks the repo
@@ -129,19 +162,28 @@ func githubTokenScopeWarning(user *githubclient.User) string {
 		"To use private repositories, create a classic token with the \"repo\" scope or a fine-grained token with access to those repositories."
 }
 
-// DisconnectGitHub removes the user's stored GitHub credentials.
-func DisconnectGitHub(ctx context.Context, userID int) error {
+// DisconnectGitHub removes stored GitHub credentials. With owner == nil every
+// connection is removed; otherwise only the one for *owner ("" = catch-all).
+func DisconnectGitHub(ctx context.Context, userID int, owner *string) error {
 	_ = ctx
-	return storage.DeleteGitHubConnection(userID)
+	if owner == nil {
+		return storage.DeleteAllGitHubConnections(userID)
+	}
+	return storage.DeleteGitHubConnection(userID, *owner)
 }
 
-func githubClientForUser(ctx context.Context, userID int) (*githubclient.Client, error) {
+// githubClientForOwner returns a client using the user's token for repositories
+// owned by owner (owner-scoped token first, else the catch-all token).
+func githubClientForOwner(ctx context.Context, userID int, owner string) (*githubclient.Client, error) {
 	_ = ctx
-	conn, err := storage.GetGitHubConnection(userID)
+	conn, err := storage.GetGitHubConnectionForOwner(userID, owner)
 	if err != nil {
 		return nil, err
 	}
 	if conn == nil {
+		if all, _ := storage.ListGitHubConnections(userID); len(all) > 0 {
+			return nil, fmt.Errorf("%w: none of your GitHub tokens cover %s; add a token for %s in Settings", ErrValidation, owner, owner)
+		}
 		return nil, fmt.Errorf("%w: connect GitHub in Settings first", ErrValidation)
 	}
 	token, err := secret.Decrypt(conn.AccessTokenEnc)
@@ -198,7 +240,7 @@ func LinkProjectGitHubRepo(ctx context.Context, userID, projectID int, repoRef s
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
-	client, err := githubClientForUser(ctx, userID)
+	client, err := githubClientForOwner(ctx, userID, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +379,7 @@ func CreateGitHubIssueForTask(ctx context.Context, userID, taskID int, title, bo
 		body += "---\nTracked in Ordryn: " + taskURL
 	}
 
-	client, err := githubClientForUser(ctx, userID)
+	client, err := githubClientForOwner(ctx, userID, repo.GitHubOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +423,7 @@ func LinkExistingGitHubIssue(ctx context.Context, userID, taskID int, issueRef s
 		}
 	}
 
-	client, err := githubClientForUser(ctx, userID)
+	client, err := githubClientForOwner(ctx, userID, repo.GitHubOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -464,10 +506,10 @@ func SyncGitHubIssueFromOrdrynState(ctx context.Context, actorUserID, taskID int
 		return
 	}
 	tokenUserID := actorUserID
-	if conn, _ := storage.GetGitHubConnection(actorUserID); conn == nil {
+	if conn, _ := storage.GetGitHubConnectionForOwner(actorUserID, repo.GitHubOwner); conn == nil {
 		tokenUserID = repo.LinkedByUserID
 	}
-	client, err := githubClientForUser(ctx, tokenUserID)
+	client, err := githubClientForOwner(ctx, tokenUserID, repo.GitHubOwner)
 	if err != nil {
 		recordGitHubSyncError(taskID, err)
 		return
@@ -624,9 +666,9 @@ func githubRepoAccessHint(apiErr *githubclient.APIError, token, owner, repo stri
 			"reconnect GitHub with a token that has the \"repo\" scope.", full)
 	}
 	if githubclient.TokenKind(token) == "fine_grained" {
-		return fmt.Sprintf("Could not access %s. If it is private, make sure your fine-grained token's resource owner is %q "+
-			"and the repository is selected under Repository access, with Issues read/write permission. "+
-			"Organizations may also need to approve fine-grained tokens.", full, owner)
+		return fmt.Sprintf("Could not access %s. If it is private, make sure the fine-grained token you added for %q has %q as its "+
+			"resource owner and the repository selected under Repository access, with Issues read/write permission. "+
+			"Organizations may also need to approve fine-grained tokens. Add a separate token for each owner in Settings.", full, owner, owner)
 	}
 	return fmt.Sprintf("Could not access %s. Check the name; if it is private, the connected GitHub account must be a "+
 		"collaborator or member with access to it.", full)
