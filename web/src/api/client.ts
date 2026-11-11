@@ -46,6 +46,9 @@ import type {
   ProjectInsights,
   ProjectTimeline,
   Planner,
+  RequestForm,
+  RequestFormInput,
+  PublicRequestForm,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -1369,6 +1372,43 @@ export const api = {
 
   unsnoozeTask(taskId: number) {
     return request<void>(`/api/v2/tasks/${taskId}/snooze`, { method: 'DELETE' })
+  },
+
+  listRequestForms(projectId: number) {
+    return request<RequestForm[]>(`/api/v2/projects/${projectId}/forms`)
+  },
+
+  createRequestForm(projectId: number, input: RequestFormInput) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  updateRequestForm(projectId: number, formId: number, input: RequestFormInput) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms/${formId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    })
+  },
+
+  rotateRequestForm(projectId: number, formId: number) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms/${formId}/rotate`, { method: 'POST' })
+  },
+
+  deleteRequestForm(projectId: number, formId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/forms/${formId}`, { method: 'DELETE' })
+  },
+
+  getRequestForm(token: string) {
+    return request<PublicRequestForm>(`/api/v2/forms/${encodeURIComponent(token)}`)
+  },
+
+  submitRequestForm(token: string, summary: string, answers: Record<string, string>) {
+    return request<{ task_id: number }>(`/api/v2/forms/${encodeURIComponent(token)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ summary, answers }),
+    })
   },
 
   listNotifications(params: { page?: number; per_page?: number; unread?: boolean } = {}) {

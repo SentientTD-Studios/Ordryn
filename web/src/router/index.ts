@@ -171,6 +171,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      // A project's request form, shared by link.
+      path: '/f/:token',
+      name: 'request-form',
+      component: () => import('@/views/RequestFormView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/planner',
       name: 'planner',
       component: () => import('@/views/PlannerView.vue'),

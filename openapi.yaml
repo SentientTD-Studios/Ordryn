@@ -68,6 +68,8 @@ tags:
   - name: GitHub
   - name: Live
   - name: Feedback
+  - name: Request forms
+    description: Forms that turn requests from anyone on the site into project tasks.
   - name: Images
 
 paths:
@@ -7400,6 +7402,223 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v2/projects/{id}/forms:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Request forms]
+      summary: List a project's request forms
+      description: Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Forms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequestForm"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Request forms]
+      summary: Create a request form
+      description: |
+        Needs `project:manage`. Anyone signed in to the site who has the form's link (`path`) can
+        file a request, which becomes a task in this project. Tasks are created with the access of
+        the form's owner (whoever saved it last), so a form closes if its owner can no longer
+        create tasks here. At most 25 forms per project and 20 questions per form.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestFormInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/forms/{formId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: formId
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      tags: [Request forms]
+      summary: Update a request form
+      description: Replaces the form's settings and makes the caller its owner. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestFormInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Request forms]
+      summary: Delete a request form
+      description: Tasks it created stay. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/forms/{formId}/rotate:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: formId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Request forms]
+      summary: Give a form a new link
+      description: The old link stops working. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Form with its new token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/forms/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Request forms]
+      summary: Open a request form by link
+      description: |
+        Any signed-in user with the link can open an enabled form; they don't need to be on the
+        project. A turned-off form (or one whose owner lost access) returns 400.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Form to fill in
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, title, intro, project_name, fields]
+                properties:
+                  token: { type: string }
+                  title: { type: string }
+                  intro: { type: string }
+                  project_name: { type: string }
+                  fields:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RequestFormField"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/forms/{token}/submit:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Request forms]
+      summary: File a request
+      description: |
+        Creates a task in the form's project: `summary` becomes the title, and the answers are
+        written into the description with a "Requested by @username" line (never the email). The
+        task gets the form's priority and tags, and its activity log records the submitter. Each
+        person can file 20 requests an hour across all forms. The submitter doesn't get access to
+        the task.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [summary]
+              properties:
+                summary:
+                  type: string
+                  maxLength: 140
+                answers:
+                  type: object
+                  description: Answers keyed by question `id`. Dates are YYYY-MM-DD; select answers must match an option.
+                  additionalProperties:
+                    type: string
+      responses:
+        "201":
+          description: Filed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/dashboard:
     get:
       tags: [Dashboard]
@@ -11646,6 +11865,73 @@ components:
         snoozed:
           type: array
           items: { $ref: "#/components/schemas/PlannerTask" }
+
+    RequestFormField:
+      type: object
+      required: [id, label, type]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9_]{1,32}$"
+          description: Answer key. Omit on save to get q1, q2, …; `summary` is reserved.
+        label: { type: string, maxLength: 120 }
+        type:
+          type: string
+          enum: [text, textarea, select, date, number]
+        required: { type: boolean }
+        help: { type: string }
+        options:
+          type: array
+          description: Choices for `select` (1-30).
+          items: { type: string }
+
+    RequestFormInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 120 }
+        intro: { type: string, maxLength: 2000 }
+        fields:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/RequestFormField"
+        priority: { type: integer, minimum: 0, maximum: 3 }
+        tag_ids:
+          type: array
+          description: Tags of this project to put on every request.
+          items: { type: integer }
+        enabled:
+          type: boolean
+          description: Defaults to true.
+
+    RequestForm:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        token: { type: string }
+        path:
+          type: string
+          description: Site-relative link to share, `/f/{token}`.
+        title: { type: string }
+        intro: { type: string }
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/RequestFormField"
+        priority: { type: integer }
+        tag_ids:
+          type: array
+          items: { type: integer }
+        enabled: { type: boolean }
+        owner_id:
+          type: integer
+          nullable: true
+          description: The manager whose access creates the tasks.
+        submissions: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     Task:
       type: object
