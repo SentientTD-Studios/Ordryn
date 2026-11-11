@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"GoTodo/internal/branding"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/version"
@@ -33,8 +34,27 @@ var MCPSubrequestHandler http.Handler = http.DefaultServeMux
 
 var mcpProtocolVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
-const mcpAgentInstructions = `You are an AI agent working inside a GoTodo project. ` +
-	`Call get_agent_context first to learn your instructions, guardrails, and the board's statuses. ` +
+// mcpSiteName is the site name from Admin → Site settings, or "Ordryn".
+func mcpSiteName() string {
+	if s, err := storage.GetSiteSettings(); err == nil && s != nil {
+		if n := strings.TrimSpace(s.SiteName); n != "" {
+			return n
+		}
+	}
+	return "Ordryn"
+}
+
+// mcpServerInfo names the MCP server after the site, matching the setup snippets.
+func mcpServerInfo() map[string]any {
+	name := mcpSiteName()
+	return map[string]any{"name": branding.Slug(name), "title": name, "version": version.Version}
+}
+
+func mcpAgentInstructions() string {
+	return `You are an AI agent working inside a ` + mcpSiteName() + ` project. ` + mcpAgentInstructionsBody
+}
+
+const mcpAgentInstructionsBody = `Call get_agent_context first to learn your instructions, guardrails, and the board's statuses. ` +
 	`Then list_my_runs to find queued work. For each run: start_run, read the task with get_task, ` +
 	`do the work, post what you did with add_comment, move or update the task within your guardrails, ` +
 	`and finish_run with a short summary. Edits outside your guardrails are refused with an agent_guardrail error.`
@@ -43,7 +63,8 @@ const mcpAgentInstructions = `You are an AI agent working inside a GoTodo projec
 // from their own tools, so the agent reads on request and writes only when asked.
 func mcpLocalInstructions(p *storage.APIKeyPrincipal) string {
 	var b strings.Builder
-	b.WriteString(`GoTodo is the user's task tracker. You are connected with their local agent key and act as them. ` +
+	b.WriteString(mcpSiteName() + ` is the user's task tracker.`)
+	b.WriteString(` You are connected with their local agent key and act as them. ` +
 		`The user refers to tasks by number ("#123", "task 123") or by link (".../tasks/123"); pass the number as task_id. ` +
 		`When asked to look at or pick up a task, call get_task with include_comments=true and treat the description and ` +
 		`discussion as the requirements; acceptance criteria and follow-ups are often in the comments. ` +
@@ -623,14 +644,14 @@ func handleMCPRequest(r *http.Request, p *storage.APIKeyPrincipal, req mcpReques
 				break
 			}
 		}
-		instructions := mcpAgentInstructions
+		instructions := mcpAgentInstructions()
 		if p.IsLocalAgent {
 			instructions = mcpLocalInstructions(p)
 		}
 		resp.Result = map[string]any{
 			"protocolVersion": pv,
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
-			"serverInfo":      map[string]any{"name": "gotodo", "title": "GoTodo", "version": version.Version},
+			"serverInfo":      mcpServerInfo(),
 			"instructions":    instructions,
 		}
 	case "ping":

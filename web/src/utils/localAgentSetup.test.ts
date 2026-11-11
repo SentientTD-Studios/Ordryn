@@ -13,11 +13,16 @@ const root = 'https://todo.example.com/gotodo/api/v2'
 
 describe('localServerName', () => {
   it('names the server after a limited project', () => {
-    assert.equal(localServerName(), 'gotodo')
-    assert.equal(localServerName(''), 'gotodo')
-    assert.equal(localServerName('Web App (v2)!'), 'gotodo-web-app-v2')
-    assert.equal(localServerName('***'), 'gotodo')
-    assert.equal(localServerName('a'.repeat(40)), `gotodo-${'a'.repeat(32)}`)
+    assert.equal(localServerName(), 'ordryn')
+    assert.equal(localServerName(''), 'ordryn')
+    assert.equal(localServerName('Web App (v2)!'), 'ordryn-web-app-v2')
+    assert.equal(localServerName('***'), 'ordryn')
+    assert.equal(localServerName('a'.repeat(40)), `ordryn-${'a'.repeat(32)}`)
+  })
+  it('starts with the site name', () => {
+    assert.equal(localServerName(null, 'Acme Tasks'), 'acme-tasks')
+    assert.equal(localServerName('Web', 'Acme Tasks'), 'acme-tasks-web')
+    assert.equal(localServerName(null, '***'), 'ordryn')
   })
 })
 

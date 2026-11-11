@@ -1,4 +1,5 @@
 import type { AgentEditableField, AgentRunStatus, ProjectAgentInput } from '../api/types.ts'
+import { siteSlug } from './siteSlug.ts'
 
 export const AGENT_FIELDS: { id: AgentEditableField; label: string; help: string }[] = [
   { id: 'status', label: 'Status', help: 'Move cards between columns (limited by the columns below)' },
@@ -98,10 +99,11 @@ export function mcpJsonConfig(root: string, name: string, key = '<AGENT_KEY>'): 
   )
 }
 
-/** MCP server names must be simple; derive one from the agent's handle. */
-export function mcpServerName(handle: string): string {
+/** MCP server names must be simple: the site's slug plus the agent's handle, e.g. "acme-release_bot". */
+export function mcpServerName(handle: string, siteName?: string | null): string {
+  const base = siteSlug(siteName)
   const n = handle.toLowerCase().replace(/[^a-z0-9_-]/g, '')
-  return n ? `gotodo-${n}` : 'gotodo'
+  return n ? `${base}-${n}` : base
 }
 
 /** What a starting setup needs from whatever runs the agent. */

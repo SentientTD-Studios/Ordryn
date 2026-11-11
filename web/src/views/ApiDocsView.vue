@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { pathPrefix } from '@/base'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
+import { siteSlug } from '@/utils/siteSlug'
 
 const { isAuthenticated } = useAuth()
 const { siteName, refresh: refreshSite } = useSite()
 const basePath = ref(pathPrefix())
+// Keys and MCP server names start with the site's own name.
+const slug = computed(() => siteSlug(siteName.value))
+const keyPrefix = computed(() => slug.value.replace(/-/g, ''))
 
 onMounted(() => {
   document.body.classList.add('api-docs-page')
@@ -202,7 +206,7 @@ Content-Type: application/json
 
 { "name": "Zapier intake", "scopes": ["tasks:read", "tasks:write"], "expires_at": "2027-01-01T00:00:00Z" }
 
-→ 201 { "id", "name", "key_prefix", "scopes", "expires_at", "key": "gotodo_…" }</code></pre>
+→ 201 { "id", "name", "key_prefix", "scopes", "expires_at", "key": "{{ keyPrefix }}_…" }</code></pre>
 
                     <h2 id="local-agent-keys" class="h4 mt-4">Local agent keys</h2>
                     <p>
@@ -224,7 +228,7 @@ Content-Type: application/json
 
 { "name": "Laptop – Claude Code", "kind": "local_agent", "scopes": ["tasks:read", "comments:write"], "project_id": 12, "expires_at": null }
 
-→ 201 { "id", "name", "kind": "local_agent", "scopes", "project_id", "project_name", "expires_at", "key": "gotodo_…" }</code></pre>
+→ 201 { "id", "name", "kind": "local_agent", "scopes", "project_id", "project_name", "expires_at", "key": "{{ keyPrefix }}_…" }</code></pre>
                     <p>
                         Over MCP, a local agent key gets <code>get_context</code>, <code>get_project</code>, <code>get_task</code>
                         (with <code>include_comments</code>), <code>get_task_comments</code>, and <code>list_tasks</code>
@@ -233,8 +237,8 @@ Content-Type: application/json
                         and with <code>comments:write</code> it gets <code>add_comment</code>. Tools outside the key's scopes
                         aren't listed. <code>task_id</code> also accepts <code>"#123"</code> or a pasted <code>/tasks/123</code> link.
                     </p>
-                    <pre class="api-docs-pre"><code>claude mcp add --transport http gotodo https://todo.example.com{{ basePath }}/api/v2/mcp \
-  --header "Authorization: Bearer gotodo_…"</code></pre>
+                    <pre class="api-docs-pre"><code>claude mcp add --transport http {{ slug }} https://todo.example.com{{ basePath }}/api/v2/mcp \
+  --header "Authorization: Bearer {{ keyPrefix }}_…"</code></pre>
 
                     <h2 id="ai-agents" class="h4 mt-4">AI agents &amp; MCP</h2>
                     <p>
@@ -312,8 +316,8 @@ POST {{ basePath }}/api/v2/agent/runs/41/finish        { "status": "succeeded", 
                         tool runs through the REST API with the same key, so guardrails and rate limits are identical.
                         Refusals come back as tool results with <code>isError: true</code>.
                     </p>
-                    <pre class="api-docs-pre"><code>claude mcp add --transport http gotodo-release_bot https://todo.example.com{{ basePath }}/api/v2/mcp \
-  --header "Authorization: Bearer gotodo_…"</code></pre>
+                    <pre class="api-docs-pre"><code>claude mcp add --transport http {{ slug }}-release_bot https://todo.example.com{{ basePath }}/api/v2/mcp \
+  --header "Authorization: Bearer {{ keyPrefix }}_…"</code></pre>
 
                     <h2 id="automation" class="h4 mt-4">Automation rules</h2>
                     <p>
