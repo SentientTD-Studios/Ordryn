@@ -1,5 +1,7 @@
 export type User = {
   id: number
+  /** Company-mode guest account. */
+  is_guest?: boolean
   email: string
   user_name: string
   /** Set in company mode by whoever manages names. */
@@ -1335,6 +1337,8 @@ export type Person = {
   /** Whether the caller may set this person's first and last name (company mode). */
   can_edit_name: boolean
   is_owner?: boolean
+  /** Company-mode guest account from outside the company. */
+  is_guest?: boolean
 }
 
 export type PeopleList = {
@@ -1349,6 +1353,10 @@ export type PeopleList = {
   teams: { id: number; name: string }[]
   /** Site roles the caller may give a new account; empty means the default User role only. */
   site_roles: { id: number; name: string; label: string }[]
+  /** Company mode, site admins: may make accounts guests or members. */
+  can_manage_guests?: boolean
+  /** The guest policy allows new guests. */
+  guests_enabled?: boolean
 }
 
 export type CreatePersonPayload = {
@@ -1358,6 +1366,7 @@ export type CreatePersonPayload = {
   last_name?: string
   team_id?: number
   site_role_id?: number
+  guest?: boolean
 }
 
 export type CreatePersonResult = {
@@ -1846,4 +1855,14 @@ export type AuditQuery = {
 export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
+}
+
+/** Company mode: what guest accounts can reach (Admin → Guests). */
+export type GuestPolicy = {
+  enabled: boolean
+  access_level: 'view' | 'full'
+  role_id: number | null
+  via_teams: boolean
+  directory: boolean
+  guest_count?: number
 }

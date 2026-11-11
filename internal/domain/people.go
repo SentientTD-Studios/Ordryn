@@ -167,6 +167,8 @@ type CreateAccountInput struct {
 	TeamID int
 	// SiteRoleID zero means the default User role.
 	SiteRoleID int
+	// Guest creates a guest account (company mode, site admins, guests enabled).
+	Guest bool
 }
 
 // CreatedAccount is the new account and the token for its set-password link.
@@ -216,6 +218,14 @@ func CreateAccountForUser(ctx context.Context, actorUserID int, in CreateAccount
 		return nil, fmt.Errorf("%w: that username is already taken", ErrConflict)
 	}
 
+	if in.Guest {
+		if err := requireCompanyAdmin(actorUserID); err != nil {
+			return nil, err
+		}
+		if !storage.GetGuestPolicy().Enabled {
+			return nil, fmt.Errorf("%w: turn on guest accounts in the guest policy first", ErrValidation)
+		}
+	}
 	if in.TeamID > 0 {
 		if !storage.IsCompanyMode() {
 			return nil, fmt.Errorf("%w: teams are only used in company mode", ErrValidation)
@@ -254,6 +264,15 @@ func CreateAccountForUser(ctx context.Context, actorUserID int, in CreateAccount
 		}
 		roleID = role.ID
 	}
+	if in.Guest {
+		role, err := storage.GetSiteRole(roleID)
+		if err != nil {
+			return nil, err
+		}
+		if err := guestRoleProblem(role); err != nil {
+			return nil, err
+		}
+	}
 
 	// Nobody knows this password; the person sets their own from the link.
 	secret := make([]byte, 32)
@@ -275,6 +294,11 @@ func CreateAccountForUser(ctx context.Context, actorUserID int, in CreateAccount
 	if first != "" || last != "" {
 		if err := storage.SetUserNames(userID, first, last); err != nil {
 			return &CreatedAccount{UserID: userID}, fmt.Errorf("account created, but saving its name failed: %w", err)
+		}
+	}
+	if in.Guest {
+		if err := storage.SetUserGuest(userID, true); err != nil {
+			return &CreatedAccount{UserID: userID}, fmt.Errorf("account created, but making it a guest failed: %w", err)
 		}
 	}
 	if in.TeamID > 0 {

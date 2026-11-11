@@ -217,6 +217,7 @@ func registerAPIV1Routes() {
 	handleAPI("/people", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/people/", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/admin/users", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
+	handleAPI("/admin/guest-policy", utils.AuthSessionChain(handlers.APIV1AdminGuestPolicy))
 	handleAPI("/admin/users/", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
 	handleAPI("/admin/site-roles", utils.SitePermAPIChain(storage.SitePermRolesManage, handlers.APIV1AdminSiteRolesRouter))
 	handleAPI("/admin/site-roles/", utils.SitePermAPIChain(storage.SitePermRolesManage, handlers.APIV1AdminSiteRolesRouter))

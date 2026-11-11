@@ -1,6 +1,7 @@
 import { withBase } from '@/base'
 import type {
   AdminSettings,
+  GuestPolicy,
   AdminSettingsPatch,
   AdminUser,
   SiteRole,
@@ -1758,6 +1759,21 @@ export const api = {
       `/api/v2/people/${id}/${active ? 'reactivate' : 'deactivate'}`,
       { method: 'POST' },
     )
+  },
+
+  setPersonGuest(id: number, guest: boolean) {
+    return request<{ ok: boolean; guest: boolean }>(`/api/v2/people/${id}/guest`, {
+      method: 'POST',
+      body: JSON.stringify({ guest }),
+    })
+  },
+
+  getGuestPolicy() {
+    return request<GuestPolicy>('/api/v2/admin/guest-policy')
+  },
+
+  saveGuestPolicy(policy: GuestPolicy) {
+    return request<GuestPolicy>('/api/v2/admin/guest-policy', { method: 'PUT', body: JSON.stringify(policy) })
   },
 
   listAdminUsers() {

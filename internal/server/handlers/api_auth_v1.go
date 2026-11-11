@@ -54,6 +54,8 @@ type apiUserMeJSON struct {
 	IsSiteOwner bool `json:"is_site_owner"`
 	// CanEditName is true in company mode for those allowed to set their own name.
 	CanEditName bool `json:"can_edit_name"`
+	// IsGuest marks a company-mode guest account.
+	IsGuest bool `json:"is_guest"`
 }
 
 func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
@@ -79,6 +81,7 @@ func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
 		ManagesPeople:           access.SeesPeople(),
 		IsSiteOwner:             access.Owner,
 		CanEditName:             domain.CanEditNames(p.ID, access, p.ID),
+		IsGuest:                 storage.IsGuestUser(p.ID),
 	}
 }
 

@@ -53,13 +53,22 @@ func UserHasSitePermission(userID int, perm string) bool {
 	}
 	defer CloseDatabase(pool)
 
-	var has bool
+	var has, guest bool
 	err = pool.QueryRow(context.Background(), `
-		SELECT COALESCE($2::text = ANY(r.permissions) OR $3::text = ANY(r.permissions), FALSE)
+		SELECT COALESCE($2::text = ANY(r.permissions) OR $3::text = ANY(r.permissions), FALSE),
+		       COALESCE(u.is_guest, FALSE)
 		FROM users u
 		JOIN roles r ON r.id = u.role_id
-		WHERE u.id = $1`, userID, perm, SitePermAdmin).Scan(&has)
-	return err == nil && has
+		WHERE u.id = $1`, userID, perm, SitePermAdmin).Scan(&has, &guest)
+	if err != nil || !has {
+		return false
+	}
+	// Guests hold no site permission but creating projects, whatever their role
+	// says (roles are also checked when they're given to guests).
+	if guest {
+		return guestAllowedSitePerms[perm] && roleHasExact(pool, userID, perm)
+	}
+	return true
 }
 
 // GetUserPermissions returns the live permissions of the user's site role. Sessions
@@ -82,6 +91,19 @@ func GetUserPermissions(userID int) ([]string, error) {
 	}
 	if perms == nil {
 		perms = []string{}
+	}
+	if IsGuestUser(userID) {
+		blocked := map[string]bool{}
+		for _, p := range GuestBlockedPerms(perms) {
+			blocked[p] = true
+		}
+		kept := make([]string, 0, len(perms))
+		for _, p := range perms {
+			if !blocked[p] {
+				kept = append(kept, p)
+			}
+		}
+		perms = kept
 	}
 	return perms, nil
 }

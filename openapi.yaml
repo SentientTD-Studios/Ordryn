@@ -7446,6 +7446,7 @@ paths:
                         role_name: { type: string }
                         can_manage: { type: boolean }
                         can_edit_name: { type: boolean }
+                        is_guest: { type: boolean, description: Company-mode guest account }
                         teams:
                           type: array
                           items:
@@ -7458,6 +7459,8 @@ paths:
                   manages_everyone: { type: boolean }
                   can_create: { type: boolean, description: False for those who only edit names }
                   names_required: { type: boolean, description: True in company mode; new accounts need first_name and last_name }
+                  can_manage_guests: { type: boolean, description: "Company mode, site admins: may make accounts guests or members" }
+                  guests_enabled: { type: boolean, description: The guest policy allows new guests }
                   teams:
                     type: array
                     items:
@@ -7508,6 +7511,7 @@ paths:
                 last_name: { type: string, description: Required in company mode }
                 team_id: { type: integer, description: "Company-mode team to join; omit for no team (admins and users:manage only)." }
                 site_role_id: { type: integer, description: Omit for the default User role. }
+                guest: { type: boolean, description: "Create a guest account (company mode, site admins, guests enabled). The role must hold no site permission but Create projects." }
       responses:
         "201":
           description: Account created
@@ -7564,6 +7568,99 @@ paths:
                   first_name: { type: string }
                   last_name: { type: string }
                   full_name: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/guest:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Make an account a guest, or a guest a member
+      description: |
+        Company mode, site admins only. A guest leaves the Company team, so shares with the whole
+        company stop reaching them. What else they reach follows the guest policy. Making a member
+        again rejoins the company. Making a guest needs guests enabled, and refuses the site
+        owner, yourself, agents, and accounts whose site role holds site permissions other than
+        Create projects.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guest]
+              properties:
+                guest: { type: boolean }
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  guest: { type: boolean }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/admin/guest-policy:
+    get:
+      tags: [Admin]
+      summary: Guest policy
+      description: Company mode, site admins only. Also returns how many guest accounts exist.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestPolicy"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Admin]
+      summary: Set the guest policy
+      description: |
+        Decides what guest accounts reach. Shares with the whole company never reach guests.
+        - `enabled`: new guests can be made.
+        - `access_level`: `view` makes every project shared with a guest read only. `full` gives
+          the weaker of the share's role and `role_id`, which must hold no site permission but
+          Create projects.
+        - `via_teams`: shares with a team a guest is on reach them. Otherwise only personal
+          shares do.
+        - `directory`: guests can look up anyone's username. Otherwise only people on their
+          projects.
+
+        Whatever their site role says, guests hold no site permission but Create projects.
+        Saving recomputes every project's access at once.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestPolicy"
+      responses:
+        "200":
+          description: Saved policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestPolicy"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -8885,6 +8982,24 @@ components:
         can_edit_name:
           type: boolean
           description: Company mode; true when the user may set their own first and last name (people:profile).
+        is_guest:
+          type: boolean
+          description: Company mode; a guest account from outside the company.
+
+    GuestPolicy:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        access_level: { type: string, enum: [view, full] }
+        role_id:
+          type: integer
+          nullable: true
+          description: Site role guests get on full shares (required for `full`).
+        via_teams: { type: boolean }
+        directory: { type: boolean }
+        guest_count:
+          type: integer
+          readOnly: true
 
     MFARequired:
       type: object
