@@ -2124,3 +2124,34 @@ export type FromTemplateResult = {
   rules_skipped: number
   warnings: string[]
 }
+
+export type ProjectHealth = 'on_track' | 'at_risk' | 'off_track'
+
+export type ProjectStatusUpdate = {
+  id: number
+  project_id: number
+  author_id: number
+  author_name: string
+  health: ProjectHealth
+  body: string
+  created_at: string
+}
+
+/** One project on the portfolio (GET /api/v2/portfolio). */
+export type PortfolioProject = {
+  id: number
+  name: string
+  slug: string
+  workflow_mode: string
+  archived: boolean
+  owner_name: string
+  organization_name?: string
+  open: number
+  overdue: number
+  due_this_week: number
+  unclaimed: number
+  done_last_week: number
+  done: number
+  latest_update: ProjectStatusUpdate | null
+  can_post_update: boolean
+}

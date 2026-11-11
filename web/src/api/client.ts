@@ -17,6 +17,9 @@ import type {
   AuditStreamSettings,
   FromTemplateResult,
   ProjectTemplate,
+  PortfolioProject,
+  ProjectHealth,
+  ProjectStatusUpdate,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1882,6 +1885,25 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ is_template: isTemplate }),
     })
+  },
+
+  getPortfolio(archived = false) {
+    return request<{ projects: PortfolioProject[] }>(`/api/v2/portfolio${archived ? '?archived=1' : ''}`)
+  },
+
+  listProjectStatusUpdates(projectId: number) {
+    return request<{ updates: ProjectStatusUpdate[] }>(`/api/v2/projects/${projectId}/status-updates`)
+  },
+
+  postProjectStatusUpdate(projectId: number, health: ProjectHealth, body: string) {
+    return request<ProjectStatusUpdate>(`/api/v2/projects/${projectId}/status-updates`, {
+      method: 'POST',
+      body: JSON.stringify({ health, body }),
+    })
+  },
+
+  deleteProjectStatusUpdate(projectId: number, updateId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/status-updates/${updateId}`, { method: 'DELETE' })
   },
 
   getAdminSettings() {

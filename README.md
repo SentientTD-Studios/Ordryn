@@ -37,6 +37,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Task activity timeline in the edit sidebar
 - Dashboard with overdue/today counts, completion charts, and streak tracking
 - Command palette (`Ctrl`/`⌘`+`K`, or Search in the sidebar): search tasks and projects, jump to `#123`, go to any page, create a task or project, toggle the theme
+- Portfolio: every project you can open with open/overdue/due-soon/unclaimed counts, weekly throughput, progress, and the lead's latest status update (on track / at risk / off track, with history)
 - Keyboard shortcuts for power users (`?` for help)
 - Invite-only registration and role-based permissions (admin, create invites)
 - Project and organization **roles** built from a permission catalog. Owner is the only built-in role; everything else is created by each organization or project (see [Roles](#roles))
