@@ -456,3 +456,18 @@ func AfterExtensionsReload(actorID int) {
 		ActorID: actorID,
 	})
 }
+
+// SubscriberCount is how many live-update streams this process is serving.
+func SubscriberCount() int {
+	h := currentHub()
+	if h == nil {
+		return 0
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := 0
+	for _, subs := range h.channels {
+		n += len(subs)
+	}
+	return n
+}
