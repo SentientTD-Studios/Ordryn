@@ -7386,11 +7386,14 @@ paths:
   /api/v2/company-home:
     get:
       tags: [Auth]
-      summary: Company home page content
+      summary: Company home page
       description: |
-        Company mode only (404 otherwise). Markdown that signed-in people see when no
-        project is shared with them yet; set as `company_home` in site settings.
-        `can_edit` is true for admins and `settings:manage` holders.
+        Company mode only (404 otherwise). `content` is the Markdown welcome set as
+        `company_home` in site settings; `can_edit` is true for admins and `settings:manage`
+        holders. `summary` is the caller's own picture: open work (tasks they claimed, plus
+        unclaimed tasks they created) with overdue / due today / due this week counts, up to
+        12 of their projects (overdue work first, then busiest) with open and overdue counts,
+        and the teams they're on. Dates use the caller's timezone.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7404,6 +7407,38 @@ paths:
                 properties:
                   content: { type: string }
                   can_edit: { type: boolean }
+                  summary:
+                    type: object
+                    properties:
+                      today: { type: string, format: date }
+                      my_work:
+                        type: object
+                        properties:
+                          open: { type: integer }
+                          overdue: { type: integer }
+                          due_today: { type: integer }
+                          due_week: { type: integer }
+                      projects:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+                            slug: { type: string }
+                            open: { type: integer }
+                            overdue: { type: integer }
+                      total_projects:
+                        type: integer
+                        description: All your unarchived projects, including any not listed.
+                      teams:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+                            members: { type: integer }
         "404":
           $ref: "#/components/responses/NotFound"
 

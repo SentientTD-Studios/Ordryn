@@ -30,7 +30,7 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const { canCreateProjects, managesPeople } = useAuth()
-const { isCompanyMode } = useSite()
+const { isCompanyMode, siteName } = useSite()
 
 const overdueCount = inject<Ref<number>>('overdueCount', ref(0))
 const pendingInviteCount = inject<Ref<number>>('pendingInviteCount', ref(0))
@@ -196,6 +196,19 @@ onBeforeUnmount(() => {
         >
           <i class="bi bi-trash3" />
           <span class="sidebar-text">Trash</span>
+        </RouterLink>
+      </li>
+      <li v-if="isCompanyMode" class="sidebar-nav-item">
+        <RouterLink
+          to="/home"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/home' }"
+          :data-tooltip="`${siteName} home`"
+          :title="`${siteName} home`"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-building" />
+          <span class="sidebar-text">Company home</span>
         </RouterLink>
       </li>
       <li class="sidebar-nav-item">

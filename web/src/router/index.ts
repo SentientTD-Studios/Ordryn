@@ -107,6 +107,13 @@ const router = createRouter({
       meta: { ownFooter: true },
     },
     {
+      // Company mode: the company home page (welcome, your work, projects, teams).
+      path: '/home',
+      name: 'company-home',
+      component: IndexView,
+      meta: { ownFooter: true, requiresAuth: true },
+    },
+    {
       // A project's board, by slug (or id / former slug, which redirect to the current slug).
       // Shares the home component so switching projects doesn't remount the board.
       path: '/p/:ref',
