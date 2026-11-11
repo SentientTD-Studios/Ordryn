@@ -145,8 +145,9 @@ func TestGuestAccounts(t *testing.T) {
 		t.Fatal("guest should hold no site-wide query permission")
 	}
 
-	// Guests only find people on their projects.
-	if _, err := newAccount("zed@example.com", "zed", false); err != nil {
+	// Guests only find people on their projects. (A member would be on the
+	// company-shared board with gus, so use another guest who shares nothing.)
+	if _, err := newAccount("zed@example.com", "zed", true); err != nil {
 		t.Fatal(err)
 	}
 	names, err := SearchUsernames(ctx, gus, "ze", 0)

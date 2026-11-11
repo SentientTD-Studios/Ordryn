@@ -186,10 +186,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "claimed_by: %v\n", err)
 		os.Exit(1)
 	}
-	if err := storage.MigrateGuests(); err != nil {
-		fmt.Fprintf(os.Stderr, "guests: %v\n", err)
-		os.Exit(1)
-	}
 	if err := storage.CreateProjectSprintsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "sprints: %v\n", err)
 		os.Exit(1)
@@ -331,6 +327,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := storage.CreateRolesTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "roles: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateGuests(); err != nil {
+		fmt.Fprintf(os.Stderr, "guests: %v\n", err)
 		os.Exit(1)
 	}
 	if err := storage.CreateAPIKeysTable(); err != nil {
