@@ -1847,3 +1847,19 @@ export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
 }
+
+export type PlannerTask = Task & {
+  /** The caller's snooze day (YYYY-MM-DD), when set. */
+  snoozed_until?: string
+}
+
+/** GET /planner: the caller's open tasks grouped for Today / Upcoming. */
+export type Planner = {
+  today: string
+  days: number
+  overdue: PlannerTask[]
+  due_today: PlannerTask[]
+  woken: PlannerTask[]
+  upcoming: { date: string; tasks: PlannerTask[] }[]
+  snoozed: PlannerTask[]
+}

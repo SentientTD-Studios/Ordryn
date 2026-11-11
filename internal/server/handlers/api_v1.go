@@ -484,6 +484,13 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 			}
 			apiV1TaskClaim(w, r, id)
 			return
+		case "snooze":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskSnooze(w, r, id)
+			return
 		case "archive":
 			if len(parts) != 2 || r.Method != http.MethodPost {
 				utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")

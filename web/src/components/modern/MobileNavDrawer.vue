@@ -194,6 +194,17 @@ watch(isAuthenticated, (ok) => {
             </li>
             <li class="sidebar-nav-item">
               <RouterLink
+                to="/planner"
+                class="sidebar-nav-link"
+                :class="{ active: route.path === '/planner' }"
+                @click="close"
+              >
+                <i class="bi bi-sun" />
+                <span>Planner</span>
+              </RouterLink>
+            </li>
+            <li class="sidebar-nav-item">
+              <RouterLink
                 to="/calendar"
                 class="sidebar-nav-link"
                 :class="{ active: route.path === '/calendar' }"
