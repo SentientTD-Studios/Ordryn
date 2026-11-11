@@ -57,6 +57,7 @@ import type {
   RequestFormInput,
   PublicRequestForm,
   Onboarding,
+  CompanyHomeSummary,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -1829,7 +1830,7 @@ export const api = {
   },
 
   getCompanyHome() {
-    return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+    return request<{ content: string; can_edit: boolean; summary?: CompanyHomeSummary }>('/api/v2/company-home')
   },
 
   getMaintenance() {

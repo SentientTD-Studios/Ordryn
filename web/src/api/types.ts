@@ -2193,3 +2193,12 @@ export type WorkloadPerson = {
 
 /** GET /api/v2/reports/workload */
 export type WorkloadReport = { people: WorkloadPerson[]; project_count: number }
+
+/** GET /company-home summary: the caller's work, projects and teams. */
+export type CompanyHomeSummary = {
+  today: string
+  my_work: { open: number; overdue: number; due_today: number; due_week: number }
+  projects: { id: number; name: string; slug: string; open: number; overdue: number }[]
+  total_projects: number
+  teams: { id: number; name: string; members: number }[]
+}

@@ -129,7 +129,9 @@ const defaultTaskProjectId = computed<number | null>(() => {
   return isCompanyMode.value ? (writableProjects.value[0]?.id ?? null) : null
 })
 // No project shared yet: show the company home page instead of an empty task list.
-const showCompanyHome = computed(() => isCompanyMode.value && metaLoaded.value && projects.value.length === 0)
+const showCompanyHome = computed(
+  () => isCompanyMode.value && metaLoaded.value && (projects.value.length === 0 || route.name === 'company-home'),
+)
 // Ticks off getting-started steps as tasks are added or completed.
 const onboardingKey = computed(() => `${tasks.value.length}:${tasks.value.filter((t) => t.completed).length}`)
 // Preference: Home (no project or saved view selected) shows a project grid above the task list.
