@@ -13,14 +13,17 @@ require (
 )
 
 require (
+	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/fergusstrange/embedded-postgres v1.34.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	golang.org/x/mod v0.32.0
+	golang.org/x/oauth2 v0.23.0
 )
 
 require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
+	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect

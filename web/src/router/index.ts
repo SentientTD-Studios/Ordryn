@@ -224,6 +224,12 @@ const router = createRouter({
       meta: { requiresAuth: true, permission: 'settings:manage' },
     },
     {
+      path: '/admin/security',
+      name: 'admin-security',
+      component: () => import('@/views/AdminSecurityView.vue'),
+      meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
       path: '/admin/mods',
       redirect: '/admin/extensions',
     },

@@ -1399,6 +1399,51 @@ paths:
         "303":
           description: Redirects to Settings
 
+  /api/v2/auth/sso/start:
+    get:
+      tags: [Auth]
+      summary: Start single sign-on (browser redirect)
+      description: |
+        Redirects to the configured OpenID Connect provider (authorization code
+        flow with PKCE, a nonce, and a state bound to this browser by a short-lived
+        cookie). Errors redirect to `/login?sso_error=…`.
+      security: []
+      parameters:
+        - name: return
+          in: query
+          description: Path on this site to land on after signing in. Anything else becomes `/`.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirects to the identity provider
+        "303":
+          description: SSO is off or unreachable; redirects to the login page with `sso_error`
+
+  /api/v2/auth/sso/callback:
+    get:
+      tags: [Auth]
+      summary: Single sign-on callback (public redirect)
+      description: |
+        Verifies the ID token, then signs in the account linked to the provider's
+        subject, or the account with the same verified email (linking it), or a new
+        account when automatic creation is on and the email domain is allowed. In
+        company mode, mapped provider groups set team membership. Local TOTP is not
+        asked for: the provider handles the second factor.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "303":
+          description: Signed in and redirected to the `return` path, or back to `/login?sso_error=…`
+
   /api/v2/webhooks/github:
     post:
       tags: [GitHub]
@@ -7184,6 +7229,75 @@ paths:
         "400":
           description: Provider unset or settings invalid
 
+  /api/v2/admin/sso:
+    get:
+      tags: [Admin]
+      summary: Get single sign-on settings
+      description: Admins only. The client secret is never returned.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: SSO settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSSOSettings"
+    patch:
+      tags: [Admin]
+      summary: Update single sign-on settings
+      description: |
+        Admins only. Omitted fields stay as they are. `client_secret` is write-only
+        ("" clears it). Turning `enabled` on needs an issuer URL, client ID, and
+        client secret. `sso_only` turns off password sign-in and self-registration
+        for everyone except admins (`403 sso_required`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSSOPatch"
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSSOSettings"
+        "400":
+          description: Validation error
+
+  /api/v2/admin/sso/test:
+    post:
+      tags: [Admin]
+      summary: Check the saved issuer URL
+      description: Admins only. Fetches the provider's discovery document.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Provider found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  authorization_endpoint:
+                    type: string
+                  token_endpoint:
+                    type: string
+        "400":
+          description: No issuer URL saved
+        "502":
+          description: Discovery failed
+
   /api/v2/announcements/dismiss:
     post:
       tags: [Announcements]
@@ -8752,6 +8866,14 @@ components:
         setup_required:
           type: boolean
           description: True until first-time setup (POST /api/v2/setup) creates the admin account.
+        sso_enabled:
+          type: boolean
+          description: Single sign-on is set up; show "Sign in with {sso_label}".
+        sso_label:
+          type: string
+        sso_only:
+          type: boolean
+          description: Password sign-in and self-registration are off for everyone but admins.
 
     ProjectAccess:
       type: object
@@ -12554,6 +12676,73 @@ components:
           type: string
         key:
           type: string
+    AdminSSOSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        label:
+          type: string
+          description: Text after "Sign in with" on the login page.
+        issuer_url:
+          type: string
+        client_id:
+          type: string
+        client_secret_set:
+          type: boolean
+        scopes:
+          type: string
+          description: Space-separated scopes requested alongside `openid`.
+        auto_create:
+          type: boolean
+          description: Create an account on first sign-in when the email domain is allowed.
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        sso_only:
+          type: boolean
+        groups_claim:
+          type: string
+          description: ID token claim with the person's groups (company mode team sync).
+        team_map:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Provider group → company-mode team id.
+        redirect_uri:
+          type: string
+          description: Callback URL to register with the provider.
+    AdminSSOPatch:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        label:
+          type: string
+        issuer_url:
+          type: string
+        client_id:
+          type: string
+        client_secret:
+          type: string
+          writeOnly: true
+        scopes:
+          type: string
+        auto_create:
+          type: boolean
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        sso_only:
+          type: boolean
+        groups_claim:
+          type: string
+        team_map:
+          type: object
+          additionalProperties:
+            type: integer
     ImageHostingTestResult:
       type: object
       properties:

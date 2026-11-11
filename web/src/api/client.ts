@@ -2,6 +2,8 @@ import { withBase } from '@/base'
 import type {
   AdminSettings,
   AdminSettingsPatch,
+  AdminSSOPatch,
+  AdminSSOSettings,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1677,6 +1679,18 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
+  },
+
+  getAdminSSO() {
+    return request<AdminSSOSettings>('/api/v2/admin/sso')
+  },
+
+  patchAdminSSO(payload: AdminSSOPatch) {
+    return request<AdminSSOSettings>('/api/v2/admin/sso', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  testAdminSSO() {
+    return request<{ status: string; authorization_endpoint: string }>('/api/v2/admin/sso/test', { method: 'POST' })
   },
 
   testImageHosting(payload: AdminSettingsPatch) {
