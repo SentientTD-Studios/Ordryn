@@ -139,6 +139,10 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
+	if sso, err := storage.GetSSOSettings(); err == nil && sso.Configured() && sso.SSOOnly {
+		utils.APIJSONError(w, http.StatusForbidden, "sso_required", "This site uses single sign-on. Sign in with it to get an account.")
+		return
+	}
 	email := strings.TrimSpace(req.Email)
 	timezone := strings.TrimSpace(req.Timezone)
 	token := strings.TrimSpace(req.InviteToken)
@@ -439,6 +443,12 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	user, err := storage.GetUserByEmail(email)
 	if err != nil || user == nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	// Only reached with the right password. Admins keep password sign-in so a
+	// broken identity provider can't lock everyone out.
+	if storage.SSOOnlyFor(user.ID) {
+		utils.APIJSONError(w, http.StatusForbidden, "sso_required", "This site uses single sign-on. Use the sign-in button instead.")
 		return
 	}
 	// Only reached with the right password, so this reveals nothing to a guesser.

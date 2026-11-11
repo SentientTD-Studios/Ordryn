@@ -518,6 +518,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSavedViewsForQueries failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateSSO(); err != nil {
+		fmt.Printf("migration: MigrateSSO failed: %v\n", err)
+		errCount++
+	}
 
 	if err := MigrateGuests(); err != nil {
 		fmt.Printf("migration: MigrateGuests failed: %v\n", err)

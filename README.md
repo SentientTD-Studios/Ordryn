@@ -7,6 +7,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 ## Features
 
 - User signup / login / logout with forgot-password flow and optional TOTP MFA
+- Single sign-on with any OpenID Connect provider (Google Workspace, Entra ID, Okta, Authentik, Keycloak): link by verified email, optional account creation limited to allowed domains, "require SSO" with an admin password fallback, and company-mode team sync from provider groups (Admin → Security)
 - Editable profile (display name, timezone, tasks-per-page preference)
 - Per-user tasks: add, edit, duplicate, complete, delete, drag-and-drop reorder
 - Projects with rename, archive, and delete; tags with create-on-type, rename, recolor, and delete

@@ -603,6 +603,11 @@ export type SiteInfo = {
   site_mode?: SiteMode
   /** True until first-time setup creates the admin account. */
   setup_required?: boolean
+  /** Single sign-on through an OpenID Connect provider. */
+  sso_enabled?: boolean
+  sso_label?: string
+  /** Password sign-in is only for admins. */
+  sso_only?: boolean
 }
 
 /** Who may create an account after setup: invite only, anyone, or nobody. */
@@ -1908,4 +1913,27 @@ export type CommentReaction = {
   mine: boolean
   /** Up to 10 people who left it. */
   names: string[]
+}
+
+/** Admin → Security: single sign-on through an OpenID Connect provider. */
+export type AdminSSOSettings = {
+  enabled: boolean
+  label: string
+  issuer_url: string
+  client_id: string
+  client_secret_set: boolean
+  scopes: string
+  auto_create: boolean
+  allowed_domains: string[]
+  sso_only: boolean
+  groups_claim: string
+  /** Provider group → company-mode team id. */
+  team_map: Record<string, number>
+  /** The callback URL to register with the provider. */
+  redirect_uri: string
+}
+
+export type AdminSSOPatch = Partial<Omit<AdminSSOSettings, 'client_secret_set' | 'redirect_uri'>> & {
+  /** Write-only; "" clears it. Omit to keep the stored secret. */
+  client_secret?: string
 }
