@@ -43,6 +43,8 @@ const settings = reactive<AdminSettings>({
   allow_user_invites: false,
   members_can_create_projects: true,
   members_can_create_organizations: true,
+  members_can_use_local_agents: true,
+  members_can_add_project_agents: true,
   site_mode: 'multi',
   company_home: '',
   site_mode_locked: false,
@@ -124,6 +126,8 @@ async function saveSettings() {
         ? {
             members_can_create_projects: settings.members_can_create_projects,
             members_can_create_organizations: settings.members_can_create_organizations,
+            members_can_use_local_agents: settings.members_can_use_local_agents,
+            members_can_add_project_agents: settings.members_can_add_project_agents,
           }
         : {}),
       user_invite_limit: settings.user_invite_limit,
@@ -458,6 +462,29 @@ onMounted(load)
               </div>
             </div>
           </template>
+          <fieldset v-if="isAdmin" class="mb-3">
+            <legend class="h6 mb-2">AI agents</legend>
+            <div class="form-check mb-2">
+              <input id="admin-members-local-agents" v-model="settings.members_can_use_local_agents" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-members-local-agents">
+                Allow {{ settings.site_mode === 'company' ? 'the User role' : 'regular users' }} to use local AI agents
+              </label>
+              <div class="form-text">
+                Local agent keys let an AI tool on someone's own computer (Claude Code, Codex, Cursor…) work on their
+                tasks as them. Turning this off stops existing keys right away.
+              </div>
+            </div>
+            <div class="form-check">
+              <input id="admin-members-project-agents" v-model="settings.members_can_add_project_agents" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-members-project-agents">
+                Allow {{ settings.site_mode === 'company' ? 'the User role' : 'regular users' }} to add AI agents to projects they manage
+              </label>
+              <div class="form-text">
+                Existing agents keep working, and managers can still pause or remove them. Admins always have both, and
+                you can set these per role on <RouterLink to="/admin/site-roles">Site roles</RouterLink>.
+              </div>
+            </div>
+          </fieldset>
           <div class="row g-3 mb-3">
             <div class="col-sm-6">
               <label for="admin-max-description" class="form-label">Max task description length</label>

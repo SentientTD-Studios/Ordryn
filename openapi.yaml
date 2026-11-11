@@ -7278,7 +7278,8 @@ paths:
       summary: Update site settings
       description: |
         Needs admin, or `settings:manage` on a company site. `site_mode` and
-        `members_can_create_*` stay with admins (403 otherwise).
+        `members_can_create_*`, `members_can_use_local_agents`, and
+        `members_can_add_project_agents` stay with admins (403 otherwise).
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -12361,6 +12362,12 @@ components:
         members_can_create_organizations:
           type: boolean
           description: Whether the member site role has orgs:create. Admins can always create organizations.
+        members_can_use_local_agents:
+          type: boolean
+          description: Whether the member site role has agents:local (create and use local agent keys). Taking it away stops existing local agent keys. Admins always have it.
+        members_can_add_project_agents:
+          type: boolean
+          description: Whether the member site role has agents:project (add and configure project AI agents and mint their keys). Pausing or removing an agent never needs it. Admins always have it.
         site_mode:
           type: string
           enum: [multi, company]
@@ -12495,6 +12502,12 @@ components:
         members_can_create_organizations:
           type: boolean
           description: Whether the member site role has orgs:create. Admins can always create organizations.
+        members_can_use_local_agents:
+          type: boolean
+          description: Whether the member site role has agents:local (create and use local agent keys). Taking it away stops existing local agent keys. Admins always have it.
+        members_can_add_project_agents:
+          type: boolean
+          description: Whether the member site role has agents:project (add and configure project AI agents and mint their keys). Pausing or removing an agent never needs it. Admins always have it.
         company_home:
           type: string
           maxLength: 20000
@@ -12597,7 +12610,7 @@ components:
       properties:
         id:
           type: string
-          enum: ["projects:create", "orgs:create", createinvites]
+          enum: ["projects:create", "orgs:create", createinvites, "users:manage", "queries:site", "agents:local", "agents:project"]
         label:
           type: string
         description:
