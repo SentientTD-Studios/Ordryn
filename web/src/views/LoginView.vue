@@ -13,6 +13,7 @@ import {
   stashDeviceAuthReturn,
   takeDeviceAuthReturn,
 } from '@/deviceAuthReturn'
+import { isPasskeyCancel, passkeysSupported } from '@/utils/webauthn'
 
 const email = ref('')
 const password = ref('')
@@ -23,7 +24,24 @@ const error = ref('')
 // True when the password was right but the email isn't confirmed yet.
 const needsConfirmation = ref(false)
 const resending = ref(false)
-const { login, verifyMFA } = useAuth()
+const { login, verifyMFA, loginWithPasskey } = useAuth()
+const canUsePasskey = passkeysSupported()
+
+async function onPasskey() {
+  busy.value = true
+  error.value = ''
+  needsConfirmation.value = false
+  try {
+    await loginWithPasskey()
+    await finishLogin()
+  } catch (err) {
+    if (isPasskeyCancel(err)) return
+    error.value = err instanceof APIError ? err.message : 'Passkey sign-in failed'
+    needsConfirmation.value = err instanceof APIError && err.code === 'email_unverified'
+  } finally {
+    busy.value = false
+  }
+}
 const { push } = useToast()
 const { enableJoinRequests, isCompanyMode, ssoEnabled, ssoLabel, ssoOnly } = useSite()
 const router = useRouter()
@@ -160,6 +178,12 @@ function backToPassword() {
                 <div class="mb-2">
                   <RouterLink to="/forgot-password" class="text-decoration-none small">Forgot Password?</RouterLink>
                 </div>
+                <template v-if="canUsePasskey">
+                  <div class="text-center text-muted small my-2">or</div>
+                  <button type="button" class="btn btn-outline-secondary w-100" :disabled="busy" @click="onPasskey">
+                    <i class="bi bi-fingerprint me-1" aria-hidden="true" />Sign in with a passkey
+                  </button>
+                </template>
               </template>
               <template v-else-if="mfaRequired">
                 <p class="text-muted">

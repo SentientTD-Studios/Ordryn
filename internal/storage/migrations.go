@@ -522,6 +522,15 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSSO failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateSecurityPolicy(); err != nil {
+		fmt.Printf("migration: MigrateSecurityPolicy failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreatePasskeyTables(); err != nil {
+		fmt.Printf("migration: CreatePasskeyTables failed: %v\n", err)
+		errCount++
+	}
 
 	if err := MigrateGuests(); err != nil {
 		fmt.Printf("migration: MigrateGuests failed: %v\n", err)

@@ -258,7 +258,7 @@ func APIV1SSOCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The provider handled the second factor, so local TOTP isn't asked for.
-	if err := establishSession(w, r, profile); err != nil {
+	if err := establishSessionVia(w, r, profile, utils.AuthMethodSSO); err != nil {
 		fail("Couldn't create your session.")
 		return
 	}
@@ -433,4 +433,68 @@ func APIV1AdminSSOTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "ok", "authorization_endpoint": p.Endpoint().AuthURL, "token_endpoint": p.Endpoint().TokenURL,
 	})
+}
+
+type adminSecurityPolicyJSON struct {
+	RequireMFA          string   `json:"require_mfa"`
+	MFARoleIDs          []int    `json:"mfa_role_ids"`
+	MinPasswordLength   int      `json:"min_password_length"`
+	SessionIdleMinutes  int      `json:"session_idle_minutes"`
+	SessionMaxHours     int      `json:"session_max_hours"`
+	AllowedEmailDomains []string `json:"allowed_email_domains"`
+	// DefaultSessionHours is how long a session lasts when session_max_hours is 0.
+	DefaultSessionHours int `json:"default_session_hours"`
+}
+
+type adminSecurityPolicyPatch struct {
+	RequireMFA          *string   `json:"require_mfa"`
+	MFARoleIDs          *[]int    `json:"mfa_role_ids"`
+	MinPasswordLength   *int      `json:"min_password_length"`
+	SessionIdleMinutes  *int      `json:"session_idle_minutes"`
+	SessionMaxHours     *int      `json:"session_max_hours"`
+	AllowedEmailDomains *[]string `json:"allowed_email_domains"`
+}
+
+func adminSecurityPolicyView(p storage.SecurityPolicy) adminSecurityPolicyJSON {
+	return adminSecurityPolicyJSON{
+		RequireMFA: p.RequireMFA, MFARoleIDs: p.MFARoleIDs, MinPasswordLength: p.MinPasswordLength,
+		SessionIdleMinutes: p.SessionIdleMinutes, SessionMaxHours: p.SessionMaxHours,
+		AllowedEmailDomains: p.AllowedEmailDomains, DefaultSessionHours: utils.SessionMaxAge() / 3600,
+	}
+}
+
+// APIV1AdminSecurityPolicy handles GET/PATCH /api/v2/admin/security-policy (admins only).
+func APIV1AdminSecurityPolicy(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		p, err := storage.LoadSecurityPolicy()
+		if err != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load the security policy.")
+			return
+		}
+		writeJSON(w, http.StatusOK, adminSecurityPolicyView(p))
+	case http.MethodPatch:
+		var req adminSecurityPolicyPatch
+		if err := decodeJSONBody(r, &req); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+			return
+		}
+		p, err := domain.UpdateSecurityPolicy(domain.SecurityPolicyInput{
+			RequireMFA: req.RequireMFA, MFARoleIDs: req.MFARoleIDs, MinPasswordLength: req.MinPasswordLength,
+			SessionIdleMinutes: req.SessionIdleMinutes, SessionMaxHours: req.SessionMaxHours,
+			AllowedEmailDomains: req.AllowedEmailDomains,
+		})
+		if err != nil {
+			writePeopleDomainError(w, err)
+			return
+		}
+		logAdminEvent(r, "admin.security_policy_updated", "site", 1, "Security policy", map[string]interface{}{
+			"require_mfa": p.RequireMFA, "min_password_length": p.MinPasswordLength,
+			"session_idle_minutes": p.SessionIdleMinutes, "session_max_hours": p.SessionMaxHours,
+			"allowed_email_domains": p.AllowedEmailDomains,
+		})
+		writeJSON(w, http.StatusOK, adminSecurityPolicyView(p))
+	default:
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+	}
 }

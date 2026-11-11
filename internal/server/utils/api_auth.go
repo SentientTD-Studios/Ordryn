@@ -301,6 +301,9 @@ func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if uid := activeSessionUserID(w, r); uid != nil {
+			if mfaEnrollmentBlocks(w, r, *uid) {
+				return
+			}
 			*r = *SetAPIAuthKind(SetAPIUserID(r, *uid), AuthKindSession)
 			next(w, r)
 			return

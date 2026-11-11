@@ -8,6 +8,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useConfirm } from '@/composables/useConfirm'
 import { useSite } from '@/composables/useSite'
 import { useToast } from '@/composables/useToast'
+import PasskeysCard from '@/components/profile/PasskeysCard.vue'
 import { AVATAR_ACCEPT, isAllowedAvatarFile } from '@/utils/imageUpload'
 
 defineProps<{
@@ -398,6 +399,8 @@ onMounted(async () => {
       </button>
     </div>
   </div>
+
+  <PasskeysCard />
 
   <div id="mfa-section" class="card mb-4">
     <div class="card-header"><h3 class="card-title mb-0">Two-factor authentication</h3></div>

@@ -608,6 +608,8 @@ export type SiteInfo = {
   sso_label?: string
   /** Password sign-in is only for admins. */
   sso_only?: boolean
+  /** Minimum length for new passwords (Admin → Security). */
+  min_password_length?: number
 }
 
 /** Who may create an account after setup: invite only, anyone, or nobody. */
@@ -1936,4 +1938,34 @@ export type AdminSSOSettings = {
 export type AdminSSOPatch = Partial<Omit<AdminSSOSettings, 'client_secret_set' | 'redirect_uri'>> & {
   /** Write-only; "" clears it. Omit to keep the stored secret. */
   client_secret?: string
+}
+
+/** Admin → Security: sign-in policy. */
+export type AdminSecurityPolicy = {
+  /** off, all (everyone), or roles (mfa_role_ids). */
+  require_mfa: 'off' | 'all' | 'roles'
+  mfa_role_ids: number[]
+  min_password_length: number
+  /** 0 = off. */
+  session_idle_minutes: number
+  /** 0 = the server default (default_session_hours). */
+  session_max_hours: number
+  allowed_email_domains: string[]
+  default_session_hours: number
+}
+
+export type AdminSecurityPolicyPatch = Partial<Omit<AdminSecurityPolicy, 'default_session_hours'>>
+
+export type Passkey = {
+  id: number
+  name: string
+  created_at: string
+  last_used_at: string | null
+}
+
+/** A started passkey registration or sign-in: WebAuthn options plus the finish token. */
+export type PasskeyCeremony = {
+  token: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options: any
 }

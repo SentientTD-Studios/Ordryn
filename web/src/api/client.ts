@@ -2,11 +2,15 @@ import { withBase } from '@/base'
 import type {
   AdminSettings,
   GuestPolicy,
+  Passkey,
+  PasskeyCeremony,
   AdminSettingsPatch,
   OffboardInput,
   OffboardingPreview,
   OffboardResult,
   AdminSSOPatch,
+  AdminSecurityPolicy,
+  AdminSecurityPolicyPatch,
   AdminSSOSettings,
   AdminUser,
   SiteRole,
@@ -163,11 +167,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         : typeof data === 'string' && data.includes('<html')
           ? 'Request failed (proxy returned an HTML error page).'
           : res.statusText || 'Request failed'
+    if (body?.error === MFA_ENROLLMENT_REQUIRED && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(MFA_ENROLLMENT_REQUIRED))
+    }
     throw new APIError(res.status, body?.error || 'request_failed', message, data)
   }
 
   return data as T
 }
+
+/** Error code (and window event) when the security policy requires setting up MFA first. */
+export const MFA_ENROLLMENT_REQUIRED = 'mfa_enrollment_required'
 
 async function download(path: string, fallbackName: string, init: RequestInit = {}): Promise<void> {
   const res = await fetch(withBase(path), { credentials: 'include', ...init })
@@ -258,6 +268,43 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
+  },
+
+  passkeyLoginBegin() {
+    return request<PasskeyCeremony>('/api/v2/auth/passkey/begin', { method: 'POST' })
+  },
+
+  passkeyLoginFinish(token: string, credential: unknown) {
+    return request<User>('/api/v2/auth/passkey/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, credential }),
+    })
+  },
+
+  listPasskeys() {
+    return request<Passkey[]>('/api/v2/me/passkeys')
+  },
+
+  passkeyRegisterBegin(password: string) {
+    return request<PasskeyCeremony>('/api/v2/me/passkeys/register/begin', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+  },
+
+  passkeyRegisterFinish(token: string, name: string, credential: unknown) {
+    return request<Passkey>('/api/v2/me/passkeys/register/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, name, credential }),
+    })
+  },
+
+  renamePasskey(id: number, name: string) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+  },
+
+  deletePasskey(id: number) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'DELETE' })
   },
 
   getMFA() {
@@ -1706,6 +1753,14 @@ export const api = {
 
   patchAdminSSO(payload: AdminSSOPatch) {
     return request<AdminSSOSettings>('/api/v2/admin/sso', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  getSecurityPolicy() {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy')
+  },
+
+  patchSecurityPolicy(payload: AdminSecurityPolicyPatch) {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy', { method: 'PATCH', body: JSON.stringify(payload) })
   },
 
   testAdminSSO() {

@@ -6,7 +6,8 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 
 ## Features
 
-- User signup / login / logout with forgot-password flow and optional TOTP MFA
+- User signup / login / logout with forgot-password flow and optional TOTP MFA, plus **passkeys** (sign in with a fingerprint, face, or device PIN, with no email or password typed). A passkey sign-in counts as two-factor for the security policy. Adding one needs your current password (single-sign-on sessions excepted), and you can rename or remove them in Settings. Set PUBLIC_URL so the passkey domain is fixed
+- Sign-in policy (Admin → Security): require two-factor authentication for everyone or chosen roles, minimum password length, idle and maximum session lengths, and allowed email domains for new accounts
 - Single sign-on with any OpenID Connect provider (Google Workspace, Entra ID, Okta, Authentik, Keycloak): link by verified email, optional account creation limited to allowed domains, "require SSO" with an admin password fallback, and company-mode team sync from provider groups (Admin → Security)
 - Editable profile (display name, timezone, tasks-per-page preference)
 - Per-user tasks: add, edit, duplicate, complete, delete, drag-and-drop reorder

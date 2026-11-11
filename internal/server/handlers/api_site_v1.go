@@ -39,6 +39,8 @@ type apiSiteResponse struct {
 	SSOEnabled bool   `json:"sso_enabled"`
 	SSOLabel   string `json:"sso_label,omitempty"`
 	SSOOnly    bool   `json:"sso_only"`
+	// MinPasswordLength is the security policy's minimum for new passwords.
+	MinPasswordLength int `json:"min_password_length"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -103,5 +105,6 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		SSOEnabled:               sso.Configured(),
 		SSOLabel:                 ssoLabel(sso),
 		SSOOnly:                  sso.Configured() && sso.SSOOnly,
+		MinPasswordLength:        domain.PasswordMinLength(),
 	})
 }

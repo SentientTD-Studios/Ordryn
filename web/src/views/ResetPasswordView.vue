@@ -3,11 +3,13 @@ import { onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useToast } from '@/composables/useToast'
+import { useSite } from '@/composables/useSite'
 import { APIError } from '@/api/types'
 
 const route = useRoute()
 const router = useRouter()
 const { push } = useToast()
+const { minPasswordLength } = useSite()
 
 const token = ref('')
 const id = ref('')
@@ -80,11 +82,11 @@ async function onSubmit() {
               <form @submit.prevent="onSubmit">
                 <div class="mb-3">
                   <label for="reset-password" class="form-label">New password</label>
-                  <input id="reset-password" v-model="newPassword" type="password" class="form-control" required minlength="8" autocomplete="new-password" />
+                  <input id="reset-password" v-model="newPassword" type="password" class="form-control" required :minlength="minPasswordLength" autocomplete="new-password" />
                 </div>
                 <div class="mb-3">
                   <label for="reset-confirm" class="form-label">Confirm password</label>
-                  <input id="reset-confirm" v-model="confirmPassword" type="password" class="form-control" required minlength="8" autocomplete="new-password" />
+                  <input id="reset-confirm" v-model="confirmPassword" type="password" class="form-control" required :minlength="minPasswordLength" autocomplete="new-password" />
                 </div>
                 <div v-if="error" class="text-danger mb-3">{{ error }}</div>
                 <button type="submit" class="btn btn-primary" :disabled="busy">
