@@ -393,6 +393,9 @@ export type Task = {
   project_workflow?: WorkflowMode | string
   claimed_by?: number | null
   claimed_by_name?: string
+  /** Member asked to review this task. */
+  reviewer_id?: number | null
+  reviewer_name?: string
   sprint_id?: number | null
   sprint_name?: string
   parent_title?: string

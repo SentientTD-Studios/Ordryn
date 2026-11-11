@@ -98,6 +98,7 @@ const SelectJoins = ` LEFT JOIN projects p ON p.id = t.project_id
 	LEFT JOIN project_statuses qs ON qs.id = t.status_id
 	LEFT JOIN project_sprints qsp ON qsp.id = t.sprint_id
 	LEFT JOIN users quc ON quc.id = t.claimed_by
+	LEFT JOIN users qrv ON qrv.id = t.reviewer_id
 	LEFT JOIN users qcr ON qcr.id = t.user_id `
 
 // Compile builds the SQL for d, numbering placeholders after the given args.
@@ -287,6 +288,8 @@ func (b *builder) clause(n Node) string {
 		return b.idSet("t.project_id", n, b.allowed(vals, b.ctx.Projects), nil)
 	case "claimed_by":
 		return b.idSet("t.claimed_by", n, b.userIDs(vals), nil)
+	case "reviewer":
+		return b.idSet("t.reviewer_id", n, b.userIDs(vals), nil)
 	case "created_by":
 		return b.idSet("t.user_id", n, b.userIDs(vals), nil)
 	case "sprint":
@@ -595,6 +598,7 @@ var sortExprs = map[string]string{
 	"workflow_status": "LOWER(qs.name)",
 	"estimate":        "t.estimate_points",
 	"claimed_by":      "LOWER(COALESCE(NULLIF(quc.full_name, ''), NULLIF(quc.user_name, ''), quc.email))",
+	"reviewer":        "LOWER(COALESCE(NULLIF(qrv.full_name, ''), NULLIF(qrv.user_name, ''), qrv.email))",
 	"created_by":      "LOWER(COALESCE(NULLIF(qcr.full_name, ''), NULLIF(qcr.user_name, ''), qcr.email))",
 	"sprint":          "qsp.start_date",
 	// Longest in status first when descending.
@@ -605,7 +609,7 @@ var sortExprs = map[string]string{
 // SortableFields lists the fields results can be sorted by.
 func SortableFields() []string {
 	return []string{"id", "title", "project", "priority", "due_date", "created_date", "modified_date",
-		"completed", "workflow_status", "status_changed_date", "days_in_status", "estimate", "claimed_by", "created_by", "sprint"}
+		"completed", "workflow_status", "status_changed_date", "days_in_status", "estimate", "claimed_by", "reviewer", "created_by", "sprint"}
 }
 
 func orderBy(keys []SortKey) string {

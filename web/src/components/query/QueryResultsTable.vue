@@ -107,6 +107,8 @@ function cell(t: QueryTask, col: string): string {
       return t.days_in_status != null ? String(t.days_in_status) : ''
     case 'claimed_by':
       return t.claimed_by_name ?? ''
+    case 'reviewer':
+      return t.reviewer_name ?? ''
     case 'created_by':
       return t.created_by_name ?? ''
     case 'sprint':

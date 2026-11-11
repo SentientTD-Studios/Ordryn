@@ -241,7 +241,8 @@ func authorizeLocalAgentKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) 
 				return err
 			}
 			return inProject(taskID)
-		case parts[2] == "claim" && (r.Method == http.MethodPost || r.Method == http.MethodDelete):
+		case (parts[2] == "claim" && (r.Method == http.MethodPost || r.Method == http.MethodDelete)) ||
+			(parts[2] == "reviewer" && (r.Method == http.MethodPut || r.Method == http.MethodDelete)):
 			if err := require(storage.APIScopeTasksWrite); err != nil {
 				return err
 			}

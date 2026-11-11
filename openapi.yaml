@@ -4717,6 +4717,73 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/tasks/{id}/reviewer:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Tasks]
+      summary: Ask a project member to review a task
+      description: |
+        Sets the task's reviewer. Needs `tasks:edit` on the task's project. Works on
+        classic and kanban project tasks; personal tasks can't have a reviewer.
+        The reviewer must be a person (not an AI agent) who can see the task. They
+        get a "Review requested" notification (unless they set it themselves or
+        turned review requests off) and start watching the task. Fires
+        `task.updated` with `reviewer_id` in the changed fields. Setting the
+        current reviewer again is a no-op.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Give `user_id`, or `user_name` when `user_id` is omitted or 0.
+              properties:
+                user_id:
+                  type: integer
+                  minimum: 1
+                user_name:
+                  type: string
+                  description: Username, with or without a leading `@`.
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Remove a task's reviewer
+      description: |
+        Needs `tasks:edit`, except that the reviewer can always remove themselves.
+        Succeeds when no reviewer is set.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/notifications:
     get:
       tags: [Notifications]
@@ -11491,6 +11558,13 @@ components:
         claimed_by_name:
           type: string
           description: Display name of the claimer
+        reviewer_id:
+          type: integer
+          nullable: true
+          description: User id of the member asked to review this task; null when none
+        reviewer_name:
+          type: string
+          description: Display name of the reviewer
         sprint_id:
           type: integer
           nullable: true
@@ -12386,7 +12460,7 @@ components:
         than OR, so "A and B or C" is "(A and B) or C" (nest a group to change that). A row without a
         join uses its group's `op`. Fields include id,
         title, description, text, project, completed, workflow_status, priority, tags, due_date,
-        created_date, modified_date, completed_date, status_changed_date, days_in_status, claimed_by, created_by, sprint, estimate,
+        created_date, modified_date, completed_date, status_changed_date, days_in_status, claimed_by, reviewer, created_by, sprint, estimate,
         is_subtask, has_subtasks, favorite and cf:<custom field key>. Date values accept YYYY-MM-DD
         or macros such as @today-7, @start_of_week and @end_of_week; `between` (dates only) takes [from, to] and includes both ends; people accept @me; sprints accept @current_sprint.
       properties:

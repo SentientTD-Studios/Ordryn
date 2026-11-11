@@ -545,6 +545,11 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := MigrateTasksAddReviewer(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddReviewer failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}
