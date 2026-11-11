@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { SiteInfo } from '@/api/types'
 
-const FALLBACK_SITE_NAME = 'GoTodo'
+const FALLBACK_SITE_NAME = 'Ordryn'
 
 function readBootstrappedSiteName(): string {
   if (typeof document === 'undefined') return FALLBACK_SITE_NAME

@@ -55,8 +55,9 @@ describe('MCP snippets', () => {
     assert.equal(apiRoot('http://localhost:8080', ''), 'http://localhost:8080/api/v2')
   })
   it('builds a Claude Code command and JSON config', () => {
-    const name = mcpServerName('Release_Bot')
-    assert.equal(name, 'gotodo-release_bot')
+    assert.equal(mcpServerName('Release_Bot'), 'ordryn-release_bot')
+    assert.equal(mcpServerName('Release_Bot', 'Acme Tasks'), 'acme-tasks-release_bot')
+    const name = 'gotodo-release_bot'
     assert.equal(
       claudeCodeMcpCommand(root, name, 'gotodo_abc'),
       'claude mcp add --transport http gotodo-release_bot https://todo.example.com/gotodo/api/v2/mcp --header "Authorization: Bearer gotodo_abc"',

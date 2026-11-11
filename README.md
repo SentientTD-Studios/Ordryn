@@ -162,7 +162,8 @@ Refusals return `403 agent_guardrail`. **Pause** refuses the agent's keys and st
 **Connecting an agent.** Mint a key on the agent's settings (it acts as the agent, never as you), then use any of:
 
 - **MCP:** `POST /api/v2/mcp` is a Model Context Protocol server (also used by [local agent keys](#local-agent-keys)) (streamable HTTP, JSON responses). For Claude Code:
-  `claude mcp add --transport http gotodo-<handle> https://<host>/api/v2/mcp --header "Authorization: Bearer <agent key>"`.
+  `claude mcp add --transport http <site>-<handle> https://<host>/api/v2/mcp --header "Authorization: Bearer <agent key>"`.
+  `<site>` is the site name from **Admin → Site settings** as a slug (`Acme Tasks` → `acme-tasks`; `ordryn` when unset). New API keys start with the same name without dashes (`acmetasks_…`). Renaming the site only changes keys made afterwards; existing keys keep working.
   Tools: `get_agent_context`, `list_my_runs`, `start_run`, `finish_run`, `get_task`, `get_task_comments`, `list_tasks`, `add_comment`, `move_task`, `update_task`, `create_task`. They run through the REST API with the same key, so guardrails and rate limits are identical.
 - **REST queue:** `GET /api/v2/agent` (instructions, guardrails, statuses), `GET /api/v2/agent/runs`, `POST /api/v2/agent/runs/{id}/start`, `POST /api/v2/agent/runs/{id}/finish` with `{ "status": "succeeded"|"failed", "summary" }`.
 - **Webhook:** set a public HTTPS `webhook_url` and each new run is POSTed as `agent.run` JSON (run, agent instructions, task, guardrails, API URLs; never a key). Requests are signed with `X-Ordryn-Signature: sha256=HMAC(secret, body)` once you create a signing secret. Delivery is tried once. Failures show on the run, and the run stays in the agent's queue.

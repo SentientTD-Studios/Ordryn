@@ -16,6 +16,7 @@ import type {
 import { APIError } from '@/api/types'
 import { pathPrefix } from '@/base'
 import { useToast } from '@/composables/useToast'
+import { useSite } from '@/composables/useSite'
 import { useConfirm } from '@/composables/useConfirm'
 import OllamaAgentScript from '@/components/OllamaAgentScript.vue'
 import { EXPIRY_PRESETS, expiresAtFromPreset, keyExpiryLabel, type ExpiryPreset } from '@/utils/projectApiKeys'
@@ -249,7 +250,8 @@ async function testWebhook() {
 
 // --- Connection snippets ---
 const root = computed(() => apiRoot(window.location.origin, pathPrefix()))
-const serverName = computed(() => mcpServerName(props.agent.handle))
+const { siteName } = useSite()
+const serverName = computed(() => mcpServerName(props.agent.handle, siteName.value))
 const snippetKey = computed(() => minted.value?.key || '<AGENT_KEY>')
 const cliCommand = computed(() => claudeCodeMcpCommand(root.value, serverName.value, snippetKey.value))
 const jsonConfig = computed(() => mcpJsonConfig(root.value, serverName.value, snippetKey.value))
@@ -487,7 +489,7 @@ watch(
       <section class="mb-3">
         <h5 class="h6">Webhook (optional)</h5>
         <p class="small text-muted mb-1">
-          GoTodo POSTs each new run to this HTTPS URL as JSON, signed with <code>X-Ordryn-Signature: sha256=…</code>.
+          {{ siteName }} POSTs each new run to this HTTPS URL as JSON, signed with <code>X-Ordryn-Signature: sha256=…</code>.
           Leave it empty if the agent polls its queue or connects over MCP.
         </p>
         <input

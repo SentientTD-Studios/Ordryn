@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"GoTodo/internal/branding"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -145,7 +147,16 @@ func newAPIKeyRaw() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return "gotodo_" + hex.EncodeToString(b), nil
+	return apiKeyPrefix() + "_" + hex.EncodeToString(b), nil
+}
+
+// apiKeyPrefix brands new keys with the site name ("Acme Tasks" -> "acmetasks_…").
+func apiKeyPrefix() string {
+	name := ""
+	if s, err := GetSiteSettings(); err == nil && s != nil {
+		name = s.SiteName
+	}
+	return branding.KeyPrefix(name)
 }
 
 // CreateAPIKey generates a new key, stores its hash, and returns the plaintext once.
