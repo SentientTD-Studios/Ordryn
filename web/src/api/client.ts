@@ -2,6 +2,9 @@ import { withBase } from '@/base'
 import type {
   AdminSettings,
   AdminSettingsPatch,
+  PortfolioProject,
+  ProjectHealth,
+  ProjectStatusUpdate,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1666,6 +1669,25 @@ export const api = {
 
   getCompanyHome() {
     return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+  },
+
+  getPortfolio(archived = false) {
+    return request<{ projects: PortfolioProject[] }>(`/api/v2/portfolio${archived ? '?archived=1' : ''}`)
+  },
+
+  listProjectStatusUpdates(projectId: number) {
+    return request<{ updates: ProjectStatusUpdate[] }>(`/api/v2/projects/${projectId}/status-updates`)
+  },
+
+  postProjectStatusUpdate(projectId: number, health: ProjectHealth, body: string) {
+    return request<ProjectStatusUpdate>(`/api/v2/projects/${projectId}/status-updates`, {
+      method: 'POST',
+      body: JSON.stringify({ health, body }),
+    })
+  },
+
+  deleteProjectStatusUpdate(projectId: number, updateId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/status-updates/${updateId}`, { method: 'DELETE' })
   },
 
   getAdminSettings() {

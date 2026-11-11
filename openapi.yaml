@@ -7605,6 +7605,118 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/portfolio:
+    get:
+      tags: [Projects]
+      summary: Portfolio of projects
+      description: |
+        Every project the caller can open (live ones; `archived=1` adds archived),
+        with open, overdue, due-in-7-days, unclaimed, and done counts, tasks done in
+        the last 7 days, and the latest status update.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: archived
+          in: query
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PortfolioProject"
+
+  /api/v2/projects/{id}/status-updates:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: List a project's status updates (newest first)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 100
+      responses:
+        "200":
+          description: Updates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectStatusUpdate"
+    post:
+      tags: [Projects]
+      summary: Post a status update
+      description: Project managers only. `body` is Markdown (4000 characters at most).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [health]
+              properties:
+                health:
+                  type: string
+                  enum: [on_track, at_risk, off_track]
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Posted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectStatusUpdate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/status-updates/{updateId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: updateId
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      tags: [Projects]
+      summary: Delete a status update
+      description: Project managers only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/admin/users:
     get:
       tags: [Admin]
@@ -12554,6 +12666,60 @@ components:
           type: string
         key:
           type: string
+    ProjectStatusUpdate:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        author_id:
+          type: integer
+        author_name:
+          type: string
+        health:
+          type: string
+          enum: [on_track, at_risk, off_track]
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PortfolioProject:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        workflow_mode:
+          type: string
+        archived:
+          type: boolean
+        owner_name:
+          type: string
+        organization_name:
+          type: string
+        open:
+          type: integer
+        overdue:
+          type: integer
+        due_this_week:
+          type: integer
+        unclaimed:
+          type: integer
+        done_last_week:
+          type: integer
+        done:
+          type: integer
+        latest_update:
+          allOf:
+            - $ref: "#/components/schemas/ProjectStatusUpdate"
+          nullable: true
+        can_post_update:
+          type: boolean
     ImageHostingTestResult:
       type: object
       properties:

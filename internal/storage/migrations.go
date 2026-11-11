@@ -506,6 +506,10 @@ func RunMigrations() error {
 		errCount++
 	}
 	// Needs organizations and projects.organization_id, so it runs after them.
+	if err := MigrateProjectStatusUpdates(); err != nil {
+		fmt.Printf("migration: MigrateProjectStatusUpdates failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateSavedViewsForQueries(); err != nil {
 		fmt.Printf("migration: MigrateSavedViewsForQueries failed: %v\n", err)
 		errCount++
