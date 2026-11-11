@@ -329,6 +329,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "roles: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateGuests(); err != nil {
+		fmt.Fprintf(os.Stderr, "guests: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateAPIKeysTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "api keys: %v\n", err)
 		os.Exit(1)

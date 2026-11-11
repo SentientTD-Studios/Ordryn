@@ -144,7 +144,7 @@ func SyncCompanyMembers() (int, error) {
 		INSERT INTO organization_members (organization_id, user_id, role)
 		SELECT o.id, u.id, $1 FROM organizations o
 		CROSS JOIN users u
-		WHERE o.is_company AND NOT COALESCE(u.is_agent, FALSE)
+		WHERE o.is_company AND NOT COALESCE(u.is_agent, FALSE) AND NOT COALESCE(u.is_guest, FALSE)
 		ON CONFLICT DO NOTHING`, CompanyMemberRole)
 	if err != nil {
 		return 0, err
@@ -178,7 +178,7 @@ func JoinCompanyIfEnabled(userID int) error {
 
 	_, err = pool.Exec(context.Background(), `
 		INSERT INTO organization_members (organization_id, user_id, role)
-		SELECT $1, u.id, $3 FROM users u WHERE u.id = $2 AND NOT COALESCE(u.is_agent, FALSE)
+		SELECT $1, u.id, $3 FROM users u WHERE u.id = $2 AND NOT COALESCE(u.is_agent, FALSE) AND NOT COALESCE(u.is_guest, FALSE)
 		ON CONFLICT DO NOTHING`, orgID, userID, CompanyMemberRole)
 	if err != nil {
 		return err

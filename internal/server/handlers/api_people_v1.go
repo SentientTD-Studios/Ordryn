@@ -36,6 +36,7 @@ type apiPersonJSON struct {
 	// CanEditName is true when the caller may set this person's first and last name.
 	CanEditName bool `json:"can_edit_name"`
 	IsOwner     bool `json:"is_owner"`
+	IsGuest     bool `json:"is_guest"`
 }
 
 type apiPeopleTeamJSON struct {
@@ -59,6 +60,10 @@ type apiPeopleListJSON struct {
 	NamesRequired bool                    `json:"names_required"`
 	Teams         []apiPeopleTeamJSON     `json:"teams"`
 	SiteRoles     []apiPeopleSiteRoleJSON `json:"site_roles"`
+	// CanManageGuests is true for site admins in company mode; GuestsEnabled says
+	// whether new guests can be made (turning one back into a member always works).
+	CanManageGuests bool `json:"can_manage_guests"`
+	GuestsEnabled   bool `json:"guests_enabled"`
 }
 
 type apiPeopleCreateRequest struct {
@@ -68,6 +73,7 @@ type apiPeopleCreateRequest struct {
 	LastName   string `json:"last_name"`
 	TeamID     int    `json:"team_id"`
 	SiteRoleID int    `json:"site_role_id"`
+	Guest      bool   `json:"guest"`
 }
 
 type apiPersonNameRequest struct {
@@ -98,6 +104,10 @@ func APIV1PeopleRouter(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(sub, "/")
 	if len(parts) == 1 {
 		apiV1PersonName(w, r, actorID, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[1] == "guest" {
+		apiV1PersonGuest(w, r, actorID, parts[0])
 		return
 	}
 	if len(parts) != 2 || (parts[1] != "deactivate" && parts[1] != "reactivate") {
@@ -146,11 +156,14 @@ func apiV1PeopleList(w http.ResponseWriter, r *http.Request, actorID int) {
 		NamesRequired:   storage.IsCompanyMode(),
 		Teams:           make([]apiPeopleTeamJSON, 0, len(teams)),
 		SiteRoles:       make([]apiPeopleSiteRoleJSON, 0, len(siteRoles)),
+		CanManageGuests: storage.IsCompanyMode() && access.Admin && !storage.IsGuestUser(actorID),
+		GuestsEnabled:   storage.GetGuestPolicy().Enabled,
 	}
 	ownerID, _ := storage.SiteOwnerID()
 	for _, p := range people {
 		pj := apiPersonJSON{
 			IsOwner:   p.ID == ownerID,
+			IsGuest:   p.IsGuest,
 			ID:        p.ID,
 			Email:     p.Email,
 			UserName:  p.UserName,
@@ -193,6 +206,7 @@ func apiV1PeopleCreate(w http.ResponseWriter, r *http.Request, actorID int) {
 		LastName:   req.LastName,
 		TeamID:     req.TeamID,
 		SiteRoleID: req.SiteRoleID,
+		Guest:      req.Guest,
 	})
 	if err != nil && (created == nil || created.UserID == 0) {
 		writePeopleDomainError(w, err)
@@ -305,4 +319,30 @@ func writePeopleDomainError(w http.ResponseWriter, err error) {
 		fmt.Printf("APIV1People: %v\n", err)
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
 	}
+}
+
+// apiV1PersonGuest handles POST /api/v2/people/{id}/guest {"guest": bool}.
+func apiV1PersonGuest(w http.ResponseWriter, r *http.Request, actorID int, rawID string) {
+	if r.Method != http.MethodPost {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	targetID, err := strconv.Atoi(rawID)
+	if err != nil || targetID <= 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid user id.")
+		return
+	}
+	var req struct {
+		Guest *bool `json:"guest"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil || req.Guest == nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Send {\"guest\": true|false}.")
+		return
+	}
+	if err := domain.SetGuestForAdmin(r.Context(), actorID, targetID, *req.Guest); err != nil {
+		writePeopleDomainError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true, "guest": *req.Guest})
 }

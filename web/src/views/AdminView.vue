@@ -11,10 +11,11 @@ import { useConfirm } from '@/composables/useConfirm'
 import TimezoneSelect from '@/components/TimezoneSelect.vue'
 import AdminSubnav from '@/components/AdminSubnav.vue'
 import RichBody from '@/components/RichBody.vue'
+import GuestPolicyCard from '@/components/GuestPolicyCard.vue'
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
-const { refresh: refreshSite } = useSite()
+const { refresh: refreshSite, isCompanyMode } = useSite()
 // Site settings managers who aren't admins can't change the site mode or what the
 // User role may create.
 const { hasPermission } = useAuth()
@@ -350,6 +351,7 @@ onMounted(load)
         </form>
       </div>
     </div>
+    <GuestPolicyCard v-if="isAdmin && isCompanyMode" />
     <div class="card mb-4">
       <div class="card-header"><h2 class="h5 mb-0">Site settings</h2></div>
       <div class="card-body">
