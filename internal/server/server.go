@@ -240,6 +240,7 @@ func registerAPIV1Routes() {
 	handleAPI("/project-templates", v1(handlers.APIV1ProjectTemplatesRouter))
 	handleAPI("/project-templates/", v1(handlers.APIV1ProjectTemplatesRouter))
 	handleAPI("/portfolio", v1(handlers.APIV1Portfolio))
+	handleAPI("/reports/", v1(handlers.APIV1ReportsRouter))
 	handleAPI("/people", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/people/", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/admin/users", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))

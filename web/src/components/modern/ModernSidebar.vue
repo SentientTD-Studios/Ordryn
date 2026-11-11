@@ -176,6 +176,19 @@ onBeforeUnmount(() => {
       </li>
       <li class="sidebar-nav-item">
         <RouterLink
+          to="/reports"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/reports' }"
+          data-tooltip="Reports"
+          title="Reports"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-clipboard-data" />
+          <span class="sidebar-text">Reports</span>
+        </RouterLink>
+      </li>
+      <li class="sidebar-nav-item">
+        <RouterLink
           to="/portfolio"
           class="sidebar-nav-link"
           :class="{ active: route.path === '/portfolio' }"

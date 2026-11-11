@@ -2155,3 +2155,41 @@ export type PortfolioProject = {
   latest_update: ProjectStatusUpdate | null
   can_post_update: boolean
 }
+
+export type TimesheetEntry = {
+  id: number
+  logged_at: string
+  user_id: number
+  user_name: string
+  project_id: number
+  project_name: string
+  task_id: number
+  task_title: string
+  minutes: number
+  note: string
+}
+
+/** GET /api/v2/reports/time */
+export type TimesheetReport = {
+  from: string
+  to: string
+  entries: TimesheetEntry[]
+  total_minutes: number
+  by_person: Record<string, number>
+  by_project: Record<string, number>
+  truncated: boolean
+}
+
+export type WorkloadPerson = {
+  user_id: number
+  user_name: string
+  claimed_open: number
+  claimed_points: number
+  claimed_overdue: number
+  done_last_week: number
+  minutes_last_week: number
+  projects: number
+}
+
+/** GET /api/v2/reports/workload */
+export type WorkloadReport = { people: WorkloadPerson[]; project_count: number }
