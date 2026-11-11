@@ -15,6 +15,8 @@ import type {
   BackupStatus,
   AuditStreamPatch,
   AuditStreamSettings,
+  FromTemplateResult,
+  ProjectTemplate,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1858,6 +1860,28 @@ export const api = {
 
   testAuditStream() {
     return request<{ ok: boolean }>('/api/v2/admin/audit-stream/test', { method: 'POST' })
+  },
+
+  listProjectTemplates() {
+    return request<{ templates: ProjectTemplate[] }>('/api/v2/project-templates')
+  },
+
+  createProjectFromTemplate(templateId: number, payload: { name: string; description?: string; include_tasks: boolean }) {
+    return request<FromTemplateResult>(`/api/v2/project-templates/${templateId}/projects`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getProjectTemplateFlag(projectId: number) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`)
+  },
+
+  setProjectTemplateFlag(projectId: number, isTemplate: boolean) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_template: isTemplate }),
+    })
   },
 
   getAdminSettings() {

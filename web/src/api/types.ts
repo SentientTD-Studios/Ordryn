@@ -2106,3 +2106,21 @@ export type Onboarding = {
   complete: boolean
   steps: OnboardingStep[]
 }
+
+/** A project people can start new projects from. */
+export type ProjectTemplate = {
+  id: number
+  name: string
+  description: string
+  workflow_mode: string
+  open_tasks: number
+}
+
+export type FromTemplateResult = {
+  project_id: number
+  name: string
+  tasks_copied: number
+  rules_copied: number
+  rules_skipped: number
+  warnings: string[]
+}

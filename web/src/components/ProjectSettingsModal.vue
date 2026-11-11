@@ -10,6 +10,7 @@ import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
 import ProjectFeedbackPanel from '@/components/ProjectFeedbackPanel.vue'
 import ProjectRequestFormsPanel from '@/components/ProjectRequestFormsPanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
+import ProjectTemplateToggle from '@/components/ProjectTemplateToggle.vue'
 import ProjectSprintsPanel from '@/components/ProjectSprintsPanel.vue'
 import ProjectGitHubPanel from '@/components/ProjectGitHubPanel.vue'
 import ProjectExtensionsPanel from '@/components/ProjectExtensionsPanel.vue'
@@ -321,6 +322,7 @@ async function archiveOrRestore() {
           </nav>
 
           <div v-if="tab === 'details'">
+            <ProjectTemplateToggle :project-id="project.id" :can-manage="canManage" />
             <div class="mb-3">
               <label for="edit-project-name" class="form-label small fw-bold">Project Name</label>
               <input
