@@ -31,6 +31,7 @@ import type {
   ChangelogEntry,
   DashboardStats,
   ProjectInsights,
+  Onboarding,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -1271,6 +1272,17 @@ export const api = {
 
   unclaimTask(taskId: number) {
     return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'DELETE' })
+  },
+
+  getOnboarding() {
+    return request<Onboarding>('/api/v2/me/onboarding')
+  },
+
+  setOnboardingDismissed(dismissed: boolean) {
+    return request<Onboarding>('/api/v2/me/onboarding', {
+      method: 'PATCH',
+      body: JSON.stringify({ dismissed }),
+    })
   },
 
   listNotifications(params: { page?: number; per_page?: number; unread?: boolean } = {}) {

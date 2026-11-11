@@ -1847,3 +1847,20 @@ export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
 }
+
+export type OnboardingStep = {
+  id: string
+  label: string
+  description: string
+  /** App path where the step is done. */
+  href: string
+  done: boolean
+  admin_only?: boolean
+}
+
+/** GET /me/onboarding: the getting-started checklist. */
+export type Onboarding = {
+  dismissed: boolean
+  complete: boolean
+  steps: OnboardingStep[]
+}

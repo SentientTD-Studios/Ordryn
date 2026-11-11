@@ -142,6 +142,7 @@ func registerAPIV1Routes() {
 	handleAPI("/me/mfa/recovery-codes", utils.AuthSessionChain(handlers.APIV1MeMFARecoveryCodes))
 	handleAPI("/me/username", utils.AuthSessionChain(handlers.APIV1ClaimUsername))
 	handleAPI("/me/avatar", utils.AuthSessionChain(handlers.APIV1MeAvatar))
+	handleAPI("/me/onboarding", utils.AuthSessionChain(handlers.APIV1MeOnboarding))
 	handleAPI("/me/notification-preferences", utils.AuthSessionChain(handlers.APIV1MeNotificationPreferences))
 	handleAPI("/me/github", utils.AuthSessionChain(handlers.APIV1MeGitHub))
 	handleAPI("/me/github/pat", utils.AuthSessionChain(handlers.APIV1MeGitHubPAT))
