@@ -28,6 +28,7 @@ type apiTaskJSON struct {
 	Description       string             `json:"description"`
 	Completed         bool               `json:"completed"`
 	DueDate           string             `json:"due_date"`
+	StartDate         string             `json:"start_date,omitempty"`
 	ProjectID         *int               `json:"project_id,omitempty"`
 	Project           string             `json:"project,omitempty"`
 	Priority          int                `json:"priority"`
@@ -71,6 +72,7 @@ type apiTaskCreateRequest struct {
 	Title          string                     `json:"title"`
 	Description    string                     `json:"description"`
 	DueDate        string                     `json:"due_date"`
+	StartDate      string                     `json:"start_date"`
 	ProjectID      *int                       `json:"project_id"`
 	ParentID       *int                       `json:"parent_id"`
 	Priority       *int                       `json:"priority"`
@@ -87,6 +89,7 @@ type apiTaskPatchRequest struct {
 	Title          *string         `json:"title"`
 	Description    *string         `json:"description"`
 	DueDate        *string         `json:"due_date"`
+	StartDate      optionalString  `json:"start_date"`
 	ProjectID      optionalInt     `json:"project_id"`
 	ParentID       **int           `json:"parent_id"`
 	Priority       *int            `json:"priority"`
@@ -319,6 +322,7 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 		Description:       t.Description,
 		Completed:         t.Completed,
 		DueDate:           t.DueDate,
+		StartDate:         t.StartDate,
 		Priority:          t.Priority,
 		Position:          t.Position,
 		ChildCount:        t.ChildCount,
@@ -661,6 +665,7 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 		Title:          req.Title,
 		Description:    req.Description,
 		DueDate:        req.DueDate,
+		StartDate:      req.StartDate,
 		ProjectID:      req.ProjectID,
 		ParentID:       req.ParentID,
 		Priority:       priority,
@@ -733,6 +738,7 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 	if req.ClearDue != nil && *req.ClearDue {
 		in.ClearDue = true
 	}
+	in.StartDate = req.StartDate.toPatchString()
 	in.ProjectID = req.ProjectID.toPatchInt(true)
 	in.EstimatePoints = req.EstimatePoints.toPatchInt(false)
 	in.SprintID = req.SprintID.toPatchInt(true)

@@ -76,6 +76,7 @@ type TaskWorkflowFields struct {
 	SprintName       string
 	ReviewerID       int
 	ReviewerName     string
+	StartDate        string // YYYY-MM-DD or ""
 }
 
 // CreateProjectWorkflowTables creates statuses and time-entry tables.
@@ -741,7 +742,8 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		        COALESCE((SELECT SUM(minutes) FROM task_time_entries e WHERE e.task_id = t.id), 0),
 		        t.claimed_by, COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, ''),
 		        t.sprint_id, COALESCE(sp.name, ''),
-		        t.reviewer_id, COALESCE(NULLIF(ru.full_name, ''), NULLIF(ru.user_name, ''), ru.email, '')
+		        t.reviewer_id, COALESCE(NULLIF(ru.full_name, ''), NULLIF(ru.user_name, ''), ru.email, ''),
+		        COALESCE(CAST(t.start_date AS TEXT), '')
 		 FROM tasks t
 		 LEFT JOIN project_statuses s ON s.id = t.status_id
 		 LEFT JOIN projects p ON p.id = t.project_id
@@ -767,10 +769,12 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		var sprintName string
 		var reviewerID sql.NullInt64
 		var reviewerName string
-		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName); err != nil {
+		var startDate string
+		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName, &startDate); err != nil {
 			return nil, err
 		}
 		f := TaskWorkflowFields{
+			StartDate:        startDate,
 			StatusName:       statusName,
 			TimeSpentMinutes: spent,
 			ProjectWorkflow:  mode,

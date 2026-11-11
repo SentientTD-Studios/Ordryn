@@ -38,6 +38,8 @@ type CreateTaskInput struct {
 	Title       string
 	Description string
 	DueDate     string
+	// StartDate is YYYY-MM-DD or "" for none; it must not be after DueDate.
+	StartDate string
 	// ProjectID: nil = omit column (no project); &0 = no project; &n = assign project n.
 	// Ignored when ParentID is set (project is copied from parent).
 	ProjectID *int
@@ -58,6 +60,8 @@ type UpdateTaskInput struct {
 	Description *string
 	DueDate     *string
 	ClearDue    bool
+	// StartDate: nil = leave; "" = clear; YYYY-MM-DD = set.
+	StartDate *string
 	// ProjectID: nil = leave; non-nil with *nil or 0 = clear; non-nil with id = set.
 	ProjectID **int
 	// ParentID: nil = leave; non-nil with *nil or 0 = promote to root; non-nil with id = nest.
@@ -113,6 +117,13 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		}
 	}
 	dueDate := strings.TrimSpace(in.DueDate)
+	startDate, err := normalizeStartDate(in.StartDate)
+	if err != nil {
+		return 0, err
+	}
+	if err := checkStartBeforeDue(startDate, dueDate); err != nil {
+		return 0, err
+	}
 
 	pool, err := storage.OpenDatabase()
 	if err != nil {
@@ -205,6 +216,11 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 
 	if err := applyCreateWorkflow(newID, projectArg, userID, in); err != nil {
 		return 0, err
+	}
+	if startDate != "" {
+		if err := storage.SetTaskStartDate(newID, startDate); err != nil {
+			return 0, err
+		}
 	}
 
 	if len(in.TagIDs) > 0 {
@@ -351,7 +367,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	_ = ownerID
 
 	needed := map[string]bool{}
-	if in.Title != nil || in.Description != nil || in.DueDate != nil || in.ClearDue || in.Priority != nil ||
+	if in.Title != nil || in.Description != nil || in.DueDate != nil || in.ClearDue || in.StartDate != nil || in.Priority != nil ||
 		in.ParentID != nil || in.TagIDs != nil || in.EstimatePoints != nil || len(in.Fields) > 0 {
 		needed[storage.PermTasksEdit] = true
 	}
@@ -398,11 +414,13 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	var projectID, parentID, statusID sql.NullInt64
 	var estimatePoints sql.NullInt64
 	var sprintID sql.NullInt64
+	var startDate string
 	err = pool.QueryRow(ctx,
 		`SELECT title, description, COALESCE(CAST(due_date AS TEXT), ''), completed,
-		 COALESCE(priority,0), COALESCE(is_favorite,false), project_id, parent_id, status_id, estimate_points, sprint_id
+		 COALESCE(priority,0), COALESCE(is_favorite,false), project_id, parent_id, status_id, estimate_points, sprint_id,
+		 COALESCE(CAST(start_date AS TEXT), '')
 		 FROM tasks WHERE id = $1`,
-		taskID).Scan(&title, &description, &dueDate, &completed, &priority, &favorite, &projectID, &parentID, &statusID, &estimatePoints, &sprintID)
+		taskID).Scan(&title, &description, &dueDate, &completed, &priority, &favorite, &projectID, &parentID, &statusID, &estimatePoints, &sprintID, &startDate)
 	if err != nil {
 		return nil, err
 	}
@@ -448,6 +466,19 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		dueDate = ""
 	} else if in.DueDate != nil {
 		dueDate = strings.TrimSpace(*in.DueDate)
+	}
+	oldStartDate := startDate
+	if in.StartDate != nil {
+		s, err := normalizeStartDate(*in.StartDate)
+		if err != nil {
+			return nil, err
+		}
+		startDate = s
+	}
+	if in.StartDate != nil || dueDate != oldDueDate {
+		if err := checkStartBeforeDue(startDate, dueDate); err != nil {
+			return nil, err
+		}
 	}
 
 	newParentID := parentID
@@ -525,6 +556,12 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		return nil, err
 	}
 
+	if startDate != oldStartDate {
+		if err := storage.SetTaskStartDate(taskID, startDate); err != nil {
+			return nil, err
+		}
+		logStartDateChange(taskID, userID, oldStartDate, startDate)
+	}
 	logTaskFieldChanges(ctx, pool, taskID, userID, oldTitle, title, result.OldPriority, priority, oldDueDate, dueDate, oldParentID, newParentID)
 	if newParentID.Valid && !oldParentID.Valid {
 		// Only root tasks repeat; nesting a recurring task ends its series.
@@ -799,6 +836,9 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	}
 	if dueChanged {
 		appendChange("due_date", oldDueDate, dueDate)
+	}
+	if startDate != oldStartDate {
+		appendChange("start_date", oldStartDate, startDate)
 	}
 	if projectChanged {
 		appendChange("project", strconv.Itoa(result.OldProjectID), strconv.Itoa(effectiveProjectID))

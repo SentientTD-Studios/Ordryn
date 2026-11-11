@@ -375,6 +375,8 @@ export type Task = {
   description: string
   completed: boolean
   due_date: string
+  /** Planned start (YYYY-MM-DD), when set. */
+  start_date?: string
   project_id?: number | null
   project?: string
   priority: number
@@ -2007,4 +2009,25 @@ export type AuditStreamPatch = {
   auth_header?: string
   include_project?: boolean
   include_task?: boolean
+}
+
+export type ProjectTimelineTask = {
+  id: number
+  title: string
+  start_date?: string
+  due_date?: string
+  completed: boolean
+  priority: number
+  parent_id: number | null
+  status_name?: string
+  claimed_by_name?: string
+}
+
+/** GET /projects/{id}/timeline: dated tasks and the "blocks" links between them. */
+export type ProjectTimeline = {
+  project_id: number
+  tasks: ProjectTimelineTask[]
+  links: { from_task_id: number; to_task_id: number }[]
+  undated_count: number
+  truncated: boolean
 }

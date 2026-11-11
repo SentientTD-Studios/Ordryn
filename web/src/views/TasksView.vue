@@ -9,6 +9,7 @@ import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
 import ModernTaskCard from '@/components/modern/ModernTaskCard.vue'
 import KanbanBoard from '@/components/KanbanBoard.vue'
+import ProjectTimeline from '@/components/ProjectTimeline.vue'
 import QuickAddBar from '@/components/QuickAddBar.vue'
 import CompanyHome from '@/components/CompanyHome.vue'
 import { useSite } from '@/composables/useSite'
@@ -166,6 +167,12 @@ const surfaces = useKanbanSurfaces(activeProjectObj, isKanbanProjectView, viewMo
 
 const showBoardView = computed(() => isKanbanProjectView.value && viewMode.value === 'board')
 const showExtensionSurface = computed(() => isKanbanProjectView.value && viewMode.value.startsWith('ext:'))
+const showTimelineView = computed(() => !!activeProjectObj.value && viewMode.value === 'timeline')
+const canEditTimeline = computed(() => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_EDIT))
+// Reload the timeline when loaded tasks change elsewhere (sidebar saves, live updates).
+const timelineRev = computed(() =>
+  tasks.value.map((t) => `${t.id}:${t.start_date ?? ''}:${t.due_date}:${t.completed}:${t.title}`).join('|'),
+)
 
 function taskMatchesStatusFilter(task: Task) {
   // Board keeps done-column cards even when the list default is incomplete.
@@ -262,12 +269,12 @@ function setViewMode(mode: string) {
       /* ignore */
     }
   }
-  if (!mode.startsWith('ext:')) void reloadInitial()
+  if (!mode.startsWith('ext:') && mode !== 'timeline') void reloadInitial()
 }
 
 /** Prefer board when entering a kanban project so unclaimed backlog is visible. */
 function ensureKanbanBoardDefault() {
-  if (!isKanbanProjectView.value || viewMode.value === 'board') return
+  if (!isKanbanProjectView.value || viewMode.value === 'board' || viewMode.value === 'timeline') return
   viewMode.value = 'board'
   try {
     localStorage.setItem(VIEW_MODE_KEY, 'board')
@@ -1147,10 +1154,11 @@ onUnmounted(() => {
           :density="density"
           :tags="displayTags"
           :tag-by-name="tagFilterByName"
-          :show-view-mode="isKanbanProjectView"
-          :view-mode="viewMode"
+          :show-view-mode="!!activeProjectObj"
+          :show-board-option="isKanbanProjectView"
+          :view-mode="isKanbanProjectView || viewMode !== 'board' ? viewMode : 'list'"
           :surface-tabs="surfaces.tabs.value"
-          :hide-task-filters="showExtensionSurface"
+          :hide-task-filters="showExtensionSurface || showTimelineView"
           @update:status="setFilterAndReload('status', $event)"
           @update:tag="setFilterAndReload('tag', $event)"
           @update:priority="setFilterAndReload('priority', $event)"
@@ -1246,7 +1254,17 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-if="!showBoardView && !showExtensionSurface" id="task-container" aria-live="polite">
+        <div v-if="showTimelineView && activeProjectObj" class="mb-3">
+          <ProjectTimeline
+            :key="activeProjectObj.id"
+            :project-id="activeProjectObj.id"
+            :can-edit="canEditTimeline"
+            :revision="timelineRev"
+            @open-task="openTaskDetails"
+          />
+        </div>
+
+        <div v-if="!showBoardView && !showExtensionSurface && !showTimelineView" id="task-container" aria-live="polite">
           <QuickAddBar
             v-if="canAddTasks"
             :projects="projects"

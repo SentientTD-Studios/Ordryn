@@ -22,6 +22,7 @@ type Task struct {
 	Completed           bool
 	DateAdded           string // time_stamp formatted for display
 	DueDate             string // Due date (YYYY-MM-DD format)
+	StartDate           string // Planned start (YYYY-MM-DD) or ""
 	DateCreated         string // time_stamp formatted for tooltip
 	DateModified        string // date_modified formatted for tooltip
 	Page                int

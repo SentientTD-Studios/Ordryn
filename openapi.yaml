@@ -6139,6 +6139,32 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/{id}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Project timeline (Gantt) data
+      description: |
+        The project's tasks that have a start or due date (not trashed or archived), ordered by
+        start (or due) date, with the "blocks" links between them. A task with only one date is a
+        single day on the timeline. Returns at most 2000 tasks; `truncated` is true when more exist.
+        `undated_count` counts open tasks with neither date. Any project member can read it.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTimeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/project-invites:
     get:
       tags: [Projects]
@@ -11506,6 +11532,10 @@ components:
           type: boolean
         due_date:
           type: string
+        start_date:
+          type: string
+          format: date
+          description: Planned start (YYYY-MM-DD); omitted when not set.
         project_id:
           type: integer
           nullable: true
@@ -11649,6 +11679,41 @@ components:
         linked_at:
           type: string
           format: date-time
+
+    ProjectTimeline:
+      type: object
+      required: [project_id, tasks, links, undated_count, truncated]
+      properties:
+        project_id:
+          type: integer
+        tasks:
+          type: array
+          items:
+            type: object
+            required: [id, title, completed, priority, parent_id]
+            properties:
+              id: { type: integer }
+              title: { type: string }
+              start_date: { type: string, format: date }
+              due_date: { type: string, format: date }
+              completed: { type: boolean }
+              priority: { type: integer }
+              parent_id: { type: integer, nullable: true }
+              status_name: { type: string }
+              claimed_by_name: { type: string }
+        links:
+          type: array
+          description: "`from_task_id` blocks `to_task_id`; both are in `tasks`."
+          items:
+            type: object
+            required: [from_task_id, to_task_id]
+            properties:
+              from_task_id: { type: integer }
+              to_task_id: { type: integer }
+        undated_count:
+          type: integer
+        truncated:
+          type: boolean
 
     TaskWatch:
       type: object
@@ -11925,6 +11990,10 @@ components:
           description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
         due_date:
           type: string
+        start_date:
+          type: string
+          format: date
+          description: Planned start (YYYY-MM-DD). Must be on or before `due_date`.
         project_id:
           type: integer
           nullable: true
@@ -11972,6 +12041,12 @@ components:
           type: string
         clear_due_date:
           type: boolean
+        start_date:
+          type: string
+          nullable: true
+          description: >
+            Planned start (YYYY-MM-DD); `null` or `""` clears it. The start must be on
+            or before the due date, including when only the due date changes.
         project_id:
           type: integer
           nullable: true

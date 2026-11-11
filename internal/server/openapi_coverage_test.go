@@ -166,6 +166,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/projects/{id}/status-counts",
 	"/api/v2/dashboard",
 	"/api/v2/tasks/{id}/reviewer",
+	"/api/v2/projects/{id}/timeline",
 	"/api/v2/events",
 	"/api/v2/calendar",
 	"/api/v2/calendar/month",

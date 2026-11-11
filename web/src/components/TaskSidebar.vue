@@ -124,6 +124,7 @@ const parentId = ref<number | ''>('')
 const parentTitle = ref('')
 const priority = ref(0)
 const dueDate = ref('')
+const startDate = ref('')
 const selectedTagIds = ref<number[]>([])
 const taskTags = ref<Tag[]>([])
 const newTags = ref('')
@@ -420,6 +421,7 @@ function resetForm() {
   currentTask.value = null
   priority.value = 0
   dueDate.value = ''
+  startDate.value = ''
   recurrenceDraft.value = emptyRecurrenceDraft()
   recurrenceDetail.value = null
   selectedTagIds.value = []
@@ -566,6 +568,7 @@ async function loadTask(id: number) {
   }
   priority.value = task.priority
   dueDate.value = task.due_date || ''
+  startDate.value = task.start_date || ''
   taskTags.value = task.tags ? [...task.tags] : []
   selectedTagIds.value = taskTags.value.map((t) => t.id)
   newTags.value = ''
@@ -635,6 +638,7 @@ type FormSnapshot = {
   parentId: number | ''
   priority: number
   dueDate: string
+  startDate: string
   selectedTagIds: number[]
   newTags: string
   statusId: number | ''
@@ -654,6 +658,7 @@ function captureFormSnapshot(): FormSnapshot {
     parentId: parentId.value,
     priority: priority.value,
     dueDate: dueDate.value,
+    startDate: startDate.value,
     selectedTagIds: [...selectedTagIds.value],
     newTags: newTags.value,
     statusId: statusId.value,
@@ -681,6 +686,7 @@ function isFormDirty(): boolean {
     parentId.value !== parent ||
     priority.value !== t.priority ||
     dueDate.value !== due ||
+    startDate.value !== (t.start_date || '') ||
     completed.value !== t.completed ||
     statusId.value !== status ||
     formSprintId(sprintId.value) !== sprint ||
@@ -702,6 +708,7 @@ function isAddFormDirty(): boolean {
     parentId.value !== b.parentId ||
     priority.value !== b.priority ||
     dueDate.value !== b.dueDate ||
+    startDate.value !== b.startDate ||
     !sameIdSet(selectedTagIds.value, b.selectedTagIds) ||
     newTags.value.trim() !== b.newTags.trim() ||
     statusId.value !== b.statusId ||
@@ -892,6 +899,7 @@ async function save(keepOpen = false): Promise<boolean> {
         parent_id: isSubtask.value ? Number(parentId.value) : null,
         priority: priority.value,
         due_date: dueDate.value || undefined,
+        start_date: startDate.value || undefined,
         tag_ids: tagIds,
         ...(isKanbanTask.value && statusId.value !== ''
           ? { status_id: Number(statusId.value) }
@@ -939,6 +947,7 @@ async function save(keepOpen = false): Promise<boolean> {
     }
     if (dueDate.value) payload.due_date = dueDate.value
     else payload.clear_due_date = true
+    payload.start_date = startDate.value || null
     if (isKanbanTask.value) {
       if (statusId.value !== '') payload.status_id = Number(statusId.value)
       payload.sprint_id = sprintPayloadId(sprintId.value)
@@ -1717,6 +1726,18 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             v-model="customFieldValues"
             :project-id="Number(projectId)"
             :read-only="readOnly"
+          />
+        </div>
+        <div class="form-group mt-2 kanban-order-due">
+          <label for="start_date">Start Date (optional):</label>
+          <input
+            id="start_date"
+            v-model="startDate"
+            type="date"
+            class="form-control"
+            :max="dueDate || undefined"
+            :disabled="readOnly"
+            :readonly="readOnly"
           />
         </div>
         <div class="form-group mt-2 kanban-order-due">
