@@ -1140,6 +1140,18 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: include_teams
+          in: query
+          required: false
+          description: |
+            With `project_id`, set to `1` to also return up to 5 team handles
+            (`is_team: true`) after the username hits. A team's handle is its name
+            lowercased with other characters turned into underscores
+            ("Design Team" -> `design_team`). Mentioning it notifies the team's
+            members who are on the project; a username with the same handle wins.
+          schema:
+            type: string
+            enum: ["1"]
       responses:
         "200":
           description: Matching usernames
@@ -8935,6 +8947,9 @@ components:
       properties:
         user_name:
           type: string
+        is_team:
+          type: boolean
+          description: True for a team handle (only with `include_teams=1`).
 
     UserPatch:
       type: object
