@@ -12,6 +12,7 @@ import type {
   AdminSecurityPolicy,
   AdminSecurityPolicyPatch,
   AdminSSOSettings,
+  BackupStatus,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1745,6 +1746,18 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ enabled, message }),
     })
+  },
+
+  getBackupStatus() {
+    return request<BackupStatus>('/api/v2/admin/backups')
+  },
+
+  downloadBackup() {
+    return download('/api/v2/admin/backups/download', 'ordryn-backup.tar.gz')
+  },
+
+  downloadStoredBackup(name: string) {
+    return download(`/api/v2/admin/backups/files/${encodeURIComponent(name)}`, name)
   },
 
   getAdminSettings() {

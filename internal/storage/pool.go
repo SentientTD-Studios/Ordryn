@@ -89,3 +89,28 @@ func ResetSharedPoolForTests() {
 	resetSystemUserCache()
 	resetTaskTextLimitsCache()
 }
+
+// PGEnv returns the libpq environment (PGHOST, PGPORT, PGUSER, PGPASSWORD,
+// PGDATABASE, PGSSLMODE) for this site's database, for tools like pg_dump. The
+// password travels in the environment, never on a command line.
+func PGEnv() ([]string, error) {
+	vals := map[string]string{}
+	for _, key := range []string{"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"} {
+		v := os.Getenv(key)
+		if v == "" {
+			return nil, fmt.Errorf("missing env variable: %s", key)
+		}
+		vals[key] = v
+	}
+	sslMode := strings.ToLower(strings.TrimSpace(os.Getenv("DB_SSLMODE")))
+	switch sslMode {
+	case "", "false", "0":
+		sslMode = "disable"
+	case "true", "1":
+		sslMode = "require"
+	}
+	return []string{
+		"PGHOST=" + vals["DB_HOST"], "PGPORT=" + vals["DB_PORT"], "PGUSER=" + vals["DB_USER"],
+		"PGPASSWORD=" + vals["DB_PASSWORD"], "PGDATABASE=" + vals["DB_NAME"], "PGSSLMODE=" + sslMode,
+	}, nil
+}

@@ -11,6 +11,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import TimezoneSelect from '@/components/TimezoneSelect.vue'
 import AdminSubnav from '@/components/AdminSubnav.vue'
 import AdminMaintenanceCard from '@/components/AdminMaintenanceCard.vue'
+import AdminBackupsCard from '@/components/AdminBackupsCard.vue'
 import RichBody from '@/components/RichBody.vue'
 import GuestPolicyCard from '@/components/GuestPolicyCard.vue'
 
@@ -955,5 +956,6 @@ onMounted(load)
         </form>
       </div>
     </div>
+    <AdminBackupsCard v-if="isAdmin" />
   </div>
 </template>

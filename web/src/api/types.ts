@@ -1972,3 +1972,14 @@ export type PasskeyCeremony = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   options: any
 }
+
+export type BackupFile = { name: string; size: number; created_at: string }
+
+/** GET /api/v2/admin/backups */
+export type BackupStatus = {
+  pg_dump_available: boolean
+  pg_dump_version: string
+  scheduled: boolean
+  schedule: { dir: string; interval_hours: number; keep: number }
+  files: BackupFile[]
+}
