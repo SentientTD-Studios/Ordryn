@@ -7605,6 +7605,91 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/people/{id}/offboarding:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Admin]
+      summary: What an account still holds
+      description: Counts used before offboarding. Same reach rules as deactivate.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claimed_tasks:
+                    type: integer
+                  owned_projects:
+                    type: integer
+                    description: Owner memberships (multi mode) or projects they created (company mode).
+                  personal_keys:
+                    type: integer
+                  project_keys:
+                    type: integer
+                  agents_created:
+                    type: integer
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/offboard:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Deactivate an account and hand off its work
+      description: |
+        Deactivates like `/deactivate`, then optionally:
+        `transfer_projects` makes `successor_id` an owner (multi mode) or gives them a
+        full share (company mode) on every project the account owns; `claims`
+        `release` clears its claims on open tasks and `reassign` moves them to the
+        successor where they can claim (released elsewhere); `revoke_keys` revokes
+        every personal and project API key it made. Validation runs before anything changes.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                successor_id:
+                  type: integer
+                claims:
+                  type: string
+                  enum: [keep, release, reassign]
+                transfer_projects:
+                  type: boolean
+                revoke_keys:
+                  type: boolean
+      responses:
+        "200":
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claims_reassigned:
+                    type: integer
+                  claims_released:
+                    type: integer
+                  projects_transferred:
+                    type: integer
+                  keys_revoked:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/admin/users:
     get:
       tags: [Admin]

@@ -1847,3 +1847,26 @@ export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
 }
+
+/** What a person still holds when they leave (People → Deactivate). */
+export type OffboardingPreview = {
+  claimed_tasks: number
+  owned_projects: number
+  personal_keys: number
+  project_keys: number
+  agents_created: number
+}
+
+export type OffboardInput = {
+  successor_id?: number
+  claims: 'keep' | 'release' | 'reassign'
+  transfer_projects: boolean
+  revoke_keys: boolean
+}
+
+export type OffboardResult = {
+  claims_reassigned: number
+  claims_released: number
+  projects_transferred: number
+  keys_revoked: number
+}

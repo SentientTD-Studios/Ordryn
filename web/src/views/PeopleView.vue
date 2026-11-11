@@ -6,6 +6,7 @@ import { APIError } from '@/api/types'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { personLabel } from '@/utils/personLabel'
+import OffboardDialog from '@/components/OffboardDialog.vue'
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
@@ -13,6 +14,12 @@ const { askConfirm } = useConfirm()
 const data = ref<PeopleList | null>(null)
 const search = ref('')
 const showInactive = ref(false)
+// Deactivating opens the offboarding dialog; reactivating is a plain confirm.
+const offboarding = ref<Person | null>(null)
+function onOffboarded() {
+  offboarding.value = null
+  void load()
+}
 
 const email = ref('')
 const userName = ref('')
@@ -316,7 +323,7 @@ onMounted(load)
             </td>
             <td class="text-end">
               <template v-if="p.can_manage">
-                <button v-if="p.active" class="btn btn-sm btn-outline-danger" type="button" @click="setActive(p, false)">
+                <button v-if="p.active" class="btn btn-sm btn-outline-danger" type="button" @click="offboarding = p">
                   Deactivate
                 </button>
                 <button v-else class="btn btn-sm btn-outline-secondary" type="button" @click="setActive(p, true)">
@@ -331,5 +338,12 @@ onMounted(load)
         </tbody>
       </table>
     </div>
+    <OffboardDialog
+      v-if="offboarding"
+      :person="offboarding"
+      :candidates="data?.people ?? []"
+      @close="offboarding = null"
+      @done="onOffboarded"
+    />
   </div>
 </template>
