@@ -7605,6 +7605,52 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/admin/maintenance:
+    get:
+      tags: [Admin]
+      summary: Get maintenance mode
+      description: Admins only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: State
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Maintenance"
+    put:
+      tags: [Admin]
+      summary: Turn maintenance (read-only) mode on or off
+      description: |
+        Admins only. While it's on, every POST, PUT, PATCH, and DELETE from anyone
+        but an admin returns `503 maintenance` with `Retry-After`, except signing in
+        and out. Reads keep working, and `GET /site` reports `maintenance` so clients
+        can show a banner. Background jobs keep running.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                message:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Maintenance"
+
   /api/v2/admin/users:
     get:
       tags: [Admin]
@@ -8752,6 +8798,11 @@ components:
         setup_required:
           type: boolean
           description: True until first-time setup (POST /api/v2/setup) creates the admin account.
+        maintenance:
+          type: boolean
+          description: The site is read-only for everyone but admins.
+        maintenance_message:
+          type: string
 
     ProjectAccess:
       type: object
@@ -12554,6 +12605,17 @@ components:
           type: string
         key:
           type: string
+    Maintenance:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
     ImageHostingTestResult:
       type: object
       properties:

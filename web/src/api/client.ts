@@ -1668,6 +1668,17 @@ export const api = {
     return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
   },
 
+  getMaintenance() {
+    return request<{ enabled: boolean; message: string; started_at: string | null }>('/api/v2/admin/maintenance')
+  },
+
+  setMaintenance(enabled: boolean, message: string) {
+    return request<{ enabled: boolean; message: string; started_at: string | null }>('/api/v2/admin/maintenance', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, message }),
+    })
+  },
+
   getAdminSettings() {
     return request<AdminSettings>('/api/v2/admin/settings')
   },

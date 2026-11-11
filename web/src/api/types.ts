@@ -595,6 +595,9 @@ export type SiteInfo = {
   site_mode?: SiteMode
   /** True until first-time setup creates the admin account. */
   setup_required?: boolean
+  /** The site is read-only for everyone but admins. */
+  maintenance?: boolean
+  maintenance_message?: string
 }
 
 /** Who may create an account after setup: invite only, anyone, or nobody. */

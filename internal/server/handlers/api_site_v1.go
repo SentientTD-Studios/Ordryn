@@ -34,6 +34,9 @@ type apiSiteResponse struct {
 	SiteMode                 string `json:"site_mode"`
 	// SetupRequired is true until first-time setup creates the admin account.
 	SetupRequired bool `json:"setup_required"`
+	// Maintenance is true while the site is read-only for everyone but admins.
+	Maintenance        bool   `json:"maintenance"`
+	MaintenanceMessage string `json:"maintenance_message,omitempty"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -63,6 +66,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 
 	textLimits := settings.TaskTextLimits()
 	setupRequired, _ := storage.SetupRequired()
+	maint := storage.GetMaintenance()
 	// Company accounts come only from people managers: no signup, join requests, or invites,
 	// whatever the stored settings say.
 	company := storage.NormalizeSiteMode(settings.SiteMode) == storage.SiteModeCompany
@@ -91,5 +95,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		AttachmentMaxBytes:       storage.ClampAttachmentMaxBytes(settings.AttachmentMaxBytes),
 		SiteMode:                 settings.SiteMode,
 		SetupRequired:            setupRequired,
+		Maintenance:              maint.Enabled,
+		MaintenanceMessage:       maint.Message,
 	})
 }
