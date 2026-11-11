@@ -1847,3 +1847,25 @@ export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
 }
+
+/** Admin → Audit log: forwarding events to a SIEM. */
+export type AuditStreamSettings = {
+  enabled: boolean
+  url: string
+  secret_set: boolean
+  auth_header_set: boolean
+  include_project: boolean
+  include_task: boolean
+  last_success_at: string | null
+  last_error: string
+  last_error_at: string | null
+}
+
+export type AuditStreamPatch = {
+  enabled?: boolean
+  url?: string
+  secret?: string
+  auth_header?: string
+  include_project?: boolean
+  include_task?: boolean
+}

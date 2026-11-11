@@ -510,6 +510,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSavedViewsForQueries failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateAuditStream(); err != nil {
+		fmt.Printf("migration: MigrateAuditStream failed: %v\n", err)
+		errCount++
+	}
 
 	if errCount == 0 {
 		return nil

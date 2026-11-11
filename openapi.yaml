@@ -7605,6 +7605,82 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/admin/audit-stream:
+    get:
+      tags: [Admin]
+      summary: Get audit streaming settings
+      description: Admins only. Secrets are never returned.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStream"
+    put:
+      tags: [Admin]
+      summary: Configure audit streaming
+      description: |
+        Admins only. While enabled, new admin events (plus project and task events
+        when included) are POSTed to `url` about every 15 seconds as
+        `{"site": "...", "events": [{source, id, occurred_at, actor_user_id, actor,
+        event_type, target_type, target_id, target, metadata}]}`, in order, up to 200
+        per batch. With a `secret`, requests carry `X-Ordryn-Timestamp` and
+        `X-Ordryn-Signature: sha256=HMAC(secret, timestamp + "." + body)`;
+        `auth_header` is sent as `Authorization`. A batch is retried until the
+        endpoint answers 2xx. Turning it on starts from new events (no backfill);
+        use the audit CSV export for history. `secret` and `auth_header` are
+        write-only ("" clears).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                url:
+                  type: string
+                secret:
+                  type: string
+                  writeOnly: true
+                auth_header:
+                  type: string
+                  writeOnly: true
+                include_project:
+                  type: boolean
+                include_task:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStream"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/admin/audit-stream/test:
+    post:
+      tags: [Admin]
+      summary: Send a test event to the audit stream endpoint
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Delivered
+        "502":
+          description: The endpoint failed
+
   /api/v2/admin/users:
     get:
       tags: [Admin]
@@ -12554,6 +12630,31 @@ components:
           type: string
         key:
           type: string
+    AuditStream:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        url:
+          type: string
+        secret_set:
+          type: boolean
+        auth_header_set:
+          type: boolean
+        include_project:
+          type: boolean
+        include_task:
+          type: boolean
+        last_success_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_error:
+          type: string
+        last_error_at:
+          type: string
+          format: date-time
+          nullable: true
     ImageHostingTestResult:
       type: object
       properties:

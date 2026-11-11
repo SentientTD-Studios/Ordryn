@@ -2,6 +2,8 @@ import { withBase } from '@/base'
 import type {
   AdminSettings,
   AdminSettingsPatch,
+  AuditStreamPatch,
+  AuditStreamSettings,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1666,6 +1668,18 @@ export const api = {
 
   getCompanyHome() {
     return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+  },
+
+  getAuditStream() {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream')
+  },
+
+  updateAuditStream(payload: AuditStreamPatch) {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream', { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  testAuditStream() {
+    return request<{ ok: boolean }>('/api/v2/admin/audit-stream/test', { method: 'POST' })
   },
 
   getAdminSettings() {

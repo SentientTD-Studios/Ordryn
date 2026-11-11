@@ -6,6 +6,8 @@ import type { AdminUser, AuditEntry, AuditFacets, AuditList, AuditQuery, AuditSo
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import AdminSubnav from '@/components/AdminSubnav.vue'
+import AdminAuditStreamCard from '@/components/AdminAuditStreamCard.vue'
+import { useAuth } from '@/composables/useAuth'
 import {
   auditChanges,
   auditDetails,
@@ -15,6 +17,7 @@ import {
 } from '@/utils/auditLog'
 
 const toast = useToast()
+const { hasPermission } = useAuth()
 const loading = ref(false)
 const result = ref<AuditList>({ items: [], total: 0, limit: 50, offset: 0 })
 const facets = ref<AuditFacets>({ event_types: [], projects: [] })
@@ -200,6 +203,7 @@ onMounted(() => {
 <template>
   <div class="container mt-3">
     <AdminSubnav />
+    <AdminAuditStreamCard v-if="hasPermission('admin')" />
     <h1>Audit log</h1>
     <p class="text-muted">
       Who did what, and when, across tasks, projects, comments, admin actions and outbound email.
