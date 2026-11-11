@@ -49,6 +49,11 @@ function isSearchKey(e: KeyboardEvent): boolean {
   return e.code === 'Slash' && !e.shiftKey
 }
 
+/** Opens the keyboard shortcuts help (the command palette's "Keyboard shortcuts"). */
+export function showShortcutsHelp() {
+  openShortcutsModal()
+}
+
 function openShortcutsModal() {
   const active = document.activeElement
   if (
