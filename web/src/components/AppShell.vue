@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, provide } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { startLiveUpdates, stopLiveUpdates } from '@/composables/useLiveUpdates'
 import { usePageActivity } from '@/composables/usePageActivity'
-import { api } from '@/api/client'
+import { api, MFA_ENROLLMENT_REQUIRED } from '@/api/client'
+import { useToast } from '@/composables/useToast'
 import ModernHeader from '@/components/modern/ModernHeader.vue'
 import MobileNavDrawer from '@/components/modern/MobileNavDrawer.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -141,16 +142,30 @@ usePageActivity(() => {
   void loadPendingInvites()
 })
 
+// The security policy requires two-factor authentication: send people to set it up.
+const router = useRouter()
+const { push: toast } = useToast()
+let mfaNoticeShown = false
+function onMFAEnrollmentRequired() {
+  if (route.name !== 'settings') void router.push({ name: 'settings', hash: '#mfa-section' })
+  if (!mfaNoticeShown) {
+    mfaNoticeShown = true
+    toast('This site requires two-factor authentication. Set it up to continue.', 'error')
+  }
+}
+
 onMounted(() => {
   initKeyboardShortcuts()
   void refreshSite()
   window.addEventListener('keydown', onMobileNavKeydown)
+  window.addEventListener(MFA_ENROLLMENT_REQUIRED, onMFAEnrollmentRequired)
 })
 
 onUnmounted(() => {
   destroyKeyboardShortcuts()
   stopLiveUpdates()
   window.removeEventListener('keydown', onMobileNavKeydown)
+  window.removeEventListener(MFA_ENROLLMENT_REQUIRED, onMFAEnrollmentRequired)
   document.body.classList.remove('ordryn-mobile-nav-open')
 })
 </script>

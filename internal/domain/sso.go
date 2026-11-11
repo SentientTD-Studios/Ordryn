@@ -124,6 +124,9 @@ func ssoUsernameBase(c SSOClaims) string {
 }
 
 func createSSOAccount(c SSOClaims) (int, error) {
+	if err := CheckNewAccountEmail(c.Email); err != nil {
+		return 0, ssoDenied("accounts with that email domain can't be created here")
+	}
 	base := ssoUsernameBase(c)
 	userName := ""
 	for i := 0; i < 50; i++ {

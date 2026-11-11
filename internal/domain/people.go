@@ -192,6 +192,9 @@ func CreateAccountForUser(ctx context.Context, actorUserID int, in CreateAccount
 	if email == "" || !strings.Contains(email, "@") {
 		return nil, fmt.Errorf("%w: a valid email address is required", ErrValidation)
 	}
+	if err := CheckNewAccountEmail(email); err != nil {
+		return nil, err
+	}
 	if exists, err := storage.UserExistsByEmail(email); err != nil {
 		return nil, err
 	} else if exists {

@@ -3,6 +3,8 @@ import type {
   AdminSettings,
   AdminSettingsPatch,
   AdminSSOPatch,
+  AdminSecurityPolicy,
+  AdminSecurityPolicyPatch,
   AdminSSOSettings,
   AdminUser,
   SiteRole,
@@ -159,11 +161,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         : typeof data === 'string' && data.includes('<html')
           ? 'Request failed (proxy returned an HTML error page).'
           : res.statusText || 'Request failed'
+    if (body?.error === MFA_ENROLLMENT_REQUIRED && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(MFA_ENROLLMENT_REQUIRED))
+    }
     throw new APIError(res.status, body?.error || 'request_failed', message, data)
   }
 
   return data as T
 }
+
+/** Error code (and window event) when the security policy requires setting up MFA first. */
+export const MFA_ENROLLMENT_REQUIRED = 'mfa_enrollment_required'
 
 async function download(path: string, fallbackName: string, init: RequestInit = {}): Promise<void> {
   const res = await fetch(withBase(path), { credentials: 'include', ...init })
@@ -1687,6 +1695,14 @@ export const api = {
 
   patchAdminSSO(payload: AdminSSOPatch) {
     return request<AdminSSOSettings>('/api/v2/admin/sso', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  getSecurityPolicy() {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy')
+  },
+
+  patchSecurityPolicy(payload: AdminSecurityPolicyPatch) {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy', { method: 'PATCH', body: JSON.stringify(payload) })
   },
 
   testAdminSSO() {

@@ -91,6 +91,13 @@ func writeAPIUserJSON(w http.ResponseWriter, status int, p *storage.UserProfile)
 // establishSession signs p in on this browser. Each sign-in gets a fresh session
 // id and records the account's session version, so it can be revoked later.
 func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserProfile) error {
+	return establishSessionVia(w, r, p, "")
+}
+
+// establishSessionVia is establishSession recording how the person signed in
+// (utils.AuthMethodSSO skips the local MFA requirement). Re-issuing a session for
+// the same account (after a password change, say) keeps its sign-in time and method.
+func establishSessionVia(w http.ResponseWriter, r *http.Request, p *storage.UserProfile, method string) error {
 	session, err := sessionstore.GetSession(r)
 	if err != nil {
 		return err
@@ -99,16 +106,29 @@ func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserPro
 	if err != nil {
 		return err
 	}
+	now := time.Now().Unix()
+	signedInAt := now
+	if prev, ok := session.Values["user_id"].(int); ok && prev == p.ID {
+		if t, ok := session.Values[utils.SessionSignedInAtKey].(int64); ok && t > 0 {
+			signedInAt = t
+		}
+		if method == "" {
+			method, _ = session.Values[utils.SessionAuthMethodKey].(string)
+		}
+	}
 	session.Values = map[interface{}]interface{}{
-		utils.SessionIDKey:      sid,
-		utils.SessionVersionKey: p.SessionVersion,
-		"user_id":               p.ID,
-		"email":                 p.Email,
-		"user_name":             p.UserName,
-		"role_id":               p.RoleID,
-		"permissions":           p.Permissions,
-		"timezone":              p.Timezone,
-		"items_per_page":        p.ItemsPerPage,
+		utils.SessionIDKey:         sid,
+		utils.SessionVersionKey:    p.SessionVersion,
+		utils.SessionSignedInAtKey: signedInAt,
+		utils.SessionLastSeenKey:   now,
+		utils.SessionAuthMethodKey: method,
+		"user_id":                  p.ID,
+		"email":                    p.Email,
+		"user_name":                p.UserName,
+		"role_id":                  p.RoleID,
+		"permissions":              p.Permissions,
+		"timezone":                 p.Timezone,
+		"items_per_page":           p.ItemsPerPage,
 	}
 	if session.Options == nil && sessionstore.Store != nil && sessionstore.Store.Options != nil {
 		opts := *sessionstore.Store.Options
@@ -158,6 +178,10 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := domain.ValidatePassword(req.Password); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", passwordPolicyMessage(err))
+		return
+	}
+	if err := domain.CheckNewAccountEmail(email); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", passwordPolicyMessage(err))
 		return
 	}

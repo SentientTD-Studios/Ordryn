@@ -26,6 +26,7 @@ const setupRequired = computed(() => !!siteInfo.value?.setup_required)
 const ssoEnabled = computed(() => !!siteInfo.value?.sso_enabled)
 const ssoLabel = computed(() => siteInfo.value?.sso_label || 'SSO')
 const ssoOnly = computed(() => !!siteInfo.value?.sso_only)
+const minPasswordLength = computed(() => siteInfo.value?.min_password_length || 8)
 const openJoin = computed(
   () => !!siteInfo.value?.enable_registration && !siteInfo.value?.invite_only,
 )
@@ -60,6 +61,7 @@ export function useSite() {
     ssoEnabled,
     ssoLabel,
     ssoOnly,
+    minPasswordLength,
     openJoin,
     loaded,
     refresh,

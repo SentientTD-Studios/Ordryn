@@ -514,6 +514,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSSO failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateSecurityPolicy(); err != nil {
+		fmt.Printf("migration: MigrateSecurityPolicy failed: %v\n", err)
+		errCount++
+	}
 
 	if errCount == 0 {
 		return nil

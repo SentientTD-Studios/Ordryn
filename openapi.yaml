@@ -7271,6 +7271,56 @@ paths:
         "400":
           description: Validation error
 
+  /api/v2/admin/security-policy:
+    get:
+      tags: [Admin]
+      summary: Get the sign-in policy
+      description: Admins only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSecurityPolicy"
+    patch:
+      tags: [Admin]
+      summary: Update the sign-in policy
+      description: |
+        Admins only. Omitted fields stay as they are.
+
+        - `require_mfa` (`off`, `all`, `roles` with `mfa_role_ids`): browser
+          sessions of people who must use two-factor authentication but haven't
+          set it up get `403 mfa_enrollment_required` everywhere except `GET /me`
+          and `/me/mfa*`, and turning MFA off returns `403 mfa_required_by_policy`.
+          Single sign-on sessions and API keys are exempt.
+        - `min_password_length` (8–64) applies to new and changed passwords.
+        - `session_idle_minutes` (0 or 5–43200) and `session_max_hours` (0–2160)
+          sign browser sessions out; they can't extend the default lifetime.
+        - `allowed_email_domains` limits new accounts (sign-up, invites, people
+          managers, single sign-on).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSecurityPolicyPatch"
+      responses:
+        "200":
+          description: Saved policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSecurityPolicy"
+        "400":
+          description: Validation error
+
   /api/v2/admin/sso/test:
     post:
       tags: [Admin]
@@ -8874,6 +8924,9 @@ components:
         sso_only:
           type: boolean
           description: Password sign-in and self-registration are off for everyone but admins.
+        min_password_length:
+          type: integer
+          description: Minimum length for new passwords (security policy).
 
     ProjectAccess:
       type: object
@@ -12676,6 +12729,53 @@ components:
           type: string
         key:
           type: string
+    AdminSecurityPolicy:
+      type: object
+      properties:
+        require_mfa:
+          type: string
+          enum: ["off", all, roles]
+        mfa_role_ids:
+          type: array
+          items:
+            type: integer
+        min_password_length:
+          type: integer
+        session_idle_minutes:
+          type: integer
+          description: 0 = off.
+        session_max_hours:
+          type: integer
+          description: 0 = the server default.
+        allowed_email_domains:
+          type: array
+          items:
+            type: string
+        default_session_hours:
+          type: integer
+          readOnly: true
+    AdminSecurityPolicyPatch:
+      type: object
+      properties:
+        require_mfa:
+          type: string
+          enum: ["off", all, roles]
+        mfa_role_ids:
+          type: array
+          items:
+            type: integer
+        min_password_length:
+          type: integer
+          minimum: 8
+          maximum: 64
+        session_idle_minutes:
+          type: integer
+        session_max_hours:
+          type: integer
+        allowed_email_domains:
+          type: array
+          items:
+            type: string
     AdminSSOSettings:
       type: object
       properties:
