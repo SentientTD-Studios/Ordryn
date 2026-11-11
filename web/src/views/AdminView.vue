@@ -10,6 +10,7 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import TimezoneSelect from '@/components/TimezoneSelect.vue'
 import AdminSubnav from '@/components/AdminSubnav.vue'
+import AdminMaintenanceCard from '@/components/AdminMaintenanceCard.vue'
 import RichBody from '@/components/RichBody.vue'
 import GuestPolicyCard from '@/components/GuestPolicyCard.vue'
 
@@ -306,6 +307,7 @@ onMounted(load)
   <div class="container mt-3">
     <AdminSubnav />
     <h1>Admin</h1>
+    <AdminMaintenanceCard v-if="isAdmin" />
     <div v-if="isAdmin" class="card mb-4" :class="{ 'border-primary': !settings.site_mode_locked }">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h2 class="h5 mb-0">Site mode</h2>

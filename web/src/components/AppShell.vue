@@ -179,6 +179,16 @@ onUnmounted(() => {
     <ModernHeader :mobile-nav-open="mobileNavOpen" @toggle-mobile-nav="toggleMobileNav" />
     <MobileNavDrawer :open="mobileNavOpen" @close="closeMobileNav" />
 
+    <div v-if="siteInfo?.maintenance" class="container py-2" role="status">
+      <div class="alert alert-warning mb-0 d-flex gap-2 align-items-start">
+        <i class="bi bi-cone-striped mt-1" aria-hidden="true" />
+        <div>
+          <strong>Maintenance in progress.</strong>
+          {{ siteInfo.maintenance_message || "The site is read-only for now; changes can't be saved until it's done." }}
+        </div>
+      </div>
+    </div>
+
     <div
       v-if="showAnnouncement && siteInfo?.global_announcement_text"
       id="global-announcement"

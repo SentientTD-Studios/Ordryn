@@ -610,6 +610,9 @@ export type SiteInfo = {
   sso_only?: boolean
   /** Minimum length for new passwords (Admin → Security). */
   min_password_length?: number
+  /** The site is read-only for everyone but admins. */
+  maintenance?: boolean
+  maintenance_message?: string
 }
 
 /** Who may create an account after setup: invite only, anyone, or nobody. */

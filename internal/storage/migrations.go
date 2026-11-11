@@ -536,6 +536,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateGuests failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateMaintenance(); err != nil {
+		fmt.Printf("migration: MigrateMaintenance failed: %v\n", err)
+		errCount++
+	}
 
 	if errCount == 0 {
 		return nil

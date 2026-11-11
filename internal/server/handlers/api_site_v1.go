@@ -41,6 +41,9 @@ type apiSiteResponse struct {
 	SSOOnly    bool   `json:"sso_only"`
 	// MinPasswordLength is the security policy's minimum for new passwords.
 	MinPasswordLength int `json:"min_password_length"`
+	// Maintenance is true while the site is read-only for everyone but admins.
+	Maintenance        bool   `json:"maintenance"`
+	MaintenanceMessage string `json:"maintenance_message,omitempty"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -70,6 +73,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 
 	textLimits := settings.TaskTextLimits()
 	setupRequired, _ := storage.SetupRequired()
+	maint := storage.GetMaintenance()
 	// Company accounts come only from people managers: no signup, join requests, or invites,
 	// whatever the stored settings say.
 	company := storage.NormalizeSiteMode(settings.SiteMode) == storage.SiteModeCompany
@@ -106,5 +110,7 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		SSOLabel:                 ssoLabel(sso),
 		SSOOnly:                  sso.Configured() && sso.SSOOnly,
 		MinPasswordLength:        domain.PasswordMinLength(),
+		Maintenance:              maint.Enabled,
+		MaintenanceMessage:       maint.Message,
 	})
 }

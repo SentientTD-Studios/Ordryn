@@ -41,9 +41,10 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 
 // handleAPI registers a REST path on the canonical /api/v2 prefix and the
 // /api/v1 compatibility alias, including BASE_PATH mounts. Every API route
-// rejects state-changing requests sent from other websites.
+// rejects state-changing requests sent from other websites, and writes from
+// non-admins while the site is in maintenance mode.
 func handleAPI(suffix string, fn http.HandlerFunc) {
-	fn = metrics.Instrument(suffix, utils.RejectCrossSite(fn))
+	fn = metrics.Instrument(suffix, utils.RejectCrossSite(utils.MaintenanceGuard(fn)))
 	handleBoth("/api/v2"+suffix, fn)
 	handleBoth("/api/v1"+suffix, fn)
 }
@@ -224,6 +225,7 @@ func registerAPIV1Routes() {
 	handleAPI("/admin/sso", utils.AdminAPIChain(handlers.APIV1AdminSSO))
 	handleAPI("/admin/sso/test", utils.AdminAPIChain(handlers.APIV1AdminSSOTest))
 	handleAPI("/admin/security-policy", utils.AdminAPIChain(handlers.APIV1AdminSecurityPolicy))
+	handleAPI("/admin/maintenance", utils.AdminAPIChain(handlers.APIV1AdminMaintenance))
 	handleAPI("/admin/image-hosting/test", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminImageHostingTest))
 	handleAPI("/company-home", v1(handlers.APIV1CompanyHome))
 	handleAPI("/people", utils.APIChain(handlers.APIV1PeopleRouter))
