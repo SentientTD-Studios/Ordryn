@@ -2,6 +2,7 @@ import { withBase } from '@/base'
 import type {
   AdminSettings,
   AdminSettingsPatch,
+  BackupStatus,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1666,6 +1667,18 @@ export const api = {
 
   getCompanyHome() {
     return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+  },
+
+  getBackupStatus() {
+    return request<BackupStatus>('/api/v2/admin/backups')
+  },
+
+  downloadBackup() {
+    return download('/api/v2/admin/backups/download', 'ordryn-backup.tar.gz')
+  },
+
+  downloadStoredBackup(name: string) {
+    return download(`/api/v2/admin/backups/files/${encodeURIComponent(name)}`, name)
   },
 
   getAdminSettings() {

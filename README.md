@@ -30,6 +30,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Invite-only registration and role-based permissions (admin, create invites)
 - Project and organization **roles** built from a permission catalog. Owner is the only built-in role; everything else is created by each organization or project (see [Roles](#roles))
 - Admin panel: site settings, user management, global announcements, configurable image hosting (S3-compatible or local uploads)
+- Backups (Admin → Settings): download a `.tar.gz` of the database (`pg_dump`) and local uploads on demand, or schedule them to a folder with rotation (`BACKUP_DIR`, `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP`); restore steps are in each archive's manifest
 - Dark and light themes
 - Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v2` (session cookie auth)
 - Live updates over Server-Sent Events so shared projects and other tabs stay in sync without a refresh

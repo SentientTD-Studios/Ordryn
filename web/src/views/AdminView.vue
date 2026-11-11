@@ -10,6 +10,7 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import TimezoneSelect from '@/components/TimezoneSelect.vue'
 import AdminSubnav from '@/components/AdminSubnav.vue'
+import AdminBackupsCard from '@/components/AdminBackupsCard.vue'
 import RichBody from '@/components/RichBody.vue'
 
 const toast = useToast()
@@ -924,5 +925,6 @@ onMounted(load)
         </form>
       </div>
     </div>
+    <AdminBackupsCard v-if="isAdmin" />
   </div>
 </template>

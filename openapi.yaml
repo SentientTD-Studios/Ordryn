@@ -7605,6 +7605,96 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/admin/backups:
+    get:
+      tags: [Admin]
+      summary: Backup status
+      description: Admins only. Whether pg_dump is available, the schedule from the environment, and stored backups.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pg_dump_available:
+                    type: boolean
+                  pg_dump_version:
+                    type: string
+                  scheduled:
+                    type: boolean
+                  schedule:
+                    type: object
+                    properties:
+                      dir:
+                        type: string
+                      interval_hours:
+                        type: integer
+                      keep:
+                        type: integer
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        size:
+                          type: integer
+                        created_at:
+                          type: string
+                          format: date-time
+
+  /api/v2/admin/backups/download:
+    get:
+      tags: [Admin]
+      summary: Download a fresh backup
+      description: |
+        Admins only. Streams a .tar.gz with `database.dump` (pg_dump custom format),
+        `uploads/` (when images are stored on this server), and `manifest.json` with
+        restore steps. Needs pg_dump on the server (PATH or `PG_DUMP_PATH`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Archive
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "503":
+          description: pg_dump isn't installed
+
+  /api/v2/admin/backups/files/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Admin]
+      summary: Download a stored (scheduled) backup
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Archive
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/admin/users:
     get:
       tags: [Admin]
