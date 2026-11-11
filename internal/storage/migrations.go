@@ -511,6 +511,11 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := CreateRequestFormTables(); err != nil {
+		fmt.Printf("migration: CreateRequestFormTables failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

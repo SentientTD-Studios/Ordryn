@@ -1847,3 +1847,45 @@ export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
 }
+
+export type RequestFormFieldType = 'text' | 'textarea' | 'select' | 'date' | 'number'
+
+export type RequestFormField = {
+  id: string
+  label: string
+  type: RequestFormFieldType
+  required?: boolean
+  help?: string
+  options?: string[]
+}
+
+export type RequestFormInput = {
+  title: string
+  intro: string
+  fields: RequestFormField[]
+  priority: number
+  tag_ids: number[]
+  enabled: boolean
+}
+
+/** A project's request form, as its managers see it. */
+export type RequestForm = RequestFormInput & {
+  id: number
+  project_id: number
+  token: string
+  /** Site-relative link to share: /f/{token}. */
+  path: string
+  owner_id: number | null
+  submissions: number
+  created_at: string
+  updated_at: string
+}
+
+/** A request form as a submitter sees it. */
+export type PublicRequestForm = {
+  token: string
+  title: string
+  intro: string
+  project_name: string
+  fields: RequestFormField[]
+}

@@ -174,6 +174,11 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 		return "Claimed"
 	case "unclaimed":
 		return "Unclaimed"
+	case "submitted_via_form":
+		if name, ok := meta["form"].(string); ok && name != "" {
+			return "Requested via form · " + name
+		}
+		return "Requested via form"
 	case "status_changed":
 		if name, ok := meta["to"].(string); ok && name != "" {
 			return "Status changed · " + name
