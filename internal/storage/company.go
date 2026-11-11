@@ -262,14 +262,15 @@ func seedCompanySiteRoles() error {
 		PermTasksDelete, PermTasksArchive, PermTasksRestore, PermProjectManage, PermProjectTags,
 		PermCommentsModerate, PermInsightsPeople, PermQueriesManage,
 	}, companyMemberPerms...)
+	manager = append(manager, AgentSitePerms...)
 	defaults := []struct {
 		name  string
 		perms []string
 	}{
-		// Runs projects it's given on a share; no site-wide powers.
-		{"Project Administrator", AllProjectPerms()},
+		// Runs projects it's given on a share, including their AI agents; no site-wide powers.
+		{"Project Administrator", append(AllProjectPerms(), AgentSitePerms...)},
 		// Does the work on the projects shared with them.
-		{"Contributor", companyMemberPerms},
+		{"Contributor", append(append([]string(nil), companyMemberPerms...), SitePermAgentsLocal)},
 		// Follows along without changing anything.
 		{"Reader", []string{}},
 		// Leads a team: hires onto it and runs its projects.

@@ -103,6 +103,12 @@ func authenticateBearer(w http.ResponseWriter, r *http.Request, token string) bo
 		return false
 	}
 	if p.IsLocalAgent {
+		// Checked live so taking the permission away stops keys already handed out.
+		if !storage.UserHasSitePermission(p.UserID, storage.SitePermAgentsLocal) {
+			APIJSONError(w, http.StatusForbidden, "agents_disabled",
+				"Local AI agents are turned off for your account. Ask an admin to allow them for your role.")
+			return false
+		}
 		if err := authorizeLocalAgentKeyRequest(r, p); err != nil {
 			writeScopedKeyError(w, err)
 			return false

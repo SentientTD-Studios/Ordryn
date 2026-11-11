@@ -354,6 +354,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "site create permissions: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateGrantAgentPermissions(); err != nil {
+		fmt.Fprintf(os.Stderr, "agent permissions: %v\n", err)
+		os.Exit(1)
+	}
 
 	_, err = pool.Exec(context.Background(), `
 		INSERT INTO users (id, email, password, role_id) VALUES

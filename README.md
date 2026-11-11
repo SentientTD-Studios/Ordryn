@@ -129,6 +129,8 @@ Every other role is created by an organization or a project from the permission 
 
 Project managers can add AI agents from **project settings → AI agents**. Each agent is a project member backed by a bot account (`users.is_agent`), so its comments, claims, status changes, and activity are attributed to it and badged as an agent. Agent accounts cannot sign in, receive no notifications, and are managed only from that tab. The agent itself runs outside Ordryn (Claude Code, a CI job, your own service). Ordryn tells it when there is work, hands it the task, and enforces what it may change.
 
+**Who can use AI agents.** Two site permissions control this, in both site modes: `agents:project` (add and configure project agents and create their keys) and `agents:local` (create and use [local agent keys](#local-agent-keys)). Every existing role gets both on upgrade. Admins can turn either off for the User role under **Admin → Site settings → AI agents**, or per role on **Site roles**. Without `agents:project`, a manager can still pause or remove an agent; existing agents keep working. Taking away `agents:local` stops that person's local agent keys immediately (`403 agents_disabled`).
+
 **What you need:** an agent on the project and something connected to its key that runs a model. A GitHub repository is **not** required. **What the agent sees:** the task (title, description, status, priority, due date, tags, custom fields), its discussion, the note sent with the run, and the agent's standing instructions, plus the project's linked GitHub repo and the task's linked issue when there are any. Nothing else, so vague one-line tasks get vague results.
 
 **Starting setups** (picked when adding an agent; they fill in instructions and guardrails, and none of them can complete tasks):
@@ -173,6 +175,7 @@ Treat anything members write on a task as input the agent will read: limit who c
 
 To let an AI agent on your own machine read your tasks while you work with it, with no project agent and no model API on the server, create a **local agent key** under **Settings → Developer → Local AI agents** (or `POST /api/v2/api-keys` with `"kind": "local_agent"`). Then say "check out task #123" in Claude Code, Codex, Gemini CLI, Cursor, or any MCP client. The page gives copy-paste setup for each.
 
+- **Needs `agents:local`** on your site role (see [Who can use AI agents](#ai-agents)).
 - **Acts as you.** The agent sees what you can see, and comments or edits appear under your name. Comments and edits go through the same role checks as your session.
 - **Scopes.** Same as project keys. `tasks:read` is required. `tasks:write` (update, move, create, claim) and `comments:write` are opt-in.
 - **Optional project limit** (`project_id`). Other projects' tasks return 404 and lists are filtered. The key is deleted with the project.

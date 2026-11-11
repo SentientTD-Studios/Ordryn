@@ -958,6 +958,9 @@ export type AdminSettings = {
   attachment_max_bytes: number
   members_can_create_projects: boolean
   members_can_create_organizations: boolean
+  /** AI agent permissions on the User role. Admins always have both. */
+  members_can_use_local_agents: boolean
+  members_can_add_project_agents: boolean
   site_mode: SiteMode
   /** True once projects or organizations exist; site_mode can no longer change. */
   site_mode_locked: boolean

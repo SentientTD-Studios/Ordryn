@@ -6,6 +6,7 @@ import { APIError } from '@/api/types'
 import { RouterLink } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import ProjectAgentEditor from '@/components/ProjectAgentEditor.vue'
+import { useAuth } from '@/composables/useAuth'
 import {
   AGENT_RECIPES,
   handleError,
@@ -25,6 +26,9 @@ const emit = defineEmits<{ changed: [] }>()
 const MAX_AGENTS = 10
 
 const toast = useToast()
+const { hasSitePermission } = useAuth()
+// Adding and configuring agents need this; pausing and removing them don't.
+const canConfigure = computed(() => hasSitePermission('agents:project'))
 const agents = ref<ProjectAgent[]>([])
 const statuses = ref<ProjectStatus[]>([])
 const roles = ref<ProjectRoleDef[]>([])
@@ -274,8 +278,12 @@ function openRunCount(agentId: number) {
         <li v-if="!agents.length && !loading" class="list-group-item text-muted">No AI agents on this project yet.</li>
       </ul>
 
+      <div v-if="!canConfigure" class="alert alert-secondary small py-2">
+        Your role can't add or configure AI agents. You can still pause or remove the agents here; ask an admin if
+        you need more.
+      </div>
       <button
-        v-if="!showCreate"
+        v-if="!showCreate && canConfigure"
         type="button"
         class="btn btn-sm btn-primary"
         :disabled="agents.length >= MAX_AGENTS || project.archived"
@@ -285,7 +293,7 @@ function openRunCount(agentId: number) {
       </button>
       <p v-if="agents.length >= MAX_AGENTS" class="small text-muted mt-1 mb-0">A project can have up to {{ MAX_AGENTS }} agents.</p>
 
-      <form v-if="showCreate" class="card card-body mb-3" @submit.prevent="createAgent">
+      <form v-if="showCreate && canConfigure" class="card card-body mb-3" @submit.prevent="createAgent">
         <h5 class="h6">New AI agent</h5>
         <fieldset class="mb-3">
           <legend class="form-label small mb-1">What should this agent do?</legend>
