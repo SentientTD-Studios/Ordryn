@@ -49,6 +49,7 @@ import type {
   RequestForm,
   RequestFormInput,
   PublicRequestForm,
+  Onboarding,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -1408,6 +1409,17 @@ export const api = {
     return request<{ task_id: number }>(`/api/v2/forms/${encodeURIComponent(token)}/submit`, {
       method: 'POST',
       body: JSON.stringify({ summary, answers }),
+    })
+  },
+
+  getOnboarding() {
+    return request<Onboarding>('/api/v2/me/onboarding')
+  },
+
+  setOnboardingDismissed(dismissed: boolean) {
+    return request<Onboarding>('/api/v2/me/onboarding', {
+      method: 'PATCH',
+      body: JSON.stringify({ dismissed }),
     })
   },
 

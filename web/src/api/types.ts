@@ -2089,3 +2089,20 @@ export type PublicRequestForm = {
   project_name: string
   fields: RequestFormField[]
 }
+
+export type OnboardingStep = {
+  id: string
+  label: string
+  description: string
+  /** App path where the step is done. */
+  href: string
+  done: boolean
+  admin_only?: boolean
+}
+
+/** GET /me/onboarding: the getting-started checklist. */
+export type Onboarding = {
+  dismissed: boolean
+  complete: boolean
+  steps: OnboardingStep[]
+}

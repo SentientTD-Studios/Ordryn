@@ -12,6 +12,7 @@ import KanbanBoard from '@/components/KanbanBoard.vue'
 import ProjectTimeline from '@/components/ProjectTimeline.vue'
 import QuickAddBar from '@/components/QuickAddBar.vue'
 import CompanyHome from '@/components/CompanyHome.vue'
+import OnboardingChecklist from '@/components/OnboardingChecklist.vue'
 import { useSite } from '@/composables/useSite'
 import ExtensionSurfaceFrame from '@/components/ExtensionSurfaceFrame.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
@@ -129,6 +130,8 @@ const defaultTaskProjectId = computed<number | null>(() => {
 })
 // No project shared yet: show the company home page instead of an empty task list.
 const showCompanyHome = computed(() => isCompanyMode.value && metaLoaded.value && projects.value.length === 0)
+// Ticks off getting-started steps as tasks are added or completed.
+const onboardingKey = computed(() => `${tasks.value.length}:${tasks.value.filter((t) => t.completed).length}`)
 // Preference: Home (no project or saved view selected) shows a project grid above the task list.
 const showHomeProjects = computed(
   () => !!user.value?.home_split_view && !filters.project && !activeViewId.value && !showCompanyHome.value,
@@ -1110,6 +1113,7 @@ onUnmounted(() => {
     <div class="ordryn-main-pane flex-grow-1 p-2 p-sm-3 p-md-4 overflow-auto d-flex flex-column justify-content-between">
       <CompanyHome v-if="showCompanyHome" />
       <div v-else>
+        <OnboardingChecklist v-if="!filters.project && !activeViewId" :refresh-key="onboardingKey" />
         <HomeProjectsPanel
           v-if="showHomeProjects"
           :projects="projects"

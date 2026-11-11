@@ -565,6 +565,11 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := MigrateUsersAddOnboarding(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddOnboarding failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

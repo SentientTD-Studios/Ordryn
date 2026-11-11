@@ -186,6 +186,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "claimed_by: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateUsersAddOnboarding(); err != nil {
+		fmt.Fprintf(os.Stderr, "onboarding: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateRequestFormTables(); err != nil {
 		fmt.Fprintf(os.Stderr, "request_forms: %v\n", err)
 		os.Exit(1)

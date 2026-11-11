@@ -152,6 +152,7 @@ func registerAPIV1Routes() {
 	handleAPI("/me/avatar", utils.AuthSessionChain(handlers.APIV1MeAvatar))
 	handleAPI("/me/passkeys", utils.AuthSessionChain(handlers.APIV1MePasskeys))
 	handleAPI("/me/passkeys/", utils.AuthSessionChain(handlers.APIV1MePasskeys))
+	handleAPI("/me/onboarding", utils.AuthSessionChain(handlers.APIV1MeOnboarding))
 	handleAPI("/me/notification-preferences", utils.AuthSessionChain(handlers.APIV1MeNotificationPreferences))
 	handleAPI("/me/github", utils.AuthSessionChain(handlers.APIV1MeGitHub))
 	handleAPI("/me/github/pat", utils.AuthSessionChain(handlers.APIV1MeGitHubPAT))

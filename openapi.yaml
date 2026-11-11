@@ -861,6 +861,52 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
+  /api/v2/me/onboarding:
+    get:
+      tags: [Profile]
+      summary: Getting-started checklist
+      description: |
+        Steps worked out from what you've done: create or join a project, add a task, finish a
+        task, and work with someone. Site admins also get site steps: name the site, set up email,
+        and bring in people. People who already had tasks when this was added start with it dismissed.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Onboarding"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Profile]
+      summary: Hide or show the checklist
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dismissed]
+              properties:
+                dismissed:
+                  type: boolean
+      responses:
+        "200":
+          description: Checklist after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Onboarding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
   /api/v2/me/passkeys:
     get:
       tags: [Profile]
@@ -11932,6 +11978,31 @@ components:
         submissions: { type: integer }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    Onboarding:
+      type: object
+      required: [dismissed, complete, steps]
+      properties:
+        dismissed: { type: boolean }
+        complete:
+          type: boolean
+          description: Every step is done.
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id, label, description, href, done]
+            properties:
+              id:
+                type: string
+                enum: [project, task, complete, teammate, site_name, email, people]
+              label: { type: string }
+              description: { type: string }
+              href:
+                type: string
+                description: App path where the step is done.
+              done: { type: boolean }
+              admin_only: { type: boolean }
 
     Task:
       type: object
