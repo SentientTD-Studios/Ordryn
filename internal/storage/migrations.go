@@ -511,6 +511,11 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := MigrateTasksAddStartDate(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddStartDate failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

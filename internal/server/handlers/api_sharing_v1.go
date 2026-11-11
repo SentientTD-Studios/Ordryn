@@ -151,6 +151,11 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 			apiV1ProjectInsights(w, r, projectID)
 			return true
 		}
+	case "timeline":
+		if len(parts) == 2 {
+			apiV1ProjectTimeline(w, r, projectID)
+			return true
+		}
 	case "status-counts":
 		if len(parts) == 2 {
 			apiV1ProjectStatusCounts(w, r, projectID)

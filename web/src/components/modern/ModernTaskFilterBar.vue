@@ -25,6 +25,8 @@ const props = withDefaults(
     density: ViewDensity
     tags: Tag[]
     showViewMode?: boolean
+    /** Offer the kanban Board view (kanban projects only). */
+    showBoardOption?: boolean
     viewMode?: string
     tagByName?: boolean
     surfaceTabs?: KanbanSurfaceTab[]
@@ -36,6 +38,7 @@ const props = withDefaults(
     dueTo: '',
     showClaimFilter: false,
     showViewMode: false,
+    showBoardOption: true,
     viewMode: 'list',
     tagByName: false,
     surfaceTabs: () => [],
@@ -153,6 +156,7 @@ function getDueDateLabel(preset: string) {
               <i class="bi bi-list-ul me-1" />List
             </button>
             <button
+              v-if="showBoardOption"
               type="button"
               class="btn btn-sm rounded-pill px-2.5 py-0.5 border-0 fw-medium transition-all"
               :class="viewMode === 'board' ? 'shadow-xs fw-bold' : 'text-muted'"
@@ -160,6 +164,15 @@ function getDueDateLabel(preset: string) {
               @click="emit('update:viewMode', 'board')"
             >
               <i class="bi bi-kanban me-1" />Board
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm rounded-pill px-2.5 py-0.5 border-0 fw-medium transition-all"
+              :class="viewMode === 'timeline' ? 'shadow-xs fw-bold' : 'text-muted'"
+              :style="viewMode === 'timeline' ? 'background: var(--ordryn-card-bg); color: var(--ordryn-text);' : ''"
+              @click="emit('update:viewMode', 'timeline')"
+            >
+              <i class="bi bi-bar-chart-steps me-1" />Timeline
             </button>
             <button
               v-for="tab in surfaceTabs"

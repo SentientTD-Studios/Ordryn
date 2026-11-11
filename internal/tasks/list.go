@@ -437,6 +437,7 @@ func attachWorkflowFieldsToTasks(taskList []Task) error {
 			t.ClaimedByName = f.ClaimedByName
 			t.SprintID = f.SprintID
 			t.SprintName = f.SprintName
+			t.StartDate = f.StartDate
 		}
 	}
 	for i := range taskList {

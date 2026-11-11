@@ -31,6 +31,7 @@ import type {
   ChangelogEntry,
   DashboardStats,
   ProjectInsights,
+  ProjectTimeline,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -579,6 +580,7 @@ export const api = {
     title: string
     description?: string
     due_date?: string
+    start_date?: string
     project_id?: number | null
     parent_id?: number | null
     priority?: number
@@ -602,6 +604,7 @@ export const api = {
       description: string
       due_date: string
       clear_due_date: boolean
+      start_date: string | null
       project_id: number | null
       parent_id: number | null
       priority: number
@@ -1506,6 +1509,10 @@ export const api = {
   async projectStatusCounts(projectId: number, sprint: string) {
     const qs = sprint ? `?sprint_id=${encodeURIComponent(sprint)}` : ''
     return (await request<{ counts: Record<string, number> }>(`/api/v2/projects/${projectId}/status-counts${qs}`)).counts
+  },
+
+  projectTimeline(projectId: number) {
+    return request<ProjectTimeline>(`/api/v2/projects/${projectId}/timeline`)
   },
 
   projectInsights(projectId: number, sprintId?: number) {
