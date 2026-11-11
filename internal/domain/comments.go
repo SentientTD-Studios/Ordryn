@@ -180,6 +180,9 @@ func ListCommentsForUser(ctx context.Context, userID, taskID int) ([]storage.Tas
 	}
 	attachCommentLinks(taskID, projectID, userID, comments)
 	attachCommentRoles(projectID, comments)
+	if err := storage.AttachCommentExtras(comments, userID); err != nil {
+		return nil, err
+	}
 	return comments, nil
 }
 

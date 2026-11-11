@@ -238,6 +238,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "task comments: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateCommentReactions(); err != nil {
+		fmt.Fprintf(os.Stderr, "comment reactions: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateTaskEventsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "task events: %v\n", err)
 		os.Exit(1)
