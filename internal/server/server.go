@@ -104,6 +104,7 @@ func StartServer() error {
 	domain.StartDueReminderWorker()
 	domain.StartNotificationEmailWorker()
 	domain.StartBackupWorker()
+	domain.StartAuditStreamer()
 
 	registerAPIV1Routes()
 
@@ -229,6 +230,8 @@ func registerAPIV1Routes() {
 	handleAPI("/admin/maintenance", utils.AdminAPIChain(handlers.APIV1AdminMaintenance))
 	handleAPI("/admin/backups", utils.AdminAPIChain(handlers.APIV1AdminBackups))
 	handleAPI("/admin/backups/", utils.AdminAPIChain(handlers.APIV1AdminBackups))
+	handleAPI("/admin/audit-stream", utils.AdminAPIChain(handlers.APIV1AdminAuditStream))
+	handleAPI("/admin/audit-stream/test", utils.AdminAPIChain(handlers.APIV1AdminAuditStream))
 	handleAPI("/admin/image-hosting/test", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminImageHostingTest))
 	handleAPI("/company-home", v1(handlers.APIV1CompanyHome))
 	handleAPI("/people", utils.APIChain(handlers.APIV1PeopleRouter))

@@ -13,6 +13,8 @@ import type {
   AdminSecurityPolicyPatch,
   AdminSSOSettings,
   BackupStatus,
+  AuditStreamPatch,
+  AuditStreamSettings,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1758,6 +1760,18 @@ export const api = {
 
   downloadStoredBackup(name: string) {
     return download(`/api/v2/admin/backups/files/${encodeURIComponent(name)}`, name)
+  },
+
+  getAuditStream() {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream')
+  },
+
+  updateAuditStream(payload: AuditStreamPatch) {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream', { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  testAuditStream() {
+    return request<{ ok: boolean }>('/api/v2/admin/audit-stream/test', { method: 'POST' })
   },
 
   getAdminSettings() {

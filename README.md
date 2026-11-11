@@ -39,6 +39,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Prometheus metrics at `/metrics` (set `METRICS_TOKEN`; scrape with `Authorization: Bearer <token>`): request counts and latency per API route, live-update streams, hook delivery backlog and dead letters, AI agent runs by status, and account, project, and task totals
 - Maintenance mode: one switch makes the site read-only for everyone but admins (writes get `503 maintenance`) with a banner explaining why
 - Backups (Admin → Settings): download a `.tar.gz` of the database (`pg_dump`) and local uploads on demand, or schedule them to a folder with rotation (`BACKUP_DIR`, `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP`); restore steps are in each archive's manifest
+- Audit streaming to a SIEM (Admin → Audit log): signed JSON batches of admin events, optionally project and task events, delivered in order with retries
 - Dark and light themes
 - Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v2` (session cookie auth)
 - Live updates over Server-Sent Events so shared projects and other tabs stay in sync without a refresh
