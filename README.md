@@ -26,6 +26,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - CSV import with preview/confirm; CSV/JSON export (auto-creates projects and tags on import)
 - Task activity timeline in the edit sidebar
 - Dashboard with overdue/today counts, completion charts, and streak tracking
+- Reports: workload per person across every project where you can view team workload, and a timesheet of logged time by date range, person, and project with CSV export
 - Keyboard shortcuts for power users (`?` for help)
 - Invite-only registration and role-based permissions (admin, create invites)
 - Project and organization **roles** built from a permission catalog. Owner is the only built-in role; everything else is created by each organization or project (see [Roles](#roles))

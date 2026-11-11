@@ -7605,6 +7605,142 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/reports/time:
+    get:
+      tags: [Reports]
+      summary: Timesheet
+      description: |
+        Logged time between `from` and `to` (inclusive, YYYY-MM-DD in your time zone;
+        defaults to the last 7 days; at most 366 days). You see your own entries on any
+        project you can open, and everyone's on projects where your role has
+        `insights:people`. `format=csv` downloads a CSV. At most 5000 entries
+        (`truncated` says when more matched).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: Timesheet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from:
+                    type: string
+                  to:
+                    type: string
+                  total_minutes:
+                    type: integer
+                  truncated:
+                    type: boolean
+                  by_person:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  by_project:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        logged_at:
+                          type: string
+                          format: date-time
+                        user_id:
+                          type: integer
+                        user_name:
+                          type: string
+                        project_id:
+                          type: integer
+                        project_name:
+                          type: string
+                        task_id:
+                          type: integer
+                        task_title:
+                          type: string
+                        minutes:
+                          type: integer
+                        note:
+                          type: string
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/reports/workload:
+    get:
+      tags: [Reports]
+      summary: Workload across projects
+      description: |
+        Per person: open claimed tasks and points, claimed overdue tasks, projects with
+        open claims, tasks completed and minutes logged in the last 7 days. Covers every
+        project where your role has `insights:people` (`project_count`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Workload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_count:
+                    type: integer
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user_id:
+                          type: integer
+                        user_name:
+                          type: string
+                        claimed_open:
+                          type: integer
+                        claimed_points:
+                          type: integer
+                        claimed_overdue:
+                          type: integer
+                        projects:
+                          type: integer
+                        done_last_week:
+                          type: integer
+                        minutes_last_week:
+                          type: integer
+
   /api/v2/admin/users:
     get:
       tags: [Admin]

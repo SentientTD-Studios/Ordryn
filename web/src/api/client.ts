@@ -2,6 +2,8 @@ import { withBase } from '@/base'
 import type {
   AdminSettings,
   AdminSettingsPatch,
+  TimesheetReport,
+  WorkloadReport,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1666,6 +1668,24 @@ export const api = {
 
   getCompanyHome() {
     return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+  },
+
+  getTimesheet(params: { from: string; to: string; user_id?: number; project_id?: number }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to })
+    if (params.user_id) qs.set('user_id', String(params.user_id))
+    if (params.project_id) qs.set('project_id', String(params.project_id))
+    return request<TimesheetReport>(`/api/v2/reports/time?${qs}`)
+  },
+
+  downloadTimesheet(params: { from: string; to: string; user_id?: number; project_id?: number }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to, format: 'csv' })
+    if (params.user_id) qs.set('user_id', String(params.user_id))
+    if (params.project_id) qs.set('project_id', String(params.project_id))
+    return download(`/api/v2/reports/time?${qs}`, `timesheet-${params.from}-to-${params.to}.csv`)
+  },
+
+  getWorkload() {
+    return request<WorkloadReport>('/api/v2/reports/workload')
   },
 
   getAdminSettings() {

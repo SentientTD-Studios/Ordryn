@@ -153,6 +153,12 @@ const router = createRouter({
       meta: { requiresAuth: true, ownFooter: true },
     },
     {
+      path: '/reports',
+      name: 'reports',
+      component: () => import('@/views/ReportsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/views',
       name: 'views',
       component: () => import('@/views/SavedViewsView.vue'),
