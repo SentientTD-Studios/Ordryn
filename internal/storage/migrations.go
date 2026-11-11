@@ -299,6 +299,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: CreateTaskCommentsTable failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateCommentReactions(); err != nil {
+		fmt.Printf("migration: MigrateCommentReactions failed: %v\n", err)
+		errCount++
+	}
 
 	if err := CreateGitHubTables(); err != nil {
 		fmt.Printf("migration: CreateGitHubTables failed: %v\n", err)

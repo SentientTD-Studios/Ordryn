@@ -5348,6 +5348,73 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v2/tasks/{id}/comments/{commentId}/reactions/{code}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: ["+1", "-1", tada, heart, smile, eyes, rocket, check]
+    put:
+      tags: [Tasks]
+      summary: Add your reaction to a comment
+      description: Anyone who can open the task's discussion. Adding the same reaction twice does nothing.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment with `reactions` (code, count, mine, names)
+    delete:
+      tags: [Tasks]
+      summary: Remove your reaction
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment with `reactions`
+
+  /api/v2/tasks/{id}/comments/{commentId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Tasks]
+      summary: Mark a comment resolved
+      description: |
+        For answered questions. The author, anyone who can edit the task, comment
+        moderators, and admins may resolve or reopen. The comment gets `resolved_at`
+        and `resolved_by_name`; clients show resolved comments collapsed.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags: [Tasks]
+      summary: Reopen a resolved comment
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment
+
   /api/v2/tasks/{id}/comments/{commentId}/revisions:
     parameters:
       - $ref: "#/components/parameters/ID"

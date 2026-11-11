@@ -1247,6 +1247,18 @@ export const api = {
     })
   },
 
+  setCommentReaction(taskId: number, commentId: number, code: string, on: boolean) {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}/reactions/${encodeURIComponent(code)}`, {
+      method: on ? 'PUT' : 'DELETE',
+    })
+  },
+
+  setCommentResolved(taskId: number, commentId: number, resolved: boolean) {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}/resolve`, {
+      method: resolved ? 'POST' : 'DELETE',
+    })
+  },
+
   editTaskComment(taskId: number, commentId: number, body: string) {
     return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}`, {
       method: 'PATCH',

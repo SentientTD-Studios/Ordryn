@@ -5,6 +5,7 @@ import { useTaskTextLimits } from '@/utils/taskText'
 import type { TaskComment, TaskCommentRevision } from '@/api/types'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
+import CommentReactionsBar from '@/components/task/CommentReactionsBar.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useConfirm } from '@/composables/useConfirm'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
@@ -29,6 +30,8 @@ const props = defineProps<{
   projectId?: number | null
   currentUserId: number | null
   isOwner: boolean
+  /** People who can edit the task may also resolve anyone's comment. */
+  canEditTask?: boolean
   /** Grow with the parent column instead of capping the thread at 360px. */
   fillHeight?: boolean
 }>()
@@ -57,6 +60,12 @@ const historyId = ref<number | null>(null)
 const historyByComment = ref<Record<number, TaskCommentRevision[]>>({})
 const historyLoading = ref(false)
 const restoringId = ref<number | null>(null)
+// Resolved comments start collapsed; ids here were opened by the viewer.
+const expandedResolved = ref<Record<number, boolean>>({})
+function replaceComment(updated: TaskComment) {
+  const i = comments.value.findIndex((c) => c.id === updated.id)
+  if (i >= 0) comments.value[i] = { ...comments.value[i], ...updated }
+}
 const isAdmin = computed(() => hasPermission('admin'))
 
 type DraftLink = {
@@ -776,9 +785,21 @@ defineExpose({ reload, isDirty, flushUnsaved })
                 </div>
               </div>
             </div>
+            <div v-else-if="c.resolved_at && !expandedResolved[c.id]" class="task-post-body small text-muted">
+              <i class="bi bi-check2-circle text-success me-1" aria-hidden="true" />Resolved<template v-if="c.resolved_by_name">
+                by {{ c.resolved_by_name }}</template>.
+              <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="expandedResolved[c.id] = true">Show</button>
+            </div>
             <div v-else class="task-post-body">
               <RichBody :body="c.body" :task-title="(id) => linkTitle(c, id)" @open-task="openLinkedTask" />
             </div>
+            <CommentReactionsBar
+              v-if="!c.deleted && editingId !== c.id"
+              :task-id="taskId"
+              :comment="c"
+              :can-resolve="c.user_id === currentUserId || isOwner || isAdmin || !!canEditTask"
+              @updated="replaceComment"
+            />
             <div v-if="historyId === c.id" class="task-post-history">
               <p v-if="historyLoading && !historyByComment[c.id]" class="small text-muted mb-0">Loading history…</p>
               <p

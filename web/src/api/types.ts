@@ -181,6 +181,10 @@ export type TaskComment = {
   deleted_by_user_id?: number
   deleted_by_kind?: 'user' | 'owner' | string
   links?: TaskCommentLink[]
+  reactions?: CommentReaction[]
+  /** Set when someone marked the comment answered. */
+  resolved_at?: string | null
+  resolved_by_name?: string
 }
 
 export type TaskCommentRevision = {
@@ -1846,4 +1850,15 @@ export type AuditQuery = {
 export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
+}
+
+export type CommentReactionCode = '+1' | '-1' | 'tada' | 'heart' | 'smile' | 'eyes' | 'rocket' | 'check'
+
+export type CommentReaction = {
+  code: CommentReactionCode
+  count: number
+  /** You left this one. */
+  mine: boolean
+  /** Up to 10 people who left it. */
+  names: string[]
 }

@@ -37,6 +37,17 @@ type apiTaskCommentJSON struct {
 	AuthorIsAgent    bool                     `json:"author_is_agent,omitempty"`
 	AuthorIsSystem   bool                     `json:"author_is_system,omitempty"`
 	Links            []apiTaskCommentLinkJSON `json:"links,omitempty"`
+	// Reactions and resolved state come with list responses and reaction/resolve calls.
+	Reactions      []apiCommentReactionJSON `json:"reactions,omitempty"`
+	ResolvedAt     *string                  `json:"resolved_at,omitempty"`
+	ResolvedByName string                   `json:"resolved_by_name,omitempty"`
+}
+
+type apiCommentReactionJSON struct {
+	Code  string   `json:"code"`
+	Count int      `json:"count"`
+	Mine  bool     `json:"mine"`
+	Names []string `json:"names"`
 }
 
 type apiTaskCommentCreateRequest struct {
@@ -98,6 +109,18 @@ func commentToAPIJSON(c storage.TaskComment) apiTaskCommentJSON {
 		for _, l := range c.Links {
 			out.Links = append(out.Links, apiTaskCommentLinkJSON{ID: l.ID, Title: l.Title})
 		}
+	}
+	for _, r := range c.Reactions {
+		names := r.Names
+		if names == nil {
+			names = []string{}
+		}
+		out.Reactions = append(out.Reactions, apiCommentReactionJSON{Code: r.Code, Count: r.Count, Mine: r.Mine, Names: names})
+	}
+	if c.ResolvedAt != nil {
+		s := c.ResolvedAt.UTC().Format(time.RFC3339)
+		out.ResolvedAt = &s
+		out.ResolvedByName = c.ResolvedByName
 	}
 	return out
 }
@@ -236,6 +259,35 @@ func handleTaskComments(w http.ResponseWriter, r *http.Request, taskID int, rest
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(commentToAPIJSON(*c))
+		return
+	}
+
+	// PUT/DELETE .../comments/{id}/reactions/{code}
+	if len(rest) == 3 && rest[1] == "reactions" {
+		if r.Method != http.MethodPut && r.Method != http.MethodDelete {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		c, err := domain.ReactToCommentForUser(r.Context(), userID, taskID, commentID, rest[2], r.Method == http.MethodPut)
+		if err != nil {
+			writeWorkflowDomainError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, commentToAPIJSON(*c))
+		return
+	}
+	// POST/DELETE .../comments/{id}/resolve
+	if len(rest) == 2 && rest[1] == "resolve" {
+		if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		c, err := domain.ResolveCommentForUser(r.Context(), userID, taskID, commentID, r.Method == http.MethodPost)
+		if err != nil {
+			writeWorkflowDomainError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, commentToAPIJSON(*c))
 		return
 	}
 

@@ -1759,6 +1759,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
           :project-id="currentTask?.project_id ?? null"
           :current-user-id="user?.id ?? null"
           :is-owner="discussionCanModerate"
+          :can-edit-task="canEditDetails"
           :fill-height="isKanbanTask"
         />
 
