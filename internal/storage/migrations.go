@@ -555,6 +555,11 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := CreateTaskSnoozesTable(); err != nil {
+		fmt.Printf("migration: CreateTaskSnoozesTable failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

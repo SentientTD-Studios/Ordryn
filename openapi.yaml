@@ -4675,6 +4675,58 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/tasks/{id}/snooze:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Tasks]
+      summary: Snooze a task in your planner
+      description: |
+        Hides the task from your planner's Today sections until `until` (a day after today in your
+        timezone, at most a year ahead). Snoozes are private to you and don't change the task.
+        Any task you can see can be snoozed. Snoozing again replaces the day.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [until]
+              properties:
+                until:
+                  type: string
+                  format: date
+      responses:
+        "200":
+          description: Snoozed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snoozed_until:
+                    type: string
+                    format: date
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Clear your snooze on a task
+      description: Wakes a snoozed task now, or dismisses one that came back from a snooze. Succeeds when there is no snooze.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Cleared
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/tasks/{id}/claim:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -7313,6 +7365,40 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/v2/planner:
+    get:
+      tags: [Tasks]
+      summary: Today / Upcoming planner
+      description: |
+        The caller's open tasks, grouped for a daily plan. "Your" tasks are the same set as the home
+        list: personal tasks, classic project tasks you can edit, and kanban tasks you claimed.
+        Dates use the caller's timezone. Sections: `overdue` (due before today), `due_today`,
+        `woken` (a snooze ran out; the task stays here until completed or the snooze is cleared),
+        `upcoming` (due within `days`, grouped by day), and `snoozed` (hidden until `snoozed_until`).
+        A snoozed task is only in `snoozed` until its day, even when overdue. At most 500 tasks.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          description: How many days ahead Upcoming covers (1-60, default 14).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      responses:
+        "200":
+          description: Planner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Planner"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/v2/dashboard:
     get:
@@ -11518,6 +11604,48 @@ components:
         options:
           type: object
           description: "`{ publicKey: … }` WebAuthn options with base64url-encoded binary fields."
+
+    PlannerTask:
+      allOf:
+        - $ref: "#/components/schemas/Task"
+        - type: object
+          properties:
+            snoozed_until:
+              type: string
+              format: date
+              description: Your snooze day, when set.
+
+    Planner:
+      type: object
+      required: [today, days, overdue, due_today, woken, upcoming, snoozed]
+      properties:
+        today:
+          type: string
+          format: date
+        days:
+          type: integer
+        overdue:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        due_today:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        woken:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        upcoming:
+          type: array
+          items:
+            type: object
+            required: [date, tasks]
+            properties:
+              date: { type: string, format: date }
+              tasks:
+                type: array
+                items: { $ref: "#/components/schemas/PlannerTask" }
+        snoozed:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
 
     Task:
       type: object

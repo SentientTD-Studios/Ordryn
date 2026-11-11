@@ -45,6 +45,7 @@ import type {
   DashboardStats,
   ProjectInsights,
   ProjectTimeline,
+  Planner,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -1353,6 +1354,21 @@ export const api = {
 
   clearTaskReviewer(taskId: number) {
     return request<Task>(`/api/v2/tasks/${taskId}/reviewer`, { method: 'DELETE' })
+  },
+
+  planner(days = 14) {
+    return request<Planner>(`/api/v2/planner?days=${days}`)
+  },
+
+  snoozeTask(taskId: number, until: string) {
+    return request<{ snoozed_until: string }>(`/api/v2/tasks/${taskId}/snooze`, {
+      method: 'PUT',
+      body: JSON.stringify({ until }),
+    })
+  },
+
+  unsnoozeTask(taskId: number) {
+    return request<void>(`/api/v2/tasks/${taskId}/snooze`, { method: 'DELETE' })
   },
 
   listNotifications(params: { page?: number; per_page?: number; unread?: boolean } = {}) {

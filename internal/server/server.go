@@ -205,6 +205,7 @@ func registerAPIV1Routes() {
 	handleAPI("/trash", v1(handlers.APIV1TrashRouter))
 	handleAPI("/trash/", v1(handlers.APIV1TrashRouter))
 	handleAPI("/dashboard", v1(handlers.APIV1Dashboard))
+	handleAPI("/planner", v1(handlers.APIV1Planner))
 	handleAPI("/events", v1(handlers.APIV1Events))
 	handleAPI("/agent", v1(handlers.APIV1AgentRouter))
 	handleAPI("/agent/", v1(handlers.APIV1AgentRouter))

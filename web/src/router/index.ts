@@ -171,6 +171,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/planner',
+      name: 'planner',
+      component: () => import('@/views/PlannerView.vue'),
+      meta: { requiresAuth: true, ownFooter: true },
+    },
+    {
       path: '/calendar',
       name: 'calendar',
       component: () => import('@/views/CalendarView.vue'),
