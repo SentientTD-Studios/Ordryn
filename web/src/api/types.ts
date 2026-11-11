@@ -1847,3 +1847,21 @@ export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
 }
+
+/** A project people can start new projects from. */
+export type ProjectTemplate = {
+  id: number
+  name: string
+  description: string
+  workflow_mode: string
+  open_tasks: number
+}
+
+export type FromTemplateResult = {
+  project_id: number
+  name: string
+  tasks_copied: number
+  rules_copied: number
+  rules_skipped: number
+  warnings: string[]
+}

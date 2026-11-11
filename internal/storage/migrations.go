@@ -207,6 +207,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateProjectsAddArchived failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateProjectsAddIsTemplate(); err != nil {
+		fmt.Printf("migration: MigrateProjectsAddIsTemplate failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateProjectsAddBacklogName(); err != nil {
 		fmt.Printf("migration: MigrateProjectsAddBacklogName failed: %v\n", err)
 		errCount++

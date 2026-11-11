@@ -214,6 +214,8 @@ func registerAPIV1Routes() {
 	handleAPI("/admin/settings", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminSettings))
 	handleAPI("/admin/image-hosting/test", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminImageHostingTest))
 	handleAPI("/company-home", v1(handlers.APIV1CompanyHome))
+	handleAPI("/project-templates", v1(handlers.APIV1ProjectTemplatesRouter))
+	handleAPI("/project-templates/", v1(handlers.APIV1ProjectTemplatesRouter))
 	handleAPI("/people", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/people/", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/admin/users", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))

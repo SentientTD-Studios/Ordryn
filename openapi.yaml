@@ -7605,6 +7605,133 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/project-templates:
+    get:
+      tags: [Projects]
+      summary: List project templates you can start from
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        workflow_mode:
+                          type: string
+                        open_tasks:
+                          type: integer
+
+  /api/v2/project-templates/{id}/projects:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Projects]
+      summary: Create a project from a template
+      description: |
+        Creates a project you own with the template's workflow mode, board columns
+        (done/default flags, descriptions, WIP limits, status gates, order), project
+        roles, project tags, sprint settings, and automation rules. Rules that name a
+        specific sprint, person, or agent are skipped (`rules_skipped`). With
+        `include_tasks`, open tasks and their open subtasks are copied with priority,
+        estimate, column, and tags. Members, comments, and history are not copied.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                include_tasks:
+                  type: boolean
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_id:
+                    type: integer
+                  name:
+                    type: string
+                  tasks_copied:
+                    type: integer
+                  rules_copied:
+                    type: integer
+                  rules_skipped:
+                    type: integer
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/template:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Whether the project is a template
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Flag
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_template:
+                    type: boolean
+    put:
+      tags: [Projects]
+      summary: Mark or unmark the project as a template
+      description: Needs Manage project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_template:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/admin/users:
     get:
       tags: [Admin]

@@ -2,6 +2,8 @@ import { withBase } from '@/base'
 import type {
   AdminSettings,
   AdminSettingsPatch,
+  FromTemplateResult,
+  ProjectTemplate,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1666,6 +1668,28 @@ export const api = {
 
   getCompanyHome() {
     return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+  },
+
+  listProjectTemplates() {
+    return request<{ templates: ProjectTemplate[] }>('/api/v2/project-templates')
+  },
+
+  createProjectFromTemplate(templateId: number, payload: { name: string; description?: string; include_tasks: boolean }) {
+    return request<FromTemplateResult>(`/api/v2/project-templates/${templateId}/projects`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getProjectTemplateFlag(projectId: number) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`)
+  },
+
+  setProjectTemplateFlag(projectId: number, isTemplate: boolean) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_template: isTemplate }),
+    })
   },
 
   getAdminSettings() {
