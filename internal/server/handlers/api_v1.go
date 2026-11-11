@@ -46,6 +46,8 @@ type apiTaskJSON struct {
 	ProjectWorkflow   string             `json:"project_workflow,omitempty"`
 	ClaimedBy         *int               `json:"claimed_by"`
 	ClaimedByName     string             `json:"claimed_by_name,omitempty"`
+	ReviewerID        *int               `json:"reviewer_id"`
+	ReviewerName      string             `json:"reviewer_name,omitempty"`
 	SprintID          *int               `json:"sprint_id,omitempty"`
 	SprintName        string             `json:"sprint_name,omitempty"`
 	ParentTitle       string             `json:"parent_title,omitempty"`
@@ -351,6 +353,11 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 		cid := t.ClaimedBy
 		out.ClaimedBy = &cid
 	}
+	if t.ReviewerID > 0 {
+		rid := t.ReviewerID
+		out.ReviewerID = &rid
+		out.ReviewerName = t.ReviewerName
+	}
 	if t.SprintID > 0 {
 		sid := t.SprintID
 		out.SprintID = &sid
@@ -483,6 +490,13 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			apiV1TaskClaim(w, r, id)
+			return
+		case "reviewer":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskReviewer(w, r, id)
 			return
 		case "archive":
 			if len(parts) != 2 || r.Method != http.MethodPost {

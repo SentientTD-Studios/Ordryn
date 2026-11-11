@@ -6,6 +6,7 @@ import { useTaskTextLimits } from '@/utils/taskText'
 import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskRecurrenceDetail } from '@/api/types'
 import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
+import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import TaskDiscussion from '@/components/TaskDiscussion.vue'
 import TaskSidebarFields from '@/components/TaskSidebarFields.vue'
@@ -133,6 +134,10 @@ const estimatePoints = ref<number | ''>('')
 const claimedBy = ref<number | null>(null)
 const claimedByName = ref('')
 const claiming = ref(false)
+const reviewerId = ref<number | null>(null)
+const reviewerName = ref('')
+const reviewerDraft = ref('')
+const reviewerBusy = ref(false)
 const activityLog = ref<InstanceType<typeof TaskActivityLog> | null>(null)
 const saveTemplateOpen = ref(false)
 const customFieldValues = ref<Record<string, unknown>>({})
@@ -279,6 +284,17 @@ const claimerLabel = computed(() => {
   if (user.value?.id && claimedBy.value === user.value.id) return 'You'
   return claimedByName.value || `User #${claimedBy.value}`
 })
+// Reviewer applies to saved project tasks (classic or kanban).
+const reviewerProjectId = computed(() => currentTask.value?.project_id ?? 0)
+const showReviewer = computed(
+  () => (mode.value === 'edit' || mode.value === 'view') && !!taskId.value && reviewerProjectId.value > 0,
+)
+const isMyReview = computed(() => !!user.value?.id && reviewerId.value === user.value.id)
+const reviewerLabel = computed(() => {
+  if (!reviewerId.value) return 'No reviewer'
+  if (isMyReview.value) return 'You'
+  return reviewerName.value || `User #${reviewerId.value}`
+})
 
 function taskInSelectedProject(t: Task): boolean {
   if (projectId.value === '') return t.project_id == null || t.project_id === 0
@@ -416,6 +432,9 @@ function resetForm() {
   estimatePoints.value = ''
   claimedBy.value = null
   claimedByName.value = ''
+  reviewerId.value = null
+  reviewerName.value = ''
+  reviewerDraft.value = ''
   statuses.value = []
   sprints.value = []
   taskWorkflow.value = ''
@@ -557,6 +576,8 @@ async function loadTask(id: number) {
   estimatePoints.value = task.estimate_points ?? ''
   claimedBy.value = task.claimed_by ?? null
   claimedByName.value = task.claimed_by_name || ''
+  applyReviewer(task)
+  reviewerDraft.value = ''
   taskWorkflow.value = task.project_workflow || ''
   customFieldValues.value = { ...(task.fields || {}) }
   recurrenceDraft.value = draftFromRecurrence(task.recurrence)
@@ -1161,6 +1182,43 @@ async function unclaimCurrentTask() {
   }
 }
 
+function applyReviewer(task: Task) {
+  reviewerId.value = task.reviewer_id ?? null
+  reviewerName.value = task.reviewer_name || ''
+}
+
+async function setReviewer() {
+  const name = reviewerDraft.value.trim().replace(/^@/, '')
+  if (!taskId.value || !name || !canEditDetails.value) return
+  reviewerBusy.value = true
+  try {
+    const task = await api.setTaskReviewer(taskId.value, name)
+    applyReviewer(task)
+    reviewerDraft.value = ''
+    toast.push('Reviewer set', 'success')
+    notifySaved(task, false)
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not set reviewer', 'error')
+  } finally {
+    reviewerBusy.value = false
+  }
+}
+
+async function clearReviewer() {
+  if (!taskId.value || !(canEditDetails.value || isMyReview.value)) return
+  reviewerBusy.value = true
+  try {
+    const task = await api.clearTaskReviewer(taskId.value)
+    applyReviewer(task)
+    toast.push('Reviewer removed', 'success')
+    notifySaved(task, false)
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not remove reviewer', 'error')
+  } finally {
+    reviewerBusy.value = false
+  }
+}
+
 async function archiveCurrentTask() {
   if (!taskId.value || !canArchiveTask.value || !currentTask.value) return
   const ok = await askConfirm({
@@ -1589,6 +1647,38 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
               <i class="bi bi-person me-1" />{{ claimerLabel }}
             </span>
           </div>
+        </div>
+        <div v-if="showReviewer" class="form-group mt-2 kanban-order-claim task-reviewer">
+          <label class="d-block" for="task-reviewer-input">Reviewer</label>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge border" :class="reviewerId ? 'text-bg-info' : 'text-bg-light text-muted'">
+              <i class="bi bi-eye me-1" />{{ reviewerLabel }}
+            </span>
+            <button
+              v-if="reviewerId && (canEditDetails || isMyReview)"
+              type="button"
+              class="btn btn-sm btn-link p-0"
+              :disabled="reviewerBusy"
+              @click="clearReviewer"
+            >
+              {{ isMyReview && !canEditDetails ? 'Step down' : 'Remove' }}
+            </button>
+          </div>
+          <form v-if="canEditDetails" class="d-flex gap-2 mt-1" @submit.prevent="setReviewer">
+            <UserSearchCombobox
+              v-model="reviewerDraft"
+              input-id="task-reviewer-input"
+              :project-id="reviewerProjectId"
+              :disabled="reviewerBusy"
+            />
+            <button
+              type="submit"
+              class="btn btn-sm btn-outline-primary text-nowrap"
+              :disabled="reviewerBusy || !reviewerDraft.trim()"
+            >
+              {{ reviewerId ? 'Change' : 'Ask' }}
+            </button>
+          </form>
         </div>
         <div v-if="isKanbanTask" class="form-group mt-2 kanban-order-estimate">
           <label for="estimate_points">Estimate (points):</label>

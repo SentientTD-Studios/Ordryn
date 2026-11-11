@@ -342,6 +342,48 @@ func apiV1TaskClaim(w http.ResponseWriter, r *http.Request, taskID int) {
 	_ = json.NewEncoder(w).Encode(taskToAPIJSON(task))
 }
 
+type apiTaskReviewerRequest struct {
+	UserID   int    `json:"user_id"`
+	UserName string `json:"user_name"`
+}
+
+// apiV1TaskReviewer handles PUT/DELETE /api/v2/tasks/{id}/reviewer.
+func apiV1TaskReviewer(w http.ResponseWriter, r *http.Request, taskID int) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var req apiTaskReviewerRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+			return
+		}
+		if err := domain.SetTaskReviewerForUser(r.Context(), userID, taskID, req.UserID, req.UserName); err != nil {
+			writeWorkflowDomainError(w, err)
+			return
+		}
+	case http.MethodDelete:
+		if err := domain.ClearTaskReviewerForUser(r.Context(), userID, taskID); err != nil {
+			writeWorkflowDomainError(w, err)
+			return
+		}
+	default:
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	tz := GetUserTimezoneByID(userID)
+	task, err := tasks.FetchTaskByIDForUser(taskID, userID, tz, 1)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load task.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(taskToAPIJSON(task))
+}
+
 func handleTaskTimeEntries(w http.ResponseWriter, r *http.Request, taskID int, rest []string) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {

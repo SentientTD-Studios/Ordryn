@@ -186,6 +186,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "claimed_by: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateTasksAddReviewer(); err != nil {
+		fmt.Fprintf(os.Stderr, "reviewer_id: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateProjectSprintsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "sprints: %v\n", err)
 		os.Exit(1)

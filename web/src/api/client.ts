@@ -1273,6 +1273,17 @@ export const api = {
     return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'DELETE' })
   },
 
+  setTaskReviewer(taskId: number, userName: string) {
+    return request<Task>(`/api/v2/tasks/${taskId}/reviewer`, {
+      method: 'PUT',
+      body: JSON.stringify({ user_name: userName }),
+    })
+  },
+
+  clearTaskReviewer(taskId: number) {
+    return request<Task>(`/api/v2/tasks/${taskId}/reviewer`, { method: 'DELETE' })
+  },
+
   listNotifications(params: { page?: number; per_page?: number; unread?: boolean } = {}) {
     const qs = new URLSearchParams()
     if (params.page) qs.set('page', String(params.page))

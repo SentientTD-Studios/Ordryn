@@ -43,6 +43,8 @@ type Task struct {
 	ProjectWorkflow     string
 	ClaimedBy           int
 	ClaimedByName       string
+	ReviewerID          int
+	ReviewerName        string
 	SprintID            int
 	SprintName          string
 	GitHubIssueNumber   int
