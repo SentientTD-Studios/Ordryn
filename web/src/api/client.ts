@@ -370,6 +370,18 @@ export const api = {
     })
   },
 
+  createLocalAgentKey(payload: {
+    name: string
+    scopes: string[]
+    project_id: number | null
+    expires_at: string | null
+  }) {
+    return request<APIKey & { key: string }>('/api/v2/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ kind: 'local_agent', ...payload }),
+    })
+  },
+
   renameAPIKey(id: number, name: string) {
     return request<APIKey>(`/api/v2/api-keys/${id}`, {
       method: 'PATCH',

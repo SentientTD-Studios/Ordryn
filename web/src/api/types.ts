@@ -1438,6 +1438,13 @@ export type APIKey = {
   key_prefix: string
   created_at: string
   last_used_at?: string | null
+  /** "standard" keys act with your full access; "local_agent" keys are limited to tasks. */
+  kind: 'standard' | 'local_agent'
+  scopes: string[]
+  project_id: number | null
+  project_name?: string
+  expires_at: string | null
+  expired: boolean
 }
 
 export type ProjectAPIKey = {
