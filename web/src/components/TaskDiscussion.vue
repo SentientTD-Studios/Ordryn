@@ -75,10 +75,19 @@ const mentionOpen = ref(false)
 const mentionToken = ref<MentionToken | null>(null)
 const mentionMenuStyle = ref<Record<string, string>>({})
 
-const { filtered: mentionHits, loading: mentionLoading, highlight: mentionHighlight, scheduleSearch, cancelPending, applyLocal, cachedNames } =
-  useUserSearch({
-    projectId: () => props.projectId,
-  })
+const {
+  filtered: mentionHits,
+  loading: mentionLoading,
+  highlight: mentionHighlight,
+  scheduleSearch,
+  cancelPending,
+  applyLocal,
+  cachedNames,
+  isTeam: isTeamMention,
+} = useUserSearch({
+  projectId: () => props.projectId,
+  includeTeams: true,
+})
 
 const showMentionMenu = computed(
   () =>
@@ -828,7 +837,7 @@ defineExpose({ reload, isDirty, flushUnsaved })
       :rows="3"
       :maxlength="MAX_BODY"
       :task-title="linkTitleById"
-      placeholder="Write a comment… Format with markdown, click 'Upload image' or paste/drop, type @ to mention a member, or paste #123 to link a task."
+      placeholder="Write a comment… Format with markdown, click 'Upload image' or paste/drop, type @ to mention a member or team, or paste #123 to link a task."
       @input="onDraftInput"
       @keydown="onDraftKeydown"
       @paste="onDraftPaste"
@@ -858,7 +867,11 @@ defineExpose({ reload, isDirty, flushUnsaved })
           @mousedown.prevent
           @click="selectMention(name)"
         >
-          {{ name }}
+          <template v-if="isTeamMention(name)">
+            <i class="bi bi-people me-1" aria-hidden="true"></i>{{ name }}
+            <span class="badge text-bg-secondary ms-1">Team</span>
+          </template>
+          <template v-else>{{ name }}</template>
         </li>
         <li
           v-if="mentionLoading && !mentionHits.length"
@@ -872,7 +885,7 @@ defineExpose({ reload, isDirty, flushUnsaved })
           class="user-search-option text-muted"
           aria-disabled="true"
         >
-          No matching project members
+          No matching project members or teams
         </li>
       </ul>
     </Teleport>

@@ -58,6 +58,8 @@ export function isVerificationPending(value: User | VerificationPending): value 
 
 export type UserSearchHit = {
   user_name: string
+  /** A team handle (only with includeTeams): mentioning it notifies the team's project members. */
+  is_team?: boolean
 }
 
 export type Tag = {

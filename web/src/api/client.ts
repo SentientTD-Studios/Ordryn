@@ -1332,10 +1332,13 @@ export const api = {
     return request<ProjectInvite[]>(`/api/v2/projects/${projectId}/invites`)
   },
 
-  searchUsers(q: string, init: RequestInit & { projectId?: number } = {}) {
-    const { projectId, ...rest } = init
+  searchUsers(q: string, init: RequestInit & { projectId?: number; includeTeams?: boolean } = {}) {
+    const { projectId, includeTeams, ...rest } = init
     const qs = new URLSearchParams({ q })
-    if (projectId && projectId > 0) qs.set('project_id', String(projectId))
+    if (projectId && projectId > 0) {
+      qs.set('project_id', String(projectId))
+      if (includeTeams) qs.set('include_teams', '1')
+    }
     return request<UserSearchHit[]>(`/api/v2/users/search?${qs}`, rest)
   },
 

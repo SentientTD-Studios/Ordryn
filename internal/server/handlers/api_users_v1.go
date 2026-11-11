@@ -13,6 +13,9 @@ import (
 
 type apiUserSearchHitJSON struct {
 	UserName string `json:"user_name"`
+	// IsTeam marks a team handle (only with include_teams=1): mentioning it
+	// notifies the team's members on the project.
+	IsTeam bool `json:"is_team,omitempty"`
 }
 
 // APIV1UsersSearch handles GET /api/v2/users/search?q=&project_id=
@@ -52,6 +55,11 @@ func APIV1UsersSearch(w http.ResponseWriter, r *http.Request) {
 	out := make([]apiUserSearchHitJSON, 0, len(names))
 	for _, name := range names {
 		out = append(out, apiUserSearchHitJSON{UserName: name})
+	}
+	if projectID > 0 && r.URL.Query().Get("include_teams") == "1" {
+		for _, h := range domain.TeamHandlesForMention(projectID, q, 5) {
+			out = append(out, apiUserSearchHitJSON{UserName: h, IsTeam: true})
+		}
 	}
 	_ = json.NewEncoder(w).Encode(out)
 }
