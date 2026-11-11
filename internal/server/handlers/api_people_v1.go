@@ -110,6 +110,10 @@ func APIV1PeopleRouter(w http.ResponseWriter, r *http.Request) {
 		apiV1PersonGuest(w, r, actorID, parts[0])
 		return
 	}
+	if len(parts) == 2 && (parts[1] == "offboarding" || parts[1] == "offboard") {
+		apiV1PersonOffboard(w, r, actorID, parts[0], parts[1] == "offboard")
+		return
+	}
 	if len(parts) != 2 || (parts[1] != "deactivate" && parts[1] != "reactivate") {
 		utils.APIJSONError(w, http.StatusNotFound, "not_found", "Unknown action.")
 		return
@@ -345,4 +349,58 @@ func apiV1PersonGuest(w http.ResponseWriter, r *http.Request, actorID int, rawID
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true, "guest": *req.Guest})
+}
+
+type apiOffboardRequest struct {
+	SuccessorID      int    `json:"successor_id"`
+	Claims           string `json:"claims"`
+	TransferProjects bool   `json:"transfer_projects"`
+	RevokeKeys       bool   `json:"revoke_keys"`
+}
+
+// apiV1PersonOffboard handles GET /people/{id}/offboarding (what they hold) and
+// POST /people/{id}/offboard (deactivate and hand off their work).
+func apiV1PersonOffboard(w http.ResponseWriter, r *http.Request, actorID int, rawID string, act bool) {
+	targetID, err := strconv.Atoi(rawID)
+	if err != nil || targetID <= 0 {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid user id.")
+		return
+	}
+	if !act {
+		if r.Method != http.MethodGet {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		s, err := domain.OffboardingPreviewForUser(r.Context(), actorID, targetID)
+		if err != nil {
+			writePeopleDomainError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"claimed_tasks": len(s.ClaimedTaskIDs), "owned_projects": len(s.OwnedProjectIDs),
+			"personal_keys": s.PersonalKeys, "project_keys": s.ProjectKeys, "agents_created": s.AgentsCreated,
+		})
+		return
+	}
+	if r.Method != http.MethodPost {
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	var req apiOffboardRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+		return
+	}
+	res, err := domain.OffboardAccountForUser(r.Context(), actorID, targetID, domain.OffboardInput{
+		SuccessorID: req.SuccessorID, Claims: req.Claims, TransferProjects: req.TransferProjects, RevokeKeys: req.RevokeKeys,
+	})
+	if err != nil {
+		writePeopleDomainError(w, err)
+		return
+	}
+	logAdminEvent(r, "user_offboarded", "user", int64(targetID), storage.UserAuditLabel(targetID), map[string]interface{}{
+		"successor_id": req.SuccessorID, "claims_reassigned": res.ClaimsReassigned, "claims_released": res.ClaimsReleased,
+		"projects_transferred": res.ProjectsTransferred, "keys_revoked": res.KeysRevoked,
+	})
+	writeJSON(w, http.StatusOK, res)
 }

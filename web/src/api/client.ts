@@ -3,6 +3,9 @@ import type {
   AdminSettings,
   GuestPolicy,
   AdminSettingsPatch,
+  OffboardInput,
+  OffboardingPreview,
+  OffboardResult,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -1752,6 +1755,14 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(names),
     })
+  },
+
+  getOffboardingPreview(id: number) {
+    return request<OffboardingPreview>(`/api/v2/people/${id}/offboarding`)
+  },
+
+  offboardPerson(id: number, payload: OffboardInput) {
+    return request<OffboardResult>(`/api/v2/people/${id}/offboard`, { method: 'POST', body: JSON.stringify(payload) })
   },
 
   setPersonActive(id: number, active: boolean) {
