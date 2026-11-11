@@ -427,6 +427,55 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /api/v2/auth/passkey/begin:
+    post:
+      tags: [Auth]
+      summary: Start signing in with a passkey
+      description: |
+        No email needed: the authenticator offers the passkeys it holds for this site. Returns
+        `options` for `navigator.credentials.get()` and a `token` (valid 5 minutes, usable once).
+      responses:
+        "200":
+          description: Ceremony started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremony"
+
+  /api/v2/auth/passkey/finish:
+    post:
+      tags: [Auth]
+      summary: Finish signing in with a passkey
+      description: |
+        Verifies the assertion and starts a session. A passkey needs the device's PIN or
+        biometric, so it counts as two-factor: there is no separate MFA step, and the security
+        policy's two-factor requirement is met for this session. The same account checks as
+        password sign-in apply (deactivated, single-sign-on-only, unconfirmed email). Any
+        verification failure returns the same 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, credential]
+              properties:
+                token: { type: string }
+                credential:
+                  type: object
+                  description: The assertion response, with binary fields base64url-encoded.
+      responses:
+        "200":
+          description: Signed in; the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/auth/mfa/verify:
     post:
       tags: [Auth]
@@ -809,6 +858,124 @@ paths:
           $ref: "#/components/responses/APIError"
         "409":
           $ref: "#/components/responses/APIError"
+
+  /api/v2/me/passkeys:
+    get:
+      tags: [Profile]
+      summary: List your passkeys
+      description: Browser sessions only; API keys get 403.
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Passkeys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Passkey"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/me/passkeys/register/begin:
+    post:
+      tags: [Profile]
+      summary: Start adding a passkey
+      description: |
+        Needs your current password, unless this session signed in through single sign-on (those
+        accounts may have no password). Returns `options` to pass to
+        `navigator.credentials.create()` (base64url fields) and a `token` for the finish call,
+        valid for 5 minutes. Passkeys are discoverable credentials with user verification
+        required. The relying party ID is the host of `PUBLIC_URL` (or of the request when it's
+        unset). At most 20 passkeys per account. Allowed while the security policy is waiting for
+        you to set up two-factor authentication.
+      security:
+        - SessionCookie: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string }
+      responses:
+        "200":
+          description: Ceremony started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremony"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/me/passkeys/register/finish:
+    post:
+      tags: [Profile]
+      summary: Finish adding a passkey
+      description: Send the `token` and the authenticator's response (`PublicKeyCredential` as JSON). Each token works once.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, credential]
+              properties:
+                token: { type: string }
+                name:
+                  type: string
+                  maxLength: 60
+                  description: Label such as "Work laptop"; defaults to "Passkey".
+                credential:
+                  type: object
+                  description: The registration response, with binary fields base64url-encoded.
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Passkey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/me/passkeys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Profile]
+      summary: Rename a passkey
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+      responses:
+        "204":
+          description: Renamed
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Profile]
+      summary: Remove a passkey
+      description: It can no longer be used to sign in. (Also remove it from your device or password manager.)
+      security:
+        - SessionCookie: []
+      responses:
+        "204":
+          description: Removed
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v2/me/avatar:
     post:
@@ -10741,6 +10908,23 @@ components:
         name:
           type: string
           maxLength: 50
+
+    Passkey:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+
+    PasskeyCeremony:
+      type: object
+      required: [token, options]
+      properties:
+        token: { type: string }
+        options:
+          type: object
+          description: "`{ publicKey: … }` WebAuthn options with base64url-encoded binary fields."
 
     Task:
       type: object

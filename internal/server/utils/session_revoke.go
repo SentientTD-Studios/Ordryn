@@ -36,6 +36,10 @@ const (
 // provider handled the second factor, so the local MFA requirement doesn't apply.
 const AuthMethodSSO = "sso"
 
+// AuthMethodPasskey marks sessions started with a passkey. The authenticator checked
+// the person's PIN or biometric, so the local MFA requirement doesn't apply either.
+const AuthMethodPasskey = "passkey"
+
 // lastSeenRefresh limits how often an active session's cookie is rewritten.
 const lastSeenRefresh = time.Minute
 
@@ -77,6 +81,20 @@ func SessionSignedInWithSSO(r *http.Request) bool {
 		return false
 	}
 	return SessionStringValue(sess, SessionAuthMethodKey) == AuthMethodSSO
+}
+
+// SessionSignedInWithPasskey reports whether this session started with a passkey.
+func SessionSignedInWithPasskey(r *http.Request) bool {
+	sess, err := sessionstore.Store.Get(r, "session")
+	if err != nil || sess == nil {
+		return false
+	}
+	return SessionStringValue(sess, SessionAuthMethodKey) == AuthMethodPasskey
+}
+
+// ExtractBearerTokenForHandlers returns the request's API key, or "" for a cookie session.
+func ExtractBearerTokenForHandlers(r *http.Request) string {
+	return extractBearerToken(r)
 }
 
 // NewSessionID returns a random id for a new sign-in.
@@ -178,7 +196,7 @@ func activeSessionUserID(w http.ResponseWriter, r *http.Request) *int {
 
 // mfaEnrollmentPaths stay open to people the policy requires to set up MFA, so
 // they can load their profile and enroll.
-var mfaEnrollmentPaths = []string{"/me", "/me/mfa", "/me/mfa/setup", "/me/mfa/enable", "/me/mfa/recovery-codes"}
+var mfaEnrollmentPaths = []string{"/me", "/me/mfa", "/me/mfa/setup", "/me/mfa/enable", "/me/mfa/recovery-codes", "/me/passkeys", "/me/passkeys/register/begin", "/me/passkeys/register/finish"}
 
 // apiPathSuffix is the path after /api/v2 or /api/v1 (and BASE_PATH), e.g. "/me/mfa".
 func apiPathSuffix(r *http.Request) string {
@@ -201,7 +219,7 @@ func mfaEnrollmentBlocks(w http.ResponseWriter, r *http.Request, uid int) bool {
 	if storage.GetSecurityPolicy().RequireMFA == storage.MFARequireOff {
 		return false
 	}
-	if slices.Contains(mfaEnrollmentPaths, apiPathSuffix(r)) || SessionSignedInWithSSO(r) {
+	if slices.Contains(mfaEnrollmentPaths, apiPathSuffix(r)) || SessionSignedInWithSSO(r) || SessionSignedInWithPasskey(r) {
 		return false
 	}
 	if !storage.MFAEnrollmentRequired(uid) {

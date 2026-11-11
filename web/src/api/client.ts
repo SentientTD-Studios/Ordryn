@@ -1,6 +1,8 @@
 import { withBase } from '@/base'
 import type {
   AdminSettings,
+  Passkey,
+  PasskeyCeremony,
   AdminSettingsPatch,
   AdminSSOPatch,
   AdminSecurityPolicy,
@@ -262,6 +264,43 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
+  },
+
+  passkeyLoginBegin() {
+    return request<PasskeyCeremony>('/api/v2/auth/passkey/begin', { method: 'POST' })
+  },
+
+  passkeyLoginFinish(token: string, credential: unknown) {
+    return request<User>('/api/v2/auth/passkey/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, credential }),
+    })
+  },
+
+  listPasskeys() {
+    return request<Passkey[]>('/api/v2/me/passkeys')
+  },
+
+  passkeyRegisterBegin(password: string) {
+    return request<PasskeyCeremony>('/api/v2/me/passkeys/register/begin', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+  },
+
+  passkeyRegisterFinish(token: string, name: string, credential: unknown) {
+    return request<Passkey>('/api/v2/me/passkeys/register/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, name, credential }),
+    })
+  },
+
+  renamePasskey(id: number, name: string) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+  },
+
+  deletePasskey(id: number) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'DELETE' })
   },
 
   getMFA() {

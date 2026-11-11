@@ -519,6 +519,11 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	if err := CreatePasskeyTables(); err != nil {
+		fmt.Printf("migration: CreatePasskeyTables failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

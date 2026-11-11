@@ -1893,3 +1893,17 @@ export type AdminSecurityPolicy = {
 }
 
 export type AdminSecurityPolicyPatch = Partial<Omit<AdminSecurityPolicy, 'default_session_hours'>>
+
+export type Passkey = {
+  id: number
+  name: string
+  created_at: string
+  last_used_at: string | null
+}
+
+/** A started passkey registration or sign-in: WebAuthn options plus the finish token. */
+export type PasskeyCeremony = {
+  token: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options: any
+}
