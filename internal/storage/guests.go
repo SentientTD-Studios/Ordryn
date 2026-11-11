@@ -237,19 +237,47 @@ func SearchCoMembersByUsernamePrefix(userID int, q string, limit int) ([]string,
 // Project permissions are separate and always allowed.
 var guestAllowedSitePerms = map[string]bool{SitePermProjectsCreate: true}
 
+// guestIgnoredSitePerms don't stop a role from being given to guests; guests
+// just never get them. Every site role gains the AI agent permissions on
+// upgrade, and guests never use agents.
+var guestIgnoredSitePerms = map[string]bool{SitePermAgentsLocal: true, SitePermAgentsProject: true}
+
+func isSitePerm(p string) bool {
+	if p == SitePermAdmin {
+		return true
+	}
+	for _, c := range sitePermCatalog {
+		if c.ID == p {
+			return true
+		}
+	}
+	for _, c := range companySitePermCatalog {
+		if c.ID == p {
+			return true
+		}
+	}
+	return false
+}
+
 // GuestBlockedPerms returns the permissions in perms a guest's role may not
-// hold: admin and every site permission except creating projects.
+// hold: admin and every site permission except creating projects (and the
+// ignored agent permissions).
 func GuestBlockedPerms(perms []string) []string {
-	site := map[string]bool{SitePermAdmin: true}
-	for _, p := range sitePermCatalog {
-		site[p.ID] = true
-	}
-	for _, p := range companySitePermCatalog {
-		site[p.ID] = true
-	}
 	var out []string
 	for _, p := range perms {
-		if site[p] && !guestAllowedSitePerms[p] {
+		if isSitePerm(p) && !guestAllowedSitePerms[p] && !guestIgnoredSitePerms[p] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// GuestEffectivePerms is perms without the site permissions a guest never has,
+// so the UI doesn't offer what the server would refuse.
+func GuestEffectivePerms(perms []string) []string {
+	out := []string{}
+	for _, p := range perms {
+		if !isSitePerm(p) || guestAllowedSitePerms[p] {
 			out = append(out, p)
 		}
 	}

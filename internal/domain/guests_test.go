@@ -66,6 +66,16 @@ func TestGuestAccounts(t *testing.T) {
 	if !storage.IsGuestUser(gus) {
 		t.Fatal("expected a guest")
 	}
+	// Guests get the default role even though it carries the AI agent
+	// permissions; they just never hold them.
+	for _, perm := range storage.AgentSitePerms {
+		if storage.UserHasSitePermission(gus, perm) {
+			t.Fatalf("guest holds %s", perm)
+		}
+	}
+	if prof, err := storage.GetUserProfileByID(gus); err != nil || slices.Contains(prof.Permissions, storage.SitePermAgentsLocal) {
+		t.Fatalf("guest profile permissions: %v err=%v", prof.Permissions, err)
+	}
 	companyID, _ := storage.CompanyOrganizationID()
 	if r, _ := storage.GetOrganizationRole(companyID, gus); r != "" {
 		t.Fatal("guests must not be in the company")
