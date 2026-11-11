@@ -34,6 +34,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Project and organization **roles** built from a permission catalog. Owner is the only built-in role; everything else is created by each organization or project (see [Roles](#roles))
 - Offboarding: deactivating someone shows what they still hold and can hand their claimed tasks and projects to a successor and revoke their API keys in one step
 - Admin panel: site settings, user management, global announcements, configurable image hosting (S3-compatible or local uploads)
+- Prometheus metrics at `/metrics` (set `METRICS_TOKEN`; scrape with `Authorization: Bearer <token>`): request counts and latency per API route, live-update streams, hook delivery backlog and dead letters, AI agent runs by status, and account, project, and task totals
 - Dark and light themes
 - Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v2` (session cookie auth)
 - Live updates over Server-Sent Events so shared projects and other tabs stay in sync without a refresh

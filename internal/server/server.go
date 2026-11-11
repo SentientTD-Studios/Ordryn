@@ -6,6 +6,7 @@ import (
 	"GoTodo/internal/hooks"
 	"GoTodo/internal/live"
 	"GoTodo/internal/mailer"
+	"GoTodo/internal/metrics"
 	"GoTodo/internal/server/handlers"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
@@ -42,7 +43,7 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 // /api/v1 compatibility alias, including BASE_PATH mounts. Every API route
 // rejects state-changing requests sent from other websites.
 func handleAPI(suffix string, fn http.HandlerFunc) {
-	fn = utils.RejectCrossSite(fn)
+	fn = metrics.Instrument(suffix, utils.RejectCrossSite(fn))
 	handleBoth("/api/v2"+suffix, fn)
 	handleBoth("/api/v1"+suffix, fn)
 }
@@ -117,6 +118,8 @@ func StartServer() error {
 }
 
 func registerAPIV1Routes() {
+	// Prometheus scrape target; 404 unless METRICS_TOKEN is set.
+	handleBoth("/metrics", handlers.Metrics)
 	handleAPI("/health", handlers.APIV1Health)
 	handleAPI("/site", handlers.APIV1Site)
 	handleAPI("/setup", utils.AuthPublicChain(handlers.APIV1Setup))
