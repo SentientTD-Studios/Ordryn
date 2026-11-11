@@ -86,6 +86,17 @@ const loadedProjectKey = ref<string | null>(null)
 let reloadGeneration = 0
 
 const showAddProjectModal = ref(false)
+// The command palette's "New project" lands here with ?new_project=1.
+watch(
+  () => route.query.new_project,
+  (v) => {
+    if (v !== '1') return
+    showAddProjectModal.value = true
+    const { new_project: _drop, ...rest } = route.query
+    void router.replace({ query: rest })
+  },
+  { immediate: true },
+)
 const showEditProjectModal = ref(false)
 const editingProject = ref<Project | null>(null)
 

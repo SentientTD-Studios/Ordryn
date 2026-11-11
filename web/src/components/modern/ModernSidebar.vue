@@ -6,6 +6,7 @@ import type { Project, SavedView } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { useProjectNav } from '@/composables/useProjectNav'
+import { useCommandPalette } from '@/composables/useCommandPalette'
 import { sidebarProjectSections } from '@/utils/projectNav'
 import { audienceIcon, audienceLabel } from '@/utils/queryDefinition'
 import SidebarProjectLink from '@/components/modern/SidebarProjectLink.vue'
@@ -49,6 +50,7 @@ const hiddenCount = computed(() => {
   return Math.max(0, props.projects.length - shown)
 })
 const shortcutHint = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl+K'
+const commandPalette = useCommandPalette()
 
 function selectProject(proj: Project) {
   nav.touchRecent(proj.id)
@@ -262,12 +264,12 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="sidebar-nav-link sidebar-find-project"
-            data-tooltip="Find a project"
-            :title="`Find a project (${shortcutHint})`"
-            @click="nav.openSwitcher()"
+            data-tooltip="Search"
+            :title="`Search tasks, projects, and commands (${shortcutHint})`"
+            @click="commandPalette.show()"
           >
             <i class="bi bi-search" />
-            <span class="sidebar-text">Find a project</span>
+            <span class="sidebar-text">Search</span>
             <span class="sidebar-text sidebar-shortcut">{{ shortcutHint }}</span>
           </button>
         </li>

@@ -17,6 +17,8 @@ import ChangelogModal from '@/components/ChangelogModal.vue'
 import ShortcutsModal from '@/components/ShortcutsModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import ProjectSwitcher from '@/components/modern/ProjectSwitcher.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
+import { useCommandPalette } from '@/composables/useCommandPalette'
 import { resetProjectNav, useProjectNav } from '@/composables/useProjectNav'
 import { useTaskUrlSync } from '@/composables/useTaskUrlSync'
 
@@ -89,15 +91,17 @@ function closeMobileNav() {
 }
 
 const projectNav = useProjectNav()
+const commandPalette = useCommandPalette()
 
 function onMobileNavKeydown(e: KeyboardEvent) {
-  // Ctrl/Cmd+K toggles the project switcher from anywhere in the app.
+  // Ctrl/Cmd+K toggles the command palette from anywhere in the app (tasks,
+  // projects, pages, actions). The project switcher stays on the sidebar button.
   if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
     if (!isAuthenticated.value || route.name === 'share') return
     e.preventDefault()
     closeMobileNav()
     if (projectNav.switcherOpen.value) projectNav.closeSwitcher()
-    else projectNav.openSwitcher()
+    commandPalette.toggle()
     return
   }
   if (e.key === 'Escape' && mobileNavOpen.value) {
@@ -193,5 +197,6 @@ onUnmounted(() => {
     <ChangelogModal v-if="showChangelog" />
     <ShortcutsModal />
     <ProjectSwitcher v-if="isAuthenticated" />
+    <CommandPalette v-if="isAuthenticated" />
   </div>
 </template>
