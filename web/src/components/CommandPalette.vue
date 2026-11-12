@@ -13,7 +13,7 @@ import { rankItems, taskNumber, type PaletteItem } from '@/utils/commandPalette'
 import { searchProjects } from '@/utils/projectNav'
 import { projectRoute, taskPageRoute } from '@/utils/projectRoute'
 
-type Item = PaletteItem & { icon: string; hint?: string; run: () => void }
+type Item = PaletteItem & { icon: string; hint?: string; detail?: string; muted?: boolean; run: () => void }
 
 const palette = useCommandPalette()
 const route = useRoute()
@@ -96,7 +96,17 @@ const taskItems = computed<Item[]>(() => {
     if (t.id === n) continue
     out.push({
       id: `task-${t.id}`, label: t.title, hint: `#${t.id}`, group: 'Tasks',
-      icon: t.completed ? 'bi-check-circle' : 'bi-circle', run: () => sidebar.openView(t.id),
+      detail: [t.project || 'Personal', t.parent_title].filter(Boolean).join(' › '),
+      muted: t.completed,
+      icon: t.completed ? 'bi-check-circle' : 'bi-circle', run: () => void sidebar.openTask(t.id),
+    })
+  }
+  const q = query.value.trim()
+  if (q) {
+    out.push({
+      id: 'search-all', label: 'Search everything',
+      detail: q, group: 'Tasks', icon: 'bi-search',
+      run: go({ name: 'search', query: { q } }),
     })
   }
   return out
@@ -132,10 +142,16 @@ watch(query, (q) => {
     const seq = ++searchSeq
     searching.value = true
     try {
-      const res = await api.listTasks({ search: term, include_subtasks: 1, per_page: 8, status: 'incomplete' })
-      if (seq === searchSeq) tasks.value = res.tasks.slice(0, 8)
+      // Live results: titles and ids in every project you can open, done tasks and
+      // subtasks included. "See all results" runs the full search.
+      const res = await api.search({ q: term, per_page: 8, scope: 'titles' })
+      if (seq === searchSeq) {
+        tasks.value = res.tasks.slice(0, 8)
+      }
     } catch {
-      if (seq === searchSeq) tasks.value = []
+      if (seq === searchSeq) {
+        tasks.value = []
+      }
     } finally {
       if (seq === searchSeq) searching.value = false
     }
@@ -232,7 +248,8 @@ function onKeydown(e: KeyboardEvent) {
                 @click="runAt(index)"
               >
                 <i class="bi" :class="item.icon" aria-hidden="true" />
-                <span class="flex-grow-1 text-truncate">{{ item.label }}</span>
+                <span class="flex-grow-1 text-truncate" :class="{ 'opacity-75 text-decoration-line-through': item.muted }">{{ item.label }}</span>
+                <span v-if="item.detail" class="small text-truncate flex-shrink-1" :class="index === highlight ? 'opacity-75' : 'text-muted'" style="max-width: 45%">{{ item.detail }}</span>
                 <kbd v-if="item.hint" class="small" :class="{ 'opacity-75': index !== highlight }">{{ item.hint }}</kbd>
               </div>
             </div>

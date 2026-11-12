@@ -1,5 +1,7 @@
 import { withBase } from '@/base'
 import type {
+  SearchResults,
+  OrgRemovalProject,
   AdminSettings,
   GuestPolicy,
   Passkey,
@@ -587,6 +589,17 @@ export const api = {
 
   cancelAgentRun(taskId: number, runId: number) {
     return request<AgentRun>(`/api/v2/tasks/${taskId}/agent-runs/${runId}/cancel`, { method: 'POST' })
+  },
+
+  /** Site search (see tasks.ParseSearchQuery for the query syntax). */
+  /** scope 'titles' matches titles and ids only (live results); 'all' (default) also descriptions, tags and comments. */
+  search(params: { q: string; project?: number; page?: number; per_page?: number; scope?: 'all' | 'titles' }) {
+    const qs = new URLSearchParams({ q: params.q })
+    if (params.scope && params.scope !== 'all') qs.set('scope', params.scope)
+    if (params.project) qs.set('project', String(params.project))
+    if (params.page) qs.set('page', String(params.page))
+    if (params.per_page) qs.set('per_page', String(params.per_page))
+    return request<SearchResults>(`/api/v2/search?${qs}`)
   },
 
   listTasks(params: Record<string, string | number | undefined> = {}) {
@@ -1205,8 +1218,17 @@ export const api = {
     return request<OrgMemberRoleImpact>(`/api/v2/organizations/${orgId}/members/${userId}/project-impact`)
   },
 
-  removeOrganizationMember(orgId: number, userId: number) {
-    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, { method: 'DELETE' })
+  /** The organization's projects a member is on, and which removing them leaves on its own. */
+  organizationMemberRemovalImpact(orgId: number, userId: number) {
+    return request<{ projects: OrgRemovalProject[] }>(`/api/v2/organizations/${orgId}/members/${userId}/removal-impact`)
+  },
+
+  /** Remove a member; `removeFromProjects` also takes them off those hand-assigned projects. */
+  removeOrganizationMember(orgId: number, userId: number, removeFromProjects: number[] = []) {
+    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ remove_from_projects: removeFromProjects }),
+    })
   },
 
   listOrganizationRoles(orgId: number) {

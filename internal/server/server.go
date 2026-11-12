@@ -180,6 +180,7 @@ func registerAPIV1Routes() {
 	handleAPI("/tasks/", v1(handlers.APIV1TasksRouter))
 	handleAPI("/notifications", v1(handlers.APIV1NotificationsRouter))
 	handleAPI("/notifications/", v1(handlers.APIV1NotificationsRouter))
+	handleAPI("/search", v1(handlers.APIV1Search))
 	handleAPI("/users/search", v1(utils.RateLimitMiddleware(20, 0.4, 60, utils.KeyByUser)(handlers.APIV1UsersSearch)))
 	handleAPI("/project-roles", v1(handlers.APIV1ProjectRolesCatalog))
 	handleAPI("/organizations", v1(handlers.APIV1OrganizationsRouter))

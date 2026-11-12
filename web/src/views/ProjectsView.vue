@@ -579,7 +579,7 @@ async function leaveProject(p: Project) {
   if (!me) return
   const ok = await askConfirm({
     title: 'Leave project?',
-    message: `Leave project “${p.name}”?`,
+    message: `Leave project “${p.name}”? Your claims, review requests and watches on its tasks are cleared, and its tasks, including ones you created, stop showing for you.`,
     confirmLabel: 'Leave',
     danger: true,
   })

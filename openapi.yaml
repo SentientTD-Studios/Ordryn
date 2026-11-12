@@ -1947,6 +1947,109 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/search:
+    get:
+      tags: [Tasks]
+      summary: Search tasks and projects
+      description: |
+        Searches every task in the projects you can open right now, plus your own
+        tasks that have no project. Tasks you created in a project you have since
+        left are not included. Matching is partial and case-insensitive, and
+        results include completed tasks and subtasks (subtasks carry `parent_title`).
+
+        Every word in `q` must appear somewhere in the task: its title,
+        description, a tag name, or a comment (with `scope=titles`, the title
+        only). A word of five or more letters (not a number) also matches titles
+        holding a word one edit away (an inserted, missing, wrong or swapped
+        letter), so `recieve` finds "Receive invoices". A number also matches the
+        task with that id. Put a phrase in double quotes to match it as one term.
+        Qualifiers narrow the search:
+
+        - `#123` or `id:123`: the task with that id
+        - `project:web`: projects whose name contains "web"
+        - `tag:bug`: has a tag whose name contains "bug"
+        - `status:review`: workflow status name contains "review"
+        - `is:open`, `is:done` (also `status:open`, `status:done`)
+        - `is:archived`: also search archived tasks and archived projects
+        - `claimed:me`, `claimed:none`
+
+        Values with spaces are quoted: `project:"web app"`. Exact id matches come
+        first, then tasks whose title holds every word as typed (typo matches come
+        after), then open before done, then
+        the most recently changed. An empty `q` returns no results.
+
+        `projects` lists up to 5 projects whose name contains every word (first
+        page only, and not when `project` is set). A project-scoped API key always
+        searches its own project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 500
+        - name: scope
+          in: query
+          description: >
+            `all` (default) matches titles, descriptions, tag names and comments;
+            `titles` matches titles and ids only, for live results as you type.
+          schema:
+            type: string
+            enum: [all, titles]
+            default: all
+        - name: project
+          in: query
+          description: Only search this project. 404 when you can't open it.
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, tasks, total, page, per_page, total_pages, projects]
+                properties:
+                  query:
+                    type: string
+                  tasks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Task"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+                  total_pages:
+                    type: integer
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v2/tasks:
     get:
       tags: [Tasks]
@@ -2009,6 +2112,11 @@ paths:
           in: query
           schema:
             type: string
+          description: >
+            Keyword filter on top of the other filters: every word must appear in the
+            task's title, description, or a tag name (or be its id); a parent also
+            matches through its subtasks. For searching everything you can open, use
+            `/api/v2/search`.
         - name: sort
           in: query
           schema:
@@ -2810,12 +2918,86 @@ paths:
     delete:
       tags: [Organizations]
       summary: Remove a member or leave the organization
+      description: |
+        The member also leaves the organization's projects whose people it controls:
+        on a multi-user site, projects whose roster is locked to the organization;
+        on a company site, projects they reached only through this team's share.
+        `remove_from_projects` also takes them off hand-assigned projects listed by
+        `removal-impact` (copied or hand-picked rosters, or personal shares on a
+        company site); other ids are ignored. The project's owner is never removed.
+
+        Whenever someone loses access to a project, any way at all, their claims,
+        review requests, user-field values and watches on its tasks are cleared, and
+        tasks they created there stop showing in their lists.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remove_from_projects:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: integer
+      responses:
+        "204":
+          description: Removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organizations/{id}/members/{userId}/removal-impact:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Organizations]
+      summary: Preview which projects removing a member takes them off
+      description: |
+        The organization's projects the member is on (not ones they own). `automatic`
+        projects are left with the organization; the others were assigned by hand and
+        are only left when named in the removal's `remove_from_projects`. `mode` is
+        `lock`, `copy` or `select` (how the organization's people were imported), or on
+        a company site `share` (through this team) or `personal` (a personal share).
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
-        "204":
-          description: Removed
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects]
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, mode, automatic]
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        mode:
+                          type: string
+                          enum: [lock, copy, select, share, personal]
+                        automatic:
+                          type: boolean
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":

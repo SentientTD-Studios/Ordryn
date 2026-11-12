@@ -222,7 +222,8 @@ func TestCompileForceProject(t *testing.T) {
 	ctx := testCtx()
 	ctx.ForceProject = 2
 	c := compileRaw(t, `{"scope":{"projects":[1]}}`, ctx)
-	if !strings.Contains(c.Where, "t.project_id = $") || strings.Contains(c.Where, "t.project_id IS NULL") {
+	// The personal-tasks scope is "OR t.project_id IS NULL"; visibility has its own IS NULL check.
+	if !strings.Contains(c.Where, "t.project_id = $") || strings.Contains(c.Where, ") OR t.project_id IS NULL)") {
 		t.Fatalf("forced project must replace the scope:\n%s", c.Where)
 	}
 	ctx.ForceProject = 99

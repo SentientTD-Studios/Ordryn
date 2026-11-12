@@ -578,6 +578,18 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	// Needs project_members, tasks (claims, reviewers), custom fields and watches.
+	if err := MigrateReleaseLostProjectAccess(); err != nil {
+		fmt.Printf("migration: MigrateReleaseLostProjectAccess failed: %v\n", err)
+		errCount++
+	}
+
+	// Needs tasks and tags.
+	if err := MigrateSearchWords(); err != nil {
+		fmt.Printf("migration: MigrateSearchWords failed: %v\n", err)
+		errCount++
+	}
+
 	if errCount == 0 {
 		return nil
 	}

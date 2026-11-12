@@ -518,22 +518,193 @@ func UpsertOrganizationMember(orgID, userID int, role string) error {
 
 // RemoveOrganizationMember deletes a non-owner membership row.
 func RemoveOrganizationMember(orgID, userID int) error {
+	_, err := RemoveOrganizationMemberFromProjects(orgID, userID, nil)
+	return err
+}
+
+// OrgRemovalProject is one of an organization's projects that a member is on,
+// and what removing them from the organization does to it.
+type OrgRemovalProject struct {
+	ID   int
+	Name string
+	// Mode is how the person is on the project: lock, copy, or select (an
+	// organization import), or share/personal (company team or personal share).
+	Mode string
+	// Automatic projects drop the person with the organization: their place
+	// there came from it. The others were assigned by hand and are only left
+	// when the remover picks them.
+	Automatic bool
+}
+
+// ListOrgRemovalProjects lists the organization's projects the member is on,
+// apart from ones they own. On a multi-user site an org-locked roster is
+// automatic and copied or hand-picked rosters are optional. On a company site,
+// access through this team's share is automatic and a personal share on one of
+// the team's projects is optional.
+func ListOrgRemovalProjects(orgID, userID int) ([]OrgRemovalProject, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer CloseDatabase(pool)
 
-	tag, err := pool.Exec(context.Background(),
+	var query string
+	if IsCompanyMode() {
+		query = `
+			SELECT p.id, p.name,
+			       CASE WHEN pg.id IS NOT NULL THEN 'personal' ELSE 'share' END,
+			       pg.id IS NULL
+			FROM projects p
+			LEFT JOIN project_access_grants pg ON pg.project_id = p.id AND pg.user_id = $2
+			WHERE p.user_id IS DISTINCT FROM $2
+			  AND (
+			    (pg.id IS NOT NULL AND p.organization_id = $1)
+			    OR (pg.id IS NULL AND EXISTS (SELECT 1 FROM project_access_grants tg WHERE tg.project_id = p.id AND tg.organization_id = $1)
+			        AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
+			  )
+			ORDER BY LOWER(p.name), p.id`
+	} else {
+		query = `
+			SELECT p.id, p.name,
+			       COALESCE(NULLIF(p.org_import, ''), CASE WHEN COALESCE(p.org_managed, false) THEN 'lock' ELSE 'copy' END),
+			       COALESCE(p.org_managed, false)
+			FROM projects p
+			JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
+			WHERE p.organization_id = $1 AND p.user_id IS DISTINCT FROM $2
+			ORDER BY LOWER(p.name), p.id`
+	}
+	rows, err := pool.Query(context.Background(), query, orgID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []OrgRemovalProject{}
+	for rows.Next() {
+		var r OrgRemovalProject
+		if err := rows.Scan(&r.ID, &r.Name, &r.Mode, &r.Automatic); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// RemoveOrganizationMemberFromProjects removes a non-owner from the
+// organization, takes them off its projects whose rosters it controls, and also
+// off the projects in alsoRemove (ids from ListOrgRemovalProjects; others are
+// ignored). Returns the projects whose people changed. Losing a project
+// releases the person's claims, reviews and watches there (see
+// MigrateReleaseLostProjectAccess).
+func RemoveOrganizationMemberFromProjects(orgID, userID int, alsoRemove []int) ([]int, error) {
+	if alsoRemove == nil {
+		alsoRemove = []int{}
+	}
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+	ctx := context.Background()
+	company := IsCompanyMode()
+
+	// On a company site, the team's projects lose this person when they're
+	// recomputed below; note them first, while the membership still counts.
+	var teamProjects []int
+	if company {
+		rows, err := pool.Query(ctx, `SELECT DISTINCT project_id FROM project_access_grants WHERE organization_id = $1`, orgID)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			teamProjects = append(teamProjects, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx,
 		`DELETE FROM organization_members WHERE organization_id = $1 AND user_id = $2 AND role <> 'owner'`,
 		orgID, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("member not found or cannot remove owner")
+		return nil, fmt.Errorf("member not found or cannot remove owner")
 	}
-	return RecomputeCompanyProjectsForTeam(orgID)
+
+	var query string
+	if company {
+		// Personal shares on the team's projects; team shares drop with the recompute.
+		query = `
+			DELETE FROM project_access_grants g USING projects p
+			WHERE g.project_id = p.id AND p.organization_id = $1 AND g.user_id = $2 AND p.id = ANY($3)
+			RETURNING g.project_id`
+	} else {
+		query = `
+			DELETE FROM project_members pm USING projects p
+			WHERE pm.project_id = p.id AND p.organization_id = $1 AND pm.user_id = $2
+			  AND p.user_id IS DISTINCT FROM $2
+			  AND (COALESCE(p.org_managed, false) OR p.id = ANY($3))
+			RETURNING pm.project_id`
+	}
+	rows, err := tx.Query(ctx, query, orgID, userID, alsoRemove)
+	if err != nil {
+		return nil, err
+	}
+	var changed []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		changed = append(changed, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	if company {
+		if err := RecomputeCompanyProjectsForTeam(orgID); err != nil {
+			return nil, err
+		}
+		for _, id := range changed {
+			if err := RecomputeCompanyProjectAccess(id); err != nil {
+				return nil, err
+			}
+		}
+		changed = append(changed, teamProjects...)
+	}
+	return uniqueInts(changed), nil
+}
+
+func uniqueInts(ids []int) []int {
+	seen := make(map[int]bool, len(ids))
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // CountOrgMembersWithRole counts org memberships using slug, optionally limited to one org.

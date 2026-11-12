@@ -92,7 +92,7 @@ func apiV1CalendarSync(w http.ResponseWriter, r *http.Request) {
 		}
 		due := fmt.Sprintf("%s-%s-%s", ev.StartDate[0:4], ev.StartDate[4:6], ev.StartDate[6:8])
 		var current sql.NullString
-		if err := pool.QueryRow(ctx, `SELECT CAST(due_date AS TEXT) FROM tasks WHERE id = $1 AND user_id = $2 AND completed = false AND deleted_at IS NULL`, taskID, userID).Scan(&current); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT CAST(due_date AS TEXT) FROM tasks WHERE id = $1 AND user_id = $2 AND completed = false AND deleted_at IS NULL AND `+storage.TaskProjectOpenSQL("", "$2"), taskID, userID).Scan(&current); err != nil {
 			continue
 		}
 		oldDue := ""
@@ -104,7 +104,7 @@ func apiV1CalendarSync(w http.ResponseWriter, r *http.Request) {
 		}
 		tag, err := pool.Exec(ctx,
 			`UPDATE tasks SET due_date = $1::date, date_modified = NOW() AT TIME ZONE 'UTC'
-			 WHERE id = $2 AND user_id = $3 AND completed = false`, due, taskID, userID)
+			 WHERE id = $2 AND user_id = $3 AND completed = false AND `+storage.TaskProjectOpenSQL("", "$3"), due, taskID, userID)
 		if err == nil && tag.RowsAffected() > 0 {
 			updated++
 			live.AfterTaskChangeLive(userID, taskID, live.TypeTaskUpdated)

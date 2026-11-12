@@ -29,6 +29,7 @@ onUnmounted(() => {
           <ul class="list-inline mb-0">
             <li class="list-inline-item"><a href="#getting-started">Getting started</a></li>
             <li class="list-inline-item"><a href="#tasks">Tasks</a></li>
+            <li class="list-inline-item"><a href="#search">Search</a></li>
             <li class="list-inline-item"><a href="#projects-views">Projects &amp; views</a></li>
             <li class="list-inline-item"><a href="#roles-permissions">Roles</a></li>
             <li class="list-inline-item"><a href="#ai-agents">AI agents</a></li>
@@ -65,8 +66,8 @@ onUnmounted(() => {
           <li>Nest work under a parent with <strong>Add subtask</strong>; expand or collapse children as needed.</li>
           <li>
             Each task has a stable number (for example <code>#42</code>) shown in the task panel.
-            Use <strong>Copy link</strong> to share a URL such as <code>/tasks/42</code>, or search
-            for <code>42</code> / <code>#42</code> to find it.
+            Use <strong>Copy link</strong> to share a URL such as <code>/tasks/42</code>, or
+            <a href="#search">search</a> for <code>#42</code> to find it.
           </li>
           <li>
             Archive a task to hide it from boards and lists. Filter by the <strong>archived</strong> tag
@@ -122,10 +123,54 @@ onUnmounted(() => {
           files; project managers can remove anyone's. Files go to the trash and come back with their task.
         </p>
 
+        <h2 id="search" class="h4 mt-4">Search</h2>
+        <p>
+          The search box in the header (or <kbd>/</kbd> from anywhere) searches every task and project you can
+          open right now: your own tasks and those in projects you're a member of. As you type, it lists tasks whose
+          title matches (or the task with that id); pick one with the arrow keys and <kbd>Enter</kbd>, or click it.
+          <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd> gives the same quick results. Press <kbd>Enter</kbd> without picking
+          one to search everything on the <RouterLink to="/search">search page</RouterLink>: titles, descriptions, tags
+          and comments. Matching is partial and ignores case, and completed tasks and subtasks are included. Every word
+          you type must appear somewhere in the task, so <code>login bug</code> finds "Bug on the login page". Typos in
+          titles are forgiven too: a word of five or more letters also finds titles with a word one letter off
+          (missing, extra, wrong or swapped), so <code>recieve</code> finds "Receive invoices". A number also finds the task with that id. To narrow it down:
+        </p>
+        <ul>
+          <li><code>#42</code> or <code>id:42</code>: the task with that id</li>
+          <li><code>"exact phrase"</code>: words that must appear together</li>
+          <li><code>project:web</code>: tasks in projects whose name contains "web" (quote names with spaces: <code>project:"web app"</code>)</li>
+          <li><code>tag:bug</code>: tasks with a tag whose name contains "bug"</li>
+          <li><code>status:review</code>: a board's status name; <code>is:open</code> or <code>is:done</code> for open or completed work</li>
+          <li><code>claimed:me</code> or <code>claimed:none</code></li>
+          <li><code>is:archived</code>: also search archived tasks and archived projects</li>
+        </ul>
+        <p>
+          Exact id matches come first, then tasks whose title holds every word as typed (so typo matches come after),
+          then open before done. The search page
+          can also limit results to one project.
+        </p>
+
         <h2 id="projects-views" class="h4 mt-4">Projects, tags, filters, and saved views</h2>
         <p>
-          Organize work with projects and tags. On the home page, the filter bar lets you search,
-          filter by status, tag, priority, and due date, and change sort order or list density. Tick several tags or priorities to see tasks that match any of them. Under <strong>Due date</strong>, <strong>Custom range…</strong> shows tasks due between two dates (leave one end empty for "from" or "until"); tasks with no due date are left out.
+          Organize work with projects and tags. Filters depend on where you are:
+        </p>
+        <ul>
+          <li>
+            <strong>Home</strong> is your queue of open work. Its only filter picks a project (or tasks with no project).
+          </li>
+          <li>
+            A project's <strong>list</strong> view has the full filter bar: a keyword filter for that list, status, tag,
+            priority, due date, who claimed it (kanban projects), and sort order. Tick several tags or priorities to see
+            tasks that match any of them. Under <strong>Due date</strong>, <strong>Custom range…</strong> shows tasks due
+            between two dates (leave one end empty for "from" or "until"); tasks with no due date are left out.
+          </li>
+          <li>
+            A kanban <strong>board</strong> has no filters: its columns are the statuses, and the sprint switcher picks
+            the sprint.
+          </li>
+        </ul>
+        <p>
+          For anything else, like open bugs across several projects, build a saved query.
         </p>
         <ul>
           <li>
@@ -143,7 +188,10 @@ onUnmounted(() => {
             import: copy everyone and keep roles editable, copy everyone and lock roles to the
             organization, or pick specific members and a role for each. People who are not imported
             are removed from the project. Organization role changes update imported-and-locked
-            projects only. Archived projects move
+            projects only. Removing someone from an organization also takes them off its projects whose
+            roles are locked to it (on a company site: projects they reached only through that team);
+            the dialog lists projects they were put on by hand (copied rosters, picked members, or
+            personal shares) so you can remove them from those too. Archived projects move
             into an Archived section so they do not clutter the main list, are tagged archived
             automatically, and cannot accept new tasks until the owner restores them. Kanban projects can name sprints
             with optional descriptions, date ranges, and a lock date on the Sprints tab
@@ -152,11 +200,16 @@ onUnmounted(() => {
             sprint or backlog.
           </li>
           <li>
+            When someone loses access to a project (they leave, are removed, or lose the team or
+            organization that gave them access) they're unassigned from its tasks: their claims,
+            review requests, person-field values and watches there are cleared. Its tasks, even ones
+            they created, stop showing in their lists, search, calendar and exports.
+          </li>
+          <li>
             Project owners can give any non-done column a <strong>WIP limit</strong> in project settings
             (Board tab). When a column holds more cards than its limit, its count turns red, for example
             <em>5 / 3</em>. The limit is a warning only and never blocks a move. It counts every card in the column for the sprint (or
-            backlog) on screen, so search and other filters don't change the number; hover the count to see how many
-            cards the filters hide. Use the
+            backlog) on screen. Use the
             <i class="bi bi-chevron-bar-left" aria-label="collapse" /> button on a column to
             <strong>collapse</strong> it to a narrow strip; your collapsed columns are remembered for each board in this
             browser.
@@ -499,7 +552,7 @@ onUnmounted(() => {
             </tr>
             <tr>
               <td><kbd>/</kbd></td>
-              <td>Focus search</td>
+              <td>Search (on a project's list view, its keyword filter)</td>
             </tr>
             <tr>
               <td><kbd>Esc</kbd></td>

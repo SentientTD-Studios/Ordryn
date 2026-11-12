@@ -37,14 +37,9 @@ func FetchAllTasksForUserWithFilters(userID *int, timezone string, filters ListF
 	}
 
 	if search != "" {
-		args := []interface{}{searchPattern(search), timezone, *userID}
-		idIdx := 0
-		if searchID, ok := parseSearchTaskID(search); ok {
-			args = append(args, searchID)
-			idIdx = len(args)
-		}
-		match := searchMatchSQL("t.id", 1, idIdx)
-		where := "WHERE " + match + " AND t.user_id = $3"
+		args := []interface{}{*userID, timezone}
+		match, args := textTermsSQL("t.id", args, SearchTerms(search))
+		where := "WHERE " + match + " AND t.user_id = $1 AND " + storage.TaskProjectOpenSQL("t", "$1")
 		where, args = appendFilterSQL(where, args, filters, timezone, "t", *userID)
 		query := taskSelect + where + filters.orderByClause("t") + fmt.Sprintf(" LIMIT %d", ExportMaxTasks)
 		r, err := pool.Query(context.Background(), query, args...)
@@ -54,7 +49,7 @@ func FetchAllTasksForUserWithFilters(userID *int, timezone string, filters ListF
 		rows = r
 	} else {
 		args := []interface{}{*userID, timezone}
-		where := "WHERE t.user_id = $1"
+		where := "WHERE t.user_id = $1 AND " + storage.TaskProjectOpenSQL("t", "$1")
 		where, args = appendFilterSQL(where, args, filters, timezone, "t", *userID)
 		query := taskSelect + where + filters.orderByClause("t") + fmt.Sprintf(" LIMIT %d", ExportMaxTasks)
 		r, err := pool.Query(context.Background(), query, args...)

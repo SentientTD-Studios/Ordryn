@@ -176,6 +176,16 @@ func authorizeLocalAgentKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) 
 	case len(parts) == 1 && parts[0] == "me" && r.Method == http.MethodGet:
 		return require(storage.APIScopeTasksRead)
 
+	// /search: pinned to the key's project, like the task list.
+	case len(parts) == 1 && parts[0] == "search" && r.Method == http.MethodGet:
+		if err := require(storage.APIScopeTasksRead); err != nil {
+			return err
+		}
+		q := r.URL.Query()
+		q.Set("project", strconv.Itoa(pid))
+		r.URL.RawQuery = q.Encode()
+		return nil
+
 	// /tasks
 	case len(parts) == 1 && parts[0] == "tasks":
 		switch r.Method {
@@ -336,6 +346,16 @@ func authorizeProjectKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) err
 			return err
 		}
 		return requireTaskInProject(taskID, pid)
+
+	// /search: pinned to the key's project, like the task list.
+	case len(parts) == 1 && parts[0] == "search" && r.Method == http.MethodGet:
+		if err := require(storage.APIScopeTasksRead); err != nil {
+			return err
+		}
+		q := r.URL.Query()
+		q.Set("project", strconv.Itoa(pid))
+		r.URL.RawQuery = q.Encode()
+		return nil
 
 	// /tasks
 	case len(parts) == 1 && parts[0] == "tasks":
