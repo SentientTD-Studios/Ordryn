@@ -26,6 +26,19 @@ const emit = defineEmits<{
 }>()
 
 const { push } = useToast()
+
+const showingOnboarding = ref(false)
+async function showOnboarding() {
+  showingOnboarding.value = true
+  try {
+    await api.setOnboardingDismissed(false)
+    push('The checklist is back on Home', 'success')
+  } catch (err) {
+    push(err instanceof APIError ? err.message : 'Could not update', 'error')
+  } finally {
+    showingOnboarding.value = false
+  }
+}
 const { askConfirm } = useConfirm()
 const tags = ref<Tag[]>([])
 const tagName = ref('')
@@ -155,6 +168,13 @@ onMounted(() => {
           {{ busy ? 'Saving…' : 'Save preferences' }}
         </button>
       </form>
+      <hr />
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="small text-muted">Hid the getting-started checklist?</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="showingOnboarding" @click="showOnboarding">
+          Show it on Home again
+        </button>
+      </div>
     </div>
   </div>
 

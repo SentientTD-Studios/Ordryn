@@ -74,6 +74,9 @@ type TaskWorkflowFields struct {
 	ClaimedByName    string
 	SprintID         int
 	SprintName       string
+	ReviewerID       int
+	ReviewerName     string
+	StartDate        string // YYYY-MM-DD or ""
 }
 
 // CreateProjectWorkflowTables creates statuses and time-entry tables.
@@ -738,11 +741,14 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		        COALESCE(p.workflow_mode, 'classic'),
 		        COALESCE((SELECT SUM(minutes) FROM task_time_entries e WHERE e.task_id = t.id), 0),
 		        t.claimed_by, COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, ''),
-		        t.sprint_id, COALESCE(sp.name, '')
+		        t.sprint_id, COALESCE(sp.name, ''),
+		        t.reviewer_id, COALESCE(NULLIF(ru.full_name, ''), NULLIF(ru.user_name, ''), ru.email, ''),
+		        COALESCE(CAST(t.start_date AS TEXT), '')
 		 FROM tasks t
 		 LEFT JOIN project_statuses s ON s.id = t.status_id
 		 LEFT JOIN projects p ON p.id = t.project_id
 		 LEFT JOIN users cu ON cu.id = t.claimed_by
+		 LEFT JOIN users ru ON ru.id = t.reviewer_id
 		 LEFT JOIN project_sprints sp ON sp.id = t.sprint_id
 		 WHERE t.id = ANY($1)`, taskIDs)
 	if err != nil {
@@ -761,10 +767,14 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		var claimedByName string
 		var sprintID sql.NullInt64
 		var sprintName string
-		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName); err != nil {
+		var reviewerID sql.NullInt64
+		var reviewerName string
+		var startDate string
+		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName, &startDate); err != nil {
 			return nil, err
 		}
 		f := TaskWorkflowFields{
+			StartDate:        startDate,
 			StatusName:       statusName,
 			TimeSpentMinutes: spent,
 			ProjectWorkflow:  mode,
@@ -783,6 +793,10 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		}
 		if sprintID.Valid {
 			f.SprintID = int(sprintID.Int64)
+		}
+		if reviewerID.Valid {
+			f.ReviewerID = int(reviewerID.Int64)
+			f.ReviewerName = reviewerName
 		}
 		out[id] = f
 	}

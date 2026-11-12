@@ -103,6 +103,12 @@ func authenticateBearer(w http.ResponseWriter, r *http.Request, token string) bo
 		return false
 	}
 	if p.IsLocalAgent {
+		// Checked live so taking the permission away stops keys already handed out.
+		if !storage.UserHasSitePermission(p.UserID, storage.SitePermAgentsLocal) {
+			APIJSONError(w, http.StatusForbidden, "agents_disabled",
+				"Local AI agents are turned off for your account. Ask an admin to allow them for your role.")
+			return false
+		}
 		if err := authorizeLocalAgentKeyRequest(r, p); err != nil {
 			writeScopedKeyError(w, err)
 			return false
@@ -235,7 +241,8 @@ func authorizeLocalAgentKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) 
 				return err
 			}
 			return inProject(taskID)
-		case parts[2] == "claim" && (r.Method == http.MethodPost || r.Method == http.MethodDelete):
+		case (parts[2] == "claim" && (r.Method == http.MethodPost || r.Method == http.MethodDelete)) ||
+			(parts[2] == "reviewer" && (r.Method == http.MethodPut || r.Method == http.MethodDelete)):
 			if err := require(storage.APIScopeTasksWrite); err != nil {
 				return err
 			}

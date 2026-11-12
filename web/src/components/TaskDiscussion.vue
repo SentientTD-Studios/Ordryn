@@ -5,6 +5,7 @@ import { useTaskTextLimits } from '@/utils/taskText'
 import type { TaskComment, TaskCommentRevision } from '@/api/types'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import RichBody from '@/components/RichBody.vue'
+import CommentReactionsBar from '@/components/task/CommentReactionsBar.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useConfirm } from '@/composables/useConfirm'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
@@ -29,6 +30,8 @@ const props = defineProps<{
   projectId?: number | null
   currentUserId: number | null
   isOwner: boolean
+  /** People who can edit the task may also resolve anyone's comment. */
+  canEditTask?: boolean
   /** Grow with the parent column instead of capping the thread at 360px. */
   fillHeight?: boolean
 }>()
@@ -57,6 +60,20 @@ const historyId = ref<number | null>(null)
 const historyByComment = ref<Record<number, TaskCommentRevision[]>>({})
 const historyLoading = ref(false)
 const restoringId = ref<number | null>(null)
+function replaceComment(updated: TaskComment) {
+  const i = comments.value.findIndex((c) => c.id === updated.id)
+  if (i < 0) return
+  // The server omits empty reactions and resolved_at / resolved_by_name on an
+  // open comment, so a plain merge would keep stale values after removing the
+  // last reaction or reopening. Clear them first.
+  comments.value[i] = {
+    ...comments.value[i],
+    reactions: [],
+    resolved_at: null,
+    resolved_by_name: undefined,
+    ...updated,
+  }
+}
 const isAdmin = computed(() => hasPermission('admin'))
 
 type DraftLink = {
@@ -75,10 +92,19 @@ const mentionOpen = ref(false)
 const mentionToken = ref<MentionToken | null>(null)
 const mentionMenuStyle = ref<Record<string, string>>({})
 
-const { filtered: mentionHits, loading: mentionLoading, highlight: mentionHighlight, scheduleSearch, cancelPending, applyLocal, cachedNames } =
-  useUserSearch({
-    projectId: () => props.projectId,
-  })
+const {
+  filtered: mentionHits,
+  loading: mentionLoading,
+  highlight: mentionHighlight,
+  scheduleSearch,
+  cancelPending,
+  applyLocal,
+  cachedNames,
+  isTeam: isTeamMention,
+} = useUserSearch({
+  projectId: () => props.projectId,
+  includeTeams: true,
+})
 
 const showMentionMenu = computed(
   () =>
@@ -777,8 +803,19 @@ defineExpose({ reload, isDirty, flushUnsaved })
               </div>
             </div>
             <div v-else class="task-post-body">
+              <div v-if="c.resolved_at" class="small text-success mb-1">
+                <i class="bi bi-check2-circle me-1" aria-hidden="true" />Resolved<template v-if="c.resolved_by_name">
+                  by {{ c.resolved_by_name }}</template>
+              </div>
               <RichBody :body="c.body" :task-title="(id) => linkTitle(c, id)" @open-task="openLinkedTask" />
             </div>
+            <CommentReactionsBar
+              v-if="!c.deleted && editingId !== c.id"
+              :task-id="taskId"
+              :comment="c"
+              :can-resolve="c.user_id === currentUserId || isOwner || isAdmin || !!canEditTask"
+              @updated="replaceComment"
+            />
             <div v-if="historyId === c.id" class="task-post-history">
               <p v-if="historyLoading && !historyByComment[c.id]" class="small text-muted mb-0">Loading history…</p>
               <p
@@ -828,7 +865,7 @@ defineExpose({ reload, isDirty, flushUnsaved })
       :rows="3"
       :maxlength="MAX_BODY"
       :task-title="linkTitleById"
-      placeholder="Write a comment… Format with markdown, click 'Upload image' or paste/drop, type @ to mention a member, or paste #123 to link a task."
+      placeholder="Write a comment… Format with markdown, click 'Upload image' or paste/drop, type @ to mention a member or team, or paste #123 to link a task."
       @input="onDraftInput"
       @keydown="onDraftKeydown"
       @paste="onDraftPaste"
@@ -858,7 +895,11 @@ defineExpose({ reload, isDirty, flushUnsaved })
           @mousedown.prevent
           @click="selectMention(name)"
         >
-          {{ name }}
+          <template v-if="isTeamMention(name)">
+            <i class="bi bi-people me-1" aria-hidden="true"></i>{{ name }}
+            <span class="badge text-bg-secondary ms-1">Team</span>
+          </template>
+          <template v-else>{{ name }}</template>
         </li>
         <li
           v-if="mentionLoading && !mentionHits.length"
@@ -872,7 +913,7 @@ defineExpose({ reload, isDirty, flushUnsaved })
           class="user-search-option text-muted"
           aria-disabled="true"
         >
-          No matching project members
+          No matching project members or teams
         </li>
       </ul>
     </Teleport>

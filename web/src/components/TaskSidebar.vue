@@ -6,6 +6,7 @@ import { useTaskTextLimits } from '@/utils/taskText'
 import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskRecurrenceDetail } from '@/api/types'
 import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
+import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import TaskDiscussion from '@/components/TaskDiscussion.vue'
 import TaskSidebarFields from '@/components/TaskSidebarFields.vue'
@@ -123,6 +124,7 @@ const parentId = ref<number | ''>('')
 const parentTitle = ref('')
 const priority = ref(0)
 const dueDate = ref('')
+const startDate = ref('')
 const selectedTagIds = ref<number[]>([])
 const taskTags = ref<Tag[]>([])
 const newTags = ref('')
@@ -133,6 +135,10 @@ const estimatePoints = ref<number | ''>('')
 const claimedBy = ref<number | null>(null)
 const claimedByName = ref('')
 const claiming = ref(false)
+const reviewerId = ref<number | null>(null)
+const reviewerName = ref('')
+const reviewerDraft = ref('')
+const reviewerBusy = ref(false)
 const activityLog = ref<InstanceType<typeof TaskActivityLog> | null>(null)
 const saveTemplateOpen = ref(false)
 const customFieldValues = ref<Record<string, unknown>>({})
@@ -279,6 +285,17 @@ const claimerLabel = computed(() => {
   if (user.value?.id && claimedBy.value === user.value.id) return 'You'
   return claimedByName.value || `User #${claimedBy.value}`
 })
+// Reviewer applies to saved project tasks (classic or kanban).
+const reviewerProjectId = computed(() => currentTask.value?.project_id ?? 0)
+const showReviewer = computed(
+  () => (mode.value === 'edit' || mode.value === 'view') && !!taskId.value && reviewerProjectId.value > 0,
+)
+const isMyReview = computed(() => !!user.value?.id && reviewerId.value === user.value.id)
+const reviewerLabel = computed(() => {
+  if (!reviewerId.value) return 'No reviewer'
+  if (isMyReview.value) return 'You'
+  return reviewerName.value || `User #${reviewerId.value}`
+})
 
 function taskInSelectedProject(t: Task): boolean {
   if (projectId.value === '') return t.project_id == null || t.project_id === 0
@@ -404,6 +421,7 @@ function resetForm() {
   currentTask.value = null
   priority.value = 0
   dueDate.value = ''
+  startDate.value = ''
   recurrenceDraft.value = emptyRecurrenceDraft()
   recurrenceDetail.value = null
   selectedTagIds.value = []
@@ -416,6 +434,9 @@ function resetForm() {
   estimatePoints.value = ''
   claimedBy.value = null
   claimedByName.value = ''
+  reviewerId.value = null
+  reviewerName.value = ''
+  reviewerDraft.value = ''
   statuses.value = []
   sprints.value = []
   taskWorkflow.value = ''
@@ -547,6 +568,7 @@ async function loadTask(id: number) {
   }
   priority.value = task.priority
   dueDate.value = task.due_date || ''
+  startDate.value = task.start_date || ''
   taskTags.value = task.tags ? [...task.tags] : []
   selectedTagIds.value = taskTags.value.map((t) => t.id)
   newTags.value = ''
@@ -557,6 +579,8 @@ async function loadTask(id: number) {
   estimatePoints.value = task.estimate_points ?? ''
   claimedBy.value = task.claimed_by ?? null
   claimedByName.value = task.claimed_by_name || ''
+  applyReviewer(task)
+  reviewerDraft.value = ''
   taskWorkflow.value = task.project_workflow || ''
   customFieldValues.value = { ...(task.fields || {}) }
   recurrenceDraft.value = draftFromRecurrence(task.recurrence)
@@ -614,6 +638,7 @@ type FormSnapshot = {
   parentId: number | ''
   priority: number
   dueDate: string
+  startDate: string
   selectedTagIds: number[]
   newTags: string
   statusId: number | ''
@@ -633,6 +658,7 @@ function captureFormSnapshot(): FormSnapshot {
     parentId: parentId.value,
     priority: priority.value,
     dueDate: dueDate.value,
+    startDate: startDate.value,
     selectedTagIds: [...selectedTagIds.value],
     newTags: newTags.value,
     statusId: statusId.value,
@@ -660,6 +686,7 @@ function isFormDirty(): boolean {
     parentId.value !== parent ||
     priority.value !== t.priority ||
     dueDate.value !== due ||
+    startDate.value !== (t.start_date || '') ||
     completed.value !== t.completed ||
     statusId.value !== status ||
     formSprintId(sprintId.value) !== sprint ||
@@ -681,6 +708,7 @@ function isAddFormDirty(): boolean {
     parentId.value !== b.parentId ||
     priority.value !== b.priority ||
     dueDate.value !== b.dueDate ||
+    startDate.value !== b.startDate ||
     !sameIdSet(selectedTagIds.value, b.selectedTagIds) ||
     newTags.value.trim() !== b.newTags.trim() ||
     statusId.value !== b.statusId ||
@@ -871,6 +899,7 @@ async function save(keepOpen = false): Promise<boolean> {
         parent_id: isSubtask.value ? Number(parentId.value) : null,
         priority: priority.value,
         due_date: dueDate.value || undefined,
+        start_date: startDate.value || undefined,
         tag_ids: tagIds,
         ...(isKanbanTask.value && statusId.value !== ''
           ? { status_id: Number(statusId.value) }
@@ -918,6 +947,7 @@ async function save(keepOpen = false): Promise<boolean> {
     }
     if (dueDate.value) payload.due_date = dueDate.value
     else payload.clear_due_date = true
+    payload.start_date = startDate.value || null
     if (isKanbanTask.value) {
       if (statusId.value !== '') payload.status_id = Number(statusId.value)
       payload.sprint_id = sprintPayloadId(sprintId.value)
@@ -1158,6 +1188,43 @@ async function unclaimCurrentTask() {
     toast.push(err instanceof APIError ? err.message : 'Could not release task', 'error')
   } finally {
     claiming.value = false
+  }
+}
+
+function applyReviewer(task: Task) {
+  reviewerId.value = task.reviewer_id ?? null
+  reviewerName.value = task.reviewer_name || ''
+}
+
+async function setReviewer() {
+  const name = reviewerDraft.value.trim().replace(/^@/, '')
+  if (!taskId.value || !name || !canEditDetails.value) return
+  reviewerBusy.value = true
+  try {
+    const task = await api.setTaskReviewer(taskId.value, name)
+    applyReviewer(task)
+    reviewerDraft.value = ''
+    toast.push('Reviewer set', 'success')
+    notifySaved(task, false)
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not set reviewer', 'error')
+  } finally {
+    reviewerBusy.value = false
+  }
+}
+
+async function clearReviewer() {
+  if (!taskId.value || !(canEditDetails.value || isMyReview.value)) return
+  reviewerBusy.value = true
+  try {
+    const task = await api.clearTaskReviewer(taskId.value)
+    applyReviewer(task)
+    toast.push('Reviewer removed', 'success')
+    notifySaved(task, false)
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Could not remove reviewer', 'error')
+  } finally {
+    reviewerBusy.value = false
   }
 }
 
@@ -1590,6 +1657,38 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             </span>
           </div>
         </div>
+        <div v-if="showReviewer" class="form-group mt-2 kanban-order-claim task-reviewer">
+          <label class="d-block" for="task-reviewer-input">Reviewer</label>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge border" :class="reviewerId ? 'text-bg-info' : 'text-bg-light text-muted'">
+              <i class="bi bi-eye me-1" />{{ reviewerLabel }}
+            </span>
+            <button
+              v-if="reviewerId && (canEditDetails || isMyReview)"
+              type="button"
+              class="btn btn-sm btn-link p-0"
+              :disabled="reviewerBusy"
+              @click="clearReviewer"
+            >
+              {{ isMyReview && !canEditDetails ? 'Step down' : 'Remove' }}
+            </button>
+          </div>
+          <form v-if="canEditDetails" class="d-flex gap-2 mt-1" @submit.prevent="setReviewer">
+            <UserSearchCombobox
+              v-model="reviewerDraft"
+              input-id="task-reviewer-input"
+              :project-id="reviewerProjectId"
+              :disabled="reviewerBusy"
+            />
+            <button
+              type="submit"
+              class="btn btn-sm btn-outline-primary text-nowrap"
+              :disabled="reviewerBusy || !reviewerDraft.trim()"
+            >
+              {{ reviewerId ? 'Change' : 'Ask' }}
+            </button>
+          </form>
+        </div>
         <div v-if="isKanbanTask" class="form-group mt-2 kanban-order-estimate">
           <label for="estimate_points">Estimate (points):</label>
           <input
@@ -1627,6 +1726,18 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             v-model="customFieldValues"
             :project-id="Number(projectId)"
             :read-only="readOnly"
+          />
+        </div>
+        <div class="form-group mt-2 kanban-order-due">
+          <label for="start_date">Start Date (optional):</label>
+          <input
+            id="start_date"
+            v-model="startDate"
+            type="date"
+            class="form-control"
+            :max="dueDate || undefined"
+            :disabled="readOnly"
+            :readonly="readOnly"
           />
         </div>
         <div class="form-group mt-2 kanban-order-due">
@@ -1759,6 +1870,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
           :project-id="currentTask?.project_id ?? null"
           :current-user-id="user?.id ?? null"
           :is-owner="discussionCanModerate"
+          :can-edit-task="canEditDetails"
           :fill-height="isKanbanTask"
         />
 

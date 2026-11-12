@@ -144,7 +144,7 @@ func SyncCompanyMembers() (int, error) {
 		INSERT INTO organization_members (organization_id, user_id, role)
 		SELECT o.id, u.id, $1 FROM organizations o
 		CROSS JOIN users u
-		WHERE o.is_company AND NOT COALESCE(u.is_agent, FALSE)
+		WHERE o.is_company AND NOT COALESCE(u.is_agent, FALSE) AND NOT COALESCE(u.is_guest, FALSE)
 		ON CONFLICT DO NOTHING`, CompanyMemberRole)
 	if err != nil {
 		return 0, err
@@ -178,7 +178,7 @@ func JoinCompanyIfEnabled(userID int) error {
 
 	_, err = pool.Exec(context.Background(), `
 		INSERT INTO organization_members (organization_id, user_id, role)
-		SELECT $1, u.id, $3 FROM users u WHERE u.id = $2 AND NOT COALESCE(u.is_agent, FALSE)
+		SELECT $1, u.id, $3 FROM users u WHERE u.id = $2 AND NOT COALESCE(u.is_agent, FALSE) AND NOT COALESCE(u.is_guest, FALSE)
 		ON CONFLICT DO NOTHING`, orgID, userID, CompanyMemberRole)
 	if err != nil {
 		return err
@@ -262,14 +262,15 @@ func seedCompanySiteRoles() error {
 		PermTasksDelete, PermTasksArchive, PermTasksRestore, PermProjectManage, PermProjectTags,
 		PermCommentsModerate, PermInsightsPeople, PermQueriesManage,
 	}, companyMemberPerms...)
+	manager = append(manager, AgentSitePerms...)
 	defaults := []struct {
 		name  string
 		perms []string
 	}{
-		// Runs projects it's given on a share; no site-wide powers.
-		{"Project Administrator", AllProjectPerms()},
+		// Runs projects it's given on a share, including their AI agents; no site-wide powers.
+		{"Project Administrator", append(AllProjectPerms(), AgentSitePerms...)},
 		// Does the work on the projects shared with them.
-		{"Contributor", companyMemberPerms},
+		{"Contributor", append(append([]string(nil), companyMemberPerms...), SitePermAgentsLocal)},
 		// Follows along without changing anything.
 		{"Reader", []string{}},
 		// Leads a team: hires onto it and runs its projects.

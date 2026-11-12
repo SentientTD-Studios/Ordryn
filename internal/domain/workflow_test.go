@@ -94,6 +94,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "projects archived: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateProjectsAddIsTemplate(); err != nil {
+		fmt.Fprintf(os.Stderr, "projects is_template: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.MigrateProjectsAddWorkflowMode(); err != nil {
 		fmt.Fprintf(os.Stderr, "workflow mode: %v\n", err)
 		os.Exit(1)
@@ -186,6 +190,30 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "claimed_by: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateUsersAddOnboarding(); err != nil {
+		fmt.Fprintf(os.Stderr, "onboarding: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateRequestFormTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "request_forms: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateTaskSnoozesTable(); err != nil {
+		fmt.Fprintf(os.Stderr, "task_snoozes: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateTasksAddStartDate(); err != nil {
+		fmt.Fprintf(os.Stderr, "start_date: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateTasksAddReviewer(); err != nil {
+		fmt.Fprintf(os.Stderr, "reviewer_id: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreatePasskeyTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "passkeys: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateProjectSprintsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "sprints: %v\n", err)
 		os.Exit(1)
@@ -236,6 +264,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := storage.CreateTaskCommentsTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "task comments: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateCommentReactions(); err != nil {
+		fmt.Fprintf(os.Stderr, "comment reactions: %v\n", err)
 		os.Exit(1)
 	}
 	if err := storage.CreateTaskEventsTable(); err != nil {
@@ -329,6 +361,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "roles: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateGuests(); err != nil {
+		fmt.Fprintf(os.Stderr, "guests: %v\n", err)
+		os.Exit(1)
+	}
 	if err := storage.CreateAPIKeysTable(); err != nil {
 		fmt.Fprintf(os.Stderr, "api keys: %v\n", err)
 		os.Exit(1)
@@ -352,6 +388,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := storage.MigrateGrantSiteCreatePermissions(); err != nil {
 		fmt.Fprintf(os.Stderr, "site create permissions: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateGrantAgentPermissions(); err != nil {
+		fmt.Fprintf(os.Stderr, "agent permissions: %v\n", err)
 		os.Exit(1)
 	}
 

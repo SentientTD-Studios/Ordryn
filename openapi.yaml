@@ -68,6 +68,8 @@ tags:
   - name: GitHub
   - name: Live
   - name: Feedback
+  - name: Request forms
+    description: Forms that turn requests from anyone on the site into project tasks.
   - name: Images
 
 paths:
@@ -426,6 +428,55 @@ paths:
                 $ref: "#/components/schemas/OK"
         "429":
           $ref: "#/components/responses/RateLimited"
+
+  /api/v2/auth/passkey/begin:
+    post:
+      tags: [Auth]
+      summary: Start signing in with a passkey
+      description: |
+        No email needed: the authenticator offers the passkeys it holds for this site. Returns
+        `options` for `navigator.credentials.get()` and a `token` (valid 5 minutes, usable once).
+      responses:
+        "200":
+          description: Ceremony started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremony"
+
+  /api/v2/auth/passkey/finish:
+    post:
+      tags: [Auth]
+      summary: Finish signing in with a passkey
+      description: |
+        Verifies the assertion and starts a session. A passkey needs the device's PIN or
+        biometric, so it counts as two-factor: there is no separate MFA step, and the security
+        policy's two-factor requirement is met for this session. The same account checks as
+        password sign-in apply (deactivated, single-sign-on-only, unconfirmed email). Any
+        verification failure returns the same 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, credential]
+              properties:
+                token: { type: string }
+                credential:
+                  type: object
+                  description: The assertion response, with binary fields base64url-encoded.
+      responses:
+        "200":
+          description: Signed in; the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v2/auth/mfa/verify:
     post:
@@ -810,6 +861,170 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
+  /api/v2/me/onboarding:
+    get:
+      tags: [Profile]
+      summary: Getting-started checklist
+      description: |
+        Steps worked out from what you've done: create or join a project, add a task, finish a
+        task, and work with someone. Site admins also get site steps: name the site, set up email,
+        and bring in people. People who already had tasks when this was added start with it dismissed.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Onboarding"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Profile]
+      summary: Hide or show the checklist
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dismissed]
+              properties:
+                dismissed:
+                  type: boolean
+      responses:
+        "200":
+          description: Checklist after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Onboarding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/me/passkeys:
+    get:
+      tags: [Profile]
+      summary: List your passkeys
+      description: Browser sessions only; API keys get 403.
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Passkeys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Passkey"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/me/passkeys/register/begin:
+    post:
+      tags: [Profile]
+      summary: Start adding a passkey
+      description: |
+        Needs your current password, unless this session signed in through single sign-on (those
+        accounts may have no password). Returns `options` to pass to
+        `navigator.credentials.create()` (base64url fields) and a `token` for the finish call,
+        valid for 5 minutes. Passkeys are discoverable credentials with user verification
+        required. The relying party ID is the host of `PUBLIC_URL` (or of the request when it's
+        unset). At most 20 passkeys per account. Allowed while the security policy is waiting for
+        you to set up two-factor authentication.
+      security:
+        - SessionCookie: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string }
+      responses:
+        "200":
+          description: Ceremony started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremony"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/me/passkeys/register/finish:
+    post:
+      tags: [Profile]
+      summary: Finish adding a passkey
+      description: Send the `token` and the authenticator's response (`PublicKeyCredential` as JSON). Each token works once.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, credential]
+              properties:
+                token: { type: string }
+                name:
+                  type: string
+                  maxLength: 60
+                  description: Label such as "Work laptop"; defaults to "Passkey".
+                credential:
+                  type: object
+                  description: The registration response, with binary fields base64url-encoded.
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Passkey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/me/passkeys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Profile]
+      summary: Rename a passkey
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+      responses:
+        "204":
+          description: Renamed
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Profile]
+      summary: Remove a passkey
+      description: It can no longer be used to sign in. (Also remove it from your device or password manager.)
+      security:
+        - SessionCookie: []
+      responses:
+        "204":
+          description: Removed
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/me/avatar:
     post:
       tags: [Profile]
@@ -1140,6 +1355,18 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: include_teams
+          in: query
+          required: false
+          description: |
+            With `project_id`, set to `1` to also return up to 5 team handles
+            (`is_team: true`) after the username hits. A team's handle is its name
+            lowercased with other characters turned into underscores
+            ("Design Team" -> `design_team`). Mentioning it notifies the team's
+            members who are on the project; a username with the same handle wins.
+          schema:
+            type: string
+            enum: ["1"]
       responses:
         "200":
           description: Matching usernames
@@ -1398,6 +1625,51 @@ paths:
       responses:
         "303":
           description: Redirects to Settings
+
+  /api/v2/auth/sso/start:
+    get:
+      tags: [Auth]
+      summary: Start single sign-on (browser redirect)
+      description: |
+        Redirects to the configured OpenID Connect provider (authorization code
+        flow with PKCE, a nonce, and a state bound to this browser by a short-lived
+        cookie). Errors redirect to `/login?sso_error=…`.
+      security: []
+      parameters:
+        - name: return
+          in: query
+          description: Path on this site to land on after signing in. Anything else becomes `/`.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirects to the identity provider
+        "303":
+          description: SSO is off or unreachable; redirects to the login page with `sso_error`
+
+  /api/v2/auth/sso/callback:
+    get:
+      tags: [Auth]
+      summary: Single sign-on callback (public redirect)
+      description: |
+        Verifies the ID token, then signs in the account linked to the provider's
+        subject, or the account with the same verified email (linking it), or a new
+        account when automatic creation is on and the email domain is allowed. In
+        company mode, mapped provider groups set team membership. Local TOTP is not
+        asked for: the provider handles the second factor.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "303":
+          description: Signed in and redirected to the `return` path, or back to `/login?sso_error=…`
 
   /api/v2/webhooks/github:
     post:
@@ -4451,6 +4723,58 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/tasks/{id}/snooze:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Tasks]
+      summary: Snooze a task in your planner
+      description: |
+        Hides the task from your planner's Today sections until `until` (a day after today in your
+        timezone, at most a year ahead). Snoozes are private to you and don't change the task.
+        Any task you can see can be snoozed. Snoozing again replaces the day.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [until]
+              properties:
+                until:
+                  type: string
+                  format: date
+      responses:
+        "200":
+          description: Snoozed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snoozed_until:
+                    type: string
+                    format: date
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Clear your snooze on a task
+      description: Wakes a snoozed task now, or dismisses one that came back from a snooze. Succeeds when there is no snooze.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Cleared
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/tasks/{id}/claim:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -4476,6 +4800,73 @@ paths:
     delete:
       tags: [Tasks]
       summary: Release claim on a kanban task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/tasks/{id}/reviewer:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Tasks]
+      summary: Ask a project member to review a task
+      description: |
+        Sets the task's reviewer. Needs `tasks:edit` on the task's project. Works on
+        classic and kanban project tasks; personal tasks can't have a reviewer.
+        The reviewer must be a person (not an AI agent) who can see the task. They
+        get a "Review requested" notification (unless they set it themselves or
+        turned review requests off) and start watching the task. Fires
+        `task.updated` with `reviewer_id` in the changed fields. Setting the
+        current reviewer again is a no-op.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Give `user_id`, or `user_name` when `user_id` is omitted or 0.
+              properties:
+                user_id:
+                  type: integer
+                  minimum: 1
+                user_name:
+                  type: string
+                  description: Username, with or without a leading `@`.
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Remove a task's reviewer
+      description: |
+        Needs `tasks:edit`, except that the reviewer can always remove themselves.
+        Succeeds when no reviewer is set.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -5348,6 +5739,73 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v2/tasks/{id}/comments/{commentId}/reactions/{code}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: ["+1", "-1", tada, heart, smile, eyes, rocket, check]
+    put:
+      tags: [Tasks]
+      summary: Add your reaction to a comment
+      description: Anyone who can open the task's discussion. Adding the same reaction twice does nothing.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment with `reactions` (code, count, mine, names)
+    delete:
+      tags: [Tasks]
+      summary: Remove your reaction
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment with `reactions`
+
+  /api/v2/tasks/{id}/comments/{commentId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Tasks]
+      summary: Mark a comment resolved
+      description: |
+        For answered questions. The author, anyone who can edit the task, comment
+        moderators, and admins may resolve or reopen. The comment gets `resolved_at`
+        and `resolved_by_name`; clients mark resolved comments with a checkmark.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags: [Tasks]
+      summary: Reopen a resolved comment
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment
+
   /api/v2/tasks/{id}/comments/{commentId}/revisions:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -5776,6 +6234,32 @@ paths:
                 $ref: "#/components/schemas/ProjectInsights"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Project timeline (Gantt) data
+      description: |
+        The project's tasks that have a start or due date (not trashed or archived), ordered by
+        start (or due) date, with the "blocks" links between them. A task with only one date is a
+        single day on the timeline. Returns at most 2000 tasks; `truncated` is true when more exist.
+        `undated_count` counts open tasks with neither date. Any project member can read it.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTimeline"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -6930,6 +7414,257 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/planner:
+    get:
+      tags: [Tasks]
+      summary: Today / Upcoming planner
+      description: |
+        The caller's open tasks, grouped for a daily plan. "Your" tasks are the same set as the home
+        list: personal tasks, classic project tasks you can edit, and kanban tasks you claimed.
+        Dates use the caller's timezone. Sections: `overdue` (due before today), `due_today`,
+        `woken` (a snooze ran out; the task stays here until completed or the snooze is cleared),
+        `upcoming` (due within `days`, grouped by day), and `snoozed` (hidden until `snoozed_until`).
+        A snoozed task is only in `snoozed` until its day, even when overdue. At most 500 tasks.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          description: How many days ahead Upcoming covers (1-60, default 14).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      responses:
+        "200":
+          description: Planner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Planner"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v2/projects/{id}/forms:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Request forms]
+      summary: List a project's request forms
+      description: Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Forms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequestForm"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Request forms]
+      summary: Create a request form
+      description: |
+        Needs `project:manage`. Anyone signed in to the site who has the form's link (`path`) can
+        file a request, which becomes a task in this project. Tasks are created with the access of
+        the form's owner (whoever saved it last), so a form closes if its owner can no longer
+        create tasks here. At most 25 forms per project and 20 questions per form.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestFormInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/forms/{formId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: formId
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      tags: [Request forms]
+      summary: Update a request form
+      description: Replaces the form's settings and makes the caller its owner. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestFormInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Request forms]
+      summary: Delete a request form
+      description: Tasks it created stay. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/forms/{formId}/rotate:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: formId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Request forms]
+      summary: Give a form a new link
+      description: The old link stops working. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Form with its new token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/forms/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Request forms]
+      summary: Open a request form by link
+      description: |
+        Any signed-in user with the link can open an enabled form; they don't need to be on the
+        project. A turned-off form (or one whose owner lost access) returns 400.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Form to fill in
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, title, intro, project_name, fields]
+                properties:
+                  token: { type: string }
+                  title: { type: string }
+                  intro: { type: string }
+                  project_name: { type: string }
+                  fields:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RequestFormField"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/forms/{token}/submit:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Request forms]
+      summary: File a request
+      description: |
+        Creates a task in the form's project: `summary` becomes the title, and the answers are
+        written into the description with a "Requested by @username" line (never the email). The
+        task gets the form's priority and tags, and its activity log records the submitter. Each
+        person can file 20 requests an hour across all forms. The submitter doesn't get access to
+        the task.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [summary]
+              properties:
+                summary:
+                  type: string
+                  maxLength: 140
+                answers:
+                  type: object
+                  description: Answers keyed by question `id`. Dates are YYYY-MM-DD; select answers must match an option.
+                  additionalProperties:
+                    type: string
+      responses:
+        "201":
+          description: Filed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/dashboard:
     get:
       tags: [Dashboard]
@@ -7184,6 +7919,125 @@ paths:
         "400":
           description: Provider unset or settings invalid
 
+  /api/v2/admin/sso:
+    get:
+      tags: [Admin]
+      summary: Get single sign-on settings
+      description: Admins only. The client secret is never returned.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: SSO settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSSOSettings"
+    patch:
+      tags: [Admin]
+      summary: Update single sign-on settings
+      description: |
+        Admins only. Omitted fields stay as they are. `client_secret` is write-only
+        ("" clears it). Turning `enabled` on needs an issuer URL, client ID, and
+        client secret. `sso_only` turns off password sign-in and self-registration
+        for everyone except admins (`403 sso_required`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSSOPatch"
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSSOSettings"
+        "400":
+          description: Validation error
+
+  /api/v2/admin/security-policy:
+    get:
+      tags: [Admin]
+      summary: Get the sign-in policy
+      description: Admins only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSecurityPolicy"
+    patch:
+      tags: [Admin]
+      summary: Update the sign-in policy
+      description: |
+        Admins only. Omitted fields stay as they are.
+
+        - `require_mfa` (`off`, `all`, `roles` with `mfa_role_ids`): browser
+          sessions of people who must use two-factor authentication but haven't
+          set it up get `403 mfa_enrollment_required` everywhere except `GET /me`
+          and `/me/mfa*`, and turning MFA off returns `403 mfa_required_by_policy`.
+          Single sign-on sessions and API keys are exempt.
+        - `min_password_length` (8–64) applies to new and changed passwords.
+        - `session_idle_minutes` (0 or 5–43200) and `session_max_hours` (0–2160)
+          sign browser sessions out; they can't extend the default lifetime.
+        - `allowed_email_domains` limits new accounts (sign-up, invites, people
+          managers, single sign-on).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSecurityPolicyPatch"
+      responses:
+        "200":
+          description: Saved policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSecurityPolicy"
+        "400":
+          description: Validation error
+
+  /api/v2/admin/sso/test:
+    post:
+      tags: [Admin]
+      summary: Check the saved issuer URL
+      description: Admins only. Fetches the provider's discovery document.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Provider found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  authorization_endpoint:
+                    type: string
+                  token_endpoint:
+                    type: string
+        "400":
+          description: No issuer URL saved
+        "502":
+          description: Discovery failed
+
   /api/v2/announcements/dismiss:
     post:
       tags: [Announcements]
@@ -7278,7 +8132,8 @@ paths:
       summary: Update site settings
       description: |
         Needs admin, or `settings:manage` on a company site. `site_mode` and
-        `members_can_create_*` stay with admins (403 otherwise).
+        `members_can_create_*`, `members_can_use_local_agents`, and
+        `members_can_add_project_agents` stay with admins (403 otherwise).
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7386,11 +8241,14 @@ paths:
   /api/v2/company-home:
     get:
       tags: [Auth]
-      summary: Company home page content
+      summary: Company home page
       description: |
-        Company mode only (404 otherwise). Markdown that signed-in people see when no
-        project is shared with them yet; set as `company_home` in site settings.
-        `can_edit` is true for admins and `settings:manage` holders.
+        Company mode only (404 otherwise). `content` is the Markdown welcome set as
+        `company_home` in site settings; `can_edit` is true for admins and `settings:manage`
+        holders. `summary` is the caller's own picture: open work (tasks they claimed, plus
+        unclaimed tasks they created) with overdue / due today / due this week counts, up to
+        12 of their projects (overdue work first, then busiest) with open and overdue counts,
+        and the teams they're on. Dates use the caller's timezone.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7404,6 +8262,38 @@ paths:
                 properties:
                   content: { type: string }
                   can_edit: { type: boolean }
+                  summary:
+                    type: object
+                    properties:
+                      today: { type: string, format: date }
+                      my_work:
+                        type: object
+                        properties:
+                          open: { type: integer }
+                          overdue: { type: integer }
+                          due_today: { type: integer }
+                          due_week: { type: integer }
+                      projects:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+                            slug: { type: string }
+                            open: { type: integer }
+                            overdue: { type: integer }
+                      total_projects:
+                        type: integer
+                        description: All your unarchived projects, including any not listed.
+                      teams:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+                            members: { type: integer }
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -7446,6 +8336,7 @@ paths:
                         role_name: { type: string }
                         can_manage: { type: boolean }
                         can_edit_name: { type: boolean }
+                        is_guest: { type: boolean, description: Company-mode guest account }
                         teams:
                           type: array
                           items:
@@ -7458,6 +8349,8 @@ paths:
                   manages_everyone: { type: boolean }
                   can_create: { type: boolean, description: False for those who only edit names }
                   names_required: { type: boolean, description: True in company mode; new accounts need first_name and last_name }
+                  can_manage_guests: { type: boolean, description: "Company mode, site admins: may make accounts guests or members" }
+                  guests_enabled: { type: boolean, description: The guest policy allows new guests }
                   teams:
                     type: array
                     items:
@@ -7508,6 +8401,7 @@ paths:
                 last_name: { type: string, description: Required in company mode }
                 team_id: { type: integer, description: "Company-mode team to join; omit for no team (admins and users:manage only)." }
                 site_role_id: { type: integer, description: Omit for the default User role. }
+                guest: { type: boolean, description: "Create a guest account (company mode, site admins, guests enabled). The role must hold no site permission but Create projects." }
       responses:
         "201":
           description: Account created
@@ -7569,6 +8463,99 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/people/{id}/guest:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Make an account a guest, or a guest a member
+      description: |
+        Company mode, site admins only. A guest leaves the Company team, so shares with the whole
+        company stop reaching them. What else they reach follows the guest policy. Making a member
+        again rejoins the company. Making a guest needs guests enabled, and refuses the site
+        owner, yourself, agents, and accounts whose site role holds site permissions other than
+        Create projects.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guest]
+              properties:
+                guest: { type: boolean }
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  guest: { type: boolean }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/admin/guest-policy:
+    get:
+      tags: [Admin]
+      summary: Guest policy
+      description: Company mode, site admins only. Also returns how many guest accounts exist.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestPolicy"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Admin]
+      summary: Set the guest policy
+      description: |
+        Decides what guest accounts reach. Shares with the whole company never reach guests.
+        - `enabled`: new guests can be made.
+        - `access_level`: `view` makes every project shared with a guest read only. `full` gives
+          the weaker of the share's role and `role_id`, which must hold no site permission but
+          Create projects.
+        - `via_teams`: shares with a team a guest is on reach them. Otherwise only personal
+          shares do.
+        - `directory`: guests can look up anyone's username. Otherwise only people on their
+          projects.
+
+        Whatever their site role says, guests hold no site permission but Create projects.
+        Saving recomputes every project's access at once.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestPolicy"
+      responses:
+        "200":
+          description: Saved policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/people/{id}/deactivate:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -7604,6 +8591,678 @@ paths:
           description: Reactivated
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/offboarding:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Admin]
+      summary: What an account still holds
+      description: Counts used before offboarding. Same reach rules as deactivate.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claimed_tasks:
+                    type: integer
+                  owned_projects:
+                    type: integer
+                    description: Owner memberships (multi mode) or projects they created (company mode).
+                  personal_keys:
+                    type: integer
+                  project_keys:
+                    type: integer
+                  agents_created:
+                    type: integer
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/offboard:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Deactivate an account and hand off its work
+      description: |
+        Deactivates like `/deactivate`, then optionally:
+        `transfer_projects` makes `successor_id` an owner (multi mode) or gives them a
+        full share (company mode) on every project the account owns; `claims`
+        `release` clears its claims on open tasks and `reassign` moves them to the
+        successor where they can claim (released elsewhere); `revoke_keys` revokes
+        every personal and project API key it made. Validation runs before anything changes.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                successor_id:
+                  type: integer
+                claims:
+                  type: string
+                  enum: [keep, release, reassign]
+                transfer_projects:
+                  type: boolean
+                revoke_keys:
+                  type: boolean
+      responses:
+        "200":
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claims_reassigned:
+                    type: integer
+                  claims_released:
+                    type: integer
+                  projects_transferred:
+                    type: integer
+                  keys_revoked:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/admin/maintenance:
+    get:
+      tags: [Admin]
+      summary: Get maintenance mode
+      description: Admins only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: State
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Maintenance"
+    put:
+      tags: [Admin]
+      summary: Turn maintenance (read-only) mode on or off
+      description: |
+        Admins only. While it's on, every POST, PUT, PATCH, and DELETE from anyone
+        but an admin returns `503 maintenance` with `Retry-After`, except signing in
+        and out. Reads keep working, and `GET /site` reports `maintenance` so clients
+        can show a banner. Background jobs keep running.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                message:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Maintenance"
+
+  /api/v2/admin/backups:
+    get:
+      tags: [Admin]
+      summary: Backup status
+      description: Admins only. Whether pg_dump is available, the schedule from the environment, and stored backups.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pg_dump_available:
+                    type: boolean
+                  pg_dump_version:
+                    type: string
+                  scheduled:
+                    type: boolean
+                  schedule:
+                    type: object
+                    properties:
+                      dir:
+                        type: string
+                      interval_hours:
+                        type: integer
+                      keep:
+                        type: integer
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        size:
+                          type: integer
+                        created_at:
+                          type: string
+                          format: date-time
+
+  /api/v2/admin/backups/download:
+    get:
+      tags: [Admin]
+      summary: Download a fresh backup
+      description: |
+        Admins only. Streams a .tar.gz with `database.dump` (pg_dump custom format),
+        `uploads/` (when images are stored on this server), and `manifest.json` with
+        restore steps. Needs pg_dump on the server (PATH or `PG_DUMP_PATH`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Archive
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "503":
+          description: pg_dump isn't installed
+
+  /api/v2/admin/backups/files/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Admin]
+      summary: Download a stored (scheduled) backup
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Archive
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/admin/audit-stream:
+    get:
+      tags: [Admin]
+      summary: Get audit streaming settings
+      description: Admins only. Secrets are never returned.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStream"
+    put:
+      tags: [Admin]
+      summary: Configure audit streaming
+      description: |
+        Admins only. While enabled, new admin events (plus project and task events
+        when included) are POSTed to `url` about every 15 seconds as
+        `{"site": "...", "events": [{source, id, occurred_at, actor_user_id, actor,
+        event_type, target_type, target_id, target, metadata}]}`, in order, up to 200
+        per batch. With a `secret`, requests carry `X-Ordryn-Timestamp` and
+        `X-Ordryn-Signature: sha256=HMAC(secret, timestamp + "." + body)`;
+        `auth_header` is sent as `Authorization`. A batch is retried until the
+        endpoint answers 2xx. Turning it on starts from new events (no backfill);
+        use the audit CSV export for history. `secret` and `auth_header` are
+        write-only ("" clears).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                url:
+                  type: string
+                secret:
+                  type: string
+                  writeOnly: true
+                auth_header:
+                  type: string
+                  writeOnly: true
+                include_project:
+                  type: boolean
+                include_task:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStream"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/admin/audit-stream/test:
+    post:
+      tags: [Admin]
+      summary: Send a test event to the audit stream endpoint
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Delivered
+        "502":
+          description: The endpoint failed
+
+  /api/v2/project-templates:
+    get:
+      tags: [Projects]
+      summary: List project templates you can start from
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        workflow_mode:
+                          type: string
+                        open_tasks:
+                          type: integer
+
+  /api/v2/project-templates/{id}/projects:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Projects]
+      summary: Create a project from a template
+      description: |
+        Creates a project you own with the template's workflow mode, board columns
+        (done/default flags, descriptions, WIP limits, status gates, order), project
+        roles, project tags, sprint settings, and automation rules. Rules that name a
+        specific sprint, person, or agent are skipped (`rules_skipped`). With
+        `include_tasks`, open tasks and their open subtasks are copied with priority,
+        estimate, column, and tags. Members, comments, and history are not copied.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                include_tasks:
+                  type: boolean
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_id:
+                    type: integer
+                  name:
+                    type: string
+                  tasks_copied:
+                    type: integer
+                  rules_copied:
+                    type: integer
+                  rules_skipped:
+                    type: integer
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/template:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Whether the project is a template
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Flag
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_template:
+                    type: boolean
+    put:
+      tags: [Projects]
+      summary: Mark or unmark the project as a template
+      description: Needs Manage project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_template:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/portfolio:
+    get:
+      tags: [Projects]
+      summary: Portfolio of projects
+      description: |
+        Every project the caller can open (live ones; `archived=1` adds archived),
+        with open, overdue, due-in-7-days, unclaimed, and done counts, tasks done in
+        the last 7 days, and the latest status update.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: archived
+          in: query
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PortfolioProject"
+
+  /api/v2/projects/{id}/status-updates:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: List a project's status updates (newest first)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 100
+      responses:
+        "200":
+          description: Updates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectStatusUpdate"
+    post:
+      tags: [Projects]
+      summary: Post a status update
+      description: Project managers only. `body` is Markdown (4000 characters at most).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [health]
+              properties:
+                health:
+                  type: string
+                  enum: [on_track, at_risk, off_track]
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Posted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectStatusUpdate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/status-updates/{updateId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: updateId
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      tags: [Projects]
+      summary: Delete a status update
+      description: Project managers only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/reports/time:
+    get:
+      tags: [Reports]
+      summary: Timesheet
+      description: |
+        Logged time between `from` and `to` (inclusive, YYYY-MM-DD in your time zone;
+        defaults to the last 7 days; at most 366 days). You see your own entries on any
+        project you can open, and everyone's on projects where your role has
+        `insights:people`. `format=csv` downloads a CSV. At most 5000 entries
+        (`truncated` says when more matched).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: Timesheet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from:
+                    type: string
+                  to:
+                    type: string
+                  total_minutes:
+                    type: integer
+                  truncated:
+                    type: boolean
+                  by_person:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  by_project:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        logged_at:
+                          type: string
+                          format: date-time
+                        user_id:
+                          type: integer
+                        user_name:
+                          type: string
+                        project_id:
+                          type: integer
+                        project_name:
+                          type: string
+                        task_id:
+                          type: integer
+                        task_title:
+                          type: string
+                        minutes:
+                          type: integer
+                        note:
+                          type: string
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/reports/workload:
+    get:
+      tags: [Reports]
+      summary: Workload across projects
+      description: |
+        Per person: open claimed tasks and points, claimed overdue tasks, projects with
+        open claims, tasks completed and minutes logged in the last 7 days. Covers every
+        project where your role has `insights:people` (`project_count`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Workload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_count:
+                    type: integer
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user_id:
+                          type: integer
+                        user_name:
+                          type: string
+                        claimed_open:
+                          type: integer
+                        claimed_points:
+                          type: integer
+                        claimed_overdue:
+                          type: integer
+                        projects:
+                          type: integer
+                        done_last_week:
+                          type: integer
+                        minutes_last_week:
+                          type: integer
 
   /api/v2/admin/users:
     get:
@@ -8752,6 +10411,22 @@ components:
         setup_required:
           type: boolean
           description: True until first-time setup (POST /api/v2/setup) creates the admin account.
+        sso_enabled:
+          type: boolean
+          description: Single sign-on is set up; show "Sign in with {sso_label}".
+        sso_label:
+          type: string
+        sso_only:
+          type: boolean
+          description: Password sign-in and self-registration are off for everyone but admins.
+        min_password_length:
+          type: integer
+          description: Minimum length for new passwords (security policy).
+        maintenance:
+          type: boolean
+          description: The site is read-only for everyone but admins.
+        maintenance_message:
+          type: string
 
     ProjectAccess:
       type: object
@@ -8885,6 +10560,24 @@ components:
         can_edit_name:
           type: boolean
           description: Company mode; true when the user may set their own first and last name (people:profile).
+        is_guest:
+          type: boolean
+          description: Company mode; a guest account from outside the company.
+
+    GuestPolicy:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        access_level: { type: string, enum: [view, full] }
+        role_id:
+          type: integer
+          nullable: true
+          description: Site role guests get on full shares (required for `full`).
+        via_teams: { type: boolean }
+        directory: { type: boolean }
+        guest_count:
+          type: integer
+          readOnly: true
 
     MFARequired:
       type: object
@@ -8935,6 +10628,9 @@ components:
       properties:
         user_name:
           type: string
+        is_team:
+          type: boolean
+          description: True for a team handle (only with `include_teams=1`).
 
     UserPatch:
       type: object
@@ -10567,6 +12263,157 @@ components:
           type: string
           maxLength: 50
 
+    Passkey:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+
+    PasskeyCeremony:
+      type: object
+      required: [token, options]
+      properties:
+        token: { type: string }
+        options:
+          type: object
+          description: "`{ publicKey: … }` WebAuthn options with base64url-encoded binary fields."
+
+    PlannerTask:
+      allOf:
+        - $ref: "#/components/schemas/Task"
+        - type: object
+          properties:
+            snoozed_until:
+              type: string
+              format: date
+              description: Your snooze day, when set.
+
+    Planner:
+      type: object
+      required: [today, days, overdue, due_today, woken, upcoming, snoozed]
+      properties:
+        today:
+          type: string
+          format: date
+        days:
+          type: integer
+        overdue:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        due_today:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        woken:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        upcoming:
+          type: array
+          items:
+            type: object
+            required: [date, tasks]
+            properties:
+              date: { type: string, format: date }
+              tasks:
+                type: array
+                items: { $ref: "#/components/schemas/PlannerTask" }
+        snoozed:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+
+    RequestFormField:
+      type: object
+      required: [id, label, type]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9_]{1,32}$"
+          description: Answer key. Omit on save to get q1, q2, …; `summary` is reserved.
+        label: { type: string, maxLength: 120 }
+        type:
+          type: string
+          enum: [text, textarea, select, date, number]
+        required: { type: boolean }
+        help: { type: string }
+        options:
+          type: array
+          description: Choices for `select` (1-30).
+          items: { type: string }
+
+    RequestFormInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 120 }
+        intro: { type: string, maxLength: 2000 }
+        fields:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/RequestFormField"
+        priority: { type: integer, minimum: 0, maximum: 3 }
+        tag_ids:
+          type: array
+          description: Tags of this project to put on every request.
+          items: { type: integer }
+        enabled:
+          type: boolean
+          description: Defaults to true.
+
+    RequestForm:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        token: { type: string }
+        path:
+          type: string
+          description: Site-relative link to share, `/f/{token}`.
+        title: { type: string }
+        intro: { type: string }
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/RequestFormField"
+        priority: { type: integer }
+        tag_ids:
+          type: array
+          items: { type: integer }
+        enabled: { type: boolean }
+        owner_id:
+          type: integer
+          nullable: true
+          description: The manager whose access creates the tasks.
+        submissions: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Onboarding:
+      type: object
+      required: [dismissed, complete, steps]
+      properties:
+        dismissed: { type: boolean }
+        complete:
+          type: boolean
+          description: Every step is done.
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id, label, description, href, done]
+            properties:
+              id:
+                type: string
+                enum: [project, task, complete, teammate, site_name, email, people]
+              label: { type: string }
+              description: { type: string }
+              href:
+                type: string
+                description: App path where the step is done.
+              done: { type: boolean }
+              admin_only: { type: boolean }
+
     Task:
       type: object
       properties:
@@ -10580,6 +12427,10 @@ components:
           type: boolean
         due_date:
           type: string
+        start_date:
+          type: string
+          format: date
+          description: Planned start (YYYY-MM-DD); omitted when not set.
         project_id:
           type: integer
           nullable: true
@@ -10632,6 +12483,13 @@ components:
         claimed_by_name:
           type: string
           description: Display name of the claimer
+        reviewer_id:
+          type: integer
+          nullable: true
+          description: User id of the member asked to review this task; null when none
+        reviewer_name:
+          type: string
+          description: Display name of the reviewer
         sprint_id:
           type: integer
           nullable: true
@@ -10716,6 +12574,41 @@ components:
         linked_at:
           type: string
           format: date-time
+
+    ProjectTimeline:
+      type: object
+      required: [project_id, tasks, links, undated_count, truncated]
+      properties:
+        project_id:
+          type: integer
+        tasks:
+          type: array
+          items:
+            type: object
+            required: [id, title, completed, priority, parent_id]
+            properties:
+              id: { type: integer }
+              title: { type: string }
+              start_date: { type: string, format: date }
+              due_date: { type: string, format: date }
+              completed: { type: boolean }
+              priority: { type: integer }
+              parent_id: { type: integer, nullable: true }
+              status_name: { type: string }
+              claimed_by_name: { type: string }
+        links:
+          type: array
+          description: "`from_task_id` blocks `to_task_id`; both are in `tasks`."
+          items:
+            type: object
+            required: [from_task_id, to_task_id]
+            properties:
+              from_task_id: { type: integer }
+              to_task_id: { type: integer }
+        undated_count:
+          type: integer
+        truncated:
+          type: boolean
 
     TaskWatch:
       type: object
@@ -10992,6 +12885,10 @@ components:
           description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
         due_date:
           type: string
+        start_date:
+          type: string
+          format: date
+          description: Planned start (YYYY-MM-DD). Must be on or before `due_date`.
         project_id:
           type: integer
           nullable: true
@@ -11039,6 +12936,12 @@ components:
           type: string
         clear_due_date:
           type: boolean
+        start_date:
+          type: string
+          nullable: true
+          description: >
+            Planned start (YYYY-MM-DD); `null` or `""` clears it. The start must be on
+            or before the due date, including when only the due date changes.
         project_id:
           type: integer
           nullable: true
@@ -11527,7 +13430,7 @@ components:
         than OR, so "A and B or C" is "(A and B) or C" (nest a group to change that). A row without a
         join uses its group's `op`. Fields include id,
         title, description, text, project, completed, workflow_status, priority, tags, due_date,
-        created_date, modified_date, completed_date, status_changed_date, days_in_status, claimed_by, created_by, sprint, estimate,
+        created_date, modified_date, completed_date, status_changed_date, days_in_status, claimed_by, reviewer, created_by, sprint, estimate,
         is_subtask, has_subtasks, favorite and cf:<custom field key>. Date values accept YYYY-MM-DD
         or macros such as @today-7, @start_of_week and @end_of_week; `between` (dates only) takes [from, to] and includes both ends; people accept @me; sprints accept @current_sprint.
       properties:
@@ -12161,6 +14064,12 @@ components:
         members_can_create_organizations:
           type: boolean
           description: Whether the member site role has orgs:create. Admins can always create organizations.
+        members_can_use_local_agents:
+          type: boolean
+          description: Whether the member site role has agents:local (create and use local agent keys). Taking it away stops existing local agent keys. Admins always have it.
+        members_can_add_project_agents:
+          type: boolean
+          description: Whether the member site role has agents:project (add and configure project AI agents and mint their keys). Pausing or removing an agent never needs it. Admins always have it.
         site_mode:
           type: string
           enum: [multi, company]
@@ -12295,6 +14204,12 @@ components:
         members_can_create_organizations:
           type: boolean
           description: Whether the member site role has orgs:create. Admins can always create organizations.
+        members_can_use_local_agents:
+          type: boolean
+          description: Whether the member site role has agents:local (create and use local agent keys). Taking it away stops existing local agent keys. Admins always have it.
+        members_can_add_project_agents:
+          type: boolean
+          description: Whether the member site role has agents:project (add and configure project AI agents and mint their keys). Pausing or removing an agent never needs it. Admins always have it.
         company_home:
           type: string
           maxLength: 20000
@@ -12397,7 +14312,7 @@ components:
       properties:
         id:
           type: string
-          enum: ["projects:create", "orgs:create", createinvites]
+          enum: ["projects:create", "orgs:create", createinvites, "users:manage", "queries:site", "agents:local", "agents:project"]
         label:
           type: string
         description:
@@ -12554,6 +14469,210 @@ components:
           type: string
         key:
           type: string
+    AdminSecurityPolicy:
+      type: object
+      properties:
+        require_mfa:
+          type: string
+          enum: ["off", all, roles]
+        mfa_role_ids:
+          type: array
+          items:
+            type: integer
+        min_password_length:
+          type: integer
+        session_idle_minutes:
+          type: integer
+          description: 0 = off.
+        session_max_hours:
+          type: integer
+          description: 0 = the server default.
+        allowed_email_domains:
+          type: array
+          items:
+            type: string
+        default_session_hours:
+          type: integer
+          readOnly: true
+    AdminSecurityPolicyPatch:
+      type: object
+      properties:
+        require_mfa:
+          type: string
+          enum: ["off", all, roles]
+        mfa_role_ids:
+          type: array
+          items:
+            type: integer
+        min_password_length:
+          type: integer
+          minimum: 8
+          maximum: 64
+        session_idle_minutes:
+          type: integer
+        session_max_hours:
+          type: integer
+        allowed_email_domains:
+          type: array
+          items:
+            type: string
+    AdminSSOSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        label:
+          type: string
+          description: Text after "Sign in with" on the login page.
+        issuer_url:
+          type: string
+        client_id:
+          type: string
+        client_secret_set:
+          type: boolean
+        scopes:
+          type: string
+          description: Space-separated scopes requested alongside `openid`.
+        auto_create:
+          type: boolean
+          description: Create an account on first sign-in when the email domain is allowed.
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        sso_only:
+          type: boolean
+        groups_claim:
+          type: string
+          description: ID token claim with the person's groups (company mode team sync).
+        team_map:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Provider group → company-mode team id.
+        redirect_uri:
+          type: string
+          description: Callback URL to register with the provider.
+    AdminSSOPatch:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        label:
+          type: string
+        issuer_url:
+          type: string
+        client_id:
+          type: string
+        client_secret:
+          type: string
+          writeOnly: true
+        scopes:
+          type: string
+        auto_create:
+          type: boolean
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        sso_only:
+          type: boolean
+        groups_claim:
+          type: string
+        team_map:
+          type: object
+          additionalProperties:
+            type: integer
+    Maintenance:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+    AuditStream:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        url:
+          type: string
+        secret_set:
+          type: boolean
+        auth_header_set:
+          type: boolean
+        include_project:
+          type: boolean
+        include_task:
+          type: boolean
+        last_success_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_error:
+          type: string
+        last_error_at:
+          type: string
+          format: date-time
+          nullable: true
+    ProjectStatusUpdate:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        author_id:
+          type: integer
+        author_name:
+          type: string
+        health:
+          type: string
+          enum: [on_track, at_risk, off_track]
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PortfolioProject:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        workflow_mode:
+          type: string
+        archived:
+          type: boolean
+        owner_name:
+          type: string
+        organization_name:
+          type: string
+        open:
+          type: integer
+        overdue:
+          type: integer
+        due_this_week:
+          type: integer
+        unclaimed:
+          type: integer
+        done_last_week:
+          type: integer
+        done:
+          type: integer
+        latest_update:
+          allOf:
+            - $ref: "#/components/schemas/ProjectStatusUpdate"
+          nullable: true
+        can_post_update:
+          type: boolean
     ImageHostingTestResult:
       type: object
       properties:

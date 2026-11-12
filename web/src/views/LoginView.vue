@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { pathPrefix } from '@/base'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { useSite } from '@/composables/useSite'
@@ -12,6 +13,7 @@ import {
   stashDeviceAuthReturn,
   takeDeviceAuthReturn,
 } from '@/deviceAuthReturn'
+import { isPasskeyCancel, passkeysSupported } from '@/utils/webauthn'
 
 const email = ref('')
 const password = ref('')
@@ -22,16 +24,45 @@ const error = ref('')
 // True when the password was right but the email isn't confirmed yet.
 const needsConfirmation = ref(false)
 const resending = ref(false)
-const { login, verifyMFA } = useAuth()
+const { login, verifyMFA, loginWithPasskey } = useAuth()
+const canUsePasskey = passkeysSupported()
+
+async function onPasskey() {
+  busy.value = true
+  error.value = ''
+  needsConfirmation.value = false
+  try {
+    await loginWithPasskey()
+    await finishLogin()
+  } catch (err) {
+    if (isPasskeyCancel(err)) return
+    error.value = err instanceof APIError ? err.message : 'Passkey sign-in failed'
+    needsConfirmation.value = err instanceof APIError && err.code === 'email_unverified'
+  } finally {
+    busy.value = false
+  }
+}
 const { push } = useToast()
-const { enableJoinRequests, isCompanyMode } = useSite()
+const { enableJoinRequests, isCompanyMode, ssoEnabled, ssoLabel, ssoOnly } = useSite()
 const router = useRouter()
 const route = useRoute()
+// SSO-only sites hide the password form; admins can still open it.
+const showPasswordForm = ref(false)
+const passwordFormVisible = computed(() => !ssoOnly.value || showPasswordForm.value || mfaRequired.value)
+
+const ssoStartURL = computed(() => {
+  const queryRedirect = typeof route.query.redirect === 'string' ? route.query.redirect : null
+  const target = resolvePostLoginRedirect(queryRedirect, '/')
+  return `${pathPrefix()}/api/v2/auth/sso/start?return=${encodeURIComponent(target)}`
+})
 
 onMounted(() => {
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : null
   if (isDeviceAuthPath(redirect)) {
     stashDeviceAuthReturn(redirect)
+  }
+  if (typeof route.query.sso_error === 'string') {
+    error.value = route.query.sso_error
   }
 })
 
@@ -98,7 +129,19 @@ function backToPassword() {
           </div>
           <form @submit.prevent="onSubmit">
             <div class="card-body">
-              <template v-if="!mfaRequired">
+              <template v-if="ssoEnabled && !mfaRequired">
+                <a :href="ssoStartURL" class="btn btn-primary w-100 mb-3">
+                  <i class="bi bi-box-arrow-in-right me-1" aria-hidden="true" />Sign in with {{ ssoLabel }}
+                </a>
+                <div v-if="!passwordFormVisible">
+                  <div v-if="error" class="text-danger mb-2">{{ error }}</div>
+                  <button type="button" class="btn btn-link btn-sm px-0" @click="showPasswordForm = true">
+                    Administrator? Sign in with a password
+                  </button>
+                </div>
+                <div v-else class="text-center text-muted small mb-3">or sign in with your password</div>
+              </template>
+              <template v-if="!mfaRequired && passwordFormVisible">
                 <div class="mb-3">
                   <label for="login-email" class="form-label">Email</label>
                   <input
@@ -135,8 +178,14 @@ function backToPassword() {
                 <div class="mb-2">
                   <RouterLink to="/forgot-password" class="text-decoration-none small">Forgot Password?</RouterLink>
                 </div>
+                <template v-if="canUsePasskey">
+                  <div class="text-center text-muted small my-2">or</div>
+                  <button type="button" class="btn btn-outline-secondary w-100" :disabled="busy" @click="onPasskey">
+                    <i class="bi bi-fingerprint me-1" aria-hidden="true" />Sign in with a passkey
+                  </button>
+                </template>
               </template>
-              <template v-else>
+              <template v-else-if="mfaRequired">
                 <p class="text-muted">
                   Enter the 6-digit code from your authenticator app, or one of your recovery codes.
                 </p>
@@ -157,8 +206,8 @@ function backToPassword() {
               </template>
             </div>
             <div class="card-footer d-flex justify-content-between align-items-center">
-              <span v-if="!mfaRequired && isCompanyMode" class="small text-muted">
-                Need an account? Ask your manager.
+              <span v-if="!mfaRequired && (isCompanyMode || ssoOnly)" class="small text-muted">
+                {{ ssoOnly ? `New here? Sign in with ${ssoLabel}.` : 'Need an account? Ask your manager.' }}
               </span>
               <span v-else-if="!mfaRequired" class="small">
                 <RouterLink to="/register">Create an account</RouterLink>
@@ -170,7 +219,7 @@ function backToPassword() {
               <button v-else type="button" class="btn btn-link text-decoration-none px-0" @click="backToPassword">
                 Back
               </button>
-              <button type="submit" class="btn btn-primary" :disabled="busy">
+              <button v-if="passwordFormVisible" type="submit" class="btn btn-primary" :disabled="busy">
                 <template v-if="mfaRequired">
                   {{ busy ? 'Verifying…' : 'Verify' }}
                 </template>

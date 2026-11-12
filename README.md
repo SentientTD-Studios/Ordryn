@@ -6,30 +6,49 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 
 ## Features
 
-- User signup / login / logout with forgot-password flow and optional TOTP MFA
+- User signup / login / logout with forgot-password flow and optional TOTP MFA, plus **passkeys** (sign in with a fingerprint, face, or device PIN, with no email or password typed). A passkey sign-in counts as two-factor for the security policy. Adding one needs your current password (single-sign-on sessions excepted), and you can rename or remove them in Settings. Set PUBLIC_URL so the passkey domain is fixed
+- Sign-in policy (Admin → Security): require two-factor authentication for everyone or chosen roles, minimum password length, idle and maximum session lengths, and allowed email domains for new accounts
+- Single sign-on with any OpenID Connect provider (Google Workspace, Entra ID, Okta, Authentik, Keycloak): link by verified email, optional account creation limited to allowed domains, "require SSO" with an admin password fallback, and company-mode team sync from provider groups (Admin → Security)
 - Editable profile (display name, timezone, tasks-per-page preference)
 - Per-user tasks: add, edit, duplicate, complete, delete, drag-and-drop reorder
 - Projects with rename, archive, and delete; tags with create-on-type, rename, recolor, and delete
+- Project templates: mark any project as a template and start new projects from it (board columns, WIP limits, gates, roles, tags, sprint settings, automation rules, and optionally its open tasks)
 - Kanban boards with custom statuses, estimates, claims, named sprints (descriptions, date ranges, lock dates, and a board sprint switcher), soft per-column WIP limits, and collapsible columns
 - Priority levels (None / Low / Medium / High) with optional sort-by-priority view
 - Due dates with smart filters (today, overdue, this week, no date) and relative labels, plus due-date reminders at 08:00 local the day before and the morning of (for your own tasks, tasks you claimed, and tasks in projects you own)
+- Start dates and a project **Timeline** view (any project): tasks with a start and/or due date are bars (due-only tasks are milestones), with "blocks" links drawn as arrows, a today line, day/week/month zoom, and drag-to-reschedule for members who can edit tasks. The start date must be on or before the due date
+- **Planner** (Today / Upcoming): your open tasks grouped into Overdue, Due today, and the next 7, 14 or 30 days, with one-click complete. **Snooze** a task to hide it from Today until a later day (tomorrow, in 3 days, next Monday, in a week, or any date). Snoozes are private, and a task comes back to Today when its snooze ends
 - Recurring tasks: daily / weekly (chosen weekdays) / monthly / yearly or every N units, scheduled from the due date or from completion, with optional end date or occurrence count. Completing a task creates the next occurrence (title, description, priority, tags, custom fields, estimate, claim, and subtasks carry over) and keeps a linked series history; reopening within 15 minutes undoes an untouched next occurrence
 - Watchers: watch a task or a whole project to get in-app notifications when tasks are completed or reopened, change status or due date, are claimed, or become blocked or unblocked; creating, commenting on, or claiming a project task watches it automatically
+- **Guest accounts** (company mode) for clients and contractors. Admins create guests or turn accounts into guests on the People page, and decide in Admin → Guests what guests reach: read only or a capped role, whether team shares reach them, and whether they can look up the directory. Guests are never in the company, so company-wide shares skip them, and they hold no site permission but Create projects
+- Reviewers: ask a project member to review a task. They get a "Review requested" notification (which they can turn off) and start watching it. Saved queries can filter and sort by `reviewer`, and the reviewer can step down without edit rights
+- **Request forms**: project managers build intake forms (short text, paragraph, choice, date and number questions, with default priority and tags) and share a link. Anyone signed in to the site can file a request, even without being on the project. Each request becomes a task with the answers in its description and a "Requested by @username" line. Links can be rotated, forms turned off, and each person can file 20 requests an hour
+- Getting-started checklist on Home for new people: create or join a project, add a task, finish a task, and work with someone, plus site setup steps (name, email, people) for admins. Steps tick off from what you actually do. It can be hidden and brought back in Settings; people who already had tasks when upgrading start with it hidden
+- **Company home** (company mode, at /home and in the sidebar): the admin-written welcome, your open / overdue / due-today / due-this-week work, your projects with overdue work first, and your teams. People with no projects land on it automatically
 - Optional email notifications: once an admin allows them, each user opts in per notification type, as they happen (unread notifications batched into at most one email per 10 minutes, skipping anything already seen in the app) or as a daily summary; notification email has its own rate limit separate from account mail
 - Task links: blocks / blocked by, relates to, and duplicates, with cycle prevention, a blocked badge on list and board cards, and an unblocked notification when the last open blocker is completed
 - Search with status, tag, due-date, and priority filters; clearing those filters keeps you in the current project
 - Markdown task descriptions with truncated list view and expand-in-place
-- Task discussion comments with @-mentions of project members (notifies them) and #task links; authors and project owners can edit comments, with posted/edited timestamps and an admin restore log
+- Task discussion comments with @-mentions of project members or teams (`@design_team` notifies the team's members on the project) and #task links; authors and project owners can edit comments, with posted/edited timestamps and an admin restore log
+- Comment reactions (👍 👎 🎉 ❤️ 😄 👀 🚀 ✅) and "Mark resolved" for answered questions, which get a checkmark in the thread
 - Bulk actions: complete, delete, move project, add/remove tag, set/clear due date, set priority, set kanban status, move sprint
 - Trash: deleted tasks (with their subtasks) go to Trash, restorable with comments, links, fields, and history intact until purged after an admin-set retention (default 30 days); an Undo toast appears right after deleting
 - ICS calendar feed for due tasks; in-app calendar view; ICS import to sync due dates
 - CSV import with preview/confirm; CSV/JSON export (auto-creates projects and tags on import)
 - Task activity timeline in the edit sidebar
 - Dashboard with overdue/today counts, completion charts, and streak tracking
+- Command palette (`Ctrl`/`⌘`+`K`, or Search in the sidebar): search tasks and projects, jump to `#123`, go to any page, create a task or project, toggle the theme
+- Portfolio: every project you can open with open/overdue/due-soon/unclaimed counts, weekly throughput, progress, and the lead's latest status update (on track / at risk / off track, with history)
+- Reports: workload per person across every project where you can view team workload, and a timesheet of logged time by date range, person, and project with CSV export
 - Keyboard shortcuts for power users (`?` for help)
 - Invite-only registration and role-based permissions (admin, create invites)
 - Project and organization **roles** built from a permission catalog. Owner is the only built-in role; everything else is created by each organization or project (see [Roles](#roles))
+- Offboarding: deactivating someone shows what they still hold and can hand their claimed tasks and projects to a successor and revoke their API keys in one step
 - Admin panel: site settings, user management, global announcements, configurable image hosting (S3-compatible or local uploads)
+- Prometheus metrics at `/metrics` (set `METRICS_TOKEN`; scrape with `Authorization: Bearer <token>`): request counts and latency per API route, live-update streams, hook delivery backlog and dead letters, AI agent runs by status, and account, project, and task totals
+- Maintenance mode: one switch makes the site read-only for everyone but admins (writes get `503 maintenance`) with a banner explaining why
+- Backups (Admin → Settings): download a `.tar.gz` of the database (`pg_dump`) and local uploads on demand, or schedule them to a folder with rotation (`BACKUP_DIR`, `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP`); restore steps are in each archive's manifest
+- Audit streaming to a SIEM (Admin → Audit log): signed JSON batches of admin events, optionally project and task events, delivered in order with retries
 - Dark and light themes
 - Vue 3 SPA at the site root (or `BASE_PATH`, e.g. `/gotodo/`) over `/api/v2` (session cookie auth)
 - Live updates over Server-Sent Events so shared projects and other tabs stay in sync without a refresh
@@ -39,7 +58,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 
 ## Extensions
 
-Ordryn loads folders from `data/extensions/` (or `EXTENSIONS_DIR`) at startup. Each folder is one extension. Copy examples from `examples/extensions/` (or keep a local copy under `data/extensions/`), then click **Reload Extensions** in **Admin → Extensions** to hot-reload them into the running application without restarting the server. Hot reloading rescans manifests, synchronizes custom field definitions in PostgreSQL, refreshes hook bindings, and notifies connected clients in real time. Enable loaded extensions in **Admin → Extensions**, then configure destinations where `settings.scope` allows: classic project Extensions, kanban Extensions, Profile → Integrations, or Admin for site-only hooks. Project members can open the Extensions tab to see which destinations are turned on (name, description, triggers, and the webhook hostname) without the secret, quiet hours, or other owner settings.
+Ordryn loads folders from `data/extensions/` (or `EXTENSIONS_DIR`) at startup. Each folder is one extension. Copy examples from `examples/extensions/` (or keep a local copy under `data/extensions/`), then click **Reload Extensions** in **Admin â Extensions** to hot-reload them into the running application without restarting the server. Hot reloading rescans manifests, synchronizes custom field definitions in PostgreSQL, refreshes hook bindings, and notifies connected clients in real time. Enable loaded extensions in **Admin â Extensions**, then configure destinations where `settings.scope` allows: classic project Extensions, kanban Extensions, Profile â Integrations, or Admin for site-only hooks. Project members can open the Extensions tab to see which destinations are turned on (name, description, triggers, and the webhook hostname) without the secret, quiet hours, or other owner settings.
 
 Bundled examples cover chat destinations (Discord, Slack, Teams, Google Chat, ntfy, generic webhook, email relay), focused hooks (due-dates including `task.due_soon`, comments + mentions, claimed, activity, lifecycle, join-requests), a personal **Mentions** ntfy destination, **Standup** (sandboxed daily check-in panel), **Retro** (kanban-tab retrospective using the document store), **Callback bot** (sandboxed panel, callback tokens, inbound `complete`/`set_field`), and custom fields (`severity`, `estimate`, `fields-demo` including `date` and `markdown`).
 
@@ -68,13 +87,13 @@ Site (Admin): `join.request`, `join.approved`, `join.denied`
 
 Triggers may include `*` to match every **declared** hook. Empty project/member trigger lists still mean none. `templates["*"]` is the default message when an event has no specific template.
 
-SSE still uses `task.updated` / `project.updated` / `task.commented` so the UI refreshes. Outbound hooks use the specific event (`task.status_changed`, `task.due_changed`, `task.comment_edited`, …). Residual `task.updated` fires only for leftover field keys (title, description, priority, parent, estimate, favorite, custom fields). Destinations subscribed to `task.updated` still receive those specialized task mutations (kanban status, due date, tags, claims, complete/archive, and project/sprint moves) so chat extensions that only declare `task.updated` keep posting. A destination that selected a specific event uses that event’s template; otherwise the `task.updated` template is used.
+SSE still uses `task.updated` / `project.updated` / `task.commented` so the UI refreshes. Outbound hooks use the specific event (`task.status_changed`, `task.due_changed`, `task.comment_edited`, â¦). Residual `task.updated` fires only for leftover field keys (title, description, priority, parent, estimate, favorite, custom fields). Destinations subscribed to `task.updated` still receive those specialized task mutations (kanban status, due date, tags, claims, complete/archive, and project/sprint moves) so chat extensions that only declare `task.updated` keep posting. A destination that selected a specific event uses that eventâs template; otherwise the `task.updated` template is used.
 
 `task.moved` still fires when a task changes project or sprint. `task.project_changed` / `task.sprint_changed` fire in addition so relays can tell them apart.
 
 Template tokens include `{task}` `{name}` `{status}` `{old_status}` `{project}` `{actor}` `{actor_id}` `{url}` `{id}` `{priority}` `{old_priority}` `{description}` `{parent_id}` `{estimate}` `{comment}` `{claimed_by}` `{due_date}` `{sprint}` `{tags}` `{mentions}` `{member}` `{join_email}` `{event}` `{event_id}` `{occurred_at}` `{changed}` `{fields}`.
 
-For `http.webhook` with `format: json`, the body keeps those flat fields and adds nested `actor_detail`, `task_detail`, `project_detail`, `changes`, and `digest_events`. Outbound requests send `X-Ordryn-Event-Id` and, for queued rows, `X-Ordryn-Delivery-Id`. Failed deliveries become `dead` after 8 attempts; owners can `POST …/deliveries/{id}/retry`. HTTP 429 (Discord/Google Chat rate limits) is retried using `Retry-After` / `retry_after`, and the extensions panel shows a rate-limit notice while that destination is waiting.
+For `http.webhook` with `format: json`, the body keeps those flat fields and adds nested `actor_detail`, `task_detail`, `project_detail`, `changes`, and `digest_events`. Outbound requests send `X-Ordryn-Event-Id` and, for queued rows, `X-Ordryn-Delivery-Id`. Failed deliveries become `dead` after 8 attempts; owners can `POST â¦/deliveries/{id}/retry`. HTTP 429 (Discord/Google Chat rate limits) is retried using `Retry-After` / `retry_after`, and the extensions panel shows a rate-limit notice while that destination is waiting.
 
 Status filters (`status_ids` / `status_exclude_ids`) work like tag filters. Quiet hours and digest (`hourly` / `daily`) still apply. Digest bodies list up to 10 `{name} ({event})` lines.
 
@@ -86,10 +105,10 @@ Each setting has `scope`: a string or array that controls **where it can be conf
 
 | Scope | Configurable at |
 | --- | --- |
-| `site` | Admin → Extensions only |
+| `site` | Admin â Extensions only |
 | `project` | Classic/list project Extensions tab only |
 | `kanban` | Kanban board Extensions tab only |
-| `user` | Profile → Integrations. Classic project owners can also use “Notify me” on the Extensions tab |
+| `user` | Profile â Integrations. Classic project owners can also use âNotify meâ on the Extensions tab |
 
 `member` is accepted as an alias of `user`. A setting can list more than one surface: `"scope": ["project", "kanban"]` is the usual team webhook (classic project and board). `"scope": "project"` does **not** include kanban boards.
 
@@ -99,15 +118,15 @@ Custom field types: `string`, `number`, `boolean`, `enum`, `url`, `user`, `date`
 
 ### Sandboxed UI
 
-Set `ui` to an HTML file in the folder. Project members see it in an iframe (`sandbox` without `allow-same-origin`, so it cannot read the session). Extra files next to that HTML are served under `/api/v2/projects/{id}/extensions/{id}/ui/…`. Do not put secrets in the panel; use outbound JSON callbacks instead. The **Standup** example is a working check-in worksheet in that iframe.
+Set `ui` to an HTML file in the folder. Project members see it in an iframe (`sandbox` without `allow-same-origin`, so it cannot read the session). Extra files next to that HTML are served under `/api/v2/projects/{id}/extensions/{id}/ui/â¦`. Do not put secrets in the panel; use outbound JSON callbacks instead. The **Standup** example is a working check-in worksheet in that iframe.
 
 Host API 2 adds `surfaces` so a panel can also sit on the kanban board (`at: "kanban.tab"`). Those frames still cannot read the session. The parent SPA forwards `store.get` / `store.put` / `store.list` over `postMessage` to `GET`/`PUT /api/v2/projects/{id}/extensions/{id}/store/{key}` (64 KiB JSON, optimistic `revision`, SSE `extension.store`). Permissions: `store:read`, `store:write` (viewers are read-only). The **Retro** example is a Went well / Improve / Actions board keyed to the sprint switcher.
 
 ### Callback tokens and inbound actions
 
-`permissions` (`tasks:read`, `tasks:write`, `comments:write`) mints a **project-scoped** callback token (not a user API key). JSON deliveries include it. Relays `POST /api/v2/ext/callback` with `Authorization: Bearer …` and `{ "action": "get"|"complete"|"comment"|"set_field", "task_id": 1, … }`. Rotate it from the project Extensions tab (`controls`: `rotate_callback`).
+`permissions` (`tasks:read`, `tasks:write`, `comments:write`) mints a **project-scoped** callback token (not a user API key). JSON deliveries include it. Relays `POST /api/v2/ext/callback` with `Authorization: Bearer â¦` and `{ "action": "get"|"complete"|"comment"|"set_field", "task_id": 1, â¦ }`. Rotate it from the project Extensions tab (`controls`: `rotate_callback`).
 
-`actions` (`complete`, `comment`, `set_field`) opt the extension into extra inbound webhook verbs on `POST /api/v2/webhooks/inbound` when the extension is enabled on that project. First-party `create` / `comment` still use the project's inbound flags. JSON **must** include `project_id`. HMAC requests send `X-Ordryn-Timestamp` (unix seconds, ±5 minutes) and `X-Ordryn-Signature: sha256=HMAC(secret, timestamp + "." + body)`. Shared secret `X-Ordryn-Webhook-Secret` is unchanged. Both inbound and callback endpoints are rate-limited.
+`actions` (`complete`, `comment`, `set_field`) opt the extension into extra inbound webhook verbs on `POST /api/v2/webhooks/inbound` when the extension is enabled on that project. First-party `create` / `comment` still use the project's inbound flags. JSON **must** include `project_id`. HMAC requests send `X-Ordryn-Timestamp` (unix seconds, Â±5 minutes) and `X-Ordryn-Signature: sha256=HMAC(secret, timestamp + "." + body)`. Shared secret `X-Ordryn-Webhook-Secret` is unchanged. Both inbound and callback endpoints are rate-limited.
 
 ### Delivery
 
@@ -115,7 +134,7 @@ Host API 2 adds `surfaces` so a panel can also sit on the kanban board (`at: "ka
 
 ## Roles
 
-**Owner** is the only site-wide role. It always has every permission, including permissions added in later releases, and site admins can only change its name and description (Admin → Roles). Organizations can rename Owner for their members, and projects can rename it for theirs. A rename never changes permissions.
+**Owner** is the only site-wide role. It always has every permission, including permissions added in later releases, and site admins can only change its name and description (Admin â Roles). Organizations can rename Owner for their members, and projects can rename it for theirs. A rename never changes permissions.
 
 Every other role is created by an organization or a project from the permission catalog. A project can use its organization's roles plus its own. A project locked to its organization (`org_import: "lock"`) uses only the organization's roles and names, and follows organization changes automatically.
 
@@ -127,7 +146,9 @@ Every other role is created by an organization or a project from the permission 
 
 ## AI agents
 
-Project managers can add AI agents from **project settings → AI agents**. Each agent is a project member backed by a bot account (`users.is_agent`), so its comments, claims, status changes, and activity are attributed to it and badged as an agent. Agent accounts cannot sign in, receive no notifications, and are managed only from that tab. The agent itself runs outside Ordryn (Claude Code, a CI job, your own service). Ordryn tells it when there is work, hands it the task, and enforces what it may change.
+Project managers can add AI agents from **project settings â AI agents**. Each agent is a project member backed by a bot account (`users.is_agent`), so its comments, claims, status changes, and activity are attributed to it and badged as an agent. Agent accounts cannot sign in, receive no notifications, and are managed only from that tab. The agent itself runs outside Ordryn (Claude Code, a CI job, your own service). Ordryn tells it when there is work, hands it the task, and enforces what it may change.
+
+**Who can use AI agents.** Two site permissions control this, in both site modes: `agents:project` (add and configure project agents and create their keys) and `agents:local` (create and use [local agent keys](#local-agent-keys)). Every existing role gets both on upgrade. Admins can turn either off for the User role under **Admin → Site settings → AI agents**, or per role on **Site roles**. Without `agents:project`, a manager can still pause or remove an agent; existing agents keep working. Taking away `agents:local` stops that person's local agent keys immediately (`403 agents_disabled`).
 
 **What you need:** an agent on the project and something connected to its key that runs a model. A GitHub repository is **not** required. **What the agent sees:** the task (title, description, status, priority, due date, tags, custom fields), its discussion, the note sent with the run, and the agent's standing instructions, plus the project's linked GitHub repo and the task's linked issue when there are any. Nothing else, so vague one-line tasks get vague results.
 
@@ -136,12 +157,12 @@ Project managers can add AI agents from **project settings → AI agents**. Each
 | Setup | Send it | You get back | Runs on |
 | --- | --- | --- | --- |
 | Triage & clarify | Rough requests | Rewritten description with "done when" criteria, priority, questions; moved to Review | Any model, including local (Ollama) |
-| Break down into subtasks | Features / epics | 3–10 subtasks and a plan | Any model |
+| Break down into subtasks | Features / epics | 3â10 subtasks and a plan | Any model |
 | Draft & write | Docs, emails, release notes, checklists | The draft as a comment | Any model |
 | Investigate code (read-only) | Bug reports, "how does X work?" | Findings with file:line references and a proposed patch | An agent that can read the code (e.g. the local Ollama script with folder access) |
 | Code changes | Bugs / small features | Branch or PR, tests, summary | An agent with the code checked out (e.g. Claude Code over MCP) |
 
-To try it for free with a model on your own computer, open the agent's settings → **Connect the agent** → **Run a local model (Ollama)**. Pick a model, context size, and folder access, and download a single script with those settings (and a fresh key) built in. Run it with `node`. It polls this site over HTTPS, so it works against a hosted instance without ports, tunnels, or server changes. Source and full options: [`tools/ollama-agent`](tools/ollama-agent/README.md). The web build bundles it (`vite.config.ts`, `virtual:ollama-agent`), so the download always matches the server's API.
+To try it for free with a model on your own computer, open the agent's settings â **Connect the agent** â **Run a local model (Ollama)**. Pick a model, context size, and folder access, and download a single script with those settings (and a fresh key) built in. Run it with `node`. It polls this site over HTTPS, so it works against a hosted instance without ports, tunnels, or server changes. Source and full options: [`tools/ollama-agent`](tools/ollama-agent/README.md). The web build bundles it (`vite.config.ts`, `virtual:ollama-agent`), so the download always matches the server's API.
 
 **Runs.** A run asks one agent to work on one task. A run starts when a permitted member `@mentions` the agent in a comment, moves a card into one of the agent's trigger columns, or clicks **Send to agent** on a task (optionally with a note, such as acceptance criteria). **Who can trigger** is managers only (the default), anyone who can edit tasks, or only the roles and/or specific members the manager selects (`trigger_by: "selected"` with `trigger_role_slugs` / `trigger_user_ids`; managers aren't included unless selected). A mention or column move from anyone else is ignored: no run, no error. "Send to agent" isn't offered to them. Events caused by agents never start runs, so agents can't loop on each other. An agent has at most one open run per task and an hourly limit. On kanban boards it can claim the card while it works, and the claim is released when the run finishes or is cancelled.
 
@@ -155,14 +176,15 @@ To try it for free with a model on your own computer, open the agent's settings 
 | Complete tasks | off | Needed for `completed` and done columns. Leave off to keep a human sign-off |
 | Create tasks | off | Needed for `POST /tasks` and re-parenting |
 | Comment | on | Needed to post comments |
-| Max runs / hour | 20 | 1–500 |
+| Max runs / hour | 20 | 1â500 |
 
 Refusals return `403 agent_guardrail`. **Pause** refuses the agent's keys and stops new runs. **Remove** revokes its keys, cancels open runs, clears its claims, and takes it off the project. Its history stays.
 
 **Connecting an agent.** Mint a key on the agent's settings (it acts as the agent, never as you), then use any of:
 
 - **MCP:** `POST /api/v2/mcp` is a Model Context Protocol server (also used by [local agent keys](#local-agent-keys)) (streamable HTTP, JSON responses). For Claude Code:
-  `claude mcp add --transport http gotodo-<handle> https://<host>/api/v2/mcp --header "Authorization: Bearer <agent key>"`.
+  `claude mcp add --transport http <site>-<handle> https://<host>/api/v2/mcp --header "Authorization: Bearer <agent key>"`.
+  `<site>` is the site name from **Admin → Site settings** as a slug (`Acme Tasks` → `acme-tasks`; `ordryn` when unset). New API keys start with the same name without dashes (`acmetasks_…`). Renaming the site only changes keys made afterwards; existing keys keep working.
   Tools: `get_agent_context`, `list_my_runs`, `start_run`, `finish_run`, `get_task`, `get_task_comments`, `list_tasks`, `add_comment`, `move_task`, `update_task`, `create_task`. They run through the REST API with the same key, so guardrails and rate limits are identical.
 - **REST queue:** `GET /api/v2/agent` (instructions, guardrails, statuses), `GET /api/v2/agent/runs`, `POST /api/v2/agent/runs/{id}/start`, `POST /api/v2/agent/runs/{id}/finish` with `{ "status": "succeeded"|"failed", "summary" }`.
 - **Webhook:** set a public HTTPS `webhook_url` and each new run is POSTed as `agent.run` JSON (run, agent instructions, task, guardrails, API URLs; never a key). Requests are signed with `X-Ordryn-Signature: sha256=HMAC(secret, body)` once you create a signing secret. Delivery is tried once. Failures show on the run, and the run stays in the agent's queue.
@@ -171,8 +193,9 @@ Treat anything members write on a task as input the agent will read: limit who c
 
 ### Local agent keys
 
-To let an AI agent on your own machine read your tasks while you work with it, with no project agent and no model API on the server, create a **local agent key** under **Settings → Developer → Local AI agents** (or `POST /api/v2/api-keys` with `"kind": "local_agent"`). Then say "check out task #123" in Claude Code, Codex, Gemini CLI, Cursor, or any MCP client. The page gives copy-paste setup for each.
+To let an AI agent on your own machine read your tasks while you work with it, with no project agent and no model API on the server, create a **local agent key** under **Settings â Developer â Local AI agents** (or `POST /api/v2/api-keys` with `"kind": "local_agent"`). Then say "check out task #123" in Claude Code, Codex, Gemini CLI, Cursor, or any MCP client. The page gives copy-paste setup for each.
 
+- **Needs `agents:local`** on your site role (see [Who can use AI agents](#ai-agents)).
 - **Acts as you.** The agent sees what you can see, and comments or edits appear under your name. Comments and edits go through the same role checks as your session.
 - **Scopes.** Same as project keys. `tasks:read` is required. `tasks:write` (update, move, create, claim) and `comments:write` are opt-in.
 - **Optional project limit** (`project_id`). Other projects' tasks return 404 and lists are filtered. The key is deleted with the project.
@@ -183,13 +206,13 @@ Standard personal keys still act with full access and are refused by `/mcp`.
 
 ## Automation rules
 
-Project managers can automate routine cleanup from **project settings → Rules**. Each rule is **when** (an event such as claimed, completed, unblocked, tag added, or a timed check such as overdue N days or no activity N days) / **if** (column, priority, tags, sprint, assignee, custom field, due date, open/done) / **then** (up to 5 actions: move column, priority, add/remove tag, assign, sprint, due date, complete, reopen, archive, comment, notify, send to an AI agent).
+Project managers can automate routine cleanup from **project settings â Rules**. Each rule is **when** (an event such as claimed, completed, unblocked, tag added, or a timed check such as overdue N days or no activity N days) / **if** (column, priority, tags, sprint, assignee, custom field, due date, open/done) / **then** (up to 5 actions: move column, priority, add/remove tag, assign, sprint, due date, complete, reopen, archive, comment, notify, send to an AI agent).
 
 Starter rules cover common needs in one click: archive tasks 30 days after completion, tag `slipping` when 3+ days overdue (and clear it), move unblocked tasks to Ready, start work on claim, return unclaimed work to To Do, nudge stale In Progress work, escalate unassigned work that's due soon, mark bugs high priority, and carry unfinished work into the next sprint.
 
 Rules run as the protected site account **`@automation`** (`users.is_system`; created by migrations). It can't sign in, has no inbox, can't be banned or renamed, and isn't stored as a project member. Instead it holds a built-in role on every project that can edit, move, claim, complete, and archive tasks, but never delete them or manage the project. Its changes appear in task history as **Automation**, alongside a line naming the rule, and in the Rules tab's run history.
 
-**Safety:** changes made by Automation never trigger other rules (no chains, no loops). Timed rules act once per task per episode, such as once per due date. A rule pauses itself after 10 failed runs in a row or 200 runs in an hour. Members can opt out of Automation notices under profile → notifications. Reference: `/docs/api/v2#automation` and [`openapi.yaml`](openapi.yaml) (tag **Automation**).
+**Safety:** changes made by Automation never trigger other rules (no chains, no loops). Timed rules act once per task per episode, such as once per due date. A rule pauses itself after 10 failed runs in a row or 200 runs in an hour. Members can opt out of Automation notices under profile â notifications. Reference: `/docs/api/v2#automation` and [`openapi.yaml`](openapi.yaml) (tag **Automation**).
 
 ## Requirements
 
@@ -226,9 +249,9 @@ The git tag is the version. Nothing in source is bumped for a release.
 
 ## Docs
 
-- [Wiki](https://github.com/SentientTD-Studios/Ordryn/wiki) — self-hosting, configuration, API guide, example clients
-- [`openapi.yaml`](openapi.yaml) — `/api/v2` contract (also `GET /openapi.yaml` on a running instance)
-- [`web/README.md`](web/README.md) — Vue SPA development
+- [Wiki](https://github.com/SentientTD-Studios/Ordryn/wiki) â self-hosting, configuration, API guide, example clients
+- [`openapi.yaml`](openapi.yaml) â `/api/v2` contract (also `GET /openapi.yaml` on a running instance)
+- [`web/README.md`](web/README.md) â Vue SPA development
 - [License](LICENSE)
 - Extensions authoring (including `settings.scope` of `site`, `project`, `kanban`, and `user`): see **Extensions** above. The wiki covers hosting, not the hook manifest.
 

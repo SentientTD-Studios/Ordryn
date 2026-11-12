@@ -459,3 +459,21 @@ func TestPerRowJoins(t *testing.T) {
 		t.Fatal("bad join accepted")
 	}
 }
+
+func TestCompileReviewerFilterAndSort(t *testing.T) {
+	ctx := testCtx()
+	c := compileRaw(t, `{"where":{"clauses":[{"field":"reviewer","operator":"=","value":"@me"}]},"sort":[{"field":"reviewer","dir":"asc"}]}`, ctx)
+	if !strings.Contains(c.Where, "t.reviewer_id") {
+		t.Fatalf("reviewer filter should use t.reviewer_id:\n%s", c.Where)
+	}
+	if last := c.Args[len(c.Args)-1].([]int); len(last) != 1 || last[0] != 42 {
+		t.Fatalf("@me should bind the caller, got %v", last)
+	}
+	if !strings.Contains(c.OrderBy, "qrv.") {
+		t.Fatalf("reviewer sort should use the reviewer join:\n%s", c.OrderBy)
+	}
+	c = compileRaw(t, `{"where":{"clauses":[{"field":"reviewer","operator":"=","value":999}]}}`, ctx)
+	if !strings.HasSuffix(c.Where, "(FALSE))") {
+		t.Fatalf("unknown reviewer must match nothing:\n%s", c.Where)
+	}
+}

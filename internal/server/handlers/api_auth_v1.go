@@ -54,6 +54,8 @@ type apiUserMeJSON struct {
 	IsSiteOwner bool `json:"is_site_owner"`
 	// CanEditName is true in company mode for those allowed to set their own name.
 	CanEditName bool `json:"can_edit_name"`
+	// IsGuest marks a company-mode guest account.
+	IsGuest bool `json:"is_guest"`
 }
 
 func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
@@ -79,6 +81,7 @@ func profileToMeJSON(p *storage.UserProfile) apiUserMeJSON {
 		ManagesPeople:           access.SeesPeople(),
 		IsSiteOwner:             access.Owner,
 		CanEditName:             domain.CanEditNames(p.ID, access, p.ID),
+		IsGuest:                 storage.IsGuestUser(p.ID),
 	}
 }
 
@@ -91,6 +94,13 @@ func writeAPIUserJSON(w http.ResponseWriter, status int, p *storage.UserProfile)
 // establishSession signs p in on this browser. Each sign-in gets a fresh session
 // id and records the account's session version, so it can be revoked later.
 func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserProfile) error {
+	return establishSessionVia(w, r, p, "")
+}
+
+// establishSessionVia is establishSession recording how the person signed in
+// (utils.AuthMethodSSO skips the local MFA requirement). Re-issuing a session for
+// the same account (after a password change, say) keeps its sign-in time and method.
+func establishSessionVia(w http.ResponseWriter, r *http.Request, p *storage.UserProfile, method string) error {
 	session, err := sessionstore.GetSession(r)
 	if err != nil {
 		return err
@@ -99,16 +109,29 @@ func establishSession(w http.ResponseWriter, r *http.Request, p *storage.UserPro
 	if err != nil {
 		return err
 	}
+	now := time.Now().Unix()
+	signedInAt := now
+	if prev, ok := session.Values["user_id"].(int); ok && prev == p.ID {
+		if t, ok := session.Values[utils.SessionSignedInAtKey].(int64); ok && t > 0 {
+			signedInAt = t
+		}
+		if method == "" {
+			method, _ = session.Values[utils.SessionAuthMethodKey].(string)
+		}
+	}
 	session.Values = map[interface{}]interface{}{
-		utils.SessionIDKey:      sid,
-		utils.SessionVersionKey: p.SessionVersion,
-		"user_id":               p.ID,
-		"email":                 p.Email,
-		"user_name":             p.UserName,
-		"role_id":               p.RoleID,
-		"permissions":           p.Permissions,
-		"timezone":              p.Timezone,
-		"items_per_page":        p.ItemsPerPage,
+		utils.SessionIDKey:         sid,
+		utils.SessionVersionKey:    p.SessionVersion,
+		utils.SessionSignedInAtKey: signedInAt,
+		utils.SessionLastSeenKey:   now,
+		utils.SessionAuthMethodKey: method,
+		"user_id":                  p.ID,
+		"email":                    p.Email,
+		"user_name":                p.UserName,
+		"role_id":                  p.RoleID,
+		"permissions":              p.Permissions,
+		"timezone":                 p.Timezone,
+		"items_per_page":           p.ItemsPerPage,
 	}
 	if session.Options == nil && sessionstore.Store != nil && sessionstore.Store.Options != nil {
 		opts := *sessionstore.Store.Options
@@ -136,6 +159,10 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 		return
 	}
+	if sso, err := storage.GetSSOSettings(); err == nil && sso.Configured() && sso.SSOOnly {
+		utils.APIJSONError(w, http.StatusForbidden, "sso_required", "This site uses single sign-on. Sign in with it to get an account.")
+		return
+	}
 	email := strings.TrimSpace(req.Email)
 	timezone := strings.TrimSpace(req.Timezone)
 	token := strings.TrimSpace(req.InviteToken)
@@ -154,6 +181,10 @@ func APIV1AuthRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := domain.ValidatePassword(req.Password); err != nil {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", passwordPolicyMessage(err))
+		return
+	}
+	if err := domain.CheckNewAccountEmail(email); err != nil {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", passwordPolicyMessage(err))
 		return
 	}
@@ -436,6 +467,12 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 	user, err := storage.GetUserByEmail(email)
 	if err != nil || user == nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Internal server error.")
+		return
+	}
+	// Only reached with the right password. Admins keep password sign-in so a
+	// broken identity provider can't lock everyone out.
+	if storage.SSOOnlyFor(user.ID) {
+		utils.APIJSONError(w, http.StatusForbidden, "sso_required", "This site uses single sign-on. Use the sign-in button instead.")
 		return
 	}
 	// Only reached with the right password, so this reveals nothing to a guesser.

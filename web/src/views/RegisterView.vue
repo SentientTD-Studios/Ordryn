@@ -34,7 +34,7 @@ const pendingMessage = ref('')
 const resending = ref(false)
 const { register } = useAuth()
 const { push } = useToast()
-const { enableJoinRequests } = useSite()
+const { enableJoinRequests, minPasswordLength } = useSite()
 const router = useRouter()
 
 let availabilityTimer: ReturnType<typeof setTimeout> | null = null
@@ -164,11 +164,11 @@ async function resendConfirmation() {
               </div>
               <div class="mb-3">
                 <label for="signup-password" class="form-label">Password</label>
-                <input id="signup-password" v-model="password" type="password" class="form-control" required minlength="8" autocomplete="new-password" />
+                <input id="signup-password" v-model="password" type="password" class="form-control" required :minlength="minPasswordLength" autocomplete="new-password" />
               </div>
               <div class="mb-3">
                 <label for="signup-confirm" class="form-label">Confirm password</label>
-                <input id="signup-confirm" v-model="confirm" type="password" class="form-control" required minlength="8" autocomplete="new-password" />
+                <input id="signup-confirm" v-model="confirm" type="password" class="form-control" required :minlength="minPasswordLength" autocomplete="new-password" />
               </div>
               <div class="mb-3">
                 <label for="signup-timezone" class="form-label">Timezone</label>

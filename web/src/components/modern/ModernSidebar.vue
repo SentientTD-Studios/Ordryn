@@ -6,6 +6,7 @@ import type { Project, SavedView } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { useProjectNav } from '@/composables/useProjectNav'
+import { useCommandPalette } from '@/composables/useCommandPalette'
 import { sidebarProjectSections } from '@/utils/projectNav'
 import { audienceIcon, audienceLabel } from '@/utils/queryDefinition'
 import SidebarProjectLink from '@/components/modern/SidebarProjectLink.vue'
@@ -30,7 +31,7 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const { canCreateProjects, managesPeople } = useAuth()
-const { isCompanyMode } = useSite()
+const { isCompanyMode, siteName } = useSite()
 
 const overdueCount = inject<Ref<number>>('overdueCount', ref(0))
 const pendingInviteCount = inject<Ref<number>>('pendingInviteCount', ref(0))
@@ -49,6 +50,7 @@ const hiddenCount = computed(() => {
   return Math.max(0, props.projects.length - shown)
 })
 const shortcutHint = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl+K'
+const commandPalette = useCommandPalette()
 
 function selectProject(proj: Project) {
   nav.touchRecent(proj.id)
@@ -174,6 +176,45 @@ onBeforeUnmount(() => {
       </li>
       <li class="sidebar-nav-item">
         <RouterLink
+          to="/reports"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/reports' }"
+          data-tooltip="Reports"
+          title="Reports"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-clipboard-data" />
+          <span class="sidebar-text">Reports</span>
+        </RouterLink>
+      </li>
+      <li class="sidebar-nav-item">
+        <RouterLink
+          to="/portfolio"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/portfolio' }"
+          data-tooltip="Portfolio"
+          title="Portfolio"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-grid-3x3-gap" />
+          <span class="sidebar-text">Portfolio</span>
+        </RouterLink>
+      </li>
+      <li class="sidebar-nav-item">
+        <RouterLink
+          to="/planner"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/planner' }"
+          data-tooltip="Planner"
+          title="Planner"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-sun" />
+          <span class="sidebar-text">Planner</span>
+        </RouterLink>
+      </li>
+      <li class="sidebar-nav-item">
+        <RouterLink
           to="/calendar"
           class="sidebar-nav-link"
           :class="{ active: route.path === '/calendar' }"
@@ -196,6 +237,19 @@ onBeforeUnmount(() => {
         >
           <i class="bi bi-trash3" />
           <span class="sidebar-text">Trash</span>
+        </RouterLink>
+      </li>
+      <li v-if="isCompanyMode" class="sidebar-nav-item">
+        <RouterLink
+          to="/home"
+          class="sidebar-nav-link"
+          :class="{ active: route.path === '/home' }"
+          :data-tooltip="`${siteName} home`"
+          :title="`${siteName} home`"
+          @click="emit('close-mobile')"
+        >
+          <i class="bi bi-building" />
+          <span class="sidebar-text">Company home</span>
         </RouterLink>
       </li>
       <li class="sidebar-nav-item">
@@ -262,12 +316,12 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="sidebar-nav-link sidebar-find-project"
-            data-tooltip="Find a project"
-            :title="`Find a project (${shortcutHint})`"
-            @click="nav.openSwitcher()"
+            data-tooltip="Search"
+            :title="`Search tasks, projects, and commands (${shortcutHint})`"
+            @click="commandPalette.show()"
           >
             <i class="bi bi-search" />
-            <span class="sidebar-text">Find a project</span>
+            <span class="sidebar-text">Search</span>
             <span class="sidebar-text sidebar-shortcut">{{ shortcutHint }}</span>
           </button>
         </li>

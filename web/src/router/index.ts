@@ -107,6 +107,13 @@ const router = createRouter({
       meta: { ownFooter: true },
     },
     {
+      // Company mode: the company home page (welcome, your work, projects, teams).
+      path: '/home',
+      name: 'company-home',
+      component: IndexView,
+      meta: { ownFooter: true, requiresAuth: true },
+    },
+    {
       // A project's board, by slug (or id / former slug, which redirect to the current slug).
       // Shares the home component so switching projects doesn't remount the board.
       path: '/p/:ref',
@@ -153,6 +160,18 @@ const router = createRouter({
       meta: { requiresAuth: true, ownFooter: true },
     },
     {
+      path: '/reports',
+      name: 'reports',
+      component: () => import('@/views/ReportsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/portfolio',
+      name: 'portfolio',
+      component: () => import('@/views/PortfolioView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/views',
       name: 'views',
       component: () => import('@/views/SavedViewsView.vue'),
@@ -169,6 +188,19 @@ const router = createRouter({
       name: 'query',
       component: () => import('@/views/QueryEditorView.vue'),
       meta: { requiresAuth: true },
+    },
+    {
+      // A project's request form, shared by link.
+      path: '/f/:token',
+      name: 'request-form',
+      component: () => import('@/views/RequestFormView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/planner',
+      name: 'planner',
+      component: () => import('@/views/PlannerView.vue'),
+      meta: { requiresAuth: true, ownFooter: true },
     },
     {
       path: '/calendar',
@@ -222,6 +254,12 @@ const router = createRouter({
       name: 'admin-extensions',
       component: () => import('@/views/AdminExtensionsView.vue'),
       meta: { requiresAuth: true, permission: 'settings:manage' },
+    },
+    {
+      path: '/admin/security',
+      name: 'admin-security',
+      component: () => import('@/views/AdminSecurityView.vue'),
+      meta: { requiresAuth: true, permission: 'admin' },
     },
     {
       path: '/admin/mods',

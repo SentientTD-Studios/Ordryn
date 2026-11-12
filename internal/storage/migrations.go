@@ -207,6 +207,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateProjectsAddArchived failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateProjectsAddIsTemplate(); err != nil {
+		fmt.Printf("migration: MigrateProjectsAddIsTemplate failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateProjectsAddBacklogName(); err != nil {
 		fmt.Printf("migration: MigrateProjectsAddBacklogName failed: %v\n", err)
 		errCount++
@@ -297,6 +301,10 @@ func RunMigrations() error {
 	}
 	if err := CreateTaskCommentsTable(); err != nil {
 		fmt.Printf("migration: CreateTaskCommentsTable failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateCommentReactions(); err != nil {
+		fmt.Printf("migration: MigrateCommentReactions failed: %v\n", err)
 		errCount++
 	}
 
@@ -470,6 +478,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateGrantSiteCreatePermissions failed: %v\n", err)
 		errCount++
 	}
+	if err := MigrateGrantAgentPermissions(); err != nil {
+		fmt.Printf("migration: MigrateGrantAgentPermissions failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateSiteSettingsAddSiteMode(); err != nil {
 		fmt.Printf("migration: MigrateSiteSettingsAddSiteMode failed: %v\n", err)
 		errCount++
@@ -506,8 +518,63 @@ func RunMigrations() error {
 		errCount++
 	}
 	// Needs organizations and projects.organization_id, so it runs after them.
+	if err := MigrateProjectStatusUpdates(); err != nil {
+		fmt.Printf("migration: MigrateProjectStatusUpdates failed: %v\n", err)
+		errCount++
+	}
 	if err := MigrateSavedViewsForQueries(); err != nil {
 		fmt.Printf("migration: MigrateSavedViewsForQueries failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateSSO(); err != nil {
+		fmt.Printf("migration: MigrateSSO failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateSecurityPolicy(); err != nil {
+		fmt.Printf("migration: MigrateSecurityPolicy failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreatePasskeyTables(); err != nil {
+		fmt.Printf("migration: CreatePasskeyTables failed: %v\n", err)
+		errCount++
+	}
+
+	if err := MigrateGuests(); err != nil {
+		fmt.Printf("migration: MigrateGuests failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateMaintenance(); err != nil {
+		fmt.Printf("migration: MigrateMaintenance failed: %v\n", err)
+		errCount++
+	}
+	if err := MigrateAuditStream(); err != nil {
+		fmt.Printf("migration: MigrateAuditStream failed: %v\n", err)
+		errCount++
+	}
+
+	if err := MigrateTasksAddReviewer(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddReviewer failed: %v\n", err)
+		errCount++
+	}
+
+	if err := MigrateTasksAddStartDate(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddStartDate failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreateTaskSnoozesTable(); err != nil {
+		fmt.Printf("migration: CreateTaskSnoozesTable failed: %v\n", err)
+		errCount++
+	}
+
+	if err := CreateRequestFormTables(); err != nil {
+		fmt.Printf("migration: CreateRequestFormTables failed: %v\n", err)
+		errCount++
+	}
+
+	if err := MigrateUsersAddOnboarding(); err != nil {
+		fmt.Printf("migration: MigrateUsersAddOnboarding failed: %v\n", err)
 		errCount++
 	}
 

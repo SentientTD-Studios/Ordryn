@@ -1,5 +1,7 @@
 export type User = {
   id: number
+  /** Company-mode guest account. */
+  is_guest?: boolean
   email: string
   user_name: string
   /** Set in company mode by whoever manages names. */
@@ -56,6 +58,8 @@ export function isVerificationPending(value: User | VerificationPending): value 
 
 export type UserSearchHit = {
   user_name: string
+  /** A team handle (only with includeTeams): mentioning it notifies the team's project members. */
+  is_team?: boolean
 }
 
 export type Tag = {
@@ -181,6 +185,10 @@ export type TaskComment = {
   deleted_by_user_id?: number
   deleted_by_kind?: 'user' | 'owner' | string
   links?: TaskCommentLink[]
+  reactions?: CommentReaction[]
+  /** Set when someone marked the comment answered. */
+  resolved_at?: string | null
+  resolved_by_name?: string
 }
 
 export type TaskCommentRevision = {
@@ -367,6 +375,8 @@ export type Task = {
   description: string
   completed: boolean
   due_date: string
+  /** Planned start (YYYY-MM-DD), when set. */
+  start_date?: string
   project_id?: number | null
   project?: string
   priority: number
@@ -385,6 +395,9 @@ export type Task = {
   project_workflow?: WorkflowMode | string
   claimed_by?: number | null
   claimed_by_name?: string
+  /** Member asked to review this task. */
+  reviewer_id?: number | null
+  reviewer_name?: string
   sprint_id?: number | null
   sprint_name?: string
   parent_title?: string
@@ -595,6 +608,16 @@ export type SiteInfo = {
   site_mode?: SiteMode
   /** True until first-time setup creates the admin account. */
   setup_required?: boolean
+  /** Single sign-on through an OpenID Connect provider. */
+  sso_enabled?: boolean
+  sso_label?: string
+  /** Password sign-in is only for admins. */
+  sso_only?: boolean
+  /** Minimum length for new passwords (Admin → Security). */
+  min_password_length?: number
+  /** The site is read-only for everyone but admins. */
+  maintenance?: boolean
+  maintenance_message?: string
 }
 
 /** Who may create an account after setup: invite only, anyone, or nobody. */
@@ -958,6 +981,9 @@ export type AdminSettings = {
   attachment_max_bytes: number
   members_can_create_projects: boolean
   members_can_create_organizations: boolean
+  /** AI agent permissions on the User role. Admins always have both. */
+  members_can_use_local_agents: boolean
+  members_can_add_project_agents: boolean
   site_mode: SiteMode
   /** True once projects or organizations exist; site_mode can no longer change. */
   site_mode_locked: boolean
@@ -1335,6 +1361,8 @@ export type Person = {
   /** Whether the caller may set this person's first and last name (company mode). */
   can_edit_name: boolean
   is_owner?: boolean
+  /** Company-mode guest account from outside the company. */
+  is_guest?: boolean
 }
 
 export type PeopleList = {
@@ -1349,6 +1377,10 @@ export type PeopleList = {
   teams: { id: number; name: string }[]
   /** Site roles the caller may give a new account; empty means the default User role only. */
   site_roles: { id: number; name: string; label: string }[]
+  /** Company mode, site admins: may make accounts guests or members. */
+  can_manage_guests?: boolean
+  /** The guest policy allows new guests. */
+  guests_enabled?: boolean
 }
 
 export type CreatePersonPayload = {
@@ -1358,6 +1390,7 @@ export type CreatePersonPayload = {
   last_name?: string
   team_id?: number
   site_role_id?: number
+  guest?: boolean
 }
 
 export type CreatePersonResult = {
@@ -1846,4 +1879,326 @@ export type AuditQuery = {
 export type AuditFacets = {
   event_types: { source: AuditSource; event_type: string }[]
   projects: { id: number; name: string; archived: boolean }[]
+}
+
+/** Company mode: what guest accounts can reach (Admin → Guests). */
+export type GuestPolicy = {
+  enabled: boolean
+  access_level: 'view' | 'full'
+  role_id: number | null
+  via_teams: boolean
+  directory: boolean
+  guest_count?: number
+}
+
+/** What a person still holds when they leave (People → Deactivate). */
+export type OffboardingPreview = {
+  claimed_tasks: number
+  owned_projects: number
+  personal_keys: number
+  project_keys: number
+  agents_created: number
+}
+
+export type OffboardInput = {
+  successor_id?: number
+  claims: 'keep' | 'release' | 'reassign'
+  transfer_projects: boolean
+  revoke_keys: boolean
+}
+
+export type OffboardResult = {
+  claims_reassigned: number
+  claims_released: number
+  projects_transferred: number
+  keys_revoked: number
+}
+
+export type CommentReactionCode = '+1' | '-1' | 'tada' | 'heart' | 'smile' | 'eyes' | 'rocket' | 'check'
+
+export type CommentReaction = {
+  code: CommentReactionCode
+  count: number
+  /** You left this one. */
+  mine: boolean
+  /** Up to 10 people who left it. */
+  names: string[]
+}
+
+/** Admin → Security: single sign-on through an OpenID Connect provider. */
+export type AdminSSOSettings = {
+  enabled: boolean
+  label: string
+  issuer_url: string
+  client_id: string
+  client_secret_set: boolean
+  scopes: string
+  auto_create: boolean
+  allowed_domains: string[]
+  sso_only: boolean
+  groups_claim: string
+  /** Provider group → company-mode team id. */
+  team_map: Record<string, number>
+  /** The callback URL to register with the provider. */
+  redirect_uri: string
+}
+
+export type AdminSSOPatch = Partial<Omit<AdminSSOSettings, 'client_secret_set' | 'redirect_uri'>> & {
+  /** Write-only; "" clears it. Omit to keep the stored secret. */
+  client_secret?: string
+}
+
+/** Admin → Security: sign-in policy. */
+export type AdminSecurityPolicy = {
+  /** off, all (everyone), or roles (mfa_role_ids). */
+  require_mfa: 'off' | 'all' | 'roles'
+  mfa_role_ids: number[]
+  min_password_length: number
+  /** 0 = off. */
+  session_idle_minutes: number
+  /** 0 = the server default (default_session_hours). */
+  session_max_hours: number
+  allowed_email_domains: string[]
+  default_session_hours: number
+}
+
+export type AdminSecurityPolicyPatch = Partial<Omit<AdminSecurityPolicy, 'default_session_hours'>>
+
+export type Passkey = {
+  id: number
+  name: string
+  created_at: string
+  last_used_at: string | null
+}
+
+/** A started passkey registration or sign-in: WebAuthn options plus the finish token. */
+export type PasskeyCeremony = {
+  token: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options: any
+}
+
+export type BackupFile = { name: string; size: number; created_at: string }
+
+/** GET /api/v2/admin/backups */
+export type BackupStatus = {
+  pg_dump_available: boolean
+  pg_dump_version: string
+  scheduled: boolean
+  schedule: { dir: string; interval_hours: number; keep: number }
+  files: BackupFile[]
+}
+
+/** Admin → Audit log: forwarding events to a SIEM. */
+export type AuditStreamSettings = {
+  enabled: boolean
+  url: string
+  secret_set: boolean
+  auth_header_set: boolean
+  include_project: boolean
+  include_task: boolean
+  last_success_at: string | null
+  last_error: string
+  last_error_at: string | null
+}
+
+export type AuditStreamPatch = {
+  enabled?: boolean
+  url?: string
+  secret?: string
+  auth_header?: string
+  include_project?: boolean
+  include_task?: boolean
+}
+
+export type ProjectTimelineTask = {
+  id: number
+  title: string
+  start_date?: string
+  due_date?: string
+  completed: boolean
+  priority: number
+  parent_id: number | null
+  status_name?: string
+  claimed_by_name?: string
+}
+
+/** GET /projects/{id}/timeline: dated tasks and the "blocks" links between them. */
+export type ProjectTimeline = {
+  project_id: number
+  tasks: ProjectTimelineTask[]
+  links: { from_task_id: number; to_task_id: number }[]
+  undated_count: number
+  truncated: boolean
+}
+
+export type PlannerTask = Task & {
+  /** The caller's snooze day (YYYY-MM-DD), when set. */
+  snoozed_until?: string
+}
+
+/** GET /planner: the caller's open tasks grouped for Today / Upcoming. */
+export type Planner = {
+  today: string
+  days: number
+  overdue: PlannerTask[]
+  due_today: PlannerTask[]
+  woken: PlannerTask[]
+  upcoming: { date: string; tasks: PlannerTask[] }[]
+  snoozed: PlannerTask[]
+}
+
+export type RequestFormFieldType = 'text' | 'textarea' | 'select' | 'date' | 'number'
+
+export type RequestFormField = {
+  id: string
+  label: string
+  type: RequestFormFieldType
+  required?: boolean
+  help?: string
+  options?: string[]
+}
+
+export type RequestFormInput = {
+  title: string
+  intro: string
+  fields: RequestFormField[]
+  priority: number
+  tag_ids: number[]
+  enabled: boolean
+}
+
+/** A project's request form, as its managers see it. */
+export type RequestForm = RequestFormInput & {
+  id: number
+  project_id: number
+  token: string
+  /** Site-relative link to share: /f/{token}. */
+  path: string
+  owner_id: number | null
+  submissions: number
+  created_at: string
+  updated_at: string
+}
+
+/** A request form as a submitter sees it. */
+export type PublicRequestForm = {
+  token: string
+  title: string
+  intro: string
+  project_name: string
+  fields: RequestFormField[]
+}
+
+export type OnboardingStep = {
+  id: string
+  label: string
+  description: string
+  /** App path where the step is done. */
+  href: string
+  done: boolean
+  admin_only?: boolean
+}
+
+/** GET /me/onboarding: the getting-started checklist. */
+export type Onboarding = {
+  dismissed: boolean
+  complete: boolean
+  steps: OnboardingStep[]
+}
+
+/** A project people can start new projects from. */
+export type ProjectTemplate = {
+  id: number
+  name: string
+  description: string
+  workflow_mode: string
+  open_tasks: number
+}
+
+export type FromTemplateResult = {
+  project_id: number
+  name: string
+  tasks_copied: number
+  rules_copied: number
+  rules_skipped: number
+  warnings: string[]
+}
+
+export type ProjectHealth = 'on_track' | 'at_risk' | 'off_track'
+
+export type ProjectStatusUpdate = {
+  id: number
+  project_id: number
+  author_id: number
+  author_name: string
+  health: ProjectHealth
+  body: string
+  created_at: string
+}
+
+/** One project on the portfolio (GET /api/v2/portfolio). */
+export type PortfolioProject = {
+  id: number
+  name: string
+  slug: string
+  workflow_mode: string
+  archived: boolean
+  owner_name: string
+  organization_name?: string
+  open: number
+  overdue: number
+  due_this_week: number
+  unclaimed: number
+  done_last_week: number
+  done: number
+  latest_update: ProjectStatusUpdate | null
+  can_post_update: boolean
+}
+
+export type TimesheetEntry = {
+  id: number
+  logged_at: string
+  user_id: number
+  user_name: string
+  project_id: number
+  project_name: string
+  task_id: number
+  task_title: string
+  minutes: number
+  note: string
+}
+
+/** GET /api/v2/reports/time */
+export type TimesheetReport = {
+  from: string
+  to: string
+  entries: TimesheetEntry[]
+  total_minutes: number
+  by_person: Record<string, number>
+  by_project: Record<string, number>
+  truncated: boolean
+}
+
+export type WorkloadPerson = {
+  user_id: number
+  user_name: string
+  claimed_open: number
+  claimed_points: number
+  claimed_overdue: number
+  done_last_week: number
+  minutes_last_week: number
+  projects: number
+}
+
+/** GET /api/v2/reports/workload */
+export type WorkloadReport = { people: WorkloadPerson[]; project_count: number }
+
+/** GET /company-home summary: the caller's work, projects and teams. */
+export type CompanyHomeSummary = {
+  today: string
+  my_work: { open: number; overdue: number; due_today: number; due_week: number }
+  projects: { id: number; name: string; slug: string; open: number; overdue: number }[]
+  total_projects: number
+  teams: { id: number; name: string; members: number }[]
 }

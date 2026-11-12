@@ -135,6 +135,8 @@ func TestMain(m *testing.M) {
 			status_id INTEGER,
 			estimate_points INTEGER,
 			claimed_by INTEGER,
+			reviewer_id INTEGER,
+			start_date DATE,
 			sprint_id INTEGER,
 			deleted_at TIMESTAMPTZ,
 			deleted_by INTEGER,

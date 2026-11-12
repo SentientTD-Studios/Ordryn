@@ -8,7 +8,9 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import ProjectSharePanel from '@/components/ProjectSharePanel.vue'
 import ProjectFeedbackPanel from '@/components/ProjectFeedbackPanel.vue'
+import ProjectRequestFormsPanel from '@/components/ProjectRequestFormsPanel.vue'
 import ProjectWorkflowPanel from '@/components/ProjectWorkflowPanel.vue'
+import ProjectTemplateToggle from '@/components/ProjectTemplateToggle.vue'
 import ProjectSprintsPanel from '@/components/ProjectSprintsPanel.vue'
 import ProjectGitHubPanel from '@/components/ProjectGitHubPanel.vue'
 import ProjectExtensionsPanel from '@/components/ProjectExtensionsPanel.vue'
@@ -26,6 +28,7 @@ import { pathPrefix } from '@/base'
 
 type SettingsTab =
   | 'details'
+  | 'forms'
   | 'board'
   | 'sprints'
   | 'tags'
@@ -93,6 +96,7 @@ const tabs = computed(() => {
   }
   items.push({ id: 'sharing', label: 'Sharing' })
   if (canManage.value) items.push({ id: 'feedback', label: 'Feedback' })
+  if (canManage.value) items.push({ id: 'forms', label: 'Request forms' })
   if (canManage.value && !isCompanyMode.value) items.push({ id: 'roles', label: 'Roles' })
   return items
 })
@@ -318,6 +322,7 @@ async function archiveOrRestore() {
           </nav>
 
           <div v-if="tab === 'details'">
+            <ProjectTemplateToggle :project-id="project.id" :can-manage="canManage" />
             <div class="mb-3">
               <label for="edit-project-name" class="form-label small fw-bold">Project Name</label>
               <input
@@ -489,6 +494,12 @@ async function archiveOrRestore() {
 
           <ProjectFeedbackPanel
             v-else-if="tab === 'feedback' && canManage"
+            :project="project"
+            @changed="onPanelChanged"
+          />
+
+          <ProjectRequestFormsPanel
+            v-else-if="tab === 'forms' && canManage"
             :project="project"
             @changed="onPanelChanged"
           />

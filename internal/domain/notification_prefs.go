@@ -27,6 +27,7 @@ var optionalNotifications = []NotificationOption{
 	{Type: storage.NotificationTaskCommented, Label: "Comments", Description: "Someone comments on a task in a project you belong to."},
 	{Type: storage.NotificationTaskMentioned, Label: "Mentions", Description: "Someone @mentions you in a comment. When off, you get a regular comment notification instead if comments are on."},
 	{Type: NotificationTaskActivity, Label: "Watched task activity", Description: "A task you watch is claimed, moved, blocked, completed, reopened, or has its due date changed."},
+	{Type: NotificationReviewRequested, Label: "Review requests", Description: "Someone asks you to review a task."},
 	{Type: NotificationTaskUnblocked, Label: "Unblocked tasks", Description: "A task you watch has its last open blocker completed."},
 	{Type: storage.NotificationDueReminder, Label: "Due date reminders", Description: "A task is due tomorrow or today: your own tasks, tasks you claimed, and tasks in projects you own. Set the timing in the Due date reminders menu above."},
 	{Type: storage.NotificationAutomation, Label: "Automation", Description: "A project automation rule changes, comments on, assigns, or flags a task you follow. When off, nothing caused by Automation reaches your inbox.", NoEmail: true},

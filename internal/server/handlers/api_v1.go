@@ -28,6 +28,7 @@ type apiTaskJSON struct {
 	Description       string             `json:"description"`
 	Completed         bool               `json:"completed"`
 	DueDate           string             `json:"due_date"`
+	StartDate         string             `json:"start_date,omitempty"`
 	ProjectID         *int               `json:"project_id,omitempty"`
 	Project           string             `json:"project,omitempty"`
 	Priority          int                `json:"priority"`
@@ -46,6 +47,8 @@ type apiTaskJSON struct {
 	ProjectWorkflow   string             `json:"project_workflow,omitempty"`
 	ClaimedBy         *int               `json:"claimed_by"`
 	ClaimedByName     string             `json:"claimed_by_name,omitempty"`
+	ReviewerID        *int               `json:"reviewer_id"`
+	ReviewerName      string             `json:"reviewer_name,omitempty"`
 	SprintID          *int               `json:"sprint_id,omitempty"`
 	SprintName        string             `json:"sprint_name,omitempty"`
 	ParentTitle       string             `json:"parent_title,omitempty"`
@@ -69,6 +72,7 @@ type apiTaskCreateRequest struct {
 	Title          string                     `json:"title"`
 	Description    string                     `json:"description"`
 	DueDate        string                     `json:"due_date"`
+	StartDate      string                     `json:"start_date"`
 	ProjectID      *int                       `json:"project_id"`
 	ParentID       *int                       `json:"parent_id"`
 	Priority       *int                       `json:"priority"`
@@ -85,6 +89,7 @@ type apiTaskPatchRequest struct {
 	Title          *string         `json:"title"`
 	Description    *string         `json:"description"`
 	DueDate        *string         `json:"due_date"`
+	StartDate      optionalString  `json:"start_date"`
 	ProjectID      optionalInt     `json:"project_id"`
 	ParentID       **int           `json:"parent_id"`
 	Priority       *int            `json:"priority"`
@@ -317,6 +322,7 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 		Description:       t.Description,
 		Completed:         t.Completed,
 		DueDate:           t.DueDate,
+		StartDate:         t.StartDate,
 		Priority:          t.Priority,
 		Position:          t.Position,
 		ChildCount:        t.ChildCount,
@@ -350,6 +356,11 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 	if t.ClaimedBy > 0 {
 		cid := t.ClaimedBy
 		out.ClaimedBy = &cid
+	}
+	if t.ReviewerID > 0 {
+		rid := t.ReviewerID
+		out.ReviewerID = &rid
+		out.ReviewerName = t.ReviewerName
 	}
 	if t.SprintID > 0 {
 		sid := t.SprintID
@@ -483,6 +494,20 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			apiV1TaskClaim(w, r, id)
+			return
+		case "reviewer":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskReviewer(w, r, id)
+			return
+		case "snooze":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskSnooze(w, r, id)
 			return
 		case "archive":
 			if len(parts) != 2 || r.Method != http.MethodPost {
@@ -647,6 +672,7 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 		Title:          req.Title,
 		Description:    req.Description,
 		DueDate:        req.DueDate,
+		StartDate:      req.StartDate,
 		ProjectID:      req.ProjectID,
 		ParentID:       req.ParentID,
 		Priority:       priority,
@@ -719,6 +745,7 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 	if req.ClearDue != nil && *req.ClearDue {
 		in.ClearDue = true
 	}
+	in.StartDate = req.StartDate.toPatchString()
 	in.ProjectID = req.ProjectID.toPatchInt(true)
 	in.EstimatePoints = req.EstimatePoints.toPatchInt(false)
 	in.SprintID = req.SprintID.toPatchInt(true)

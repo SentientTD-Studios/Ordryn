@@ -1,7 +1,27 @@
 import { withBase } from '@/base'
 import type {
   AdminSettings,
+  GuestPolicy,
+  Passkey,
+  PasskeyCeremony,
   AdminSettingsPatch,
+  OffboardInput,
+  OffboardingPreview,
+  OffboardResult,
+  AdminSSOPatch,
+  AdminSecurityPolicy,
+  AdminSecurityPolicyPatch,
+  AdminSSOSettings,
+  BackupStatus,
+  AuditStreamPatch,
+  AuditStreamSettings,
+  FromTemplateResult,
+  ProjectTemplate,
+  PortfolioProject,
+  ProjectHealth,
+  ProjectStatusUpdate,
+  TimesheetReport,
+  WorkloadReport,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -31,6 +51,13 @@ import type {
   ChangelogEntry,
   DashboardStats,
   ProjectInsights,
+  ProjectTimeline,
+  Planner,
+  RequestForm,
+  RequestFormInput,
+  PublicRequestForm,
+  Onboarding,
+  CompanyHomeSummary,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -157,11 +184,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         : typeof data === 'string' && data.includes('<html')
           ? 'Request failed (proxy returned an HTML error page).'
           : res.statusText || 'Request failed'
+    if (body?.error === MFA_ENROLLMENT_REQUIRED && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(MFA_ENROLLMENT_REQUIRED))
+    }
     throw new APIError(res.status, body?.error || 'request_failed', message, data)
   }
 
   return data as T
 }
+
+/** Error code (and window event) when the security policy requires setting up MFA first. */
+export const MFA_ENROLLMENT_REQUIRED = 'mfa_enrollment_required'
 
 async function download(path: string, fallbackName: string, init: RequestInit = {}): Promise<void> {
   const res = await fetch(withBase(path), { credentials: 'include', ...init })
@@ -252,6 +285,43 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
+  },
+
+  passkeyLoginBegin() {
+    return request<PasskeyCeremony>('/api/v2/auth/passkey/begin', { method: 'POST' })
+  },
+
+  passkeyLoginFinish(token: string, credential: unknown) {
+    return request<User>('/api/v2/auth/passkey/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, credential }),
+    })
+  },
+
+  listPasskeys() {
+    return request<Passkey[]>('/api/v2/me/passkeys')
+  },
+
+  passkeyRegisterBegin(password: string) {
+    return request<PasskeyCeremony>('/api/v2/me/passkeys/register/begin', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+  },
+
+  passkeyRegisterFinish(token: string, name: string, credential: unknown) {
+    return request<Passkey>('/api/v2/me/passkeys/register/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, name, credential }),
+    })
+  },
+
+  renamePasskey(id: number, name: string) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+  },
+
+  deletePasskey(id: number) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'DELETE' })
   },
 
   getMFA() {
@@ -579,6 +649,7 @@ export const api = {
     title: string
     description?: string
     due_date?: string
+    start_date?: string
     project_id?: number | null
     parent_id?: number | null
     priority?: number
@@ -602,6 +673,7 @@ export const api = {
       description: string
       due_date: string
       clear_due_date: boolean
+      start_date: string | null
       project_id: number | null
       parent_id: number | null
       priority: number
@@ -1247,6 +1319,18 @@ export const api = {
     })
   },
 
+  setCommentReaction(taskId: number, commentId: number, code: string, on: boolean) {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}/reactions/${encodeURIComponent(code)}`, {
+      method: on ? 'PUT' : 'DELETE',
+    })
+  },
+
+  setCommentResolved(taskId: number, commentId: number, resolved: boolean) {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}/resolve`, {
+      method: resolved ? 'POST' : 'DELETE',
+    })
+  },
+
   editTaskComment(taskId: number, commentId: number, body: string) {
     return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}`, {
       method: 'PATCH',
@@ -1271,6 +1355,80 @@ export const api = {
 
   unclaimTask(taskId: number) {
     return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'DELETE' })
+  },
+
+  setTaskReviewer(taskId: number, userName: string) {
+    return request<Task>(`/api/v2/tasks/${taskId}/reviewer`, {
+      method: 'PUT',
+      body: JSON.stringify({ user_name: userName }),
+    })
+  },
+
+  clearTaskReviewer(taskId: number) {
+    return request<Task>(`/api/v2/tasks/${taskId}/reviewer`, { method: 'DELETE' })
+  },
+
+  planner(days = 14) {
+    return request<Planner>(`/api/v2/planner?days=${days}`)
+  },
+
+  snoozeTask(taskId: number, until: string) {
+    return request<{ snoozed_until: string }>(`/api/v2/tasks/${taskId}/snooze`, {
+      method: 'PUT',
+      body: JSON.stringify({ until }),
+    })
+  },
+
+  unsnoozeTask(taskId: number) {
+    return request<void>(`/api/v2/tasks/${taskId}/snooze`, { method: 'DELETE' })
+  },
+
+  listRequestForms(projectId: number) {
+    return request<RequestForm[]>(`/api/v2/projects/${projectId}/forms`)
+  },
+
+  createRequestForm(projectId: number, input: RequestFormInput) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  updateRequestForm(projectId: number, formId: number, input: RequestFormInput) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms/${formId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    })
+  },
+
+  rotateRequestForm(projectId: number, formId: number) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms/${formId}/rotate`, { method: 'POST' })
+  },
+
+  deleteRequestForm(projectId: number, formId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/forms/${formId}`, { method: 'DELETE' })
+  },
+
+  getRequestForm(token: string) {
+    return request<PublicRequestForm>(`/api/v2/forms/${encodeURIComponent(token)}`)
+  },
+
+  submitRequestForm(token: string, summary: string, answers: Record<string, string>) {
+    return request<{ task_id: number }>(`/api/v2/forms/${encodeURIComponent(token)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ summary, answers }),
+    })
+  },
+
+  getOnboarding() {
+    return request<Onboarding>('/api/v2/me/onboarding')
+  },
+
+  setOnboardingDismissed(dismissed: boolean) {
+    return request<Onboarding>('/api/v2/me/onboarding', {
+      method: 'PATCH',
+      body: JSON.stringify({ dismissed }),
+    })
   },
 
   listNotifications(params: { page?: number; per_page?: number; unread?: boolean } = {}) {
@@ -1328,10 +1486,13 @@ export const api = {
     return request<ProjectInvite[]>(`/api/v2/projects/${projectId}/invites`)
   },
 
-  searchUsers(q: string, init: RequestInit & { projectId?: number } = {}) {
-    const { projectId, ...rest } = init
+  searchUsers(q: string, init: RequestInit & { projectId?: number; includeTeams?: boolean } = {}) {
+    const { projectId, includeTeams, ...rest } = init
     const qs = new URLSearchParams({ q })
-    if (projectId && projectId > 0) qs.set('project_id', String(projectId))
+    if (projectId && projectId > 0) {
+      qs.set('project_id', String(projectId))
+      if (includeTeams) qs.set('include_teams', '1')
+    }
     return request<UserSearchHit[]>(`/api/v2/users/search?${qs}`, rest)
   },
 
@@ -1508,6 +1669,10 @@ export const api = {
     return (await request<{ counts: Record<string, number> }>(`/api/v2/projects/${projectId}/status-counts${qs}`)).counts
   },
 
+  projectTimeline(projectId: number) {
+    return request<ProjectTimeline>(`/api/v2/projects/${projectId}/timeline`)
+  },
+
   projectInsights(projectId: number, sprintId?: number) {
     const qs = sprintId ? `?sprint_id=${sprintId}` : ''
     return request<ProjectInsights>(`/api/v2/projects/${projectId}/insights${qs}`)
@@ -1665,7 +1830,101 @@ export const api = {
   },
 
   getCompanyHome() {
-    return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+    return request<{ content: string; can_edit: boolean; summary?: CompanyHomeSummary }>('/api/v2/company-home')
+  },
+
+  getMaintenance() {
+    return request<{ enabled: boolean; message: string; started_at: string | null }>('/api/v2/admin/maintenance')
+  },
+
+  setMaintenance(enabled: boolean, message: string) {
+    return request<{ enabled: boolean; message: string; started_at: string | null }>('/api/v2/admin/maintenance', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, message }),
+    })
+  },
+
+  getBackupStatus() {
+    return request<BackupStatus>('/api/v2/admin/backups')
+  },
+
+  downloadBackup() {
+    return download('/api/v2/admin/backups/download', 'ordryn-backup.tar.gz')
+  },
+
+  downloadStoredBackup(name: string) {
+    return download(`/api/v2/admin/backups/files/${encodeURIComponent(name)}`, name)
+  },
+
+  getAuditStream() {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream')
+  },
+
+  updateAuditStream(payload: AuditStreamPatch) {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream', { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  testAuditStream() {
+    return request<{ ok: boolean }>('/api/v2/admin/audit-stream/test', { method: 'POST' })
+  },
+
+  listProjectTemplates() {
+    return request<{ templates: ProjectTemplate[] }>('/api/v2/project-templates')
+  },
+
+  createProjectFromTemplate(templateId: number, payload: { name: string; description?: string; include_tasks: boolean }) {
+    return request<FromTemplateResult>(`/api/v2/project-templates/${templateId}/projects`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getProjectTemplateFlag(projectId: number) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`)
+  },
+
+  setProjectTemplateFlag(projectId: number, isTemplate: boolean) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_template: isTemplate }),
+    })
+  },
+
+  getPortfolio(archived = false) {
+    return request<{ projects: PortfolioProject[] }>(`/api/v2/portfolio${archived ? '?archived=1' : ''}`)
+  },
+
+  listProjectStatusUpdates(projectId: number) {
+    return request<{ updates: ProjectStatusUpdate[] }>(`/api/v2/projects/${projectId}/status-updates`)
+  },
+
+  postProjectStatusUpdate(projectId: number, health: ProjectHealth, body: string) {
+    return request<ProjectStatusUpdate>(`/api/v2/projects/${projectId}/status-updates`, {
+      method: 'POST',
+      body: JSON.stringify({ health, body }),
+    })
+  },
+
+  deleteProjectStatusUpdate(projectId: number, updateId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/status-updates/${updateId}`, { method: 'DELETE' })
+  },
+
+  getTimesheet(params: { from: string; to: string; user_id?: number; project_id?: number }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to })
+    if (params.user_id) qs.set('user_id', String(params.user_id))
+    if (params.project_id) qs.set('project_id', String(params.project_id))
+    return request<TimesheetReport>(`/api/v2/reports/time?${qs}`)
+  },
+
+  downloadTimesheet(params: { from: string; to: string; user_id?: number; project_id?: number }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to, format: 'csv' })
+    if (params.user_id) qs.set('user_id', String(params.user_id))
+    if (params.project_id) qs.set('project_id', String(params.project_id))
+    return download(`/api/v2/reports/time?${qs}`, `timesheet-${params.from}-to-${params.to}.csv`)
+  },
+
+  getWorkload() {
+    return request<WorkloadReport>('/api/v2/reports/workload')
   },
 
   getAdminSettings() {
@@ -1677,6 +1936,26 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
+  },
+
+  getAdminSSO() {
+    return request<AdminSSOSettings>('/api/v2/admin/sso')
+  },
+
+  patchAdminSSO(payload: AdminSSOPatch) {
+    return request<AdminSSOSettings>('/api/v2/admin/sso', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  getSecurityPolicy() {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy')
+  },
+
+  patchSecurityPolicy(payload: AdminSecurityPolicyPatch) {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  testAdminSSO() {
+    return request<{ status: string; authorization_endpoint: string }>('/api/v2/admin/sso/test', { method: 'POST' })
   },
 
   testImageHosting(payload: AdminSettingsPatch) {
@@ -1753,11 +2032,34 @@ export const api = {
     })
   },
 
+  getOffboardingPreview(id: number) {
+    return request<OffboardingPreview>(`/api/v2/people/${id}/offboarding`)
+  },
+
+  offboardPerson(id: number, payload: OffboardInput) {
+    return request<OffboardResult>(`/api/v2/people/${id}/offboard`, { method: 'POST', body: JSON.stringify(payload) })
+  },
+
   setPersonActive(id: number, active: boolean) {
     return request<{ ok: boolean; active: boolean }>(
       `/api/v2/people/${id}/${active ? 'reactivate' : 'deactivate'}`,
       { method: 'POST' },
     )
+  },
+
+  setPersonGuest(id: number, guest: boolean) {
+    return request<{ ok: boolean; guest: boolean }>(`/api/v2/people/${id}/guest`, {
+      method: 'POST',
+      body: JSON.stringify({ guest }),
+    })
+  },
+
+  getGuestPolicy() {
+    return request<GuestPolicy>('/api/v2/admin/guest-policy')
+  },
+
+  saveGuestPolicy(policy: GuestPolicy) {
+    return request<GuestPolicy>('/api/v2/admin/guest-policy', { method: 'PUT', body: JSON.stringify(policy) })
   },
 
   listAdminUsers() {

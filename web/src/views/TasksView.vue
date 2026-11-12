@@ -9,8 +9,10 @@ import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
 import ModernTaskCard from '@/components/modern/ModernTaskCard.vue'
 import KanbanBoard from '@/components/KanbanBoard.vue'
+import ProjectTimeline from '@/components/ProjectTimeline.vue'
 import QuickAddBar from '@/components/QuickAddBar.vue'
 import CompanyHome from '@/components/CompanyHome.vue'
+import OnboardingChecklist from '@/components/OnboardingChecklist.vue'
 import { useSite } from '@/composables/useSite'
 import ExtensionSurfaceFrame from '@/components/ExtensionSurfaceFrame.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
@@ -86,6 +88,17 @@ const loadedProjectKey = ref<string | null>(null)
 let reloadGeneration = 0
 
 const showAddProjectModal = ref(false)
+// The command palette's "New project" lands here with ?new_project=1.
+watch(
+  () => route.query.new_project,
+  (v) => {
+    if (v !== '1') return
+    showAddProjectModal.value = true
+    const { new_project: _drop, ...rest } = route.query
+    void router.replace({ query: rest })
+  },
+  { immediate: true },
+)
 const showEditProjectModal = ref(false)
 const editingProject = ref<Project | null>(null)
 
@@ -116,7 +129,11 @@ const defaultTaskProjectId = computed<number | null>(() => {
   return isCompanyMode.value ? (writableProjects.value[0]?.id ?? null) : null
 })
 // No project shared yet: show the company home page instead of an empty task list.
-const showCompanyHome = computed(() => isCompanyMode.value && metaLoaded.value && projects.value.length === 0)
+const showCompanyHome = computed(
+  () => isCompanyMode.value && metaLoaded.value && (projects.value.length === 0 || route.name === 'company-home'),
+)
+// Ticks off getting-started steps as tasks are added or completed.
+const onboardingKey = computed(() => `${tasks.value.length}:${tasks.value.filter((t) => t.completed).length}`)
 // Preference: Home (no project or saved view selected) shows a project grid above the task list.
 const showHomeProjects = computed(
   () => !!user.value?.home_split_view && !filters.project && !activeViewId.value && !showCompanyHome.value,
@@ -155,6 +172,12 @@ const surfaces = useKanbanSurfaces(activeProjectObj, isKanbanProjectView, viewMo
 
 const showBoardView = computed(() => isKanbanProjectView.value && viewMode.value === 'board')
 const showExtensionSurface = computed(() => isKanbanProjectView.value && viewMode.value.startsWith('ext:'))
+const showTimelineView = computed(() => !!activeProjectObj.value && viewMode.value === 'timeline')
+const canEditTimeline = computed(() => hasProjectPerm(activeProjectObj.value, PROJECT_PERMS.TASKS_EDIT))
+// Reload the timeline when loaded tasks change elsewhere (sidebar saves, live updates).
+const timelineRev = computed(() =>
+  tasks.value.map((t) => `${t.id}:${t.start_date ?? ''}:${t.due_date}:${t.completed}:${t.title}`).join('|'),
+)
 
 function taskMatchesStatusFilter(task: Task) {
   // Board keeps done-column cards even when the list default is incomplete.
@@ -251,12 +274,12 @@ function setViewMode(mode: string) {
       /* ignore */
     }
   }
-  if (!mode.startsWith('ext:')) void reloadInitial()
+  if (!mode.startsWith('ext:') && mode !== 'timeline') void reloadInitial()
 }
 
 /** Prefer board when entering a kanban project so unclaimed backlog is visible. */
 function ensureKanbanBoardDefault() {
-  if (!isKanbanProjectView.value || viewMode.value === 'board') return
+  if (!isKanbanProjectView.value || viewMode.value === 'board' || viewMode.value === 'timeline') return
   viewMode.value = 'board'
   try {
     localStorage.setItem(VIEW_MODE_KEY, 'board')
@@ -1092,6 +1115,7 @@ onUnmounted(() => {
     <div class="ordryn-main-pane flex-grow-1 p-2 p-sm-3 p-md-4 overflow-auto d-flex flex-column justify-content-between">
       <CompanyHome v-if="showCompanyHome" />
       <div v-else>
+        <OnboardingChecklist v-if="!filters.project && !activeViewId" :refresh-key="onboardingKey" />
         <HomeProjectsPanel
           v-if="showHomeProjects"
           :projects="projects"
@@ -1136,10 +1160,11 @@ onUnmounted(() => {
           :density="density"
           :tags="displayTags"
           :tag-by-name="tagFilterByName"
-          :show-view-mode="isKanbanProjectView"
-          :view-mode="viewMode"
+          :show-view-mode="!!activeProjectObj"
+          :show-board-option="isKanbanProjectView"
+          :view-mode="isKanbanProjectView || viewMode !== 'board' ? viewMode : 'list'"
           :surface-tabs="surfaces.tabs.value"
-          :hide-task-filters="showExtensionSurface"
+          :hide-task-filters="showExtensionSurface || showTimelineView"
           @update:status="setFilterAndReload('status', $event)"
           @update:tag="setFilterAndReload('tag', $event)"
           @update:priority="setFilterAndReload('priority', $event)"
@@ -1235,7 +1260,17 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-if="!showBoardView && !showExtensionSurface" id="task-container" aria-live="polite">
+        <div v-if="showTimelineView && activeProjectObj" class="mb-3">
+          <ProjectTimeline
+            :key="activeProjectObj.id"
+            :project-id="activeProjectObj.id"
+            :can-edit="canEditTimeline"
+            :revision="timelineRev"
+            @open-task="openTaskDetails"
+          />
+        </div>
+
+        <div v-if="!showBoardView && !showExtensionSurface && !showTimelineView" id="task-container" aria-live="polite">
           <QuickAddBar
             v-if="canAddTasks"
             :projects="projects"
