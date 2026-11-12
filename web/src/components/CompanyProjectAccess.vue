@@ -102,8 +102,8 @@ async function unshare(s: ProjectShare) {
     title: `Stop sharing with ${s.name}?`,
     message:
       s.kind === 'team'
-        ? `Members of ${s.name} lose access unless the project is also shared with them another way.`
-        : `${s.name} loses access unless the project is also shared with one of their teams.`,
+        ? `Members of ${s.name} lose access unless the project is also shared with them another way. Anyone who loses access is unassigned from its tasks.`
+        : `${s.name} loses access unless the project is also shared with one of their teams. If they do, they're unassigned from its tasks.`,
     confirmLabel: 'Stop sharing',
     danger: true,
   })

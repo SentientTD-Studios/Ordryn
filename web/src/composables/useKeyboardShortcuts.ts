@@ -79,6 +79,23 @@ function closeOpenModals() {
   }
 }
 
+function focusVisibleInput(id: string): boolean {
+  const el = document.getElementById(id)
+  if (!(el instanceof HTMLInputElement) || el.offsetParent === null) return false
+  el.focus()
+  el.select()
+  return true
+}
+
+/**
+ * Focus site search: the search page's box, else the header's, else open the
+ * search page (the header box is hidden on small screens).
+ */
+export function focusSiteSearch() {
+  if (focusVisibleInput('site-search-page') || focusVisibleInput('global-search')) return
+  void import('@/router').then(({ default: router }) => router.push({ name: 'search' }))
+}
+
 function focusTaskCardElement(id: number) {
   const el = document.getElementById(`task-card-${id}`)
   if (!(el instanceof HTMLElement)) return
@@ -144,13 +161,14 @@ function onKeydown(e: KeyboardEvent) {
 
   if (typing || e.defaultPrevented) return
 
-  if (!taskHandlers) return
-
   if (isSearchKey(e)) {
     e.preventDefault()
-    taskHandlers.focusSearch()
+    if (taskHandlers) taskHandlers.focusSearch()
+    else focusSiteSearch()
     return
   }
+
+  if (!taskHandlers) return
 
   if (e.code === 'KeyN') {
     e.preventDefault()

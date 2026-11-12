@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { Organization, Project, SavedView, SavedViewFilter, Tag, Task } from '@/api/types'
 import { filterToDefinition } from '@/utils/queryDefinition'
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
-import ModernTaskFilterBar from '@/components/modern/ModernTaskFilterBar.vue'
+import ModernTaskFilterBar, { type TaskFilterMode } from '@/components/modern/ModernTaskFilterBar.vue'
 import ModernTaskCard from '@/components/modern/ModernTaskCard.vue'
 import KanbanBoard from '@/components/KanbanBoard.vue'
 import ProjectTimeline from '@/components/ProjectTimeline.vue'
@@ -28,7 +28,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useBoardSprints } from '@/composables/useBoardSprints'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { useKanbanSurfaces } from '@/composables/useKanbanSurfaces'
-import { useTaskListFilters } from '@/composables/useTaskListFilters'
+import { DEFAULT_TASK_LIST_STATUS, useTaskListFilters } from '@/composables/useTaskListFilters'
 import { useTaskListState } from '@/composables/useTaskListState'
 import { allowTaskRouteNavigation, useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useTaskSortable } from '@/composables/useTaskSortable'
@@ -37,7 +37,7 @@ import { useProjectNav } from '@/composables/useProjectNav'
 import { useConfirm } from '@/composables/useConfirm'
 import { useViewDensity } from '@/composables/useViewDensity'
 import { useSidebarState } from '@/composables/useSidebarState'
-import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+import { focusSiteSearch, useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 import { isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
@@ -46,6 +46,7 @@ import { kanbanSprintQueryValue, kanbanWorkflowClaimScope } from '@/utils/kanban
 import { uniqueTagsByName, isArchivedTask } from '@/utils/tags'
 import { filterHas, parseFilterList } from '@/utils/filterValues'
 import { projectRoute } from '@/utils/projectRoute'
+import { taskMatchesKeyword } from '@/utils/search'
 
 const route = useRoute()
 const router = useRouter()
@@ -80,6 +81,8 @@ const expandedParentIds = ref<Set<number>>(new Set())
 const loadedPage = ref(0)
 const totalPages = ref(1)
 const search = ref('')
+/** Home's only filter: '' all projects, '0' no project, else a project id. Not part of the URL. */
+const homeProject = ref('')
 const loading = ref(true)
 const loadingMore = ref(false)
 /** Project filter key last applied to `tasks` ('' = all projects). */
@@ -179,6 +182,25 @@ const timelineRev = computed(() =>
   tasks.value.map((t) => `${t.id}:${t.start_date ?? ''}:${t.due_date}:${t.completed}:${t.title}`).join('|'),
 )
 
+/**
+ * Which filters apply. Home is a work queue with only a project filter; a board
+ * needs none (its columns are the statuses); a project's list (and an old
+ * ?view= saved view) gets the full set. Searching everything is /search.
+ */
+const filterMode = computed<TaskFilterMode>(() => {
+  if (activeViewId.value) return 'project'
+  if (!filters.project) return 'home'
+  if (showBoardView.value || showExtensionSurface.value || showTimelineView.value) return 'board'
+  return 'project'
+})
+
+// Filters from a project list would otherwise linger, invisible, on Home or a board.
+watch(filterMode, (mode, prev) => {
+  if (mode === prev || mode === 'project' || !hasActiveFilters.value) return
+  resetFilters()
+  search.value = ''
+})
+
 function taskMatchesStatusFilter(task: Task) {
   // Board keeps done-column cards even when the list default is incomplete.
   if (showBoardView.value) return filters.status === 'complete' ? task.completed : true
@@ -189,6 +211,10 @@ function taskMatchesStatusFilter(task: Task) {
 
 function taskMatchesProjectScope(task: Task): boolean {
   if (!board.taskInSprint(task)) return false
+  if (!filters.project && !activeViewId.value && homeProject.value) {
+    if (homeProject.value === '0') return task.project_id == null
+    return task.project_id === parseInt(homeProject.value, 10)
+  }
   if (filters.project === '0' && task.project_id != null) return false
   if (filters.project && filters.project !== '0') {
     const pid = parseInt(filters.project, 10)
@@ -198,6 +224,10 @@ function taskMatchesProjectScope(task: Task): boolean {
 }
 
 function taskMatchesCurrentFilters(task: Task): boolean {
+  if (filterMode.value === 'home') return !task.completed && taskMatchesProjectScope(task)
+  if (filterMode.value === 'board') {
+    return (showBoardView.value || !task.completed) && taskMatchesProjectScope(task)
+  }
   if (!taskMatchesStatusFilter(task)) return false
   if (!taskMatchesProjectScope(task)) return false
   if (filters.priority && !filterHas(filters.priority, String(task.priority ?? 0))) return false
@@ -216,10 +246,7 @@ function taskMatchesCurrentFilters(task: Task): boolean {
       return false
     }
   }
-  if (filters.search) {
-    const q = filters.search.toLowerCase()
-    if (!`${task.title} ${task.description}`.toLowerCase().includes(q)) return false
-  }
+  if (filters.search && !taskMatchesKeyword(task, filters.search)) return false
   return true
 }
 
@@ -243,7 +270,12 @@ const allSelected = computed(
 const isSelecting = computed(() => selectMode.value || selected.value.length > 0)
 const isSearching = computed(() => filters.search !== '')
 const showTaskTable = computed(
-  () => tasks.value.length > 0 || total.value > 0 || hasActiveFilters.value || isKanbanProjectView.value,
+  () =>
+    tasks.value.length > 0 ||
+    total.value > 0 ||
+    hasActiveFilters.value ||
+    isKanbanProjectView.value ||
+    (filterMode.value === 'home' && !!homeProject.value),
 )
 const hasMore = computed(() => loadedPage.value < totalPages.value)
 const sortableEnabled = computed(() => filters.sort !== 'priority' && !loading.value)
@@ -307,13 +339,32 @@ async function loadAllForBoard() {
   }
 }
 
+// List filters a board or Home never sends, even before the reset watcher runs.
+const LIST_ONLY_PARAMS = ['status', 'due', 'due_from', 'due_to', 'completed', 'priority', 'tag', 'sort', 'search', 'claimed']
+
 function listApiParams(page: number, perPage: number) {
   // Home/classic lists stay on claimed work. A kanban project view (board or
   // list) includes unclaimed tasks so mass-edit can cover the whole sprint.
   const inKanbanProject = isKanbanProjectView.value
+  if (filterMode.value === 'home') {
+    // Home is the open work queue; the project filter is all it takes.
+    const home: Record<string, string | number> = {
+      page,
+      per_page: perPage,
+      status: DEFAULT_TASK_LIST_STATUS,
+      workflow_claim_scope: kanbanWorkflowClaimScope(false),
+    }
+    if (homeProject.value) home.project = homeProject.value
+    return home
+  }
   const params: Record<string, string | number> = {
     ...toApiParams(page, perPage),
     workflow_claim_scope: kanbanWorkflowClaimScope(inKanbanProject),
+  }
+  if (filterMode.value === 'board') {
+    for (const key of LIST_ONLY_PARAMS) delete params[key]
+    // A list view behind a board tab (timeline, extensions) still shows open work.
+    if (!showBoardView.value) params.status = DEFAULT_TASK_LIST_STATUS
   }
   // List defaults to incomplete; board still needs done-column cards.
   if (inKanbanProject && viewMode.value === 'board' && params.status === 'incomplete') delete params.status
@@ -460,7 +511,7 @@ function isBoardRoute() {
  * project already open (moving the URL to its board). Returns true when filters
  * changed and the list needs reloading.
  */
-async function syncFiltersFromRoute(): Promise<boolean> {
+async function syncFiltersFromRoute(fromProjectBoard = false): Promise<boolean> {
   if (!isBoardRoute()) return false
   if (route.name === 'project' || route.name === 'project-task') {
     const ref = String(route.params.ref || '')
@@ -519,7 +570,15 @@ async function syncFiltersFromRoute(): Promise<boolean> {
     return true
   }
 
-  // Bare "/": keep the open project, but show it in the URL.
+  // Bare "/" reached from a project's board (the brand link, Home): go home.
+  if (fromProjectBoard && route.name === 'tasks') {
+    if (!filters.project && !activeViewId.value) return false
+    activeViewId.value = null
+    setFilter('project', '')
+    return true
+  }
+
+  // Bare "/" otherwise: keep the open project, but show it in the URL.
   if (!activeViewId.value && filters.project && filters.project !== '0') {
     void router.replace({ ...projectLocation(filters.project), query: route.query, hash: route.hash })
   }
@@ -542,7 +601,7 @@ function syncUrlToProject() {
 
 async function reloadInitial() {
   const generation = ++reloadGeneration
-  const projectKey = filters.project || ''
+  const projectKey = filters.project || (homeProject.value ? `home:${homeProject.value}` : '')
   loading.value = true
   loadedPage.value = 0
   selected.value = []
@@ -657,8 +716,10 @@ function routeKeyWithoutTask() {
   return JSON.stringify([route.name, route.params.ref ?? '', rest])
 }
 
-watch(routeKeyWithoutTask, async () => {
-  if (await syncFiltersFromRoute()) void reloadInitial()
+watch(routeKeyWithoutTask, async (_key, prevKey) => {
+  const prevName = prevKey ? (JSON.parse(prevKey) as unknown[])[0] : null
+  const fromProjectBoard = prevName === 'project' || prevName === 'project-task'
+  if (await syncFiltersFromRoute(fromProjectBoard)) void reloadInitial()
 })
 
 // Keep the URL on the current slug when the open project's slug is changed.
@@ -901,7 +962,7 @@ const currentViewFilter = computed<SavedViewFilter>(() => ({
   due: filters.due || undefined,
   due_from: (filters.due === 'range' && filters.due_from) || undefined,
   due_to: (filters.due === 'range' && filters.due_to) || undefined,
-  project: filters.project || undefined,
+  project: filters.project || homeProject.value || undefined,
   priority: filters.priority || undefined,
   tag: filters.tag || undefined,
   sort: filters.sort || undefined,
@@ -1029,12 +1090,34 @@ function getFocusableTaskIds(): number[] {
   return ids
 }
 
+/** "/" focuses this project list's keyword filter, or site search everywhere else. */
 function focusSearchInput() {
   const el = document.getElementById('task-search') as HTMLInputElement | null
-  if (!el) return
+  if (!el || el.offsetParent === null) {
+    focusSiteSearch()
+    return
+  }
   el.focus()
   el.select()
 }
+
+function setHomeProject(id: string) {
+  if (homeProject.value === id) return
+  homeProject.value = id
+  void reloadInitial()
+}
+
+// Drop Home's project filter once that project is gone from the list (left, deleted, archived).
+watch(projects, (list) => {
+  const id = homeProject.value
+  if (!id || id === '0' || !metaLoaded.value) return
+  if (!list.some((p) => String(p.id) === id && !p.archived)) setHomeProject('')
+})
+
+const exportQuery = computed(() => {
+  const base = toExportQuery()
+  return filterMode.value === 'home' && homeProject.value ? `${base}&project=${encodeURIComponent(homeProject.value)}` : base
+})
 
 function showShortcutsHintOnce() {
   try {
@@ -1131,7 +1214,7 @@ onUnmounted(() => {
           :selecting="isSelecting"
           :can-add-tasks="canAddTasks"
           :can-undo="!!undoToken"
-          :export-query="toExportQuery()"
+          :export-query="exportQuery"
           @toggle-select="toggleSelectMode"
           @add="openAddFromView"
           @undo="undoDelete"
@@ -1164,7 +1247,10 @@ onUnmounted(() => {
           :show-board-option="isKanbanProjectView"
           :view-mode="isKanbanProjectView || viewMode !== 'board' ? viewMode : 'list'"
           :surface-tabs="surfaces.tabs.value"
-          :hide-task-filters="showExtensionSurface || showTimelineView"
+          :mode="filterMode"
+          :home-project="homeProject"
+          :projects="projects"
+          :allow-no-project="!isCompanyMode"
           @update:status="setFilterAndReload('status', $event)"
           @update:tag="setFilterAndReload('tag', $event)"
           @update:priority="setFilterAndReload('priority', $event)"
@@ -1175,6 +1261,7 @@ onUnmounted(() => {
           @update:search="search = $event; setFilter('search', $event); reloadInitial()"
           @update:density="density = $event"
           @update:view-mode="setViewMode($event)"
+          @update:home-project="setHomeProject"
           @clear-filters="clearFilters"
         />
 
@@ -1387,10 +1474,18 @@ onUnmounted(() => {
             class="text-center py-5 rounded-3 border"
             style="background: var(--ordryn-card-bg); color: var(--ordryn-text); border-color: var(--ordryn-card-border) !important;"
           >
-            <p class="text-muted mb-2">No tasks match your search query.</p>
-            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" @click="clearFilters">
-              Clear Search
-            </button>
+            <p class="text-muted mb-2">No tasks in this list match “{{ filters.search }}”.</p>
+            <div class="d-flex justify-content-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" @click="clearFilters">
+                Clear filters
+              </button>
+              <RouterLink
+                class="btn btn-sm btn-outline-secondary rounded-pill"
+                :to="{ name: 'search', query: { q: filters.search } }"
+              >
+                Search everywhere
+              </RouterLink>
+            </div>
           </div>
 
           <div

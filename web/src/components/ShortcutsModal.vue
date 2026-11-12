@@ -36,7 +36,7 @@ import { RouterLink } from 'vue-router'
               </tr>
               <tr>
                 <td><kbd>/</kbd></td>
-                <td>Focus search</td>
+                <td>Search everything you can open (on a project's list view, its keyword filter)</td>
               </tr>
               <tr>
                 <td><kbd>Esc</kbd></td>

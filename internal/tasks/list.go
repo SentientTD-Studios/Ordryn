@@ -151,37 +151,35 @@ func SearchTasksForUserWithFilters(page, pageSize int, searchQuery string, userI
 	}
 
 	offset := (page - 1) * pageSize
-	pattern := searchPattern(searchQuery)
-	searchID, hasSearchID := parseSearchTaskID(searchQuery)
-
-	countArgs := []interface{}{pattern, *userID}
-	countIDIdx := 0
-	if hasSearchID {
-		countArgs = append(countArgs, searchID)
-		countIDIdx = len(countArgs)
+	if offset < 0 {
+		offset = 0
 	}
-	countWhere := "WHERE " + storage.TaskListVisibleCondition("", "$2", filters.ProjectFilter)
+	terms := SearchTerms(searchQuery)
+
+	countArgs := []interface{}{*userID}
+	countWhere := "WHERE " + storage.TaskListVisibleCondition("", "$1", filters.ProjectFilter)
 	if filters.SprintFilter == nil {
 		countWhere += filters.rootOnlySQL("")
 	}
-	countWhere += " AND (" + searchMatchClause("", countIDIdx) + " OR EXISTS (SELECT 1 FROM tasks c WHERE c.parent_id = id AND " + childSearchClause(countIDIdx) + "))"
+	var countMatch string
+	countMatch, countArgs = parentOrChildMatchSQL("tasks.id", countArgs, terms)
+	countWhere += " AND " + countMatch
 	countWhere, countArgs = appendFilterSQL(countWhere, countArgs, filters, timezone, "", *userID)
 	var totalTasks int
 	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM tasks "+countWhere, countArgs...).Scan(&totalTasks); err != nil {
 		return nil, 0, err
 	}
 
-	selectArgs := []interface{}{pattern, timezone, pageSize, *userID, offset}
-	selectIDIdx := 0
-	if hasSearchID {
-		selectArgs = append(selectArgs, searchID)
-		selectIDIdx = len(selectArgs)
-	}
-	selectWhere := "WHERE " + storage.TaskListVisibleCondition("t", "$4", filters.ProjectFilter) + filters.rootOnlySQL("t") +
-		" AND (" + searchMatchClause("t", selectIDIdx) + " OR EXISTS (SELECT 1 FROM tasks c WHERE c.parent_id = t.id AND " + childSearchClause(selectIDIdx) + "))"
+	selectArgs := []interface{}{*userID, timezone}
+	selectWhere := "WHERE " + storage.TaskListVisibleCondition("t", "$1", filters.ProjectFilter) + filters.rootOnlySQL("t")
+	var selectMatch string
+	selectMatch, selectArgs = parentOrChildMatchSQL("t.id", selectArgs, terms)
+	selectWhere += " AND " + selectMatch
 	selectWhere, selectArgs = appendFilterSQL(selectWhere, selectArgs, filters, timezone, "t", *userID)
+	selectArgs = append(selectArgs, pageSize, offset)
 
-	query := taskSelectSQL() + selectWhere + filters.orderByClause("t") + " LIMIT $3 OFFSET $5"
+	query := taskSelectSQL() + selectWhere + filters.orderByClause("t") +
+		fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(selectArgs)-1, len(selectArgs))
 
 	rows, err := pool.Query(context.Background(), query, selectArgs...)
 	if err != nil {
@@ -262,42 +260,61 @@ func parseSearchTaskID(query string) (int, bool) {
 // searchPattern turns a search box query into an ILIKE pattern that matches
 // it literally anywhere in the text: %, _ and \ in the query are escaped.
 func searchPattern(query string) string {
-	escaped := strings.NewReplacer(`\`, `\`, `%`, `\%`, `_`, `\_`).Replace(strings.TrimSpace(query))
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.TrimSpace(query))
 	return "%" + escaped + "%"
 }
 
-// searchIDsSQL selects the ids of tasks whose title, description, or a tag name
-// matches the pattern in argument $patternIdx. Each branch is a plain ILIKE on
-// one column so the trigram indexes from storage.EnsureSearchIndexes apply; an
-// OR across the columns and the tag join could not use them.
-func searchIDsSQL(patternIdx int) string {
-	return fmt.Sprintf(`(SELECT id FROM tasks WHERE title ILIKE $%[1]d
+// searchFields is what a free-text search term is matched against (a number
+// also matches the task id, whatever the fields).
+type searchFields int
+
+const (
+	// searchTitles: titles only. The header's live results.
+	searchTitles searchFields = iota
+	// searchStandard: titles, descriptions and tag names. A list's keyword filter.
+	searchStandard
+	// searchEverything: searchStandard plus comments. A full site search.
+	searchEverything
+)
+
+// searchIDsSQL selects the ids of tasks where fields match the pattern in
+// argument $patternIdx. Each branch is a plain ILIKE on one column so the
+// trigram indexes from storage.EnsureSearchIndexes apply; an OR across the
+// columns and joins could not use them.
+func searchIDsSQL(patternIdx int, fields searchFields) string {
+	sql := fmt.Sprintf(`(SELECT id FROM tasks WHERE title ILIKE $%d`, patternIdx)
+	if fields >= searchStandard {
+		sql += fmt.Sprintf(`
 		UNION SELECT id FROM tasks WHERE description ILIKE $%[1]d
-		UNION SELECT tt.task_id FROM task_tags tt JOIN tags tg ON tg.id = tt.tag_id WHERE tg.name ILIKE $%[1]d)`, patternIdx)
+		UNION SELECT tt.task_id FROM task_tags tt JOIN tags tg ON tg.id = tt.tag_id WHERE tg.name ILIKE $%[1]d`, patternIdx)
+	}
+	if fields >= searchEverything {
+		sql += fmt.Sprintf(`
+		UNION SELECT task_id FROM task_comments WHERE body ILIKE $%d AND deleted_at IS NULL`, patternIdx)
+	}
+	return sql + ")"
 }
 
 // searchMatchSQL matches idCol against the search pattern in $patternIdx, or
 // against an exact task id in $idArgIndex when the query is a number.
-func searchMatchSQL(idCol string, patternIdx, idArgIndex int) string {
-	clause := fmt.Sprintf("%s IN %s", idCol, searchIDsSQL(patternIdx))
+func searchMatchSQL(idCol string, patternIdx, idArgIndex int, fields searchFields) string {
+	clause := fmt.Sprintf("%s IN %s", idCol, searchIDsSQL(patternIdx, fields))
 	if idArgIndex <= 0 {
 		return "(" + clause + ")"
 	}
 	return fmt.Sprintf("(%s OR %s = $%d)", clause, idCol, idArgIndex)
 }
 
-func searchMatchClause(tablePrefix string, idArgIndex int) string {
-	idCol := "id"
-	if tablePrefix != "" {
-		idCol = tablePrefix + ".id"
-	}
-	return searchMatchSQL(idCol, 1, idArgIndex)
+// parentOrChildMatchSQL matches a list row when it, or one of its live
+// subtasks, matches every search term.
+func parentOrChildMatchSQL(idCol string, args []interface{}, terms []string) (string, []interface{}) {
+	var own, child string
+	own, args = textTermsSQL(idCol, args, terms)
+	child, args = textTermsSQL("c.id", args, terms)
+	return "(" + own + " OR EXISTS (SELECT 1 FROM tasks c WHERE c.parent_id = " + idCol +
+		" AND c.deleted_at IS NULL AND " + child + "))", args
 }
 
-func childSearchClause(idArgIndex int) string {
-	// Trashed subtasks never make their parent match a search.
-	return "c.deleted_at IS NULL AND " + searchMatchSQL("c.id", 1, idArgIndex)
-}
 func appendTagCondition(where string, args []interface{}, filters ListFilters, userID int, tablePrefix string) (string, []interface{}) {
 	idCol := "id"
 	if tablePrefix != "" {
@@ -785,16 +802,10 @@ func appendOrphanMatchingSubtasks(roots []Task, userID int, timezone string, fil
 	args := []interface{}{userID, timezone}
 	where := "WHERE " + storage.TaskListVisibleCondition("t", "$1", filters.ProjectFilter) + " AND t.parent_id IS NOT NULL"
 	where, args = appendFilterSQL(where, args, filters, timezone, "t", userID)
-	if strings.TrimSpace(searchQuery) != "" {
-		searchID, hasSearchID := parseSearchTaskID(searchQuery)
-		args = append(args, searchPattern(searchQuery))
-		searchIdx := len(args)
-		searchIDIdx := 0
-		if hasSearchID {
-			args = append(args, searchID)
-			searchIDIdx = len(args)
-		}
-		where += " AND " + searchMatchSQL("t.id", searchIdx, searchIDIdx)
+	if terms := SearchTerms(searchQuery); len(terms) > 0 {
+		var match string
+		match, args = textTermsSQL("t.id", args, terms)
+		where += " AND " + match
 	}
 	if len(exclude) > 0 {
 		args = append(args, exclude)
@@ -962,21 +973,12 @@ func TaskMatchesFilters(taskID, userID int, timezone string, filters ListFilters
 	}
 	defer storage.CloseDatabase(pool)
 
-	var countWhere string
-	var args []interface{}
-	vis := storage.TaskListVisibleCondition("", "$3", filters.ProjectFilter)
-	visNoSearch := storage.TaskListVisibleCondition("", "$2", filters.ProjectFilter)
-	if search != "" {
-		args = []interface{}{searchPattern(search), taskID, userID}
-		idArgIndex := 0
-		if searchID, ok := parseSearchTaskID(search); ok {
-			args = append(args, searchID)
-			idArgIndex = len(args)
-		}
-		countWhere = "WHERE id = $2 AND " + vis + " AND " + searchMatchClause("", idArgIndex)
-	} else {
-		args = []interface{}{taskID, userID}
-		countWhere = "WHERE id = $1 AND " + visNoSearch
+	args := []interface{}{taskID, userID}
+	countWhere := "WHERE id = $1 AND " + storage.TaskListVisibleCondition("", "$2", filters.ProjectFilter)
+	if terms := SearchTerms(search); len(terms) > 0 {
+		var match string
+		match, args = textTermsSQL("tasks.id", args, terms)
+		countWhere += " AND " + match
 	}
 	countWhere, args = appendFilterSQL(countWhere, args, filters, timezone, "", userID)
 

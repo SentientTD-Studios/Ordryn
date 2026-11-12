@@ -243,7 +243,7 @@ func ListTrashCandidates(userID, limit int) ([]TrashedTask, error) {
 		LEFT JOIN users u ON u.id = t.deleted_by
 		WHERE t.deleted_at IS NOT NULL
 		  AND (par.id IS NULL OR par.deleted_at IS NULL OR par.delete_batch IS DISTINCT FROM t.delete_batch)
-		  AND (t.user_id = $1 OR (t.project_id IS NOT NULL AND (
+		  AND ((t.user_id = $1 AND t.project_id IS NULL) OR (t.project_id IS NOT NULL AND (
 			EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = $1)
 			OR p.user_id = $1)))
 		ORDER BY t.deleted_at DESC, t.id DESC

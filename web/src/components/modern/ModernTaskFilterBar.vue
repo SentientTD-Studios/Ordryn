@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import type { Tag } from '@/api/types'
+import { computed, onMounted, ref } from 'vue'
+import type { Project, Tag } from '@/api/types'
 import type { ViewDensity } from '@/composables/useViewDensity'
 import { dueRangeLabel, filterHas, filterSummary, parseFilterList, priorityFilterLabel, toggleFilterValue } from '@/utils/filterValues'
+
+/**
+ * Which filters a list gets: Home only picks a project, a board has none (its
+ * columns are the statuses), and a project's list gets the full set.
+ */
+export type TaskFilterMode = 'home' | 'board' | 'project'
 
 export type KanbanSurfaceTab = {
   viewKey: string
@@ -30,7 +36,12 @@ const props = withDefaults(
     viewMode?: string
     tagByName?: boolean
     surfaceTabs?: KanbanSurfaceTab[]
-    hideTaskFilters?: boolean
+    mode?: TaskFilterMode
+    /** Home's project filter: '' all, '0' no project, else a project id. */
+    homeProject?: string
+    projects?: Project[]
+    /** Offer "No project" in Home's project filter (not in company mode). */
+    allowNoProject?: boolean
   }>(),
   {
     claimed: '',
@@ -42,7 +53,10 @@ const props = withDefaults(
     viewMode: 'list',
     tagByName: false,
     surfaceTabs: () => [],
-    hideTaskFilters: false,
+    mode: 'project',
+    homeProject: '',
+    projects: () => [],
+    allowNoProject: true,
   },
 )
 
@@ -57,6 +71,7 @@ const emit = defineEmits<{
   'update:search': [val: string]
   'update:density': [val: ViewDensity]
   'update:viewMode': [val: string]
+  'update:homeProject': [val: string]
   'clear-filters': []
 }>()
 
@@ -67,6 +82,14 @@ onMounted(() => {
   if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767.98px)').matches) {
     showFilterPills.value = false
   }
+})
+
+const homeProjectOptions = computed(() => props.projects.filter((p) => !p.archived))
+
+const homeProjectLabel = computed(() => {
+  if (!props.homeProject) return 'ALL'
+  if (props.homeProject === '0') return 'NO PROJECT'
+  return props.projects.find((p) => String(p.id) === props.homeProject)?.name ?? 'ALL'
 })
 
 function tagFilterValue(t: Tag) {
@@ -103,15 +126,53 @@ function getDueDateLabel(preset: string) {
 <template>
   <div class="ordryn-filter-bar mb-2">
     <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
-      <!-- Search Input & Filter Fold Toggle Button -->
-        <div v-if="!hideTaskFilters" class="d-flex align-items-center gap-2 flex-grow-1 ordryn-filter-search">
+      <!-- Home: the only filter is which project's tasks to show -->
+      <div v-if="mode === 'home'" class="d-flex align-items-center gap-2 flex-grow-1">
+        <div class="dropdown d-inline-block">
+          <button
+            class="filter-pill-btn dropdown-toggle"
+            :class="{ active: homeProject !== '' }"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-label="Filter by project"
+          >
+            <span class="d-none d-sm-inline">PROJECT: </span><span class="fw-bold">{{ homeProjectLabel }}</span>
+          </button>
+          <ul class="dropdown-menu shadow-sm border-0 filter-multi-menu">
+            <li>
+              <button class="dropdown-item small" :class="{ active: !homeProject }" @click="emit('update:homeProject', '')">
+                All projects
+              </button>
+            </li>
+            <li v-if="allowNoProject">
+              <button class="dropdown-item small" :class="{ active: homeProject === '0' }" @click="emit('update:homeProject', '0')">
+                No project
+              </button>
+            </li>
+            <li v-if="homeProjectOptions.length"><hr class="dropdown-divider" /></li>
+            <li v-for="p in homeProjectOptions" :key="p.id">
+              <button
+                class="dropdown-item small text-truncate"
+                :class="{ active: homeProject === String(p.id) }"
+                @click="emit('update:homeProject', String(p.id))"
+              >
+                {{ p.name }}
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Keyword filter & Filter Fold Toggle Button (project lists only) -->
+        <div v-else-if="mode === 'project'" class="d-flex align-items-center gap-2 flex-grow-1 ordryn-filter-search">
         <div class="position-relative flex-grow-1">
           <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted" />
           <input
             id="task-search"
             type="text"
             class="form-control form-control-sm ps-5 pe-3 py-1.5 rounded-pill border-0 shadow-xs"
-            placeholder="Search tasks..."
+            placeholder="Filter this list by keyword…"
+            aria-label="Filter tasks by keyword"
             :value="search"
             style="background: var(--ordryn-card-bg); color: var(--ordryn-text);"
             @input="emit('update:search', ($event.target as HTMLInputElement).value)"
@@ -134,7 +195,7 @@ function getDueDateLabel(preset: string) {
       </div>
 
       <!-- Right: View mode + Density -->
-      <div class="d-flex align-items-center gap-3 flex-wrap justify-content-md-end">
+      <div class="d-flex align-items-center gap-3 flex-wrap justify-content-md-end ms-md-auto">
         <div
           v-if="showViewMode"
           class="d-flex align-items-center gap-2"
@@ -226,7 +287,7 @@ function getDueDateLabel(preset: string) {
     </div>
 
     <!-- Foldable Filter Pills Row -->
-    <div v-if="showFilterPills && !hideTaskFilters" class="filter-pills-container mt-2">
+    <div v-if="showFilterPills && mode === 'project'" class="filter-pills-container mt-2">
       <!-- Status Dropdown Pill (default: incomplete) -->
       <div class="dropdown d-inline-block">
         <button

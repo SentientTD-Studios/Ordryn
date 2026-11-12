@@ -487,9 +487,9 @@ func SyncOrganizationProjectsForUser(ctx context.Context, userID, orgID int) (*s
 	return result, nil
 }
 
-// RemoveOrganizationMemberForUser removes a non-owner, or allows self-leave.
-func RemoveOrganizationMemberForUser(ctx context.Context, actorUserID, orgID, memberUserID int) error {
-	_ = ctx
+// authorizeOrgMemberRemoval checks the actor may remove (or, for themselves,
+// leave) the member, and that the member is a removable non-owner.
+func authorizeOrgMemberRemoval(actorUserID, orgID, memberUserID int) error {
 	org, err := requireOrgAccess(orgID, actorUserID)
 	if err != nil {
 		return err
@@ -512,8 +512,34 @@ func RemoveOrganizationMemberForUser(ctx context.Context, actorUserID, orgID, me
 	if targetRole == storage.RoleOwner {
 		return fmt.Errorf("%w: cannot remove the organization owner", ErrValidation)
 	}
-	if err := storage.RemoveOrganizationMember(orgID, memberUserID); err != nil {
+	return nil
+}
+
+// OrganizationMemberRemovalImpactForUser lists the organization's projects the
+// member is on and which of them removing the member leaves automatically.
+func OrganizationMemberRemovalImpactForUser(ctx context.Context, actorUserID, orgID, memberUserID int) ([]storage.OrgRemovalProject, error) {
+	_ = ctx
+	if err := authorizeOrgMemberRemoval(actorUserID, orgID, memberUserID); err != nil {
+		return nil, err
+	}
+	return storage.ListOrgRemovalProjects(orgID, memberUserID)
+}
+
+// RemoveOrganizationMemberForUser removes a non-owner, or allows self-leave.
+// The member also leaves the organization's projects whose rosters it controls,
+// plus those in alsoRemove (picked from OrganizationMemberRemovalImpactForUser).
+// Leaving a project releases their claims, reviews and watches there.
+func RemoveOrganizationMemberForUser(ctx context.Context, actorUserID, orgID, memberUserID int, alsoRemove []int) error {
+	_ = ctx
+	if err := authorizeOrgMemberRemoval(actorUserID, orgID, memberUserID); err != nil {
+		return err
+	}
+	changed, err := storage.RemoveOrganizationMemberFromProjects(orgID, memberUserID, alsoRemove)
+	if err != nil {
 		return ErrNotFound
+	}
+	for _, pid := range changed {
+		live.AfterProjectChangeLive(actorUserID, pid, live.TypeProjectUpdated)
 	}
 	return nil
 }

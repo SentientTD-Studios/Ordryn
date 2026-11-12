@@ -113,6 +113,18 @@ export type OrgMemberProjectImpact = {
   locked: boolean
 }
 
+/**
+ * An organization project a member is on. `automatic` ones are left with the
+ * organization; the others were assigned by hand and are left only when picked.
+ * `mode`: lock / copy / select (org import), or share / personal (company site).
+ */
+export type OrgRemovalProject = {
+  id: number
+  name: string
+  mode: 'lock' | 'copy' | 'select' | 'share' | 'personal'
+  automatic: boolean
+}
+
 export type OrgMemberRoleImpact = {
   locked: OrgMemberProjectImpact[]
   unlocked: OrgMemberProjectImpact[]
@@ -582,6 +594,17 @@ export type TaskList = {
   total_pages: number
   completed_count: number
   incomplete_count: number
+}
+
+/** GET /api/v2/search: tasks and projects the caller can open that match `q`. */
+export type SearchResults = {
+  query: string
+  tasks: Task[]
+  total: number
+  page: number
+  per_page: number
+  total_pages: number
+  projects: Project[]
 }
 
 export type SiteInfo = {

@@ -154,6 +154,12 @@ const router = createRouter({
       meta: { requiresAuth: true, ownFooter: true },
     },
     {
+      path: '/search',
+      name: 'search',
+      component: () => import('@/views/SearchView.vue'),
+      meta: { requiresAuth: true, ownFooter: true },
+    },
+    {
       path: '/team',
       name: 'team',
       component: () => import('@/views/TeamDashboardView.vue'),
