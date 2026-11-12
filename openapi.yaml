@@ -5787,7 +5787,7 @@ paths:
       description: |
         For answered questions. The author, anyone who can edit the task, comment
         moderators, and admins may resolve or reopen. The comment gets `resolved_at`
-        and `resolved_by_name`; clients show resolved comments collapsed.
+        and `resolved_by_name`; clients mark resolved comments with a checkmark.
       security:
         - SessionCookie: []
         - BearerAuth: []

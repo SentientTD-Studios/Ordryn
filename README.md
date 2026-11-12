@@ -30,7 +30,7 @@ Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordr
 - Search with status, tag, due-date, and priority filters; clearing those filters keeps you in the current project
 - Markdown task descriptions with truncated list view and expand-in-place
 - Task discussion comments with @-mentions of project members or teams (`@design_team` notifies the team's members on the project) and #task links; authors and project owners can edit comments, with posted/edited timestamps and an admin restore log
-- Comment reactions (👍 👎 🎉 ❤️ 😄 👀 🚀 ✅) and "Mark resolved" for answered questions, which collapse in the thread
+- Comment reactions (👍 👎 🎉 ❤️ 😄 👀 🚀 ✅) and "Mark resolved" for answered questions, which get a checkmark in the thread
 - Bulk actions: complete, delete, move project, add/remove tag, set/clear due date, set priority, set kanban status, move sprint
 - Trash: deleted tasks (with their subtasks) go to Trash, restorable with comments, links, fields, and history intact until purged after an admin-set retention (default 30 days); an Undo toast appears right after deleting
 - ICS calendar feed for due tasks; in-app calendar view; ICS import to sync due dates

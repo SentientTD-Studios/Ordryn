@@ -60,11 +60,19 @@ const historyId = ref<number | null>(null)
 const historyByComment = ref<Record<number, TaskCommentRevision[]>>({})
 const historyLoading = ref(false)
 const restoringId = ref<number | null>(null)
-// Resolved comments start collapsed; ids here were opened by the viewer.
-const expandedResolved = ref<Record<number, boolean>>({})
 function replaceComment(updated: TaskComment) {
   const i = comments.value.findIndex((c) => c.id === updated.id)
-  if (i >= 0) comments.value[i] = { ...comments.value[i], ...updated }
+  if (i < 0) return
+  // The server omits empty reactions and resolved_at / resolved_by_name on an
+  // open comment, so a plain merge would keep stale values after removing the
+  // last reaction or reopening. Clear them first.
+  comments.value[i] = {
+    ...comments.value[i],
+    reactions: [],
+    resolved_at: null,
+    resolved_by_name: undefined,
+    ...updated,
+  }
 }
 const isAdmin = computed(() => hasPermission('admin'))
 
@@ -794,12 +802,11 @@ defineExpose({ reload, isDirty, flushUnsaved })
                 </div>
               </div>
             </div>
-            <div v-else-if="c.resolved_at && !expandedResolved[c.id]" class="task-post-body small text-muted">
-              <i class="bi bi-check2-circle text-success me-1" aria-hidden="true" />Resolved<template v-if="c.resolved_by_name">
-                by {{ c.resolved_by_name }}</template>.
-              <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="expandedResolved[c.id] = true">Show</button>
-            </div>
             <div v-else class="task-post-body">
+              <div v-if="c.resolved_at" class="small text-success mb-1">
+                <i class="bi bi-check2-circle me-1" aria-hidden="true" />Resolved<template v-if="c.resolved_by_name">
+                  by {{ c.resolved_by_name }}</template>
+              </div>
               <RichBody :body="c.body" :task-title="(id) => linkTitle(c, id)" @open-task="openLinkedTask" />
             </div>
             <CommentReactionsBar
