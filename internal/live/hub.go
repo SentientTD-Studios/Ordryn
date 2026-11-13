@@ -70,6 +70,7 @@ const (
 	TypeJoinDenied               = "join.denied"
 	TypeExtensionStore           = "extension.store"
 	TypeExtensionsReloaded       = "extensions.reloaded"
+	TypeCeremonyUpdated          = "ceremony.updated"
 )
 
 // Hub fans events out to in-process SSE subscribers and, when Redis is

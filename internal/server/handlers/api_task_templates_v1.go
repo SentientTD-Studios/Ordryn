@@ -12,44 +12,44 @@ import (
 )
 
 type apiTaskTemplateJSON struct {
-	ID             int      `json:"id"`
-	ProjectID      *int     `json:"project_id"`
-	OwnerID        int      `json:"owner_id"`
-	OwnerName      string   `json:"owner_name"`
-	Name           string   `json:"name"`
-	Title          string   `json:"title"`
-	Description    string   `json:"description"`
-	Priority       int      `json:"priority"`
-	TagNames       []string `json:"tag_names"`
-	EstimatePoints *int     `json:"estimate_points"`
-	DueOffsetDays  *int     `json:"due_offset_days"`
-	Subtasks       []string `json:"subtasks"`
-	CanManage      bool     `json:"can_manage"`
+	ID            int      `json:"id"`
+	ProjectID     *int     `json:"project_id"`
+	OwnerID       int      `json:"owner_id"`
+	OwnerName     string   `json:"owner_name"`
+	Name          string   `json:"name"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description"`
+	Priority      int      `json:"priority"`
+	TagNames      []string `json:"tag_names"`
+	EstimateHours *float64 `json:"estimate_hours"`
+	DueOffsetDays *int     `json:"due_offset_days"`
+	Subtasks      []string `json:"subtasks"`
+	CanManage     bool     `json:"can_manage"`
 }
 
 type apiTaskTemplateRequest struct {
-	ProjectID      *int     `json:"project_id"`
-	Name           string   `json:"name"`
-	Title          string   `json:"title"`
-	Description    string   `json:"description"`
-	Priority       int      `json:"priority"`
-	TagNames       []string `json:"tag_names"`
-	EstimatePoints *int     `json:"estimate_points"`
-	DueOffsetDays  *int     `json:"due_offset_days"`
-	Subtasks       []string `json:"subtasks"`
+	ProjectID     *int     `json:"project_id"`
+	Name          string   `json:"name"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description"`
+	Priority      int      `json:"priority"`
+	TagNames      []string `json:"tag_names"`
+	EstimateHours *float64 `json:"estimate_hours"`
+	DueOffsetDays *int     `json:"due_offset_days"`
+	Subtasks      []string `json:"subtasks"`
 }
 
 func (req apiTaskTemplateRequest) input() domain.TaskTemplateInput {
 	return domain.TaskTemplateInput{
 		Name: req.Name, Title: req.Title, Description: req.Description, Priority: req.Priority,
-		TagNames: req.TagNames, EstimatePoints: req.EstimatePoints, DueOffsetDays: req.DueOffsetDays, Subtasks: req.Subtasks,
+		TagNames: req.TagNames, EstimateHours: req.EstimateHours, DueOffsetDays: req.DueOffsetDays, Subtasks: req.Subtasks,
 	}
 }
 
 func taskTemplateJSON(v domain.TaskTemplateView) apiTaskTemplateJSON {
 	return apiTaskTemplateJSON{
 		ID: v.ID, ProjectID: v.ProjectID, OwnerID: v.OwnerID, OwnerName: v.OwnerName, Name: v.Name, Title: v.Title,
-		Description: v.Description, Priority: v.Priority, TagNames: v.TagNames, EstimatePoints: v.EstimatePoints,
+		Description: v.Description, Priority: v.Priority, TagNames: v.TagNames, EstimateHours: v.EstimateHours,
 		DueOffsetDays: v.DueOffsetDays, Subtasks: v.Subtasks, CanManage: v.CanManage,
 	}
 }

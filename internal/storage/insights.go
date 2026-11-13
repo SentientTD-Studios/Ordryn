@@ -9,32 +9,32 @@ import (
 
 // ProjectTaskSummary counts a project's live (not trashed, not archived) tasks.
 type ProjectTaskSummary struct {
-	Open       int
-	Done       int
-	Overdue    int
-	Unclaimed  int
-	OpenPoints int
+	Open      int
+	Done      int
+	Overdue   int
+	Unclaimed int
+	OpenHours float64
 }
 
 // WeekThroughput is how many tasks (and estimate points) were completed in a week.
 type WeekThroughput struct {
 	WeekStart time.Time
 	Tasks     int
-	Points    int
+	Hours     float64
 }
 
 // MemberWorkload is one person's claimed work and recent completions in a project.
 type MemberWorkload struct {
-	UserID        int
-	ClaimedOpen   int
-	ClaimedPoints int
-	Completed     int
+	UserID       int
+	ClaimedOpen  int
+	ClaimedHours float64
+	Completed    int
 }
 
 // SprintTaskState is a sprint task with the events needed to replay its completion history.
 type SprintTaskState struct {
 	ID          int
-	Points      int
+	Hours       float64
 	Completed   bool
 	ModifiedAt  *time.Time
 	Transitions []CompletionTransition
@@ -64,10 +64,10 @@ func GetProjectTaskSummary(projectID int, today string) (ProjectTaskSummary, err
 			COUNT(*) FILTER (WHERE COALESCE(t.completed, false)),
 			COUNT(*) FILTER (WHERE NOT COALESCE(t.completed, false) AND t.due_date < $2::date),
 			COUNT(*) FILTER (WHERE NOT COALESCE(t.completed, false) AND t.claimed_by IS NULL),
-			COALESCE(SUM(t.estimate_points) FILTER (WHERE NOT COALESCE(t.completed, false)), 0)
+			COALESCE(SUM(t.estimate_hours) FILTER (WHERE NOT COALESCE(t.completed, false)), 0)
 		FROM tasks t
 		WHERE `+liveProjectTaskSQL("t"), projectID, today).
-		Scan(&s.Open, &s.Done, &s.Overdue, &s.Unclaimed, &s.OpenPoints)
+		Scan(&s.Open, &s.Done, &s.Overdue, &s.Unclaimed, &s.OpenHours)
 	return s, err
 }
 
@@ -89,7 +89,7 @@ func GetProjectWeeklyThroughput(projectID int, tz string, weeks int) ([]WeekThro
 			  AND ((te.created_at AT TIME ZONE 'UTC') AT TIME ZONE $2) >=
 			      date_trunc('week', (NOW() AT TIME ZONE $2)) - make_interval(weeks => $3 - 1)
 		)
-		SELECT w::date, COUNT(d.task_id), COALESCE(SUM(t.estimate_points), 0)
+		SELECT w::date, COUNT(d.task_id), COALESCE(SUM(t.estimate_hours), 0)
 		FROM generate_series(
 			date_trunc('week', (NOW() AT TIME ZONE $2)) - make_interval(weeks => $3 - 1),
 			date_trunc('week', (NOW() AT TIME ZONE $2)),
@@ -106,7 +106,7 @@ func GetProjectWeeklyThroughput(projectID int, tz string, weeks int) ([]WeekThro
 	var out []WeekThroughput
 	for rows.Next() {
 		var wt WeekThroughput
-		if err := rows.Scan(&wt.WeekStart, &wt.Tasks, &wt.Points); err != nil {
+		if err := rows.Scan(&wt.WeekStart, &wt.Tasks, &wt.Hours); err != nil {
 			return nil, err
 		}
 		out = append(out, wt)
@@ -134,7 +134,7 @@ func GetProjectMemberWorkload(projectID int, since time.Time) (map[int]*MemberWo
 	}
 
 	rows, err := pool.Query(ctx, `
-		SELECT t.claimed_by, COUNT(*), COALESCE(SUM(t.estimate_points), 0)
+		SELECT t.claimed_by, COUNT(*), COALESCE(SUM(t.estimate_hours), 0)
 		FROM tasks t
 		WHERE `+liveProjectTaskSQL("t")+` AND t.claimed_by IS NOT NULL AND NOT COALESCE(t.completed, false)
 		GROUP BY t.claimed_by`, projectID)
@@ -142,13 +142,14 @@ func GetProjectMemberWorkload(projectID int, since time.Time) (map[int]*MemberWo
 		return nil, err
 	}
 	for rows.Next() {
-		var id, n, pts int
+		var id, n int
+		var pts float64
 		if err := rows.Scan(&id, &n, &pts); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		m := get(id)
-		m.ClaimedOpen, m.ClaimedPoints = n, pts
+		m.ClaimedOpen, m.ClaimedHours = n, pts
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -187,7 +188,7 @@ func ListSprintTaskStates(projectID, sprintID int) ([]SprintTaskState, error) {
 	defer CloseDatabase(pool)
 	ctx := context.Background()
 	rows, err := pool.Query(ctx, `
-		SELECT t.id, COALESCE(t.estimate_points, 0), COALESCE(t.completed, false), COALESCE(t.date_modified, t.time_stamp)
+		SELECT t.id, COALESCE(t.estimate_hours, 0), COALESCE(t.completed, false), COALESCE(t.date_modified, t.time_stamp)
 		FROM tasks t
 		WHERE `+liveProjectTaskSQL("t")+` AND t.sprint_id = $2
 		ORDER BY t.id`, projectID, sprintID)
@@ -200,7 +201,7 @@ func ListSprintTaskStates(projectID, sprintID int) ([]SprintTaskState, error) {
 	for rows.Next() {
 		var st SprintTaskState
 		var mod sql.NullTime
-		if err := rows.Scan(&st.ID, &st.Points, &st.Completed, &mod); err != nil {
+		if err := rows.Scan(&st.ID, &st.Hours, &st.Completed, &mod); err != nil {
 			rows.Close()
 			return nil, err
 		}

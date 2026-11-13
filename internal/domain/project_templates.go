@@ -354,7 +354,7 @@ func copyTemplateTasks(ctx context.Context, userID, srcID, dstID int, statuses, 
 	copied := 0
 	for _, t := range tasks {
 		in := CreateTaskInput{Title: t.Title, Description: t.Description, Priority: t.Priority,
-			ProjectID: &dstID, EstimatePoints: t.EstimatePoints}
+			ProjectID: &dstID, EstimateHours: t.EstimateHours}
 		if t.ParentID != 0 {
 			parent, ok := newID[t.ParentID]
 			if !ok {

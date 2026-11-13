@@ -25,11 +25,11 @@ func TestTaskTemplatesApplyAndAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	three, offset := 3, 2
+	three, offset := 3.0, 2
 	personal, err := CreateTaskTemplateForUser(ctx, 1, nil, TaskTemplateInput{
 		Name: "  Bug report ", Title: "Investigate bug", Description: "Steps:",
 		Priority: 3, TagNames: []string{"bug", "BUG", "missing-tag", "archived"},
-		EstimatePoints: &three, DueOffsetDays: &offset,
+		EstimateHours: &three, DueOffsetDays: &offset,
 		Subtasks: []string{"Reproduce", " ", "Fix", "Add test"},
 	})
 	if err != nil {

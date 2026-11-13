@@ -44,14 +44,16 @@ type CreateTaskInput struct {
 	// Ignored when ParentID is set (project is copied from parent).
 	ProjectID *int
 	// ParentID: nil = root; &n = nest under root task n.
-	ParentID       *int
-	Priority       int
-	Completed      bool
-	TagIDs         []int
-	StatusID       *int
-	EstimatePoints *int
-	SprintID       *int
-	Fields         map[string]json.RawMessage
+	ParentID      *int
+	Priority      int
+	Completed     bool
+	TagIDs        []int
+	StatusID      *int
+	EstimateHours *float64
+	// Refinement: nil = project default; "" = unset; otherwise a storage.Refinement* state.
+	Refinement *string
+	SprintID   *int
+	Fields     map[string]json.RawMessage
 }
 
 // UpdateTaskInput is a partial update. Nil pointer fields are left unchanged.
@@ -71,8 +73,10 @@ type UpdateTaskInput struct {
 	TagIDs    *[]int
 	// StatusID: nil = leave; non-nil with *nil or 0 = reject on kanban; non-nil with id = set.
 	StatusID **int
-	// EstimatePoints: nil = leave; non-nil with *nil = clear; non-nil with value = set.
-	EstimatePoints **int
+	// EstimateHours: nil = leave; non-nil with *nil = clear; non-nil with value = set (quarter hours).
+	EstimateHours **float64
+	// Refinement: nil = leave; "" = clear; otherwise a storage.Refinement* state.
+	Refinement *string
 	// SprintID: nil = leave; non-nil with *nil or 0 = clear; non-nil with id = set.
 	SprintID **int
 	// Fields: nil = leave; non-nil map merges (JSON null clears a key).
@@ -111,10 +115,13 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 	if in.Priority < 0 || in.Priority > 3 {
 		return 0, fmt.Errorf("%w: priority must be 0-3", ErrValidation)
 	}
-	if in.EstimatePoints != nil {
-		if *in.EstimatePoints < 0 || *in.EstimatePoints > storage.MaxEstimatePoints {
-			return 0, fmt.Errorf("%w: estimate_points must be 0-%d", ErrValidation, storage.MaxEstimatePoints)
+	if in.EstimateHours != nil {
+		if err := ValidateEstimateHours(*in.EstimateHours); err != nil {
+			return 0, err
 		}
+	}
+	if in.Refinement != nil && !storage.ValidRefinementState(*in.Refinement) {
+		return 0, ErrInvalidRefinement
 	}
 	dueDate := strings.TrimSpace(in.DueDate)
 	startDate, err := normalizeStartDate(in.StartDate)
@@ -248,9 +255,10 @@ func applyCreateWorkflow(taskID int, projectArg interface{}, userID int, in Crea
 	case int64:
 		projectID = int(v)
 	}
+	explicitRefinement := in.Refinement != nil && *in.Refinement != ""
 	if projectID <= 0 {
-		if in.StatusID != nil || in.EstimatePoints != nil || in.SprintID != nil {
-			return fmt.Errorf("%w: status, estimates, and sprints require a kanban project", ErrValidation)
+		if in.StatusID != nil || in.EstimateHours != nil || in.SprintID != nil || explicitRefinement {
+			return fmt.Errorf("%w: status, estimates, refinement, and sprints require a kanban project", ErrValidation)
 		}
 		return nil
 	}
@@ -259,7 +267,7 @@ func applyCreateWorkflow(taskID int, projectArg interface{}, userID int, in Crea
 		return err
 	}
 	if mode != storage.WorkflowKanban {
-		if in.StatusID != nil || in.EstimatePoints != nil || in.SprintID != nil {
+		if in.StatusID != nil || in.EstimateHours != nil || in.SprintID != nil || explicitRefinement {
 			return fmt.Errorf("%w: status, estimates, and sprints require a kanban project", ErrValidation)
 		}
 		return nil
@@ -275,10 +283,13 @@ func applyCreateWorkflow(taskID int, projectArg interface{}, userID int, in Crea
 			return err
 		}
 	}
-	if in.EstimatePoints != nil {
-		if err := storage.SetTaskEstimatePoints(taskID, in.EstimatePoints); err != nil {
+	if in.EstimateHours != nil {
+		if err := storage.SetTaskEstimateHours(taskID, in.EstimateHours); err != nil {
 			return err
 		}
+	}
+	if err := applyCreateRefinement(taskID, projectID, in.Refinement); err != nil {
+		return err
 	}
 	explicitSprint := in.SprintID != nil
 	sprintID := in.SprintID
@@ -368,7 +379,7 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 
 	needed := map[string]bool{}
 	if in.Title != nil || in.Description != nil || in.DueDate != nil || in.ClearDue || in.StartDate != nil || in.Priority != nil ||
-		in.ParentID != nil || in.TagIDs != nil || in.EstimatePoints != nil || len(in.Fields) > 0 {
+		in.ParentID != nil || in.TagIDs != nil || in.EstimateHours != nil || in.Refinement != nil || len(in.Fields) > 0 {
 		needed[storage.PermTasksEdit] = true
 	}
 	if in.Completed != nil {
@@ -412,15 +423,16 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	var completed, favorite bool
 	var priority int
 	var projectID, parentID, statusID sql.NullInt64
-	var estimatePoints sql.NullInt64
+	var estimateHours sql.NullFloat64
+	var refinement string
 	var sprintID sql.NullInt64
 	var startDate string
 	err = pool.QueryRow(ctx,
 		`SELECT title, description, COALESCE(CAST(due_date AS TEXT), ''), completed,
-		 COALESCE(priority,0), COALESCE(is_favorite,false), project_id, parent_id, status_id, estimate_points, sprint_id,
-		 COALESCE(CAST(start_date AS TEXT), '')
+		 COALESCE(priority,0), COALESCE(is_favorite,false), project_id, parent_id, status_id, estimate_hours, sprint_id,
+		 COALESCE(CAST(start_date AS TEXT), ''), COALESCE(refinement_state, '')
 		 FROM tasks WHERE id = $1`,
-		taskID).Scan(&title, &description, &dueDate, &completed, &priority, &favorite, &projectID, &parentID, &statusID, &estimatePoints, &sprintID, &startDate)
+		taskID).Scan(&title, &description, &dueDate, &completed, &priority, &favorite, &projectID, &parentID, &statusID, &estimateHours, &sprintID, &startDate, &refinement)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +443,8 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	oldDescription := description
 	oldPriority := priority
 	oldParentID := parentID
-	oldEstimate := estimatePoints
+	oldEstimate := estimateHours
+	oldRefinement := refinement
 	statusTouched := false
 	completedTouched := in.Completed != nil
 	originalProjectID := projectID
@@ -670,34 +683,45 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		}
 	}
 
-	if in.EstimatePoints != nil {
-		if effectiveProjectID <= 0 {
-			return nil, fmt.Errorf("%w: estimates require a kanban project", ErrValidation)
-		}
-		mode, err := storage.GetProjectWorkflowMode(effectiveProjectID)
-		if err != nil {
+	newEstimate := oldEstimate
+	if in.EstimateHours != nil {
+		if err := requireKanbanProject(effectiveProjectID, "estimates"); err != nil {
 			return nil, err
 		}
-		if mode != storage.WorkflowKanban {
-			return nil, fmt.Errorf("%w: estimates require a kanban project", ErrValidation)
-		}
-		var newEstimate sql.NullInt64
-		if *in.EstimatePoints == nil {
-			if err := storage.SetTaskEstimatePoints(taskID, nil); err != nil {
+		newEstimate = sql.NullFloat64{}
+		if *in.EstimateHours != nil {
+			h := **in.EstimateHours
+			if err := ValidateEstimateHours(h); err != nil {
 				return nil, err
 			}
-		} else {
-			pts := **in.EstimatePoints
-			if pts < 0 || pts > storage.MaxEstimatePoints {
-				return nil, fmt.Errorf("%w: estimate_points must be 0-%d", ErrValidation, storage.MaxEstimatePoints)
-			}
-			if err := storage.SetTaskEstimatePoints(taskID, &pts); err != nil {
-				return nil, err
-			}
-			newEstimate = sql.NullInt64{Int64: int64(pts), Valid: true}
+			newEstimate = sql.NullFloat64{Float64: h, Valid: true}
 		}
-		if !sameNullInt64(oldEstimate, newEstimate) {
+		// Always write: it also drops a legacy point value behind an unchanged derived estimate.
+		if err := storage.SetTaskEstimateHours(taskID, *in.EstimateHours); err != nil {
+			return nil, err
+		}
+		if !sameNullFloat64(oldEstimate, newEstimate) {
 			_ = storage.LogTaskEvent(taskID, userID, "estimate_changed", estimateChangeMetadata(oldEstimate, newEstimate))
+		}
+	}
+
+	newRefinement := oldRefinement
+	if in.Refinement != nil {
+		next := *in.Refinement
+		if !storage.ValidRefinementState(next) {
+			return nil, ErrInvalidRefinement
+		}
+		if next != "" {
+			if err := requireRefinementEnabled(effectiveProjectID); err != nil {
+				return nil, err
+			}
+		}
+		if next != oldRefinement {
+			if err := storage.SetTaskRefinementState(taskID, next); err != nil {
+				return nil, err
+			}
+			newRefinement = next
+			_ = storage.LogTaskEvent(taskID, userID, "refinement_changed", map[string]interface{}{"from": oldRefinement, "to": next})
 		}
 	}
 
@@ -789,15 +813,8 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 	titleChanged := oldTitle != title
 	descriptionChanged := oldDescription != description
 	parentChanged := !sameNullInt64(oldParentID, newParentID)
-	newEstimate := oldEstimate
-	if in.EstimatePoints != nil {
-		if *in.EstimatePoints == nil {
-			newEstimate = sql.NullInt64{}
-		} else {
-			newEstimate = sql.NullInt64{Int64: int64(**in.EstimatePoints), Valid: true}
-		}
-	}
-	estimateChanged := !sameNullInt64(oldEstimate, newEstimate)
+	estimateChanged := !sameNullFloat64(oldEstimate, newEstimate)
+	refinementChanged := oldRefinement != newRefinement
 	completedChanged := oldCompleted != completed
 	statusChanged := statusTouched && newStatusID != oldStatusID
 	if statusChanged && !completedChanged {
@@ -853,7 +870,10 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		appendChange("parent", strconv.Itoa(nullInt(oldParentID)), strconv.Itoa(nullInt(newParentID)))
 	}
 	if estimateChanged {
-		appendChange("estimate", strconv.Itoa(nullInt(oldEstimate)), strconv.Itoa(nullInt(newEstimate)))
+		appendChange("estimate", formatNullHours(oldEstimate), formatNullHours(newEstimate))
+	}
+	if refinementChanged {
+		appendChange("refinement", oldRefinement, newRefinement)
 	}
 	changed = append(changed, fieldKeys...)
 
@@ -946,13 +966,14 @@ func dueDateChangeMetadata(from, to string) map[string]interface{} {
 	return meta
 }
 
-func estimateChangeMetadata(from, to sql.NullInt64) map[string]interface{} {
-	meta := map[string]interface{}{}
+// estimateChangeMetadata records hours; unit distinguishes these from older point-based entries.
+func estimateChangeMetadata(from, to sql.NullFloat64) map[string]interface{} {
+	meta := map[string]interface{}{"unit": "hours"}
 	if from.Valid {
-		meta["from"] = int(from.Int64)
+		meta["from"] = from.Float64
 	}
 	if to.Valid {
-		meta["to"] = int(to.Int64)
+		meta["to"] = to.Float64
 	}
 	return meta
 }

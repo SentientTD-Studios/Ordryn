@@ -358,7 +358,7 @@ type TaskRecurrenceSource struct {
 	Priority       int
 	ProjectID      int
 	ParentID       int
-	EstimatePoints *int
+	EstimateHours  *float64
 	ClaimedBy      int
 }
 
@@ -370,10 +370,11 @@ func GetTaskRecurrenceSource(taskID int) (*TaskRecurrenceSource, error) {
 	}
 	defer CloseDatabase(pool)
 	var s TaskRecurrenceSource
-	var projectID, parentID, estimate, claimed sql.NullInt64
+	var projectID, parentID, claimed sql.NullInt64
+	var estimate sql.NullFloat64
 	if err := pool.QueryRow(context.Background(), `
 		SELECT id, user_id, title, COALESCE(description, ''), COALESCE(CAST(due_date AS TEXT), ''),
-			COALESCE(priority, 0), project_id, parent_id, estimate_points, claimed_by
+			COALESCE(priority, 0), project_id, parent_id, estimate_hours, claimed_by
 		FROM tasks WHERE id = $1`, taskID).Scan(&s.TaskID, &s.OwnerID, &s.Title, &s.Description, &s.DueDate,
 		&s.Priority, &projectID, &parentID, &estimate, &claimed); err != nil {
 		return nil, err
@@ -382,8 +383,8 @@ func GetTaskRecurrenceSource(taskID int) (*TaskRecurrenceSource, error) {
 	s.ParentID = int(parentID.Int64)
 	s.ClaimedBy = int(claimed.Int64)
 	if estimate.Valid {
-		v := int(estimate.Int64)
-		s.EstimatePoints = &v
+		v := estimate.Float64
+		s.EstimateHours = &v
 	}
 	return &s, nil
 }

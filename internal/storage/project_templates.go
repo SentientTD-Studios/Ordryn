@@ -77,7 +77,7 @@ type TemplateTask struct {
 	Description    string
 	Priority       int
 	StatusID       int
-	EstimatePoints *int
+	EstimateHours  *float64
 	TagIDs         []int
 }
 
@@ -92,7 +92,7 @@ func ListTemplateTasks(projectID int) ([]TemplateTask, error) {
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT t.id, COALESCE(t.parent_id, 0), COALESCE(t.title, ''), COALESCE(t.description, ''),
-		       COALESCE(t.priority, 0), COALESCE(t.status_id, 0), t.estimate_points,
+		       COALESCE(t.priority, 0), COALESCE(t.status_id, 0), t.estimate_hours,
 		       COALESCE((SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) FROM task_tags tt WHERE tt.task_id = t.id), '{}')
 		FROM tasks t
 		WHERE t.project_id = $1 AND NOT COALESCE(t.completed, FALSE)
@@ -106,7 +106,7 @@ func ListTemplateTasks(projectID int) ([]TemplateTask, error) {
 	for rows.Next() {
 		var t TemplateTask
 		if err := rows.Scan(&t.ID, &t.ParentID, &t.Title, &t.Description, &t.Priority, &t.StatusID,
-			&t.EstimatePoints, &t.TagIDs); err != nil {
+			&t.EstimateHours, &t.TagIDs); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

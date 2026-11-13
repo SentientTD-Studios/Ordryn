@@ -104,7 +104,7 @@ func apiV1WorkloadReport(w http.ResponseWriter, r *http.Request, userID int) {
 	for _, row := range rows {
 		out = append(out, map[string]interface{}{
 			"user_id": row.UserID, "user_name": row.UserName, "claimed_open": row.ClaimedOpen,
-			"claimed_points": row.ClaimedPoints, "claimed_overdue": row.ClaimedOver, "done_last_week": row.DoneLastWeek,
+			"claimed_hours": row.ClaimedHours, "claimed_overdue": row.ClaimedOver, "done_last_week": row.DoneLastWeek,
 			"minutes_last_week": row.MinutesWeek, "projects": row.Projects,
 		})
 	}

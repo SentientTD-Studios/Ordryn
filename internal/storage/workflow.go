@@ -16,7 +16,6 @@ const (
 	WorkflowKanban  = "kanban"
 
 	MaxProjectStatuses      = 8
-	MaxEstimatePoints       = 100
 	MaxStatusNameLen        = 40
 	MaxStatusDescriptionLen = 50
 	MaxTimeEntryNote        = 200
@@ -67,7 +66,8 @@ type TaskTimeEntry struct {
 type TaskWorkflowFields struct {
 	StatusID         int
 	StatusName       string
-	EstimatePoints   *int
+	EstimateHours    *float64
+	Refinement       string // "", RefinementNeeded or RefinementRefined
 	TimeSpentMinutes int
 	ProjectWorkflow  string
 	ClaimedBy        int
@@ -350,7 +350,7 @@ func ClearProjectStatusesAndTaskFields(projectID int) error {
 	defer CloseDatabase(pool)
 
 	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL WHERE project_id = $1`, projectID)
+		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, estimate_hours = NULL, refinement_state = NULL, sprint_id = NULL WHERE project_id = $1`, projectID)
 	if err != nil {
 		return err
 	}
@@ -690,7 +690,7 @@ func ClearTaskWorkflowFields(taskID int) error {
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1`,
+		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, estimate_hours = NULL, refinement_state = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1`,
 		taskID)
 	return err
 }
@@ -706,21 +706,8 @@ func ClearTaskWorkflowFieldsForTasks(taskIDs []int) error {
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC'
+		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, estimate_hours = NULL, refinement_state = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC'
 		 WHERE id = ANY($1)`, taskIDs)
-	return err
-}
-
-// SetTaskEstimatePoints sets or clears estimate_points.
-func SetTaskEstimatePoints(taskID int, points *int) error {
-	pool, err := OpenDatabase()
-	if err != nil {
-		return err
-	}
-	defer CloseDatabase(pool)
-	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET estimate_points = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2`,
-		points, taskID)
 	return err
 }
 
@@ -737,7 +724,7 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT t.id, t.status_id, COALESCE(s.name, ''), t.estimate_points,
+		`SELECT t.id, t.status_id, COALESCE(s.name, ''), t.estimate_hours, COALESCE(t.refinement_state, ''),
 		        COALESCE(p.workflow_mode, 'classic'),
 		        COALESCE((SELECT SUM(minutes) FROM task_time_entries e WHERE e.task_id = t.id), 0),
 		        t.claimed_by, COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, ''),
@@ -760,7 +747,8 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		var id int
 		var statusID sql.NullInt64
 		var statusName string
-		var estimate sql.NullInt64
+		var estimate sql.NullFloat64
+		var refinement string
 		var mode string
 		var spent int
 		var claimedBy sql.NullInt64
@@ -770,12 +758,13 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		var reviewerID sql.NullInt64
 		var reviewerName string
 		var startDate string
-		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName, &startDate); err != nil {
+		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &refinement, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName, &startDate); err != nil {
 			return nil, err
 		}
 		f := TaskWorkflowFields{
 			StartDate:        startDate,
 			StatusName:       statusName,
+			Refinement:       refinement,
 			TimeSpentMinutes: spent,
 			ProjectWorkflow:  mode,
 			ClaimedByName:    claimedByName,
@@ -785,8 +774,8 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 			f.StatusID = int(statusID.Int64)
 		}
 		if estimate.Valid {
-			v := int(estimate.Int64)
-			f.EstimatePoints = &v
+			v := estimate.Float64
+			f.EstimateHours = &v
 		}
 		if claimedBy.Valid {
 			f.ClaimedBy = int(claimedBy.Int64)

@@ -102,7 +102,7 @@ func TestDueReminderPassRemindsOwnerAndClaimerOnce(t *testing.T) {
 	}
 
 	// "Today" for the pass is fixed; due dates are relative to it.
-	day := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, 3)
+	day := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, 3)
 	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
 	pid := proj.ID
 	boardTask, err := CreateTask(ctx, owner, CreateTaskInput{Title: "Board deliverable", ProjectID: &pid, DueDate: tomorrow})

@@ -21,27 +21,30 @@ func TestBuildBurndownReplaysCompletionHistory(t *testing.T) {
 	modified := at("2026-10-03 08:00")
 	tasks := []storage.SprintTaskState{
 		// Done on day 2.
-		{ID: 1, Points: 3, Completed: true, Transitions: []storage.CompletionTransition{{Completed: true, At: at("2026-10-02 10:00")}}},
+		{ID: 1, Hours: 3, Completed: true, Transitions: []storage.CompletionTransition{{Completed: true, At: at("2026-10-02 10:00")}}},
 		// Done on day 1, reopened on day 2.
-		{ID: 2, Points: 2, Transitions: []storage.CompletionTransition{
+		{ID: 2, Hours: 2, Transitions: []storage.CompletionTransition{
 			{Completed: true, At: at("2026-10-01 09:00")},
 			{Completed: false, At: at("2026-10-02 09:00")},
 		}},
 		// Never touched.
-		{ID: 3, Points: 5},
+		{ID: 3, Hours: 5},
 		// Completed before events were recorded; dated by its last change.
-		{ID: 4, Points: 1, Completed: true, ModifiedAt: &modified},
+		{ID: 4, Hours: 1, Completed: true, ModifiedAt: &modified},
 	}
 	sprint := SprintRef{ID: 9, Name: "S", StartDate: "2026-10-01", EndDate: "2026-10-05"}
 	bd := BuildBurndown(sprint, tasks, time.UTC, at("2026-10-03 12:00"))
-	if bd == nil || bd.TotalTasks != 4 || bd.TotalPoints != 11 || len(bd.Days) != 5 {
+	if bd == nil || bd.TotalTasks != 4 || bd.TotalHours != 11 || len(bd.Days) != 5 {
 		t.Fatalf("burndown = %+v", bd)
 	}
-	want := []struct{ tasks, points int }{{3, 9}, {3, 8}, {2, 7}}
+	want := []struct {
+		tasks  int
+		points float64
+	}{{3, 9}, {3, 8}, {2, 7}}
 	for i, w := range want {
 		d := bd.Days[i]
-		if d.RemainingTasks == nil || *d.RemainingTasks != w.tasks || *d.RemainingPoints != w.points {
-			t.Fatalf("day %s remaining = %v/%v, want %d/%d", d.Date, d.RemainingTasks, d.RemainingPoints, w.tasks, w.points)
+		if d.RemainingTasks == nil || *d.RemainingTasks != w.tasks || *d.RemainingHours != w.points {
+			t.Fatalf("day %s remaining = %v/%v, want %d/%v", d.Date, d.RemainingTasks, d.RemainingHours, w.tasks, w.points)
 		}
 	}
 	for _, d := range bd.Days[3:] {
@@ -49,7 +52,7 @@ func TestBuildBurndownReplaysCompletionHistory(t *testing.T) {
 			t.Fatalf("future day %s has actuals", d.Date)
 		}
 	}
-	if bd.Days[0].IdealTasks != 4 || bd.Days[4].IdealTasks != 0 || bd.Days[2].IdealPoints != 5.5 {
+	if bd.Days[0].IdealTasks != 4 || bd.Days[4].IdealTasks != 0 || bd.Days[2].IdealHours != 5.5 {
 		t.Fatalf("ideal line = %+v", bd.Days)
 	}
 }
@@ -96,9 +99,9 @@ func TestProjectInsights(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid, sid := proj.ID, sprint.ID
-	three, five := 3, 5
-	done := mustCreateTask(t, 1, CreateTaskInput{Title: "Done", ProjectID: &pid, SprintID: &sid, EstimatePoints: &three})
-	claimed := mustCreateTask(t, 1, CreateTaskInput{Title: "Claimed", ProjectID: &pid, SprintID: &sid, EstimatePoints: &five})
+	three, five := 3.0, 5.0
+	done := mustCreateTask(t, 1, CreateTaskInput{Title: "Done", ProjectID: &pid, SprintID: &sid, EstimateHours: &three})
+	claimed := mustCreateTask(t, 1, CreateTaskInput{Title: "Claimed", ProjectID: &pid, SprintID: &sid, EstimateHours: &five})
 	mustCreateTask(t, 1, CreateTaskInput{Title: "Overdue", ProjectID: &pid, DueDate: "2001-01-01"})
 	if err := SetTaskCompleted(ctx, 1, done, true); err != nil {
 		t.Fatal(err)
@@ -126,13 +129,13 @@ func TestProjectInsights(t *testing.T) {
 	if !ins.CanViewMembers {
 		t.Fatal("owner should see members")
 	}
-	if s := ins.Summary; s.Open != 2 || s.Done != 1 || s.Overdue != 1 || s.Unclaimed != 1 || s.OpenPoints != 5 {
+	if s := ins.Summary; s.Open != 2 || s.Done != 1 || s.Overdue != 1 || s.Unclaimed != 1 || s.OpenHours != 5 {
 		t.Fatalf("summary = %+v", s)
 	}
 	if n := len(ins.Throughput); n != insightsThroughputWeeks {
 		t.Fatalf("throughput weeks = %d", n)
 	}
-	if last := ins.Throughput[len(ins.Throughput)-1]; last.Tasks != 1 || last.Points != 3 {
+	if last := ins.Throughput[len(ins.Throughput)-1]; last.Tasks != 1 || last.Hours != 3 {
 		t.Fatalf("this week = %+v", last)
 	}
 	byID := map[int]MemberInsight{}
@@ -142,15 +145,15 @@ func TestProjectInsights(t *testing.T) {
 	if m := byID[1]; m.Completed != 1 || m.ClaimedOpen != 0 {
 		t.Fatalf("owner = %+v", m)
 	}
-	if m := byID[2]; m.ClaimedOpen != 1 || m.ClaimedPoints != 5 || !m.IsMember {
+	if m := byID[2]; m.ClaimedOpen != 1 || m.ClaimedHours != 5 || !m.IsMember {
 		t.Fatalf("editor = %+v", m)
 	}
 	bd := ins.Burndown
-	if bd == nil || bd.Sprint.ID != sprint.ID || bd.TotalTasks != 2 || bd.TotalPoints != 8 {
+	if bd == nil || bd.Sprint.ID != sprint.ID || bd.TotalTasks != 2 || bd.TotalHours != 8 {
 		t.Fatalf("burndown = %+v", bd)
 	}
 	todayRow := bd.Days[2]
-	if todayRow.RemainingTasks == nil || *todayRow.RemainingTasks != 1 || *todayRow.RemainingPoints != 5 {
+	if todayRow.RemainingTasks == nil || *todayRow.RemainingTasks != 1 || *todayRow.RemainingHours != 5 {
 		t.Fatalf("today remaining = %+v", todayRow)
 	}
 	if bd.Days[3].RemainingTasks != nil {

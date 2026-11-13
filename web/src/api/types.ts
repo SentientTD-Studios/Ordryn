@@ -402,7 +402,10 @@ export type Task = {
   modified_at: string
   status_id?: number | null
   status_name?: string
-  estimate_points?: number | null
+  /** Estimate in hours, quarter-hour steps (kanban only). */
+  estimate_hours?: number | null
+  /** Refinement flag (kanban, when refinement is enabled). */
+  refinement?: RefinementState
   time_spent_minutes?: number
   project_workflow?: WorkflowMode | string
   claimed_by?: number | null
@@ -705,7 +708,7 @@ export type TaskTemplateInput = {
   description: string
   priority: number
   tag_names: string[]
-  estimate_points: number | null
+  estimate_hours: number | null
   /** New task is due this many days after the day it is created. */
   due_offset_days: number | null
   subtasks: string[]
@@ -900,8 +903,8 @@ export type ProjectInsights = {
   project_id: number
   project_name: string
   workflow_mode: WorkflowMode | string
-  summary: { open: number; done: number; overdue: number; unclaimed: number; open_points: number }
-  throughput: { week_start: string; tasks: number; points: number }[]
+  summary: { open: number; done: number; overdue: number; unclaimed: number; open_hours: number }
+  throughput: { week_start: string; tasks: number; hours: number }[]
   completed_days: number
   can_view_members: boolean
   members: {
@@ -910,20 +913,20 @@ export type ProjectInsights = {
     is_agent: boolean
     is_member: boolean
     claimed_open: number
-    claimed_points: number
+    claimed_hours: number
     completed: number
   }[]
   sprints: InsightsSprint[]
   burndown: {
     sprint: InsightsSprint
     total_tasks: number
-    total_points: number
+    total_hours: number
     days: {
       date: string
       remaining_tasks: number | null
-      remaining_points: number | null
+      remaining_hours: number | null
       ideal_tasks: number
-      ideal_points: number
+      ideal_hours: number
     }[]
   } | null
 }
@@ -1007,6 +1010,8 @@ export type AdminSettings = {
   /** AI agent permissions on the User role. Admins always have both. */
   members_can_use_local_agents: boolean
   members_can_add_project_agents: boolean
+  /** Built-in ceremonies switched on site-wide (projects still opt in). */
+  ceremonies: Record<string, boolean>
   site_mode: SiteMode
   /** True once projects or organizations exist; site_mode can no longer change. */
   site_mode_locked: boolean
@@ -2207,7 +2212,7 @@ export type WorkloadPerson = {
   user_id: number
   user_name: string
   claimed_open: number
-  claimed_points: number
+  claimed_hours: number
   claimed_overdue: number
   done_last_week: number
   minutes_last_week: number
@@ -2225,3 +2230,216 @@ export type CompanyHomeSummary = {
   total_projects: number
   teams: { id: number; name: string; members: number }[]
 }
+
+/** A task's refinement flag. Empty means unset. */
+export type RefinementState = '' | 'needs_refinement' | 'refined'
+
+/** Built-in ceremony identifiers. */
+export type CeremonyKind = 'refinement' | 'retro' | 'standup'
+
+export type CeremonySettings = {
+  kanban: boolean
+  /** Ceremonies a site admin has switched on. */
+  site: Record<string, boolean>
+  /** Ceremonies this project opted into. */
+  project: Record<string, boolean>
+  /** Usable now: site on, project on, kanban board. */
+  active: Record<string, boolean>
+  /** Hours one legacy story point converts to. */
+  hours_per_point: number
+  new_tasks_need_refinement: boolean
+  can_manage: boolean
+  can_facilitate: Record<string, boolean>
+  retro: RetroConfig
+  standup: StandupConfig
+  retro_templates: RetroTemplate[]
+}
+
+export type RetroTemplateId = 'went_well' | 'start_stop_continue' | 'four_ls' | 'mad_sad_glad'
+export type RetroColumn = { key: string; title: string }
+export type RetroTemplate = { id: RetroTemplateId; columns: RetroColumn[] }
+
+export type RetroConfig = {
+  template: RetroTemplateId
+  /** Votes per person; 0 = unlimited. */
+  max_votes: number
+  anonymous: boolean
+}
+
+export type StandupConfig = {
+  /** Per-person timer; 0 = off. */
+  speaker_seconds: number
+  shuffle: boolean
+}
+
+export type CeremonySettingsPatch = Partial<{
+  ceremonies: Partial<Record<CeremonyKind, boolean>>
+  hours_per_point: number
+  new_tasks_need_refinement: boolean
+  retro: RetroConfig
+  standup: StandupConfig
+}>
+
+export type CeremonySessionMeta = {
+  id: number
+  project_id: number
+  kind: CeremonyKind
+  title: string
+  status: 'active' | 'ended'
+  facilitator_id: number | null
+  facilitator_name?: string
+  sprint_id: number | null
+  sprint_name?: string
+  revision: number
+  created_at: string
+  updated_at: string
+  ended_at: string | null
+}
+
+export type RefinementTask = {
+  id: number
+  parent_id: number | null
+  parent_title?: string
+  title: string
+  priority: number
+  completed: boolean
+  status_name?: string
+  sprint_id: number | null
+  sprint_name?: string
+  claimed_by_name?: string
+  estimate_hours: number | null
+  refinement: RefinementState
+  deleted: boolean
+}
+
+export type RefinementOutcome = 'refined' | 'skipped'
+
+export type RefinementSession = CeremonySessionMeta & {
+  queue: number[]
+  /** Index into queue; equals queue.length once past the last task. */
+  current: number
+  current_task_id: number | null
+  /** Keyed by task id. */
+  outcomes: Record<string, RefinementOutcome>
+  tasks: RefinementTask[]
+  can_facilitate: boolean
+  is_facilitator: boolean
+}
+
+export type RefinementSessionSummary = CeremonySessionMeta & {
+  queued: number
+  refined: number
+  skipped: number
+}
+
+export type RefinementStartInput = {
+  title?: string
+  sprint_id?: number
+  backlog?: boolean
+  include_unflagged?: boolean
+  task_ids?: number[]
+}
+
+export type RefinementAction =
+  | { action: 'next' | 'prev' | 'end' | 'take_over' }
+  | { action: 'goto'; index: number }
+  | { action: 'refine' | 'skip'; task_id?: number }
+  | { action: 'add'; task_ids: number[] }
+  | { action: 'remove'; task_id: number }
+
+/** History row for retros and standups. */
+export type CeremonySessionSummary = CeremonySessionMeta & {
+  /** Items by type ('card', 'action', 'entry') and, for standups, 'blocked'. */
+  counts: Record<string, number>
+}
+
+export type RetroPhase = 'collect' | 'group' | 'vote' | 'act'
+
+export type RetroCard = {
+  id: number
+  column: string
+  /** Empty while hidden. */
+  body?: string
+  author_id: number | null
+  author_name?: string
+  mine: boolean
+  /** Someone else's card while collecting: only its column is known. */
+  hidden: boolean
+  parent_id: number | null
+  /** Filled in the Act phase and after the retro ends. */
+  votes: number
+  voted_by_me: boolean
+}
+
+export type RetroActionItem = {
+  id: number
+  body: string
+  author_id: number | null
+  author_name?: string
+  card_id: number | null
+  task_id: number | null
+  task_title?: string
+  mine: boolean
+}
+
+export type RetroSession = CeremonySessionMeta & {
+  phase: RetroPhase
+  template: RetroTemplateId
+  columns: RetroColumn[]
+  anonymous: boolean
+  max_votes: number
+  votes_used: number
+  cards: RetroCard[]
+  actions: RetroActionItem[]
+  can_facilitate: boolean
+  is_facilitator: boolean
+  can_create_task: boolean
+}
+
+export type RetroStartInput = {
+  title?: string
+  sprint_id?: number
+  template?: RetroTemplateId
+  max_votes?: number
+  anonymous?: boolean
+}
+
+export type RetroStep =
+  | { action: 'phase'; phase: RetroPhase }
+  | { action: 'end' | 'take_over' }
+
+export type StandupEntry = {
+  done: string
+  today: string
+  blockers: string
+  blocker_task_ids: number[]
+}
+
+export type StandupParticipant = {
+  user_id: number
+  name: string
+  entry: StandupEntry | null
+  updated_at: string | null
+  blocker_tasks: RefinementTask[]
+  claimed: RefinementTask[]
+}
+
+export type StandupSession = CeremonySessionMeta & {
+  current: number
+  current_user_id: number | null
+  speaker_since: string
+  speaker_seconds: number
+  server_time: string
+  participants: StandupParticipant[]
+  can_facilitate: boolean
+  is_facilitator: boolean
+  can_create_task: boolean
+  joined: boolean
+}
+
+export type StandupStartInput = { title?: string; speaker_seconds?: number; shuffle?: boolean }
+
+export type StandupStep =
+  | { action: 'next' | 'prev' | 'shuffle' | 'end' | 'take_over' }
+  | { action: 'goto'; index: number }
+  | { action: 'add_participant' | 'remove_participant'; user_id: number }

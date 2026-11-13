@@ -34,6 +34,7 @@ onUnmounted(() => {
             <li class="list-inline-item"><a href="#roles-permissions">Roles</a></li>
             <li class="list-inline-item"><a href="#ai-agents">AI agents</a></li>
             <li class="list-inline-item"><a href="#automation">Automation</a></li>
+            <li class="list-inline-item"><a href="#refinement">Ceremonies</a></li>
             <li class="list-inline-item"><a href="#calendar-dashboard">Calendar &amp; dashboard</a></li>
             <li class="list-inline-item"><a href="#collaboration">Collaboration</a></li>
             <li class="list-inline-item"><a href="#shortcuts">Shortcuts</a></li>
@@ -449,6 +450,71 @@ onUnmounted(() => {
           off <strong>Automation</strong> under profile → notifications.
         </p>
 
+        <h2 id="refinement" class="h4 mt-4">Estimates, refinement, standups and retros</h2>
+        <p>
+          Kanban tasks are estimated in <strong>hours</strong>, in quarter-hour steps (0.25, 0.5, 0.75…). Estimates
+          entered as story points before hours arrived are converted at the project's rate under project settings →
+          <strong>Estimates</strong> (for example, 1 point = 4 hours), and follow that rate if it changes. Once someone
+          enters an estimate in hours, it stays as entered.
+        </p>
+        <p>
+          Refinement is off until a site admin turns it on (Admin → Settings → Team ceremonies) and a project manager
+          opts the board in under project settings → <strong>Refinement</strong>. Then:
+        </p>
+        <ul>
+          <li>
+            Tasks can be flagged <strong>Needs Refinement</strong> or <strong>Refined</strong> from the task panel, and
+            the flag shows on cards. A project can make every new task start as Needs Refinement.
+          </li>
+          <li>
+            <strong>Refinement</strong> on the board toolbar opens the session window. Someone with the
+            <strong>Run refinement sessions</strong> permission starts a session and becomes the facilitator; the
+            queue starts with the Needs Refinement tasks, in board order.
+          </li>
+          <li>
+            Everyone who opens the window follows along live. The facilitator moves through the queue, the team
+            talks it through and fills in the details and the hours, then the facilitator marks it
+            <strong>Refined</strong> and moves on (or skips it). Anyone else with the permission can
+            <strong>Take over</strong>.
+          </li>
+          <li>One session runs per board at a time. Recent sessions and their results are listed in project settings.</li>
+        </ul>
+
+        <h3 id="standups" class="h5 mt-4">Standups</h3>
+        <p>
+          Turned on the same way (site admin, then the project's <strong>Standups</strong> settings).
+          <strong>Standup</strong> on the board opens the window; someone with <strong>Run standups</strong> starts it and
+          becomes the facilitator. Everyone on the project is added in order, and anyone else can press
+          <strong>Join standup</strong>.
+        </p>
+        <ul>
+          <li>Fill in <strong>Your check-in</strong> (done, today, blockers) on the right; it's saved to the standup and everyone sees it.</li>
+          <li>Each person's claimed open work in the current sprint shows while it's their turn.</li>
+          <li>Link blockers to existing tasks by number, or create a blocker task in one step.</li>
+          <li>
+            The facilitator moves through the order with an optional per-person timer (it turns amber near the end and red
+            when over), can add or remove people, and can shuffle who hasn't spoken. After the last person there's a
+            summary of everyone's check-ins.
+          </li>
+        </ul>
+
+        <h3 id="retros" class="h5 mt-4">Retrospectives</h3>
+        <p>
+          Turned on the same way (project settings → <strong>Retrospectives</strong>, where managers also choose the
+          default columns, votes per person, and whether cards are anonymous). <strong>Retro</strong> on the board opens
+          the window; someone with <strong>Run retrospectives</strong> starts it. The facilitator moves everyone through:
+        </p>
+        <ol>
+          <li><strong>Collect</strong>: add cards to the columns. You only see your own cards; others show as a count.</li>
+          <li><strong>Group</strong>: cards are revealed. Drag a card onto another (or use its <strong>…</strong> menu) to stack similar ones.</li>
+          <li><strong>Vote</strong>: vote for the cards that matter, up to the vote limit. Counts stay hidden until Act.</li>
+          <li><strong>Act</strong>: cards are ranked by votes. Add action items and turn them into tasks with <strong>Create task</strong>.</li>
+        </ol>
+        <p>
+          With anonymous cards on, nobody sees who wrote a card except its author. Ending the retro locks it and keeps it
+          in the project history.
+        </p>
+
         <h2 id="calendar-dashboard" class="h4 mt-4">Calendar and dashboard</h2>
         <p>
           <RouterLink to="/calendar">Calendar</RouterLink>
@@ -462,7 +528,7 @@ onUnmounted(() => {
         </p>
         <ul>
           <li>Open, done, overdue, and (on kanban boards) unclaimed counts.</li>
-          <li>Tasks or points completed per week over the last 8 weeks.</li>
+          <li>Tasks or estimated hours completed per week over the last 8 weeks.</li>
           <li>
             What each person has claimed now and has finished in the last 30 days. Only roles with the
             <strong>View team workload</strong> permission see this part; project managers choose which
@@ -474,7 +540,7 @@ onUnmounted(() => {
             so work added partway through counts from the first day.
           </li>
         </ul>
-        <p>Switch between <strong>Tasks</strong> and <strong>Points</strong> to count by estimate instead.</p>
+        <p>Switch between <strong>Tasks</strong> and <strong>Hours</strong> to count by estimate instead.</p>
 
         <h2 id="collaboration" class="h4 mt-4">Live collaboration</h2>
         <p>

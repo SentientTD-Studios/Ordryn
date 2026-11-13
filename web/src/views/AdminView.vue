@@ -14,6 +14,7 @@ import AdminMaintenanceCard from '@/components/AdminMaintenanceCard.vue'
 import AdminBackupsCard from '@/components/AdminBackupsCard.vue'
 import RichBody from '@/components/RichBody.vue'
 import GuestPolicyCard from '@/components/GuestPolicyCard.vue'
+import { clearProjectCeremoniesCache } from '@/composables/useProjectCeremonies'
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
@@ -56,6 +57,7 @@ const settings = reactive<AdminSettings>({
   max_comment_length: 20000,
   trash_retention_days: 30,
   attachments_enabled: false,
+  ceremonies: { refinement: false, retro: false, standup: false },
   attachment_max_bytes: 5 * 1024 * 1024,
   meta_description: '',
   enable_global_announcement: false,
@@ -138,6 +140,7 @@ async function saveSettings() {
       max_comment_length: settings.max_comment_length,
       trash_retention_days: settings.trash_retention_days,
       attachments_enabled: settings.attachments_enabled,
+      ceremonies: { ...settings.ceremonies },
       attachment_max_bytes: settings.attachment_max_bytes,
       meta_description: settings.meta_description,
       enable_global_announcement: settings.enable_global_announcement,
@@ -146,6 +149,7 @@ async function saveSettings() {
       enable_inbound_webhooks: settings.enable_inbound_webhooks,
     })
     Object.assign(settings, saved)
+    clearProjectCeremoniesCache()
     await refreshSite()
     toast.push('Settings saved', 'success')
   } catch (err) {
@@ -557,6 +561,31 @@ onMounted(load)
               stay downloadable. If a reverse proxy sits in front of the app, its upload limit must be at least this large.
             </div>
           </div>
+          <fieldset class="mb-3">
+            <legend class="form-label fw-semibold fs-6 mb-1">Team ceremonies</legend>
+            <div class="form-check mb-1">
+              <input id="admin-ceremony-standup" v-model="settings.ceremonies.standup" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-ceremony-standup">Standups</label>
+            </div>
+            <div class="form-check mb-1">
+              <input
+                id="admin-ceremony-refinement"
+                v-model="settings.ceremonies.refinement"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label" for="admin-ceremony-refinement">Backlog refinement</label>
+            </div>
+            <div class="form-check mb-1">
+              <input id="admin-ceremony-retro" v-model="settings.ceremonies.retro" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-ceremony-retro">Retrospectives</label>
+            </div>
+            <div class="form-text ms-4">
+              Live, facilitator-driven sessions on kanban boards (refinement also adds the Needs Refinement / Refined flag
+              on tasks). All are off by default. Each kanban project still opts in from its settings, and who can run each
+              ceremony is a project role permission.
+            </div>
+          </fieldset>
           <div class="form-check mb-2">
             <input id="admin-changelog" v-model="settings.show_changelog" class="form-check-input" type="checkbox" />
             <label class="form-check-label" for="admin-changelog">Show changelog</label>

@@ -304,8 +304,8 @@ func queryColumnText(t tasks.Task, col string) string {
 	case "sprint":
 		return t.SprintName
 	case "estimate":
-		if t.EstimatePoints != nil {
-			return strconv.Itoa(*t.EstimatePoints)
+		if t.EstimateHours != nil {
+			return strconv.FormatFloat(*t.EstimateHours, 'f', -1, 64)
 		}
 		return ""
 	case "parent":

@@ -208,6 +208,9 @@ func handleProjectSubResource(w http.ResponseWriter, r *http.Request, sub string
 	case "automations":
 		apiV1ProjectAutomations(w, r, projectID, parts[2:])
 		return true
+	case "ceremonies":
+		apiV1ProjectCeremonies(w, r, projectID, parts[2:])
+		return true
 	case "inbound":
 		if len(parts) == 2 {
 			apiV1ProjectInbound(w, r, projectID)

@@ -251,12 +251,21 @@
                   </span>
 
                   <span
-                    v-if="task.estimate_points != null"
+                    v-if="task.estimate_hours != null"
                     class="ordryn-badge text-nowrap"
                     style="background: var(--ordryn-muted-bg); color: var(--ordryn-muted);"
                     title="Estimate"
                   >
-                    {{ task.estimate_points }} pts
+                    {{ formatHours(task.estimate_hours) }}
+                  </span>
+
+                  <span
+                    v-if="task.refinement"
+                    class="ordryn-badge text-nowrap refinement-badge"
+                    :class="`refinement-badge--${task.refinement}`"
+                    :title="refinementLabel(task.refinement)"
+                  >
+                    <i class="bi me-1" :class="task.refinement === 'refined' ? 'bi-check2-circle' : 'bi-chat-square-dots'" aria-hidden="true" />{{ refinementLabel(task.refinement) }}
                   </span>
 
                   <span
@@ -361,6 +370,7 @@ import { APIError } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { pauseLiveReload, resumeLiveReload, useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { formatHours, refinementLabel } from '@/utils/estimates'
 import type { ViewDensity } from '@/composables/useViewDensity'
 import { canMoveTaskStatus, hasProjectPerm, PROJECT_PERMS, statusHasGates } from '@/utils/projectPerms'
 

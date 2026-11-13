@@ -4,6 +4,7 @@ import type { Task } from '@/api/types'
 import TaskFieldBadges from '@/components/TaskFieldBadges.vue'
 import type { ViewDensity } from '@/composables/useViewDensity'
 import { hasImageMarkdown, previewWithoutImages } from '@/utils/taskCommentBody'
+import { formatHours, refinementLabel } from '@/utils/estimates'
 
 const props = withDefaults(
   defineProps<{
@@ -335,11 +336,20 @@ function formatMinutes(total: number) {
 
         <!-- Kanban estimate / time logged -->
         <span
-          v-if="isKanbanTask() && task.estimate_points != null"
+          v-if="isKanbanTask() && task.estimate_hours != null"
           class="badge text-bg-light text-muted border text-nowrap"
           title="Estimate"
         >
-          {{ task.estimate_points }} pts
+          {{ formatHours(task.estimate_hours) }}
+        </span>
+        <span
+          v-if="isKanbanTask() && task.refinement"
+          class="badge text-nowrap refinement-badge"
+          :class="`refinement-badge--${task.refinement}`"
+          :title="refinementLabel(task.refinement)"
+        >
+          <i class="bi" :class="task.refinement === 'refined' ? 'bi-check2-circle' : 'bi-chat-square-dots'" aria-hidden="true" />
+          <span v-if="density !== 'dense'" class="ms-1">{{ refinementLabel(task.refinement) }}</span>
         </span>
         <span
           v-if="isKanbanTask() && (task.time_spent_minutes ?? 0) > 0"
@@ -408,11 +418,20 @@ function formatMinutes(total: number) {
           <span v-if="task.blocked_by_open" class="text-warning small text-nowrap" :title="`Blocked by ${task.blocked_by_open} open task(s)`" :aria-label="`Blocked by ${task.blocked_by_open} open task(s)`"><i class="bi bi-lock-fill" /></span>
         <span v-if="task.recurrence" class="text-muted small text-nowrap" :title="task.recurrence.summary" :aria-label="`Repeats: ${task.recurrence.summary}`"><i class="bi bi-arrow-repeat" /></span>
           <span
-            v-if="isKanbanTask() && task.estimate_points != null"
+            v-if="isKanbanTask() && task.estimate_hours != null"
             class="badge text-bg-light text-muted border"
             title="Estimate"
           >
-            {{ task.estimate_points }} pts
+            {{ formatHours(task.estimate_hours) }}
+          </span>
+          <span
+            v-if="isKanbanTask() && task.refinement"
+            class="badge refinement-badge"
+            :class="`refinement-badge--${task.refinement}`"
+            :title="refinementLabel(task.refinement)"
+          >
+            <i class="bi" :class="task.refinement === 'refined' ? 'bi-check2-circle' : 'bi-chat-square-dots'" aria-hidden="true" />
+            <span class="ms-1">{{ refinementLabel(task.refinement) }}</span>
           </span>
           <span
             v-if="isKanbanTask() && (task.time_spent_minutes ?? 0) > 0"

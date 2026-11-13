@@ -67,4 +67,3 @@ func UpdateAvatarURL(ctx context.Context, userID int, avatarURL string) (*storag
 func RemoveAvatar(ctx context.Context, userID int) (*storage.UserProfile, error) {
 	return UpdateAvatarURL(ctx, userID, "")
 }
-

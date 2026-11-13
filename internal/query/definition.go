@@ -655,7 +655,7 @@ func (k fieldKindInfo) normalizeValue(field string, raw json.RawMessage) (any, e
 			}
 			return int(f), nil
 		}
-		if field == "id" || field == "estimate" || field == "days_in_status" {
+		if field == "id" || field == "days_in_status" {
 			if f != float64(int64(f)) {
 				return nil, invalid("%s must be a whole number.", field)
 			}

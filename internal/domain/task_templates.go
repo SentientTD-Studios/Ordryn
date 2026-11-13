@@ -23,14 +23,14 @@ const (
 
 // TaskTemplateInput is the editable content of a template.
 type TaskTemplateInput struct {
-	Name           string
-	Title          string
-	Description    string
-	Priority       int
-	TagNames       []string
-	EstimatePoints *int
-	DueOffsetDays  *int
-	Subtasks       []string
+	Name          string
+	Title         string
+	Description   string
+	Priority      int
+	TagNames      []string
+	EstimateHours *float64
+	DueOffsetDays *int
+	Subtasks      []string
 }
 
 // TaskTemplateView is a template plus whether the caller may edit or delete it.
@@ -63,8 +63,10 @@ func normalizeTemplateInput(in TaskTemplateInput) (TaskTemplateInput, error) {
 	if out.Priority < 0 || out.Priority > 3 {
 		return out, fmt.Errorf("%w: priority must be 0-3", ErrValidation)
 	}
-	if out.EstimatePoints != nil && (*out.EstimatePoints < 0 || *out.EstimatePoints > storage.MaxEstimatePoints) {
-		return out, fmt.Errorf("%w: estimate_points must be 0-%d", ErrValidation, storage.MaxEstimatePoints)
+	if out.EstimateHours != nil {
+		if err := ValidateEstimateHours(*out.EstimateHours); err != nil {
+			return out, err
+		}
 	}
 	if out.DueOffsetDays != nil && (*out.DueOffsetDays < 0 || *out.DueOffsetDays > maxTemplateDueOffset) {
 		return out, fmt.Errorf("%w: due_offset_days must be 0-%d", ErrValidation, maxTemplateDueOffset)
@@ -192,7 +194,7 @@ func CreateTaskTemplateForUser(ctx context.Context, userID int, projectID *int, 
 	}
 	t := &storage.TaskTemplate{
 		OwnerID: userID, ProjectID: projectID, Name: in.Name, Title: in.Title, Description: in.Description,
-		Priority: in.Priority, TagNames: in.TagNames, EstimatePoints: in.EstimatePoints,
+		Priority: in.Priority, TagNames: in.TagNames, EstimateHours: in.EstimateHours,
 		DueOffsetDays: in.DueOffsetDays, Subtasks: in.Subtasks,
 	}
 	if err := storage.SaveTaskTemplate(t); err != nil {
@@ -219,7 +221,7 @@ func UpdateTaskTemplateForUser(ctx context.Context, userID, id int, in TaskTempl
 		return nil, err
 	}
 	t.Name, t.Title, t.Description, t.Priority = in.Name, in.Title, in.Description, in.Priority
-	t.TagNames, t.EstimatePoints, t.DueOffsetDays, t.Subtasks = in.TagNames, in.EstimatePoints, in.DueOffsetDays, in.Subtasks
+	t.TagNames, t.EstimateHours, t.DueOffsetDays, t.Subtasks = in.TagNames, in.EstimateHours, in.DueOffsetDays, in.Subtasks
 	if err := storage.SaveTaskTemplate(t); err != nil {
 		return nil, err
 	}
@@ -279,19 +281,19 @@ func ApplyTaskTemplateForUser(ctx context.Context, userID, id int, in ApplyTaskT
 	}
 	// Estimates and sprints only exist on kanban boards; drop them elsewhere
 	// rather than refuse the whole template.
-	estimate, sprint := t.EstimatePoints, in.SprintID
+	estimate, sprint := t.EstimateHours, in.SprintID
 	if mode, err := storage.GetProjectWorkflowMode(projectArg); projectArg == 0 || err != nil || mode != storage.WorkflowKanban {
 		estimate, sprint = nil, nil
 	}
 	parentID, err := CreateTask(ctx, userID, CreateTaskInput{
-		Title:          t.Title,
-		Description:    t.Description,
-		DueDate:        due,
-		ProjectID:      &projectArg,
-		Priority:       t.Priority,
-		TagIDs:         tagIDs,
-		EstimatePoints: estimate,
-		SprintID:       sprint,
+		Title:         t.Title,
+		Description:   t.Description,
+		DueDate:       due,
+		ProjectID:     &projectArg,
+		Priority:      t.Priority,
+		TagIDs:        tagIDs,
+		EstimateHours: estimate,
+		SprintID:      sprint,
 	})
 	if err != nil {
 		return 0, err

@@ -5,6 +5,7 @@ import { api } from '@/api/client'
 import type { TimesheetReport, WorkloadReport } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
+import { formatHours } from '@/utils/estimates'
 
 const { push } = useToast()
 const route = useRoute()
@@ -134,7 +135,7 @@ onMounted(() => {
               <tr class="small text-muted">
                 <th scope="col">Person</th>
                 <th scope="col" style="min-width: 12rem">Open claimed</th>
-                <th scope="col" class="text-end">Points</th>
+                <th scope="col" class="text-end">Estimate</th>
                 <th scope="col" class="text-end">Overdue</th>
                 <th scope="col" class="text-end">Projects</th>
                 <th scope="col" class="text-end">Done (7 days)</th>
@@ -152,7 +153,7 @@ onMounted(() => {
                     <span class="small">{{ p.claimed_open }}</span>
                   </div>
                 </td>
-                <td class="text-end">{{ p.claimed_points }}</td>
+                <td class="text-end">{{ formatHours(p.claimed_hours) }}</td>
                 <td class="text-end" :class="{ 'text-danger fw-semibold': p.claimed_overdue }">{{ p.claimed_overdue }}</td>
                 <td class="text-end">{{ p.projects }}</td>
                 <td class="text-end">{{ p.done_last_week }}</td>

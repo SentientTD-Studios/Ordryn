@@ -598,6 +598,71 @@ body {
   line-height: 1.2;
 }
 
+/* Refinement flag on task cards. Bootstrap's subtle tokens follow the light/dark theme. */
+.refinement-badge {
+  border: 1px solid transparent;
+  font-weight: 600;
+}
+
+.refinement-badge--needs_refinement {
+  background-color: var(--bs-warning-bg-subtle);
+  color: var(--bs-warning-text-emphasis);
+  border-color: var(--bs-warning-border-subtle);
+}
+
+.refinement-badge--refined {
+  background-color: var(--bs-success-bg-subtle);
+  color: var(--bs-success-text-emphasis);
+  border-color: var(--bs-success-border-subtle);
+}
+
+/* Board toolbar buttons that open ceremony windows (standup, refinement, retro), and their Live badge. */
+.ceremony-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.ceremony-launch-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.35rem;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Live badge in a ceremony window header. */
+.ceremony-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+}
+
+.ceremony-live-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ceremony-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ceremony-live-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ceremony-live-dot {
+    animation: none;
+  }
+}
+
 .ordryn-badge-status {
   background-color: var(--badge-status-bg);
   color: var(--badge-status-text);

@@ -21,8 +21,8 @@ func TestDeleteKanbanProjectWithTasks(t *testing.T) {
 		t.Fatalf("enable kanban: %v", err)
 	}
 	pid := proj.ID
-	points := 3
-	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Survives delete", ProjectID: &pid, EstimatePoints: &points})
+	points := 3.0
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Survives delete", ProjectID: &pid, EstimateHours: &points})
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -49,8 +49,8 @@ func TestDeleteKanbanProjectWithTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f := after[taskID]; f.StatusID != 0 || f.EstimatePoints != nil || f.SprintID != 0 {
-		t.Fatalf("workflow fields should be cleared, got status=%d estimate=%v sprint=%d", f.StatusID, f.EstimatePoints, f.SprintID)
+	if f := after[taskID]; f.StatusID != 0 || f.EstimateHours != nil || f.SprintID != 0 {
+		t.Fatalf("workflow fields should be cleared, got status=%d estimate=%v sprint=%d", f.StatusID, f.EstimateHours, f.SprintID)
 	}
 }
 

@@ -251,7 +251,7 @@ func (b *builder) clause(n Node) string {
 	case "priority":
 		return b.scalar("COALESCE(t.priority, 0)", n, int64Values(vals), "bigint")
 	case "estimate":
-		return b.scalar("t.estimate_points", n, int64Values(vals), "bigint")
+		return b.floatScalar("t.estimate_hours", n, float64Values(vals))
 	case "title":
 		return b.text("t.title", n, vals)
 	case "description":
@@ -596,7 +596,7 @@ var sortExprs = map[string]string{
 	"modified_date":   "t.date_modified",
 	"completed":       "COALESCE(t.completed, false)",
 	"workflow_status": "LOWER(qs.name)",
-	"estimate":        "t.estimate_points",
+	"estimate":        "t.estimate_hours",
 	"claimed_by":      "LOWER(COALESCE(NULLIF(quc.full_name, ''), NULLIF(quc.user_name, ''), quc.email))",
 	"reviewer":        "LOWER(COALESCE(NULLIF(qrv.full_name, ''), NULLIF(qrv.user_name, ''), qrv.email))",
 	"created_by":      "LOWER(COALESCE(NULLIF(qcr.full_name, ''), NULLIF(qcr.user_name, ''), qcr.email))",

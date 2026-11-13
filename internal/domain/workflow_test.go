@@ -442,6 +442,18 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "roles display_name: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateCeremonyTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "ceremony tables: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.CreateCeremonyItemTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "ceremony item tables: %v\n", err)
+		os.Exit(1)
+	}
+	if err := storage.MigrateTasksAddEstimateHours(); err != nil {
+		fmt.Fprintf(os.Stderr, "estimate hours: %v\n", err)
+		os.Exit(1)
+	}
 	code := m.Run()
 	_ = db.Stop()
 	os.Exit(code)
