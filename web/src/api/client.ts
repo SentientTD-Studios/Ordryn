@@ -48,6 +48,21 @@ import type {
   AutomationRule,
   AutomationRuleInput,
   AutomationRun,
+  CeremonySettings,
+  CeremonySettingsPatch,
+  RefinementAction,
+  RefinementSession,
+  RefinementSessionSummary,
+  RefinementStartInput,
+  RefinementState,
+  CeremonySessionSummary,
+  RetroSession,
+  RetroStartInput,
+  RetroStep,
+  StandupEntry,
+  StandupSession,
+  StandupStartInput,
+  StandupStep,
   CalendarInfo,
   CalendarMonth,
   ChangelogEntry,
@@ -576,6 +591,151 @@ export const api = {
     return request<AutomationRun[]>(`/api/v2/projects/${projectId}/automations/runs${qs}`)
   },
 
+  getCeremonySettings(projectId: number) {
+    return request<CeremonySettings>(`/api/v2/projects/${projectId}/ceremonies`)
+  },
+
+  updateCeremonySettings(projectId: number, patch: CeremonySettingsPatch) {
+    return request<CeremonySettings>(`/api/v2/projects/${projectId}/ceremonies`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  listRefinementSessions(projectId: number, limit = 25) {
+    return request<RefinementSessionSummary[]>(
+      `/api/v2/projects/${projectId}/ceremonies/refinement/sessions?limit=${limit}`,
+    )
+  },
+
+  getActiveRefinementSession(projectId: number) {
+    return request<{ session: RefinementSession | null }>(
+      `/api/v2/projects/${projectId}/ceremonies/refinement/sessions/active`,
+    )
+  },
+
+  getRefinementSession(projectId: number, sessionId: number) {
+    return request<RefinementSession>(`/api/v2/projects/${projectId}/ceremonies/refinement/sessions/${sessionId}`)
+  },
+
+  startRefinementSession(projectId: number, input: RefinementStartInput) {
+    return request<RefinementSession>(`/api/v2/projects/${projectId}/ceremonies/refinement/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  listCeremonySessions(projectId: number, kind: 'retro' | 'standup', limit = 25) {
+    return request<CeremonySessionSummary[]>(`/api/v2/projects/${projectId}/ceremonies/${kind}/sessions?limit=${limit}`)
+  },
+
+  getActiveRetro(projectId: number) {
+    return request<{ session: RetroSession | null }>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/active`)
+  },
+
+  startRetro(projectId: number, input: RetroStartInput) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  retroStep(projectId: number, sessionId: number, revision: number, step: RetroStep) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify({ ...step, revision }),
+    })
+  },
+
+  addRetroItem(
+    projectId: number,
+    sessionId: number,
+    item: { type: 'card' | 'action'; body: string; column?: string; card_id?: number },
+  ) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(item),
+    })
+  },
+
+  updateRetroItem(
+    projectId: number,
+    sessionId: number,
+    itemId: number,
+    patch: { body?: string; column?: string; parent_id?: number | null },
+  ) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  deleteRetroItem(projectId: number, sessionId: number, itemId: number) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  voteRetroCard(projectId: number, sessionId: number, itemId: number, on: boolean) {
+    return request<RetroSession>(
+      `/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}/vote`,
+      { method: on ? 'PUT' : 'DELETE' },
+    )
+  },
+
+  retroActionToTask(projectId: number, sessionId: number, itemId: number) {
+    return request<RetroSession>(
+      `/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}/task`,
+      { method: 'POST' },
+    )
+  },
+
+  getActiveStandup(projectId: number) {
+    return request<{ session: StandupSession | null }>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/active`)
+  },
+
+  startStandup(projectId: number, input: StandupStartInput) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  standupStep(projectId: number, sessionId: number, revision: number, step: StandupStep) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify({ ...step, revision }),
+    })
+  },
+
+  joinStandup(projectId: number, sessionId: number) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'join' }),
+    })
+  },
+
+  saveStandupEntry(projectId: number, sessionId: number, entry: StandupEntry) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/entry`, {
+      method: 'PUT',
+      body: JSON.stringify(entry),
+    })
+  },
+
+  createStandupBlocker(projectId: number, sessionId: number, title: string) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/blockers`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    })
+  },
+
+  refinementAction(projectId: number, sessionId: number, revision: number, action: RefinementAction) {
+    return request<RefinementSession>(
+      `/api/v2/projects/${projectId}/ceremonies/refinement/sessions/${sessionId}/actions`,
+      { method: 'POST', body: JSON.stringify({ ...action, revision }) },
+    )
+  },
+
   getTaskAgentRuns(taskId: number) {
     return request<TaskAgentRuns>(`/api/v2/tasks/${taskId}/agent-runs`)
   },
@@ -668,7 +828,8 @@ export const api = {
     priority?: number
     tag_ids?: number[]
     status_id?: number | null
-    estimate_points?: number | null
+    estimate_hours?: number | null
+    refinement?: RefinementState
     sprint_id?: number | null
     fields?: Record<string, unknown>
     recurrence?: TaskRecurrenceInput
@@ -693,7 +854,8 @@ export const api = {
       completed: boolean
       tag_ids: number[]
       status_id: number | null
-      estimate_points: number | null
+      estimate_hours: number | null
+      refinement: RefinementState
       sprint_id: number | null
       fields: Record<string, unknown>
       recurrence: TaskRecurrenceInput | null

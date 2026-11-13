@@ -230,6 +230,6 @@ func writeTaskRecurrenceDetail(w http.ResponseWriter, r *http.Request, userID, t
 func isEmptyTaskUpdate(in domain.UpdateTaskInput) bool {
 	return in.Title == nil && in.Description == nil && in.DueDate == nil && !in.ClearDue &&
 		in.ProjectID == nil && in.ParentID == nil && in.Priority == nil && in.Completed == nil &&
-		in.TagIDs == nil && in.StatusID == nil && in.EstimatePoints == nil && in.SprintID == nil &&
+		in.TagIDs == nil && in.StatusID == nil && in.EstimateHours == nil && in.Refinement == nil && in.SprintID == nil &&
 		in.Fields == nil
 }

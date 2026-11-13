@@ -18,6 +18,7 @@ import ExtensionSurfaceFrame from '@/components/ExtensionSurfaceFrame.vue'
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import ProjectSettingsModal from '@/components/ProjectSettingsModal.vue'
+import CeremonyLauncher from '@/components/CeremonyLauncher.vue'
 import TasksToolbar from '@/components/tasks/TasksToolbar.vue'
 import BoardSprintBar from '@/components/tasks/BoardSprintBar.vue'
 import TaskBulkBar from '@/components/tasks/TaskBulkBar.vue'
@@ -1220,6 +1221,12 @@ onUnmounted(() => {
           @undo="undoDelete"
         >
           <template #actions>
+            <CeremonyLauncher
+              v-if="isKanbanProjectView && activeProjectObj"
+              :project="activeProjectObj"
+              :sprints="board.sprints.value"
+              @tasks-changed="reloadInitial"
+            />
             <TaskTemplatesMenu
               v-if="canAddTasks"
               :project-id="defaultTaskProjectId"

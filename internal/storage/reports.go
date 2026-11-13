@@ -86,14 +86,14 @@ func QueryTimeEntries(q TimeEntryQuery) ([]TimeEntryRow, error) {
 
 // WorkloadRow is one person's open and recent work across projects.
 type WorkloadRow struct {
-	UserID        int
-	UserName      string
-	ClaimedOpen   int
-	ClaimedPoints int
-	ClaimedOver   int // claimed and overdue
-	DoneLastWeek  int
-	MinutesWeek   int // time logged in the last 7 days
-	Projects      int // projects they have open claims on
+	UserID       int
+	UserName     string
+	ClaimedOpen  int
+	ClaimedHours float64
+	ClaimedOver  int // claimed and overdue
+	DoneLastWeek int
+	MinutesWeek  int // time logged in the last 7 days
+	Projects     int // projects they have open claims on
 }
 
 // GetCrossProjectWorkload sums claimed work per person over projectIDs. today is
@@ -114,7 +114,7 @@ func GetCrossProjectWorkload(projectIDs []int, today string) ([]WorkloadRow, err
 		WITH claimed AS (
 			SELECT t.claimed_by AS uid,
 			       COUNT(*) AS open,
-			       COALESCE(SUM(t.estimate_points), 0) AS points,
+			       COALESCE(SUM(t.estimate_hours), 0) AS hours,
 			       COUNT(*) FILTER (WHERE t.due_date < $2::date) AS overdue,
 			       COUNT(DISTINCT t.project_id) AS projects
 			FROM tasks t
@@ -135,7 +135,7 @@ func GetCrossProjectWorkload(projectIDs []int, today string) ([]WorkloadRow, err
 			SELECT uid FROM claimed UNION SELECT uid FROM done UNION SELECT uid FROM logged
 		)
 		SELECT u.id, `+personNameSQL("u")+`,
-		       COALESCE(c.open, 0), COALESCE(c.points, 0), COALESCE(c.overdue, 0),
+		       COALESCE(c.open, 0), COALESCE(c.hours, 0), COALESCE(c.overdue, 0),
 		       COALESCE(d.n, 0), COALESCE(l.minutes, 0), COALESCE(c.projects, 0)
 		FROM people x
 		JOIN users u ON u.id = x.uid
@@ -150,7 +150,7 @@ func GetCrossProjectWorkload(projectIDs []int, today string) ([]WorkloadRow, err
 	defer rows.Close()
 	for rows.Next() {
 		var r WorkloadRow
-		if err := rows.Scan(&r.UserID, &r.UserName, &r.ClaimedOpen, &r.ClaimedPoints, &r.ClaimedOver,
+		if err := rows.Scan(&r.UserID, &r.UserName, &r.ClaimedOpen, &r.ClaimedHours, &r.ClaimedOver,
 			&r.DoneLastWeek, &r.MinutesWeek, &r.Projects); err != nil {
 			return nil, err
 		}

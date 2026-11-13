@@ -341,8 +341,8 @@ func TestRecurrenceSpawnsFromKanbanDoneStatus(t *testing.T) {
 		t.Fatalf("kanban: %v", err)
 	}
 	pid := proj.ID
-	estimate := 3
-	taskID := mustCreateTask(t, 1, CreateTaskInput{Title: "Sprint hygiene", DueDate: "2026-09-28", ProjectID: &pid, EstimatePoints: &estimate})
+	estimate := 2.5
+	taskID := mustCreateTask(t, 1, CreateTaskInput{Title: "Sprint hygiene", DueDate: "2026-09-28", ProjectID: &pid, EstimateHours: &estimate})
 	if _, err := SetTaskRecurrence(ctx, 1, taskID, &RecurrenceInput{Frequency: "daily", Interval: 2}); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -366,16 +366,16 @@ func TestRecurrenceSpawnsFromKanbanDoneStatus(t *testing.T) {
 	}
 	defer storage.CloseDatabase(pool)
 	var statusID, projectID int
-	var points *int
-	if err := pool.QueryRow(ctx, `SELECT COALESCE(status_id,0), COALESCE(project_id,0), estimate_points FROM tasks WHERE id = $1`, nextID).
-		Scan(&statusID, &projectID, &points); err != nil {
+	var hours *float64
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(status_id,0), COALESCE(project_id,0), estimate_hours FROM tasks WHERE id = $1`, nextID).
+		Scan(&statusID, &projectID, &hours); err != nil {
 		t.Fatalf("load successor: %v", err)
 	}
 	def, err := storage.GetDefaultProjectStatus(pid)
 	if err != nil || def == nil {
 		t.Fatalf("default status: %v", err)
 	}
-	if projectID != pid || statusID != def.ID || points == nil || *points != 3 {
-		t.Fatalf("successor workflow: project=%d status=%d (default %d) points=%v", projectID, statusID, def.ID, points)
+	if projectID != pid || statusID != def.ID || hours == nil || *hours != 2.5 {
+		t.Fatalf("successor workflow: project=%d status=%d (default %d) hours=%v", projectID, statusID, def.ID, hours)
 	}
 }

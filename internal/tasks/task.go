@@ -39,7 +39,8 @@ type Task struct {
 	Children            []Task
 	StatusID            int
 	StatusName          string
-	EstimatePoints      *int
+	EstimateHours       *float64
+	Refinement          string
 	TimeSpentMinutes    int
 	ProjectWorkflow     string
 	ClaimedBy           int

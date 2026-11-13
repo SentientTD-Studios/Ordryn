@@ -134,6 +134,8 @@ func TestMain(m *testing.M) {
 			due_date DATE,
 			status_id INTEGER,
 			estimate_points INTEGER,
+			estimate_hours DOUBLE PRECISION,
+			refinement_state VARCHAR(20),
 			claimed_by INTEGER,
 			reviewer_id INTEGER,
 			start_date DATE,

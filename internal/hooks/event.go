@@ -171,7 +171,7 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 		"priority":     priorityLabel(snap.Priority),
 		"description":  desc,
 		"parent_id":    strconv.Itoa(parentID),
-		"estimate":     strconv.Itoa(snap.EstimatePoints),
+		"estimate":     strconv.FormatFloat(snap.EstimateHours, 'f', -1, 64),
 		"comment":      comment,
 		"claimed_by":   snap.ClaimedByName,
 		"due_date":     snap.DueDate,

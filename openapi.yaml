@@ -60,6 +60,7 @@ tags:
   - name: Projects
   - name: AI Agents
   - name: Automation
+  - name: Ceremonies
   - name: Organizations
   - name: Tags
   - name: Saved Views
@@ -6385,6 +6386,573 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/{id}/ceremonies:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Ceremony switches and estimate settings for a project
+      description: |
+        Which built-in ceremonies a site admin has enabled (`site`), which this project opted into
+        (`project`), and which are usable now (`active`: site on, project on, kanban board). Also the
+        project's points-to-hours rate and whether new tasks start flagged "Needs Refinement".
+        Any project member can read it.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Ceremony settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeremonySettings"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Ceremonies]
+      summary: Change ceremony opt-ins and estimate settings (project:manage)
+      description: |
+        Opting in needs a kanban board and the ceremony enabled site-wide. Changing `hours_per_point`
+        re-derives every estimate that still comes from legacy story points; estimates entered in
+        hours are left alone.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ceremonies:
+                  type: object
+                  additionalProperties: { type: boolean }
+                  example: { refinement: true }
+                hours_per_point: { type: number, minimum: 0.25, maximum: 100, multipleOf: 0.25 }
+                new_tasks_need_refinement: { type: boolean }
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeremonySettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Refinement session history, newest first
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 100, default: 25 }
+      responses:
+        "200":
+          description: Sessions with outcome counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RefinementSessionSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Ceremonies]
+      summary: Start a refinement session (refinement:facilitate)
+      description: |
+        The caller becomes the facilitator. Without `task_ids` the queue is the project's open tasks
+        flagged "Needs Refinement" (plus unflagged ones with `include_unflagged`), in board order,
+        optionally limited to one sprint (`sprint_id`) or the backlog (`backlog: true`). Only one
+        session per project runs at a time.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 120 }
+                sprint_id: { type: integer }
+                backlog: { type: boolean }
+                include_unflagged: { type: boolean }
+                task_ids: { type: array, items: { type: integer } }
+      responses:
+        "201":
+          description: The new session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefinementSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions/active:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: The running refinement session, if any
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: "`session` is null when none is running"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    allOf:
+                      - $ref: "#/components/schemas/RefinementSession"
+                    nullable: true
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Ceremonies]
+      summary: One refinement session
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefinementSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions/{sessionId}/actions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Ceremonies]
+      summary: Drive a refinement session (facilitator)
+      description: |
+        Only the current facilitator may act, except `take_over`, which any member with
+        `refinement:facilitate` can use to become the facilitator. `revision` must match the
+        session's current revision (409 otherwise). `refine` flags the current task (or `task_id`)
+        "Refined" and moves on; `skip` moves on without changing the flag. Every change is pushed
+        to project members as a `ceremony.updated` live event with `key` `refinement:{sessionId}`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, revision]
+              properties:
+                action:
+                  type: string
+                  enum: [next, prev, goto, refine, skip, add, remove, end, take_over]
+                revision: { type: integer }
+                task_id: { type: integer, description: "refine, skip, remove" }
+                task_ids: { type: array, items: { type: integer }, description: add }
+                index: { type: integer, description: goto }
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefinementSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Retrospective history, newest first
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100, default: 25 } }
+      responses:
+        "200":
+          description: Retros with item counts
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CeremonySessionSummary" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Ceremonies]
+      summary: Start a retrospective (retro:facilitate)
+      description: |
+        The caller facilitates. Omitted fields use the project's retro defaults. The retro starts in the
+        Collect phase; one retro per project runs at a time.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 120 }
+                sprint_id: { type: integer }
+                template: { type: string, enum: [went_well, start_stop_continue, four_ls, mad_sad_glad] }
+                max_votes: { type: integer, minimum: 0, maximum: 20 }
+                anonymous: { type: boolean }
+      responses:
+        "201":
+          description: The new retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/active:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: The running retrospective, if any
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: "`session` is null when none is running"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { allOf: [{ $ref: "#/components/schemas/RetroSession" }], nullable: true }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Ceremonies]
+      summary: One retrospective
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/actions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Drive a retrospective (facilitator)
+      description: |
+        `phase` moves to collect, group, vote or act (any order). Only the facilitator may act, except
+        `take_over` (any member with `retro:facilitate`). `revision` must match (409 otherwise).
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, revision]
+              properties:
+                action: { type: string, enum: [phase, end, take_over] }
+                revision: { type: integer }
+                phase: { type: string, enum: [collect, group, vote, act] }
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Add a card or action item (any member)
+      description: Cards are added while collecting or grouping; action items in the Act phase. Text is up to 500 characters.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, body]
+              properties:
+                type: { type: string, enum: [card, action] }
+                column: { type: string, description: Column key (cards). }
+                body: { type: string, maxLength: 500 }
+                card_id: { type: integer, description: The card that prompted an action item (optional). }
+      responses:
+        "201":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items/{itemId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+      - { name: itemId, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Ceremonies]
+      summary: Edit, move or group a card; edit an action item
+      description: |
+        `body`: the author only. `column`: the author or facilitator while collecting or grouping.
+        `parent_id`: anyone in the Group phase; stacks the card under a top-level card (merging groups), `null` ungroups.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body: { type: string, maxLength: 500 }
+                column: { type: string }
+                parent_id: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Ceremonies]
+      summary: Delete a card or action item (author or facilitator)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items/{itemId}/vote:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+      - { name: itemId, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [Ceremonies]
+      summary: Vote for a top-level card (Vote phase)
+      description: One vote per card per person, up to the retro's `max_votes`; 409 once they are used up.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Ceremonies]
+      summary: Take back a vote (Vote phase)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items/{itemId}/task:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+      - { name: itemId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Turn an action item into a task (tasks:create)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "201":
+          description: Updated retro; the action item now has `task_id`
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Standup history, newest first
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100, default: 25 } }
+      responses:
+        "200":
+          description: Standups with check-in and blocker counts
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CeremonySessionSummary" } }
+    post:
+      tags: [Ceremonies]
+      summary: Start a standup (standup:facilitate)
+      description: |
+        Participants are the project's human members (plus the facilitator). Claimed work is scoped to
+        the sprint running today, when there is one. Omitted fields use the project defaults.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 120 }
+                speaker_seconds: { type: integer, minimum: 0, maximum: 900 }
+                shuffle: { type: boolean }
+      responses:
+        "201":
+          description: The new standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/active:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: The running standup, if any
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: "`session` is null when none is running"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { allOf: [{ $ref: "#/components/schemas/StandupSession" }], nullable: true }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Ceremonies]
+      summary: One standup
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}/actions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Drive a standup (facilitator) or join it (anyone)
+      description: |
+        `join` adds the caller to the end of the speaking order and needs no `revision`. Everything else is
+        the facilitator's (or `take_over` by a member with `standup:facilitate`) and needs the current `revision`.
+        `shuffle` reorders only the people who haven't spoken yet.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [next, prev, goto, add_participant, remove_participant, shuffle, end, take_over, join] }
+                revision: { type: integer }
+                index: { type: integer, description: goto }
+                user_id: { type: integer, description: add_participant / remove_participant }
+      responses:
+        "200":
+          description: Updated standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}/entry:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [Ceremonies]
+      summary: Save your own check-in (participants)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                done: { type: string, maxLength: 2000 }
+                today: { type: string, maxLength: 2000 }
+                blockers: { type: string, maxLength: 2000 }
+                blocker_task_ids: { type: array, maxItems: 10, items: { type: integer }, description: Tasks in this project; others are dropped. }
+      responses:
+        "200":
+          description: Updated standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}/blockers:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Create a task for a blocker and link it to your check-in (tasks:create)
+      description: The task goes into the standup's sprint, or the backlog when that sprint no longer accepts tasks.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+      responses:
+        "201":
+          description: Updated standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /api/v2/projects/{id}/insights:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -9408,7 +9976,7 @@ paths:
       tags: [Reports]
       summary: Workload across projects
       description: |
-        Per person: open claimed tasks and points, claimed overdue tasks, projects with
+        Per person: open claimed tasks and estimated hours, claimed overdue tasks, projects with
         open claims, tasks completed and minutes logged in the last 7 days. Covers every
         project where your role has `insights:people` (`project_count`).
       security:
@@ -9435,8 +10003,8 @@ paths:
                           type: string
                         claimed_open:
                           type: integer
-                        claimed_points:
-                          type: integer
+                        claimed_hours:
+                          type: number
                         claimed_overdue:
                           type: integer
                         projects:
@@ -11254,6 +11822,208 @@ components:
           type: string
           description: Set when the system paused the rule (error streak or hourly limit).
 
+    CeremonySettings:
+      type: object
+      properties:
+        kanban: { type: boolean }
+        site:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Ceremonies a site admin enabled.
+        project:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Ceremonies this project opted into.
+        active:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Usable now (site on, project on, kanban board).
+        hours_per_point: { type: number, description: Hours one legacy story point converts to. }
+        new_tasks_need_refinement: { type: boolean }
+        can_manage: { type: boolean }
+        can_facilitate:
+          type: object
+          additionalProperties: { type: boolean }
+        retro:
+          $ref: "#/components/schemas/RetroConfig"
+        standup:
+          $ref: "#/components/schemas/StandupConfig"
+        retro_templates:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              columns: { type: array, items: { $ref: "#/components/schemas/RetroColumn" } }
+
+    RetroConfig:
+      type: object
+      description: A project's retrospective defaults; each retro copies them when it starts.
+      properties:
+        template: { type: string, enum: [went_well, start_stop_continue, four_ls, mad_sad_glad] }
+        max_votes: { type: integer, minimum: 0, maximum: 20, description: Votes per person; 0 = unlimited. }
+        anonymous: { type: boolean, description: Hide card authors from everyone but themselves. }
+
+    StandupConfig:
+      type: object
+      properties:
+        speaker_seconds: { type: integer, minimum: 0, maximum: 900, description: Per-person timer; 0 turns it off. }
+        shuffle: { type: boolean, description: Randomize the speaking order when a standup starts. }
+
+    RetroColumn:
+      type: object
+      properties:
+        key: { type: string }
+        title: { type: string }
+
+    CeremonySessionSummary:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            counts:
+              type: object
+              additionalProperties: { type: integer }
+              description: Items by type (card, action, entry) and, for standups, `blocked` check-ins.
+
+    RetroSession:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            phase: { type: string, enum: [collect, group, vote, act] }
+            template: { type: string }
+            columns: { type: array, items: { $ref: "#/components/schemas/RetroColumn" } }
+            anonymous: { type: boolean }
+            max_votes: { type: integer }
+            votes_used: { type: integer }
+            can_facilitate: { type: boolean }
+            is_facilitator: { type: boolean }
+            can_create_task: { type: boolean }
+            cards:
+              type: array
+              description: |
+                While collecting, other people's cards are `hidden` (no body or author). With `anonymous`,
+                authors are only shown on your own cards. `votes` are filled in the Act phase and after the retro ends.
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  column: { type: string }
+                  body: { type: string }
+                  author_id: { type: integer, nullable: true }
+                  author_name: { type: string }
+                  mine: { type: boolean }
+                  hidden: { type: boolean }
+                  parent_id: { type: integer, nullable: true, description: Top card of the group this card is stacked under. }
+                  votes: { type: integer }
+                  voted_by_me: { type: boolean }
+            actions:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  body: { type: string }
+                  author_id: { type: integer, nullable: true }
+                  author_name: { type: string }
+                  card_id: { type: integer, nullable: true }
+                  task_id: { type: integer, nullable: true }
+                  task_title: { type: string }
+                  mine: { type: boolean }
+
+    StandupSession:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            current: { type: integer, description: Index of the speaker; equals the participant count once everyone has spoken. }
+            current_user_id: { type: integer, nullable: true }
+            speaker_since: { type: string, format: date-time }
+            speaker_seconds: { type: integer }
+            server_time: { type: string, format: date-time, description: Compare with speaker_since to run the timer without clock skew. }
+            can_facilitate: { type: boolean }
+            is_facilitator: { type: boolean }
+            can_create_task: { type: boolean }
+            joined: { type: boolean }
+            participants:
+              type: array
+              items:
+                type: object
+                properties:
+                  user_id: { type: integer }
+                  name: { type: string }
+                  entry:
+                    type: object
+                    nullable: true
+                    properties:
+                      done: { type: string }
+                      today: { type: string }
+                      blockers: { type: string }
+                      blocker_task_ids: { type: array, items: { type: integer } }
+                  updated_at: { type: string, format: date-time, nullable: true }
+                  blocker_tasks: { type: array, items: { type: object } }
+                  claimed: { type: array, items: { type: object }, description: Open tasks they have claimed (in the standup's sprint when it has one). Empty after the standup ends. }
+
+    CeremonySessionMeta:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        kind: { type: string, enum: [refinement, retro, standup] }
+        title: { type: string }
+        status: { type: string, enum: [active, ended] }
+        facilitator_id: { type: integer, nullable: true }
+        facilitator_name: { type: string }
+        sprint_id: { type: integer, nullable: true }
+        sprint_name: { type: string }
+        revision: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time, nullable: true }
+
+    RefinementSessionSummary:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            queued: { type: integer }
+            refined: { type: integer }
+            skipped: { type: integer }
+
+    RefinementSession:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            queue: { type: array, items: { type: integer } }
+            current: { type: integer, description: Index into queue; equal to its length past the last task. }
+            current_task_id: { type: integer, nullable: true }
+            outcomes:
+              type: object
+              additionalProperties: { type: string, enum: [refined, skipped] }
+              description: Keyed by task id.
+            can_facilitate: { type: boolean }
+            is_facilitator: { type: boolean }
+            tasks:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  parent_id: { type: integer, nullable: true }
+                  parent_title: { type: string }
+                  title: { type: string }
+                  priority: { type: integer }
+                  completed: { type: boolean }
+                  status_name: { type: string }
+                  sprint_id: { type: integer, nullable: true }
+                  sprint_name: { type: string }
+                  claimed_by_name: { type: string }
+                  estimate_hours: { type: number, nullable: true }
+                  refinement: { type: string, enum: ["", needs_refinement, refined] }
+                  deleted: { type: boolean }
+
     AutomationRun:
       type: object
       properties:
@@ -12160,7 +12930,7 @@ components:
             done: { type: integer }
             overdue: { type: integer }
             unclaimed: { type: integer }
-            open_points: { type: integer }
+            open_hours: { type: number }
         throughput:
           type: array
           description: Oldest week first; weeks start on Monday in the viewer's timezone.
@@ -12169,7 +12939,7 @@ components:
             properties:
               week_start: { type: string, format: date }
               tasks: { type: integer }
-              points: { type: integer }
+              hours: { type: number }
         completed_days:
           type: integer
           description: Window in days for each member's `completed` count.
@@ -12186,7 +12956,7 @@ components:
               is_agent: { type: boolean }
               is_member: { type: boolean, description: False for people who have left but still hold claims or recent completions. }
               claimed_open: { type: integer }
-              claimed_points: { type: integer }
+              claimed_hours: { type: number }
               completed: { type: integer }
         sprints:
           type: array
@@ -12200,7 +12970,7 @@ components:
             sprint:
               $ref: "#/components/schemas/InsightsSprint"
             total_tasks: { type: integer }
-            total_points: { type: integer }
+            total_hours: { type: number }
             days:
               type: array
               items:
@@ -12208,9 +12978,9 @@ components:
                 properties:
                   date: { type: string, format: date }
                   remaining_tasks: { type: integer, nullable: true }
-                  remaining_points: { type: integer, nullable: true }
+                  remaining_hours: { type: number, nullable: true }
                   ideal_tasks: { type: number }
-                  ideal_points: { type: number }
+                  ideal_hours: { type: number }
 
     ProjectEvent:
       type: object
@@ -12650,9 +13420,16 @@ components:
           nullable: true
         status_name:
           type: string
-        estimate_points:
-          type: integer
+        estimate_hours:
+          type: number
           nullable: true
+          multipleOf: 0.25
+          maximum: 999.75
+          description: Estimate in hours (quarter-hour steps). Kanban projects only.
+        refinement:
+          type: string
+          enum: ["", needs_refinement, refined]
+          description: Refinement flag. Setting a flag needs refinement enabled for the project; an empty string clears it.
         time_spent_minutes:
           type: integer
         project_workflow:
@@ -13089,9 +13866,16 @@ components:
         status_id:
           type: integer
           nullable: true
-        estimate_points:
-          type: integer
+        estimate_hours:
+          type: number
           nullable: true
+          multipleOf: 0.25
+          maximum: 999.75
+          description: Estimate in hours (quarter-hour steps). Kanban projects only.
+        refinement:
+          type: string
+          enum: ["", needs_refinement, refined]
+          description: Refinement flag. Setting a flag needs refinement enabled for the project; an empty string clears it.
         sprint_id:
           type: integer
           nullable: true
@@ -13146,9 +13930,16 @@ components:
         status_id:
           type: integer
           nullable: true
-        estimate_points:
-          type: integer
+        estimate_hours:
+          type: number
           nullable: true
+          multipleOf: 0.25
+          maximum: 999.75
+          description: Estimate in hours (quarter-hour steps). Kanban projects only.
+        refinement:
+          type: string
+          enum: ["", needs_refinement, refined]
+          description: Refinement flag. Setting a flag needs refinement enabled for the project; an empty string clears it.
         sprint_id:
           type: integer
           nullable: true
@@ -13454,7 +14245,7 @@ components:
         description: { type: string }
         priority: { type: integer, minimum: 0, maximum: 3 }
         tag_names: { type: array, maxItems: 5, items: { type: string } }
-        estimate_points: { type: integer, nullable: true }
+        estimate_hours: { type: number, nullable: true, multipleOf: 0.25, maximum: 999.75 }
         due_offset_days: { type: integer, nullable: true, minimum: 0, maximum: 365 }
         subtasks: { type: array, maxItems: 20, items: { type: string } }
 
@@ -14235,6 +15026,11 @@ components:
         attachments_enabled:
           type: boolean
           description: Lets members upload files to tasks they can edit. Off by default; existing files stay downloadable when turned off.
+        ceremonies:
+          type: object
+          additionalProperties: { type: boolean }
+          example: { refinement: true }
+          description: Built-in team ceremonies switched on site-wide. Each kanban project still opts in; all are off by default.
         attachment_max_bytes:
           type: integer
           minimum: 16384
@@ -14375,6 +15171,11 @@ components:
         attachments_enabled:
           type: boolean
           description: Lets members upload files to tasks they can edit. Off by default; existing files stay downloadable when turned off.
+        ceremonies:
+          type: object
+          additionalProperties: { type: boolean }
+          example: { refinement: true }
+          description: Built-in team ceremonies switched on site-wide. Each kanban project still opts in; all are off by default.
         attachment_max_bytes:
           type: integer
           minimum: 16384

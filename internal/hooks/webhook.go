@@ -220,14 +220,14 @@ func httpWebhookPayload(format, content, eventType string, vars map[string]strin
 		}
 		if id := atoiSafe(vars["id"]); id > 0 || vars["task"] != "" {
 			body.TaskObj = &webhookTask{
-				ID:             id,
-				Title:          vars["task"],
-				Description:    vars["description"],
-				Status:         vars["status"],
-				Priority:       vars["priority"],
-				ParentID:       atoiSafe(vars["parent_id"]),
-				EstimatePoints: atoiSafe(vars["estimate"]),
-				DueDate:        vars["due_date"],
+				ID:            id,
+				Title:         vars["task"],
+				Description:   vars["description"],
+				Status:        vars["status"],
+				Priority:      vars["priority"],
+				ParentID:      atoiSafe(vars["parent_id"]),
+				EstimateHours: atofSafe(vars["estimate"]),
+				DueDate:       vars["due_date"],
 			}
 		}
 		if pid := atoiSafe(vars["project_id"]); pid > 0 || vars["project"] != "" {
@@ -296,14 +296,14 @@ type webhookActor struct {
 }
 
 type webhookTask struct {
-	ID             int    `json:"id,omitempty"`
-	Title          string `json:"title,omitempty"`
-	Description    string `json:"description,omitempty"`
-	Status         string `json:"status,omitempty"`
-	Priority       string `json:"priority,omitempty"`
-	ParentID       int    `json:"parent_id,omitempty"`
-	EstimatePoints int    `json:"estimate_points,omitempty"`
-	DueDate        string `json:"due_date,omitempty"`
+	ID            int     `json:"id,omitempty"`
+	Title         string  `json:"title,omitempty"`
+	Description   string  `json:"description,omitempty"`
+	Status        string  `json:"status,omitempty"`
+	Priority      string  `json:"priority,omitempty"`
+	ParentID      int     `json:"parent_id,omitempty"`
+	EstimateHours float64 `json:"estimate_hours,omitempty"`
+	DueDate       string  `json:"due_date,omitempty"`
 }
 
 type webhookProject struct {
@@ -760,4 +760,12 @@ func retryableStatus(err error) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "timeout") || strings.Contains(msg, "connection")
+}
+
+func atofSafe(s string) float64 {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0
+	}
+	return f
 }

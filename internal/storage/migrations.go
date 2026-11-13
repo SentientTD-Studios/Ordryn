@@ -584,6 +584,22 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	// Needs projects, users and project_sprints.
+	if err := CreateCeremonyTables(); err != nil {
+		fmt.Printf("migration: CreateCeremonyTables failed: %v\n", err)
+		errCount++
+	}
+	if err := CreateCeremonyItemTables(); err != nil {
+		fmt.Printf("migration: CreateCeremonyItemTables failed: %v\n", err)
+		errCount++
+	}
+
+	// Needs tasks, projects, task_templates and custom_field_values.
+	if err := MigrateTasksAddEstimateHours(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddEstimateHours failed: %v\n", err)
+		errCount++
+	}
+
 	// Needs tasks and tags.
 	if err := MigrateSearchWords(); err != nil {
 		fmt.Printf("migration: MigrateSearchWords failed: %v\n", err)

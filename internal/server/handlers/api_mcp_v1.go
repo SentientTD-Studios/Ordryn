@@ -468,7 +468,7 @@ var mcpTools = []mcpTool{
 		Name:  "update_task",
 		Title: "Update a task",
 		Description: "Change task fields. `changes` takes the same keys as PATCH /api/v2/tasks/{id}: title, description, " +
-			"priority (0-3), due_date (YYYY-MM-DD), tag_ids, estimate_points, sprint_id, fields (custom fields), status_id, completed. " +
+			"priority (0-3), due_date (YYYY-MM-DD), tag_ids, estimate_hours (quarter hours), sprint_id, fields (custom fields), status_id, completed. " +
 			"tag_ids REPLACES the task's whole tag list: to add or remove one tag, read the task's current tags with get_task " +
 			"and send the full new list (tag ids are in get_project, or get_agent_context for AI agents). " +
 			"Agents can only change fields their guardrails allow.",

@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useTaskTextLimits } from '@/utils/taskText'
-import type { Project, ProjectSprint, ProjectStatus, Tag, Task, TaskRecurrenceDetail } from '@/api/types'
+import type { Project, ProjectSprint, ProjectStatus, RefinementState, Tag, Task, TaskRecurrenceDetail } from '@/api/types'
 import { APIError } from '@/api/types'
 import ParentTaskCombobox from '@/components/ParentTaskCombobox.vue'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
@@ -38,6 +38,8 @@ import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
 import { useLiveUpdates, isOwnFocusedLiveEvent, LIVE_RESYNC, type LiveEvent } from '@/composables/useLiveUpdates'
 import { batchTouchesDiscussion } from '@/utils/liveEvents'
 import { assignableTags, archiveConfirmMessage, isArchivedTask, isProtectedTag } from '@/utils/tags'
+import { ESTIMATE_STEP, MAX_ESTIMATE_HOURS, parseEstimateInput } from '@/utils/estimates'
+import { useProjectCeremonies } from '@/composables/useProjectCeremonies'
 
 const {
   open,
@@ -131,7 +133,8 @@ const newTags = ref('')
 const completed = ref(false)
 const statusId = ref<number | ''>('')
 const sprintId = ref<number | ''>('')
-const estimatePoints = ref<number | ''>('')
+const estimateHours = ref<number | ''>('')
+const refinement = ref<RefinementState>('')
 const claimedBy = ref<number | null>(null)
 const claimedByName = ref('')
 const claiming = ref(false)
@@ -243,7 +246,7 @@ const templateDraft = computed(() => {
     description: description.value,
     priority: priority.value,
     tag_names: selectedTagIds.value.map((id) => byId.get(id)).filter((n): n is string => !!n),
-    estimate_points: estimatePoints.value === '' ? null : Number(estimatePoints.value),
+    estimate_hours: estimateHours.value === '' ? null : Number(estimateHours.value),
     subtasks: relatedChildren.value.map((c) => c.title),
   }
 })
@@ -251,6 +254,14 @@ const isKanbanTask = computed(() => {
   if (taskWorkflow.value === 'kanban') return true
   return (selectedProject.value?.workflow_mode || 'classic') === 'kanban'
 })
+const { refinementActive } = useProjectCeremonies(() =>
+  isKanbanTask.value && projectId.value !== '' ? Number(projectId.value) : null,
+)
+/** Shown while refinement is on, or read-only when a flag lingers after it was switched off. */
+const showRefinementField = computed(
+  () => isKanbanTask.value && (refinementActive.value || (currentTask.value?.refinement ?? '') !== ''),
+)
+const estimateInvalid = computed(() => parseEstimateInput(estimateHours.value) === undefined)
 const sidebarTitle = computed(() => {
   if (mode.value === 'view') return 'View Task'
   if (mode.value === 'edit' && !canEditDetails.value) return 'Task'
@@ -431,7 +442,8 @@ function resetForm() {
   descriptionError.value = ''
   statusId.value = ''
   sprintId.value = ''
-  estimatePoints.value = ''
+  estimateHours.value = ''
+  refinement.value = ''
   claimedBy.value = null
   claimedByName.value = ''
   reviewerId.value = null
@@ -576,7 +588,8 @@ async function loadTask(id: number) {
   descriptionError.value = ''
   statusId.value = task.status_id ?? ''
   sprintId.value = formSprintId(task.sprint_id)
-  estimatePoints.value = task.estimate_points ?? ''
+  estimateHours.value = task.estimate_hours ?? ''
+  refinement.value = task.refinement ?? ''
   claimedBy.value = task.claimed_by ?? null
   claimedByName.value = task.claimed_by_name || ''
   applyReviewer(task)
@@ -643,7 +656,8 @@ type FormSnapshot = {
   newTags: string
   statusId: number | ''
   sprintId: number | ''
-  estimatePoints: number | ''
+  estimateHours: number | ''
+  refinement: RefinementState
   customFields: Record<string, unknown>
   recurrence: RecurrenceDraft
 }
@@ -663,7 +677,8 @@ function captureFormSnapshot(): FormSnapshot {
     newTags: newTags.value,
     statusId: statusId.value,
     sprintId: formSprintId(sprintId.value),
-    estimatePoints: estimatePoints.value,
+    estimateHours: estimateHours.value,
+    refinement: refinement.value,
     customFields: { ...customFieldValues.value },
     recurrence: { ...recurrenceDraft.value },
   }
@@ -677,7 +692,7 @@ function isFormDirty(): boolean {
   const due = t.due_date || ''
   const status = t.status_id ?? ''
   const sprint = formSprintId(t.sprint_id)
-  const estimate = t.estimate_points ?? ''
+  const estimate = t.estimate_hours ?? ''
   const tagIds = (t.tags || []).map((x) => x.id)
   return (
     title.value !== t.title ||
@@ -690,7 +705,8 @@ function isFormDirty(): boolean {
     completed.value !== t.completed ||
     statusId.value !== status ||
     formSprintId(sprintId.value) !== sprint ||
-    estimatePoints.value !== estimate ||
+    estimateHours.value !== estimate ||
+    refinement.value !== (t.refinement ?? '') ||
     newTags.value.trim() !== '' ||
     !sameIdSet(selectedTagIds.value, tagIds) ||
     !sameFields(customFieldValues.value, t.fields || {}) ||
@@ -713,7 +729,8 @@ function isAddFormDirty(): boolean {
     newTags.value.trim() !== b.newTags.trim() ||
     statusId.value !== b.statusId ||
     formSprintId(sprintId.value) !== b.sprintId ||
-    estimatePoints.value !== b.estimatePoints ||
+    estimateHours.value !== b.estimateHours ||
+    refinement.value !== b.refinement ||
     !sameFields(customFieldValues.value, b.customFields) ||
     !sameRecurrenceDraft(recurrenceDraft.value, b.recurrence)
   )
@@ -884,6 +901,10 @@ async function save(keepOpen = false): Promise<boolean> {
     toast.push('Cannot add tasks to an archived project', 'error')
     return false
   }
+  if (isKanbanTask.value && estimateInvalid.value) {
+    toast.push('Estimates are in quarter hours, from 0 to 999.75', 'error')
+    return false
+  }
   saving.value = true
   try {
     const tagIds = await resolveTagIds()
@@ -905,8 +926,12 @@ async function save(keepOpen = false): Promise<boolean> {
           ? { status_id: Number(statusId.value) }
           : {}),
         ...(isKanbanTask.value ? { sprint_id: sprintPayloadId(sprintId.value) } : {}),
-        ...(isKanbanTask.value && estimatePoints.value !== ''
-          ? { estimate_points: Number(estimatePoints.value) }
+        ...(isKanbanTask.value && estimateHours.value !== ''
+          ? { estimate_hours: Number(estimateHours.value) }
+          : {}),
+        // Unset leaves the project default ("new tasks need refinement") to the server.
+        ...(isKanbanTask.value && refinementActive.value && refinement.value !== ''
+          ? { refinement: refinement.value }
           : {}),
         ...(Object.keys(fieldsPayload()).length ? { fields: fieldsPayload() } : {}),
         ...(!isSubtask.value && recurrenceDraft.value.enabled
@@ -951,8 +976,11 @@ async function save(keepOpen = false): Promise<boolean> {
     if (isKanbanTask.value) {
       if (statusId.value !== '') payload.status_id = Number(statusId.value)
       payload.sprint_id = sprintPayloadId(sprintId.value)
-      payload.estimate_points =
-        estimatePoints.value === '' ? null : Number(estimatePoints.value)
+      // Only send what changed: re-saving an estimate derived from legacy points would detach it
+      // from the project's points-to-hours rate.
+      const nextEstimate = estimateHours.value === '' ? null : Number(estimateHours.value)
+      if (nextEstimate !== (currentTask.value?.estimate_hours ?? null)) payload.estimate_hours = nextEstimate
+      if (refinement.value !== (currentTask.value?.refinement ?? '')) payload.refinement = refinement.value
     }
     payload.fields = fieldsPayload()
     if (!isSubtask.value && recurrenceChanged()) {
@@ -1690,19 +1718,38 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
           </form>
         </div>
         <div v-if="isKanbanTask" class="form-group mt-2 kanban-order-estimate">
-          <label for="estimate_points">Estimate (points):</label>
+          <label for="estimate_hours">Estimate (hours):</label>
           <input
-            id="estimate_points"
-            v-model="estimatePoints"
+            id="estimate_hours"
+            v-model="estimateHours"
             type="number"
             class="form-control"
+            :class="{ 'is-invalid': estimateInvalid }"
             min="0"
-            max="100"
-            step="1"
+            :max="MAX_ESTIMATE_HOURS"
+            :step="ESTIMATE_STEP"
+            inputmode="decimal"
             :disabled="readOnly"
             :readonly="readOnly"
-            placeholder="0–100"
+            placeholder="e.g. 2.5"
+            aria-describedby="estimate_hours_hint"
           />
+          <small id="estimate_hours_hint" class="form-hint" :class="{ 'text-danger': estimateInvalid }">
+            Quarter hours (0.25, 0.5, 0.75).
+          </small>
+        </div>
+        <div v-if="showRefinementField" class="form-group mt-2 kanban-order-estimate">
+          <label for="task_refinement">Refinement:</label>
+          <select
+            id="task_refinement"
+            v-model="refinement"
+            class="form-select"
+            :disabled="readOnly || !refinementActive"
+          >
+            <option value="">Not set</option>
+            <option value="needs_refinement">Needs Refinement</option>
+            <option value="refined">Refined</option>
+          </select>
         </div>
         <TaskGitHubPanel
           v-if="(mode === 'edit' || mode === 'view') && taskId"

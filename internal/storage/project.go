@@ -278,7 +278,7 @@ func DeleteProject(id int, userID int) error {
 	// RESTRICT so a status can't vanish under live tasks. Detach them from the
 	// board first, the same as moving a task out of a kanban project.
 	_, err = tx.Exec(ctx, `
-		UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL,
+		UPDATE tasks SET status_id = NULL, estimate_points = NULL, estimate_hours = NULL, refinement_state = NULL, sprint_id = NULL,
 			date_modified = NOW() AT TIME ZONE 'UTC'
 		WHERE project_id = $1
 		  AND EXISTS (SELECT 1 FROM projects WHERE id = $1 AND user_id = $2)`, id, userID)

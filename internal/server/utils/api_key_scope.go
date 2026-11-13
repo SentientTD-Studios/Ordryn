@@ -511,16 +511,16 @@ func checkScopedTaskBody(r *http.Request, projectID int, create bool, agent *sto
 // agentBodyFields maps task body keys to the guardrail that governs them.
 // Keys not listed here are refused for agents (fail closed).
 var agentBodyFields = map[string]string{
-	"title":           storage.AgentFieldTitle,
-	"description":     storage.AgentFieldDescription,
-	"priority":        storage.AgentFieldPriority,
-	"due_date":        storage.AgentFieldDueDate,
-	"clear_due_date":  storage.AgentFieldDueDate,
-	"tag_ids":         storage.AgentFieldTags,
-	"estimate_points": storage.AgentFieldEstimate,
-	"sprint_id":       storage.AgentFieldSprint,
-	"fields":          storage.AgentFieldCustomFields,
-	"status_id":       storage.AgentFieldStatus,
+	"title":          storage.AgentFieldTitle,
+	"description":    storage.AgentFieldDescription,
+	"priority":       storage.AgentFieldPriority,
+	"due_date":       storage.AgentFieldDueDate,
+	"clear_due_date": storage.AgentFieldDueDate,
+	"tag_ids":        storage.AgentFieldTags,
+	"estimate_hours": storage.AgentFieldEstimate,
+	"sprint_id":      storage.AgentFieldSprint,
+	"fields":         storage.AgentFieldCustomFields,
+	"status_id":      storage.AgentFieldStatus,
 }
 
 // checkAgentTaskFields enforces an agent's guardrails on a task create or update.

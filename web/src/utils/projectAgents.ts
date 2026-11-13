@@ -8,7 +8,7 @@ export const AGENT_FIELDS: { id: AgentEditableField; label: string; help: string
   { id: 'priority', label: 'Priority', help: 'Change priority' },
   { id: 'due_date', label: 'Due date', help: 'Set or clear due dates' },
   { id: 'tags', label: 'Tags', help: 'Add or remove tags' },
-  { id: 'estimate', label: 'Estimate', help: 'Set story points' },
+  { id: 'estimate', label: 'Estimate', help: 'Set the estimate in hours' },
   { id: 'sprint', label: 'Sprint', help: 'Move tasks between sprints' },
   { id: 'custom_fields', label: 'Custom fields', help: 'Edit extension-defined fields' },
 ]

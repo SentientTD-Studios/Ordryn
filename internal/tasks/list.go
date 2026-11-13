@@ -447,7 +447,8 @@ func attachWorkflowFieldsToTasks(taskList []Task) error {
 		if f, ok := fields[t.ID]; ok {
 			t.StatusID = f.StatusID
 			t.StatusName = f.StatusName
-			t.EstimatePoints = f.EstimatePoints
+			t.EstimateHours = f.EstimateHours
+			t.Refinement = f.Refinement
 			t.TimeSpentMinutes = f.TimeSpentMinutes
 			t.ProjectWorkflow = f.ProjectWorkflow
 			t.ClaimedBy = f.ClaimedBy

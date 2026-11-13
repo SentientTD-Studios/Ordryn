@@ -48,6 +48,9 @@ type adminSettingsJSON struct {
 	MembersCanUseLocalAgents   bool `json:"members_can_use_local_agents"`
 	MembersCanAddProjectAgents bool `json:"members_can_add_project_agents"`
 
+	// Ceremonies are built-in team ceremonies (refinement, ...) switched on site-wide; projects opt in.
+	Ceremonies map[string]bool `json:"ceremonies"`
+
 	// SiteMode can change only while SiteModeLocked is false (no projects or organizations yet).
 	SiteMode       string `json:"site_mode"`
 	SiteModeLocked bool   `json:"site_mode_locked"`
@@ -106,10 +109,11 @@ type adminSettingsPatch struct {
 	AttachmentsEnabled        *bool  `json:"attachments_enabled"`
 	AttachmentMaxBytes        *int64 `json:"attachment_max_bytes"`
 
-	MembersCanCreateProjects      *bool `json:"members_can_create_projects"`
-	MembersCanCreateOrganizations *bool `json:"members_can_create_organizations"`
-	MembersCanUseLocalAgents      *bool `json:"members_can_use_local_agents"`
-	MembersCanAddProjectAgents    *bool `json:"members_can_add_project_agents"`
+	MembersCanCreateProjects      *bool           `json:"members_can_create_projects"`
+	MembersCanCreateOrganizations *bool           `json:"members_can_create_organizations"`
+	MembersCanUseLocalAgents      *bool           `json:"members_can_use_local_agents"`
+	MembersCanAddProjectAgents    *bool           `json:"members_can_add_project_agents"`
+	Ceremonies                    map[string]bool `json:"ceremonies"`
 
 	SiteMode    *string `json:"site_mode"`
 	CompanyHome *string `json:"company_home"`
@@ -446,6 +450,16 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
 		return
 	}
+	if len(req.Ceremonies) > 0 {
+		if err := domain.SetSiteCeremonies(req.Ceremonies); err != nil {
+			if errors.Is(err, domain.ErrValidation) {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", sharingClientMessage(err, "Invalid request."))
+				return
+			}
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
+			return
+		}
+	}
 	if req.CompanyHome != nil {
 		if err := storage.SetCompanyHome(strings.TrimSpace(*req.CompanyHome)); err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
@@ -587,6 +601,7 @@ type adminSettingsExtras struct {
 	ProjectAgents  bool
 	SiteModeLocked bool
 	CompanyHome    string
+	Ceremonies     map[string]bool
 }
 
 func loadAdminSettingsExtras() (adminSettingsExtras, error) {
@@ -605,6 +620,9 @@ func loadAdminSettingsExtras() (adminSettingsExtras, error) {
 		return p, err
 	}
 	if p.SiteModeLocked, err = storage.SiteModeLocked(); err != nil {
+		return p, err
+	}
+	if p.Ceremonies, err = storage.GetSiteCeremonyFeatures(); err != nil {
 		return p, err
 	}
 	if p.CompanyHome, err = storage.GetCompanyHome(); err != nil {
@@ -670,9 +688,10 @@ func adminSettingsView(s *storage.SiteSettings, perms adminSettingsExtras) admin
 		MembersCanCreateOrganizations: perms.Organizations,
 		MembersCanUseLocalAgents:      perms.LocalAgents,
 		MembersCanAddProjectAgents:    perms.ProjectAgents,
-		SiteMode:                     s.SiteMode,
+		SiteMode:                      s.SiteMode,
 		SiteModeLocked:                perms.SiteModeLocked,
 		CompanyHome:                   perms.CompanyHome,
+		Ceremonies:                    perms.Ceremonies,
 		EmailProvider:                 s.Email.Provider,
 		EmailFromAddress:              s.Email.FromAddress,
 		EmailFromName:                 s.Email.FromName,
