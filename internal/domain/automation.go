@@ -259,6 +259,7 @@ func CreateAutomationRule(userID, projectID int, in AutomationRuleInput) (*stora
 		"rule_id": created.ID, "name": created.Name, "trigger": created.TriggerType,
 	})
 	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	kickTimedRule(created)
 	return created, nil
 }
 
@@ -291,6 +292,7 @@ func UpdateAutomationRule(userID, projectID, ruleID int, in AutomationRuleInput)
 		"rule_id": updated.ID, "name": updated.Name, "enabled": updated.Enabled,
 	})
 	live.AfterProjectChange(userID, projectID, live.TypeProjectUpdated)
+	kickTimedRule(updated)
 	return updated, nil
 }
 
@@ -853,12 +855,38 @@ func statusNamesByID(projectID int) map[int]string {
 	return out
 }
 
+// timedAutomationMu keeps the 15-minute pass and save-time kicks from
+// running the same rule at once (both would act before either marks).
+var timedAutomationMu sync.Mutex
+
+// kickTimedRule runs a just-saved timed rule now instead of waiting for the
+// next worker pass, so existing tasks that already qualify are handled.
+func kickTimedRule(rule *storage.AutomationRule) {
+	if rule == nil || !rule.Enabled {
+		return
+	}
+	if info, ok := automationTrigger(rule.TriggerType); !ok || !info.Timed {
+		return
+	}
+	r := *rule
+	automationAsync(func() {
+		if projectArchived(r.ProjectID) {
+			return
+		}
+		timedAutomationMu.Lock()
+		defer timedAutomationMu.Unlock()
+		runTimedRule(&r)
+	})
+}
+
 // RunTimedAutomation runs every enabled timed rule once. It is safe to call
 // directly (tests, admin tools); the worker calls it every 15 minutes.
 func RunTimedAutomation() {
 	if !automationActive() {
 		return
 	}
+	timedAutomationMu.Lock()
+	defer timedAutomationMu.Unlock()
 	rules, err := storage.ListEnabledTimedAutomationRules(timedAutomationTriggerTypes())
 	if err != nil {
 		log.Printf("automation: list timed rules: %v", err)
