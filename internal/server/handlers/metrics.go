@@ -71,7 +71,8 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 		metrics.Gauge{Name: "ordryn_db_pool_max_conns", Help: "Database pool size limit.", Value: float64(pool.MaxConns)},
 		metrics.Gauge{Name: "ordryn_db_pool_conns", Help: "Database pool connections by state.", Labels: map[string]string{"state": "acquired"}, Value: float64(pool.AcquiredConns)},
 		metrics.Gauge{Name: "ordryn_db_pool_conns", Help: "Database pool connections by state.", Labels: map[string]string{"state": "idle"}, Value: float64(pool.IdleConns)},
-		metrics.Gauge{Name: "ordryn_db_pool_empty_acquires", Help: "Acquires that had to wait for a free connection (cumulative).", Value: float64(pool.EmptyAcquires)},
+		metrics.Gauge{Name: "ordryn_db_pool_empty_acquires", Help: "Acquires that found no idle connection and waited for one to free up or be dialed (cumulative).", Value: float64(pool.EmptyAcquires)},
+		metrics.Gauge{Name: "ordryn_db_pool_empty_acquire_wait_seconds", Help: "Time spent in acquires that found no idle connection (cumulative).", Value: pool.EmptyAcquireWaitMS / 1000},
 		metrics.Gauge{Name: "ordryn_db_ping_ms", Help: "Database ping time for this scrape.", Value: pool.PingMS},
 	)
 	for _, s := range workers.Snapshots() {

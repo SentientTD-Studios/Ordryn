@@ -2468,6 +2468,7 @@ export interface DBPoolStats {
   acquired_conns: number
   idle_conns: number
   empty_acquire_count: number
+  empty_acquire_wait_ms: number
   acquire_wait_total_ms: number
 }
 

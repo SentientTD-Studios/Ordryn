@@ -92,9 +92,10 @@ onMounted(refresh)
                 <div class="progress-bar" :class="poolBarClass" :style="{ width: poolPercent + '%' }" />
               </div>
               <p class="text-muted mb-0">
-                {{ health.database.idle_conns }} idle · waited for a connection
-                {{ health.database.empty_acquire_count }} time{{ health.database.empty_acquire_count === 1 ? '' : 's' }}
-                since start
+                {{ health.database.idle_conns }} idle ·
+                {{ health.database.empty_acquire_count }} acquire{{ health.database.empty_acquire_count === 1 ? '' : 's' }}
+                found no idle connection since start<template v-if="health.database.empty_acquire_count > 0">
+                  (avg {{ (health.database.empty_acquire_wait_ms / health.database.empty_acquire_count).toFixed(1) }} ms)</template>
               </p>
             </div>
           </div>

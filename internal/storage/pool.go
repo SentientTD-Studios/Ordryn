@@ -124,14 +124,22 @@ func PingDatabase(ctx context.Context) error {
 
 // PoolStats is a point-in-time view of the shared pool for health checks.
 type PoolStats struct {
-	OK             bool    `json:"ok"`
-	PingMS         float64 `json:"ping_ms"`
-	MaxConns       int32   `json:"max_conns"`
-	TotalConns     int32   `json:"total_conns"`
-	AcquiredConns  int32   `json:"acquired_conns"`
-	IdleConns      int32   `json:"idle_conns"`
-	EmptyAcquires  int64   `json:"empty_acquire_count"`
-	AcquireWaitsMS float64 `json:"acquire_wait_total_ms"`
+	OK            bool    `json:"ok"`
+	PingMS        float64 `json:"ping_ms"`
+	MaxConns      int32   `json:"max_conns"`
+	TotalConns    int32   `json:"total_conns"`
+	AcquiredConns int32   `json:"acquired_conns"`
+	IdleConns     int32   `json:"idle_conns"`
+	// EmptyAcquires counts acquires that found no idle connection. That
+	// includes ones that just dialed a new connection while the pool was below
+	// MaxConns (normal after idle connections are reaped), so on its own it is
+	// not a sign of contention; EmptyAcquireWaitMS shows what those cost.
+	EmptyAcquires      int64   `json:"empty_acquire_count"`
+	EmptyAcquireWaitMS float64 `json:"empty_acquire_wait_ms"`
+	// AcquireTotalMS is the time spent in every successful acquire, including
+	// the near-instant ones that got an idle connection; it is not just waiting.
+	// The JSON name predates this and is kept for API compatibility.
+	AcquireTotalMS float64 `json:"acquire_wait_total_ms"`
 }
 
 // SharedPoolStats pings the database (bounded by ctx) and reports pool usage.
@@ -146,14 +154,15 @@ func SharedPoolStats(ctx context.Context) PoolStats {
 	pingErr := pool.Ping(ctx)
 	s := pool.Stat()
 	return PoolStats{
-		OK:             pingErr == nil,
-		PingMS:         float64(time.Since(start).Microseconds()) / 1000,
-		MaxConns:       s.MaxConns(),
-		TotalConns:     s.TotalConns(),
-		AcquiredConns:  s.AcquiredConns(),
-		IdleConns:      s.IdleConns(),
-		EmptyAcquires:  s.EmptyAcquireCount(),
-		AcquireWaitsMS: float64(s.AcquireDuration().Microseconds()) / 1000,
+		OK:                 pingErr == nil,
+		PingMS:             float64(time.Since(start).Microseconds()) / 1000,
+		MaxConns:           s.MaxConns(),
+		TotalConns:         s.TotalConns(),
+		AcquiredConns:      s.AcquiredConns(),
+		IdleConns:          s.IdleConns(),
+		EmptyAcquires:      s.EmptyAcquireCount(),
+		EmptyAcquireWaitMS: float64(s.EmptyAcquireWaitTime().Microseconds()) / 1000,
+		AcquireTotalMS:     float64(s.AcquireDuration().Microseconds()) / 1000,
 	}
 }
 
