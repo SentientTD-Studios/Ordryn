@@ -16,6 +16,7 @@ import (
 	"GoTodo/internal/hooks"
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/workers"
 )
 
 // Automation limits.
@@ -698,12 +699,15 @@ func StartAutomation() {
 		Active: automationActive,
 		Handle: HandleAutomationEvent,
 	})
+	const name = "timed-automation"
+	workers.Register(name, 15*time.Minute)
+	run := func() error { RunTimedAutomation(); return nil }
 	go func() {
-		RunTimedAutomation()
+		workers.Run(name, run)
 		ticker := time.NewTicker(15 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			RunTimedAutomation()
+			workers.Run(name, run)
 		}
 	}()
 }

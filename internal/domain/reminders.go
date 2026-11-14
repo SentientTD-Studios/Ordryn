@@ -6,6 +6,7 @@ import (
 
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/workers"
 )
 
 const (
@@ -18,11 +19,13 @@ const (
 // StartDueReminderWorker checks for due-date reminders every 15 minutes, so
 // each user's 8:00 local reminder lands within a quarter hour of 8:00.
 func StartDueReminderWorker() {
+	const name = "due-reminders"
+	workers.Register(name, 15*time.Minute)
 	go func() {
 		ticker := time.NewTicker(15 * time.Minute)
 		defer ticker.Stop()
 		for {
-			RunDueReminderPass(time.Now())
+			workers.Run(name, func() error { RunDueReminderPass(time.Now()); return nil })
 			<-ticker.C
 		}
 	}()

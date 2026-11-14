@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"GoTodo/internal/metrics"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/version"
+	"GoTodo/internal/workers"
 )
 
 // Metrics serves Prometheus metrics at /metrics. It is off (404) unless
@@ -60,6 +62,32 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 		gauges = append(gauges, metrics.Gauge{Name: "ordryn_database_up", Help: "1 when the database answered this scrape.", Value: 1})
 	} else {
 		gauges = append(gauges, metrics.Gauge{Name: "ordryn_database_up", Help: "1 when the database answered this scrape.", Value: 0})
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), healthCheckTimeout)
+	defer cancel()
+	pool := storage.SharedPoolStats(ctx)
+	gauges = append(gauges,
+		metrics.Gauge{Name: "ordryn_db_pool_max_conns", Help: "Database pool size limit.", Value: float64(pool.MaxConns)},
+		metrics.Gauge{Name: "ordryn_db_pool_conns", Help: "Database pool connections by state.", Labels: map[string]string{"state": "acquired"}, Value: float64(pool.AcquiredConns)},
+		metrics.Gauge{Name: "ordryn_db_pool_conns", Help: "Database pool connections by state.", Labels: map[string]string{"state": "idle"}, Value: float64(pool.IdleConns)},
+		metrics.Gauge{Name: "ordryn_db_pool_empty_acquires", Help: "Acquires that had to wait for a free connection (cumulative).", Value: float64(pool.EmptyAcquires)},
+		metrics.Gauge{Name: "ordryn_db_ping_ms", Help: "Database ping time for this scrape.", Value: pool.PingMS},
+	)
+	for _, s := range workers.Snapshots() {
+		labels := map[string]string{"worker": s.Name}
+		healthy := 0.0
+		if s.Status == workers.StatusOK || s.Status == workers.StatusRunning || s.Status == workers.StatusPending {
+			healthy = 1
+		}
+		gauges = append(gauges,
+			metrics.Gauge{Name: "ordryn_worker_healthy", Help: "1 unless the background worker is late, stuck, or its last pass failed.", Labels: labels, Value: healthy},
+			metrics.Gauge{Name: "ordryn_worker_failures", Help: "Failed passes since start (cumulative).", Labels: labels, Value: float64(s.Failures)},
+		)
+		if s.LastStartedAt != nil {
+			gauges = append(gauges, metrics.Gauge{Name: "ordryn_worker_last_start_timestamp_seconds", Help: "Unix time the worker last started a pass.",
+				Labels: labels, Value: float64(s.LastStartedAt.Unix())})
+		}
 	}
 	metrics.Write(w, gauges)
 }

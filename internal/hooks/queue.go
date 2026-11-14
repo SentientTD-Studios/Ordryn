@@ -11,6 +11,7 @@ import (
 
 	"GoTodo/internal/extensions"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/workers"
 )
 
 const coalesceWindow = 3 * time.Second
@@ -94,12 +95,15 @@ func destinationHost(entry extensions.Entry, ctx destContext) string {
 
 // StartDeliveryWorker retries failed/pending deliveries and flushes digests.
 func StartDeliveryWorker() {
+	const name = "webhook-delivery"
+	workers.Register(name, 15*time.Second)
+	run := func() error { runDeliveryPass(); return nil }
 	go func() {
-		runDeliveryPass()
+		workers.Run(name, run)
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			runDeliveryPass()
+			workers.Run(name, run)
 		}
 	}()
 }

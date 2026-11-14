@@ -22,6 +22,7 @@ import (
 	"GoTodo/internal/imagehost"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/version"
+	"GoTodo/internal/workers"
 )
 
 // ErrNoPGDump means pg_dump isn't installed where the server can run it.
@@ -298,8 +299,10 @@ func StartBackupWorker() {
 		return
 	}
 	backupWorkerOnce.Do(func() {
+		const name = "scheduled-backup"
+		interval := time.Duration(b.IntervalHours) * time.Hour
+		workers.Register(name, interval)
 		go func() {
-			interval := time.Duration(b.IntervalHours) * time.Hour
 			for {
 				wait := time.Minute
 				if files, _ := ListBackupFiles(b.Dir); len(files) > 0 {
@@ -308,13 +311,17 @@ func StartBackupWorker() {
 					}
 				}
 				time.Sleep(wait)
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-				if name, err := RunScheduledBackup(ctx, b); err != nil {
-					fmt.Printf("backup: %v\n", err)
-				} else {
-					fmt.Printf("backup: wrote %s\n", name)
-				}
-				cancel()
+				workers.Run(name, func() error {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+					defer cancel()
+					file, err := RunScheduledBackup(ctx, b)
+					if err != nil {
+						fmt.Printf("backup: %v\n", err)
+						return err
+					}
+					fmt.Printf("backup: wrote %s\n", file)
+					return nil
+				})
 			}
 		}()
 	})
