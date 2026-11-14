@@ -2443,3 +2443,47 @@ export type StandupStep =
   | { action: 'next' | 'prev' | 'shuffle' | 'end' | 'take_over' }
   | { action: 'goto'; index: number }
   | { action: 'add_participant' | 'remove_participant'; user_id: number }
+
+export type WorkerStatusValue = 'pending' | 'ok' | 'running' | 'error' | 'late' | 'stuck'
+
+export interface WorkerStatus {
+  name: string
+  status: WorkerStatusValue
+  interval_seconds: number
+  runs: number
+  failures: number
+  running: boolean
+  last_started_at: string | null
+  last_finished_at: string | null
+  last_duration_ms: number
+  last_error?: string
+  last_error_at?: string
+}
+
+export interface DBPoolStats {
+  ok: boolean
+  ping_ms: number
+  max_conns: number
+  total_conns: number
+  acquired_conns: number
+  idle_conns: number
+  empty_acquire_count: number
+  acquire_wait_total_ms: number
+}
+
+export interface SystemHealth {
+  checked_at: string
+  process: {
+    version: string
+    started_at: string
+    uptime_seconds: number
+    goroutines: number
+    heap_alloc_bytes: number
+    sys_bytes: number
+    gc_cycles: number
+    live_streams: number
+  }
+  database: DBPoolStats
+  redis: { ok: boolean; ping_ms: number; error?: string }
+  workers: WorkerStatus[]
+}

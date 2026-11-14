@@ -20,6 +20,7 @@ const allLinks = [
   { name: 'admin', label: 'Settings', to: '/admin', perm: 'settings:manage' },
   { name: 'admin-extensions', label: 'Extensions', to: '/admin/extensions', perm: 'settings:manage' },
   { name: 'admin-security', label: 'Security', to: '/admin/security', perm: 'admin' },
+  { name: 'admin-system', label: 'System', to: '/admin/system', perm: 'admin' },
   { name: 'admin-requests', label: 'Requests', to: '/admin/requests', perm: 'admin', company: false },
   { name: 'admin-invites', label: 'Invites', to: '/admin/invites', perm: 'admin', company: false },
   { name: 'admin-users', label: 'Users', to: '/admin/users', perm: 'admin' },

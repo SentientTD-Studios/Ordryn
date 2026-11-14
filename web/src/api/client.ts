@@ -3,6 +3,7 @@ import type {
   SearchResults,
   OrgRemovalProject,
   AdminSettings,
+  SystemHealth,
   GuestPolicy,
   Passkey,
   PasskeyCeremony,
@@ -273,7 +274,7 @@ async function upload<T>(path: string, field: string, file: Blob | File): Promis
 
 export const api = {
   health() {
-    return request<{ version: string; api_enabled: boolean; redis_ok: boolean; mode: string }>(
+    return request<{ version: string; api_enabled: boolean; redis_ok: boolean; db_ok: boolean; mode: string }>(
       '/api/v2/health',
     )
   },
@@ -2015,6 +2016,10 @@ export const api = {
 
   getCompanyHome() {
     return request<{ content: string; can_edit: boolean; summary?: CompanyHomeSummary }>('/api/v2/company-home')
+  },
+
+  getSystemHealth() {
+    return request<SystemHealth>('/api/v2/admin/system/health')
   },
 
   getMaintenance() {

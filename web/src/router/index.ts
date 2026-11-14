@@ -302,6 +302,12 @@ const router = createRouter({
       meta: { requiresAuth: true, permission: 'audit:view' },
     },
     {
+      path: '/admin/system',
+      name: 'admin-system',
+      component: () => import('@/views/AdminSystemView.vue'),
+      meta: { requiresAuth: true, permission: 'admin' },
+    },
+    {
       path: '/admin/email-audit',
       name: 'admin-email-audit',
       component: () => import('@/views/AdminEmailAuditView.vue'),

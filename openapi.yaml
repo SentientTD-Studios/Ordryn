@@ -9427,6 +9427,28 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/admin/system/health:
+    get:
+      tags: [Admin]
+      summary: System health
+      description: >-
+        Admins only. Database pool and Redis latency, process stats, and the state of each
+        background worker (last run, duration, last error, and whether it is late or stuck).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemHealth"
+        "401":
+          description: Not authenticated
+        "403":
+          description: Not an admin
+
   /api/v2/admin/maintenance:
     get:
       tags: [Admin]
@@ -11099,9 +11121,115 @@ components:
           type: boolean
         redis_ok:
           type: boolean
+          description: Redis answered a PING within 2 seconds.
+        db_ok:
+          type: boolean
+          description: >-
+            The database pool handed out a connection and Postgres answered within 2 seconds.
+            False while every connection is busy, so uptime monitors can alert on it.
         mode:
           type: string
           enum: [full, api]
+
+    DBPoolStats:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        ping_ms:
+          type: number
+        max_conns:
+          type: integer
+        total_conns:
+          type: integer
+        acquired_conns:
+          type: integer
+          description: Equal to max_conns (with ok=false) means the pool is exhausted.
+        idle_conns:
+          type: integer
+        empty_acquire_count:
+          type: integer
+          description: Cumulative count of acquires that had to wait for a free connection.
+        acquire_wait_total_ms:
+          type: number
+          description: Cumulative time spent waiting to acquire connections.
+
+    WorkerStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pending, ok, running, error, late, stuck]
+          description: >-
+            late = no pass started for over twice the interval (minimum 5 minutes);
+            stuck = the current pass has run that long.
+        interval_seconds:
+          type: integer
+        runs:
+          type: integer
+        failures:
+          type: integer
+        running:
+          type: boolean
+        last_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_duration_ms:
+          type: number
+        last_error:
+          type: string
+        last_error_at:
+          type: string
+          format: date-time
+
+    SystemHealth:
+      type: object
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        process:
+          type: object
+          properties:
+            version:
+              type: string
+            started_at:
+              type: string
+              format: date-time
+            uptime_seconds:
+              type: integer
+            goroutines:
+              type: integer
+            heap_alloc_bytes:
+              type: integer
+            sys_bytes:
+              type: integer
+            gc_cycles:
+              type: integer
+            live_streams:
+              type: integer
+        database:
+          $ref: "#/components/schemas/DBPoolStats"
+        redis:
+          type: object
+          properties:
+            ok:
+              type: boolean
+            ping_ms:
+              type: number
+            error:
+              type: string
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerStatus"
 
     SiteInfo:
       type: object

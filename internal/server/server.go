@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 )
 
 func serveFavicon(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +118,20 @@ func StartServer() error {
 	}
 
 	fmt.Printf("Starting server on %s (mode=%s)\n", addr, mode)
-	return http.ListenAndServe(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux))
+	return newHTTPServer(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux)).ListenAndServe()
+}
+
+// newHTTPServer sets connection-level timeouts so slow or abandoned clients
+// can't hold sockets and goroutines open forever. There is deliberately no
+// WriteTimeout or ReadTimeout: /api/v2/events is a long-lived SSE stream, and
+// backup downloads and uploads can legitimately take minutes.
+func newHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 }
 
 func registerAPIV1Routes() {
@@ -232,6 +246,7 @@ func registerAPIV1Routes() {
 	handleAPI("/admin/sso/test", utils.AdminAPIChain(handlers.APIV1AdminSSOTest))
 	handleAPI("/admin/security-policy", utils.AdminAPIChain(handlers.APIV1AdminSecurityPolicy))
 	handleAPI("/admin/maintenance", utils.AdminAPIChain(handlers.APIV1AdminMaintenance))
+	handleAPI("/admin/system/health", utils.AdminAPIChain(handlers.APIV1AdminSystemHealth))
 	handleAPI("/admin/backups", utils.AdminAPIChain(handlers.APIV1AdminBackups))
 	handleAPI("/admin/backups/", utils.AdminAPIChain(handlers.APIV1AdminBackups))
 	handleAPI("/admin/audit-stream", utils.AdminAPIChain(handlers.APIV1AdminAuditStream))

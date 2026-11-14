@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"GoTodo/internal/storage"
+	"GoTodo/internal/workers"
 )
 
 var trailingSprintNumber = regexp.MustCompile(`^(.*?)(\d+)$`)
@@ -190,25 +191,28 @@ func incrementTrailingSprintNumber(name string) string {
 
 // StartAutoSprintWorker creates due follow-up sprints on an hourly ticker.
 func StartAutoSprintWorker() {
+	const name = "auto-sprint"
+	workers.Register(name, time.Hour)
 	go func() {
-		runAutoSprintPass()
+		workers.Run(name, runAutoSprintPass)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			runAutoSprintPass()
+			workers.Run(name, runAutoSprintPass)
 		}
 	}()
 }
 
-func runAutoSprintPass() {
+func runAutoSprintPass() error {
 	n, err := AutoCreateDueSprints(time.Now().UTC())
 	if err != nil {
 		log.Printf("auto-sprint: %v", err)
-		return
+		return err
 	}
 	if n > 0 {
 		log.Printf("auto-sprint: created %d sprint(s)", n)
 	}
+	return nil
 }
 
 // AutoCreateDueSprints creates the next sprint for projects whose current sprint
