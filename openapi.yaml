@@ -11149,10 +11149,18 @@ components:
           type: integer
         empty_acquire_count:
           type: integer
-          description: Cumulative count of acquires that had to wait for a free connection.
+          description: >-
+            Cumulative count of acquires that found no idle connection, either waiting for a
+            busy one to free up or dialing a new one. Dials after idle connections are reaped
+            count too, so a modest number with a low empty_acquire_wait_ms is normal.
+        empty_acquire_wait_ms:
+          type: number
+          description: Cumulative time spent in the acquires counted by empty_acquire_count.
         acquire_wait_total_ms:
           type: number
-          description: Cumulative time spent waiting to acquire connections.
+          description: >-
+            Cumulative time spent in every successful connection acquire, including ones that
+            got an idle connection immediately. Not only waiting; see empty_acquire_wait_ms for that.
 
     WorkerStatus:
       type: object
