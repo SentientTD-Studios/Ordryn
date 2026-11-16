@@ -222,6 +222,7 @@
                 ·
               </template>
               {{ s.task_count }} task{{ s.task_count === 1 ? '' : 's' }}
+              <template v-if="sprintTimeSummary(s)"> · {{ sprintTimeSummary(s) }}</template>
             </div>
           </div>
           <button
@@ -326,6 +327,7 @@
 </template>
 
 <script setup lang="ts">
+import { sprintTimeSummary } from '@/utils/sprintTime'
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { Project, ProjectSprint } from '@/api/types'

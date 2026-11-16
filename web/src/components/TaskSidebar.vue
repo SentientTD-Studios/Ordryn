@@ -1901,7 +1901,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
           :can-manage="projectId === '' || hasProjectPerm(selectedProject, PROJECT_PERMS.PROJECT_MANAGE)"
         />
         <TaskTimePanel
-          v-if="isKanbanTask && (mode === 'edit' || mode === 'view') && taskId"
+          v-if="(mode === 'edit' || mode === 'view') && taskId"
           class="form-group mt-3 border-top pt-3 kanban-order-time"
           :task-id="taskId"
           :initial-minutes="currentTask?.time_spent_minutes ?? 0"

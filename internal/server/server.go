@@ -232,6 +232,8 @@ func registerAPIV1Routes() {
 		utils.RateLimitMiddleware(240, 4.0, 60, utils.KeyByIPAndBearer)(handlers.APIV1MCP))))
 	handleAPI("/calendar", v1(handlers.APIV1CalendarRouter))
 	handleAPI("/calendar/", v1(handlers.APIV1CalendarRouter))
+	handleAPI("/time-blocks", v1(handlers.APIV1TimeBlocksRouter))
+	handleAPI("/time-blocks/", v1(handlers.APIV1TimeBlocksRouter))
 	handleAPI("/export", v1(handlers.APIV1Export))
 	handleAPI("/import", v1(handlers.APIV1ImportRouter))
 	handleAPI("/import/", v1(handlers.APIV1ImportRouter))

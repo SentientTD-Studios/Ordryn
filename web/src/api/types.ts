@@ -157,6 +157,10 @@ export type ProjectSprint = {
   is_locked: boolean
   task_count: number
   created_at: string
+  /** Minutes logged on the sprint's tasks. Only the sprint list fills it. */
+  time_spent_minutes?: number
+  /** Sum of the sprint's task estimates. Only the sprint list fills it. */
+  estimate_hours?: number
 }
 
 export type TaskTimeEntry = {
@@ -165,9 +169,29 @@ export type TaskTimeEntry = {
   user_id: number
   minutes: number
   note: string
+  /** When the work happened. */
+  spent_at: string
+  /** When the entry was logged. */
   created_at: string
   user_email?: string
   user_name?: string
+}
+
+/** Time on the caller's own calendar set aside for a task. */
+export type TimeBlock = {
+  id: number
+  task_id: number
+  task_title: string
+  task_completed: boolean
+  project_id?: number
+  project_name?: string
+  start_at: string
+  end_at: string
+  minutes: number
+  /** True once the block was recorded as a time entry. */
+  logged: boolean
+  time_entry_id?: number
+  created_at: string
 }
 
 export type TaskCommentLink = {

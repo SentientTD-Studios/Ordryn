@@ -489,6 +489,13 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 		case "time-entries":
 			handleTaskTimeEntries(w, r, id, parts[2:])
 			return
+		case "time-blocks":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
+				return
+			}
+			handleTaskTimeBlocks(w, r, id)
+			return
 		case "attachments":
 			apiV1TaskAttachments(w, r, id, parts[2:])
 			return

@@ -72,6 +72,8 @@ tags:
   - name: Request forms
     description: Forms that turn requests from anyone on the site into project tasks.
   - name: Images
+  - name: Time blocks
+    description: Your own hourly calendar of time set aside for tasks, which can be logged as time spent.
 
 paths:
   /api/v2/health:
@@ -5252,7 +5254,7 @@ paths:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [Tasks]
-      summary: List time entries for a kanban task
+      summary: List time entries for a task
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -5286,6 +5288,10 @@ paths:
                 note:
                   type: string
                   maxLength: 200
+                spent_at:
+                  type: string
+                  format: date-time
+                  description: When the work happened; defaults to now. Not in the future, at most 366 days back.
       responses:
         "201":
           description: Created
@@ -5293,6 +5299,177 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskTimeEntry"
+
+  /api/v2/tasks/{id}/time-blocks:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Time blocks]
+      summary: List your own time blocks on a task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Your blocks on the task, earliest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeBlock"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/time-blocks:
+    get:
+      tags: [Time blocks]
+      summary: List your time blocks in a range
+      description: |
+        Blocks overlapping [from, to), earliest first. The range may be at most 42 days.
+        Blocks on tasks in the trash or that you can no longer open are left out.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Time blocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeBlock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [Time blocks]
+      summary: Block time for a task on your calendar
+      description: Any task you can open. A task can have many blocks; a block can span up to 24 hours.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TimeBlockSpan"
+                - type: object
+                  required: [task_id]
+                  properties:
+                    task_id:
+                      type: integer
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeBlock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/time-blocks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Time blocks]
+      summary: Move or resize one of your blocks
+      description: Logged blocks can't move (409); delete their time entry first.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimeBlockSpan"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeBlock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [Time blocks]
+      summary: Delete one of your blocks
+      description: Time already logged from the block stays on the task.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/time-blocks/{id}/log:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Time blocks]
+      summary: Log a block as time spent
+      description: |
+        Creates a time entry for the block's length, dated when the block began. The block
+        must have started and needs Log time on project tasks. Each block logs once (409 after).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 200
+      responses:
+        "200":
+          description: The logged block and its new time entry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  block:
+                    $ref: "#/components/schemas/TimeBlock"
+                  time_entry:
+                    $ref: "#/components/schemas/TaskTimeEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v2/projects/{id}/automations:
     parameters:
@@ -12577,6 +12754,14 @@ components:
         created_at:
           type: string
           format: date-time
+        time_spent_minutes:
+          type: integer
+          description: |
+            Minutes logged on the sprint's tasks (archived included, trash excluded).
+            Filled on the sprint list; 0 elsewhere.
+        estimate_hours:
+          type: number
+          description: Sum of the sprint's task estimates. Filled on the sprint list; 0 elsewhere.
 
     TaskTimeEntry:
       type: object
@@ -12591,13 +12776,65 @@ components:
           type: integer
         note:
           type: string
+        spent_at:
+          type: string
+          format: date-time
+          description: When the work happened (defaults to when it was logged)
         created_at:
           type: string
           format: date-time
+          description: When the entry was logged
         user_email:
           type: string
         user_name:
           type: string
+
+    TimeBlock:
+      type: object
+      description: Time on the caller's own calendar set aside for a task. Private to its owner.
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        task_title:
+          type: string
+        task_completed:
+          type: boolean
+        project_id:
+          type: integer
+          description: Omitted for personal tasks
+        project_name:
+          type: string
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        minutes:
+          type: integer
+        logged:
+          type: boolean
+          description: True once the block was recorded as a time entry
+        time_entry_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    TimeBlockSpan:
+      type: object
+      required: [start_at, end_at]
+      properties:
+        start_at:
+          type: string
+          format: date-time
+          description: On a 15-minute boundary
+        end_at:
+          type: string
+          format: date-time
+          description: After start_at, on a 15-minute boundary, at most 24 hours later
 
     TaskComment:
       type: object

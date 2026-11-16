@@ -600,6 +600,12 @@ func RunMigrations() error {
 		errCount++
 	}
 
+	// Needs task_time_entries, tasks and users.
+	if err := CreateTimeBlockTables(); err != nil {
+		fmt.Printf("migration: CreateTimeBlockTables failed: %v\n", err)
+		errCount++
+	}
+
 	// Needs tasks and tags.
 	if err := MigrateSearchWords(); err != nil {
 		fmt.Printf("migration: MigrateSearchWords failed: %v\n", err)

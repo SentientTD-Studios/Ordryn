@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Project, ProjectSprint } from '@/api/types'
 import { sprintOptionLabel } from '@/utils/sprintLabel'
+import { sprintTimeSummary } from '@/utils/sprintTime'
 
 defineProps<{
   project: Project | null
@@ -48,6 +49,11 @@ const emit = defineEmits<{
       </template>
       <span v-else class="badge text-bg-secondary me-1">dateless</span>
       {{ selectedSprint.task_count }} task{{ selectedSprint.task_count === 1 ? '' : 's' }}
+      <template v-if="sprintTimeSummary(selectedSprint)">
+        · <span title="Time logged on this sprint's tasks, against their estimates">
+          <i class="bi bi-clock me-1" aria-hidden="true" />{{ sprintTimeSummary(selectedSprint) }}
+        </span>
+      </template>
     </span>
     <span v-else class="small text-muted">
       <template v-if="project?.backlog_description">{{ project.backlog_description }} · </template>

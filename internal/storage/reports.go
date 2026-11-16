@@ -11,10 +11,10 @@ func personNameSQL(alias string) string {
 		alias + `.user_name, ` + alias + `.email, '')`
 }
 
-// TimeEntryRow is one logged time entry with its task, project, and person.
+// TimeEntryRow is one logged time entry with its task, project (0 for a personal task), and person.
 type TimeEntryRow struct {
 	ID          int
-	LoggedAt    time.Time
+	LoggedAt    time.Time // when the work was spent
 	UserID      int
 	UserName    string
 	ProjectID   int
@@ -35,14 +35,22 @@ type TimeEntryQuery struct {
 	From, To        time.Time // [From, To)
 	UserID          int       // 0 = anyone the viewer may see
 	ProjectID       int       // 0 = all visible projects
+	// IncludePersonal adds the viewer's own time on their personal (project-less) tasks.
+	IncludePersonal bool
 	Limit           int
 }
 
 // QueryTimeEntries returns matching entries, newest first.
 func QueryTimeEntries(q TimeEntryQuery) ([]TimeEntryRow, error) {
 	out := []TimeEntryRow{}
-	if len(q.VisibleProjects) == 0 {
+	if len(q.VisibleProjects) == 0 && !q.IncludePersonal {
 		return out, nil
+	}
+	if q.VisibleProjects == nil {
+		q.VisibleProjects = []int{}
+	}
+	if q.PeopleProjects == nil {
+		q.PeopleProjects = []int{}
 	}
 	if q.Limit <= 0 || q.Limit > 10000 {
 		q.Limit = 5000
@@ -54,21 +62,21 @@ func QueryTimeEntries(q TimeEntryQuery) ([]TimeEntryRow, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT e.id, e.created_at, e.user_id, `+personNameSQL("u")+`, t.project_id, COALESCE(p.name, ''),
+		SELECT e.id, e.spent_at, e.user_id, `+personNameSQL("u")+`, COALESCE(t.project_id, 0), COALESCE(p.name, ''),
 		       t.id, COALESCE(t.title, ''), e.minutes, e.note
 		FROM task_time_entries e
 		JOIN tasks t ON t.id = e.task_id
-		JOIN projects p ON p.id = t.project_id
+		LEFT JOIN projects p ON p.id = t.project_id
 		JOIN users u ON u.id = e.user_id
-		WHERE t.project_id = ANY($1)
-		  AND (e.user_id = $2 OR t.project_id = ANY($3))
-		  AND e.created_at >= $4 AND e.created_at < $5
+		WHERE ((t.project_id = ANY($1) AND (e.user_id = $2 OR t.project_id = ANY($3)))
+		       OR (t.project_id IS NULL AND t.user_id = $2 AND e.user_id = $2 AND $9))
+		  AND e.spent_at >= $4 AND e.spent_at < $5
 		  AND ($6 = 0 OR e.user_id = $6)
 		  AND ($7 = 0 OR t.project_id = $7)
 		  AND `+TaskNotTrashedSQL("t")+`
-		ORDER BY e.created_at DESC, e.id DESC
+		ORDER BY e.spent_at DESC, e.id DESC
 		LIMIT $8`,
-		q.VisibleProjects, q.ViewerID, q.PeopleProjects, q.From, q.To, q.UserID, q.ProjectID, q.Limit)
+		q.VisibleProjects, q.ViewerID, q.PeopleProjects, q.From, q.To, q.UserID, q.ProjectID, q.Limit, q.IncludePersonal)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +137,7 @@ func GetCrossProjectWorkload(projectIDs []int, today string) ([]WorkloadRow, err
 		), logged AS (
 			SELECT e.user_id AS uid, SUM(e.minutes) AS minutes
 			FROM task_time_entries e JOIN tasks t ON t.id = e.task_id
-			WHERE `+live+` AND e.created_at >= NOW() - INTERVAL '7 days'
+			WHERE `+live+` AND e.spent_at >= NOW() - INTERVAL '7 days'
 			GROUP BY e.user_id
 		), people AS (
 			SELECT uid FROM claimed UNION SELECT uid FROM done UNION SELECT uid FROM logged

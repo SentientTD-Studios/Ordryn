@@ -454,6 +454,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "estimate hours: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateTimeBlockTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "time blocks: %v\n", err)
+		os.Exit(1)
+	}
 	code := m.Run()
 	_ = db.Stop()
 	os.Exit(code)
