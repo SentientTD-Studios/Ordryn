@@ -57,7 +57,8 @@ type TaskTimeEntry struct {
 	UserID    int
 	Minutes   int
 	Note      string
-	CreatedAt time.Time
+	SpentAt   time.Time // when the work happened
+	CreatedAt time.Time // when it was logged
 	UserEmail string
 	UserName  string
 }
@@ -839,12 +840,12 @@ func ListTaskTimeEntries(taskID int) ([]TaskTimeEntry, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT e.id, e.task_id, e.user_id, e.minutes, COALESCE(e.note,''), e.created_at,
+		`SELECT e.id, e.task_id, e.user_id, e.minutes, COALESCE(e.note,''), e.spent_at, e.created_at,
 		        COALESCE(u.email,''), COALESCE(u.user_name,'')
 		 FROM task_time_entries e
 		 JOIN users u ON u.id = e.user_id
 		 WHERE e.task_id = $1
-		 ORDER BY e.created_at DESC, e.id DESC`, taskID)
+		 ORDER BY e.spent_at DESC, e.id DESC`, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -853,7 +854,7 @@ func ListTaskTimeEntries(taskID int) ([]TaskTimeEntry, error) {
 	var out []TaskTimeEntry
 	for rows.Next() {
 		var e TaskTimeEntry
-		if err := rows.Scan(&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.CreatedAt,
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.SpentAt, &e.CreatedAt,
 			&e.UserEmail, &e.UserName); err != nil {
 			return nil, err
 		}
@@ -862,8 +863,8 @@ func ListTaskTimeEntries(taskID int) ([]TaskTimeEntry, error) {
 	return out, rows.Err()
 }
 
-// CreateTaskTimeEntry inserts a time entry.
-func CreateTaskTimeEntry(taskID, userID, minutes int, note string) (*TaskTimeEntry, error) {
+// CreateTaskTimeEntry inserts a time entry for work done at spentAt.
+func CreateTaskTimeEntry(taskID, userID, minutes int, note string, spentAt time.Time) (*TaskTimeEntry, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -873,11 +874,11 @@ func CreateTaskTimeEntry(taskID, userID, minutes int, note string) (*TaskTimeEnt
 	note = strings.TrimSpace(note)
 	var e TaskTimeEntry
 	err = pool.QueryRow(context.Background(),
-		`INSERT INTO task_time_entries (task_id, user_id, minutes, note)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, task_id, user_id, minutes, COALESCE(note,''), created_at`,
-		taskID, userID, minutes, note).Scan(
-		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.CreatedAt)
+		`INSERT INTO task_time_entries (task_id, user_id, minutes, note, spent_at)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, task_id, user_id, minutes, COALESCE(note,''), spent_at, created_at`,
+		taskID, userID, minutes, note, spentAt).Scan(
+		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.SpentAt, &e.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -894,9 +895,9 @@ func GetTaskTimeEntry(entryID int) (*TaskTimeEntry, error) {
 
 	var e TaskTimeEntry
 	err = pool.QueryRow(context.Background(),
-		`SELECT id, task_id, user_id, minutes, COALESCE(note,''), created_at
+		`SELECT id, task_id, user_id, minutes, COALESCE(note,''), spent_at, created_at
 		 FROM task_time_entries WHERE id = $1`, entryID).Scan(
-		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.CreatedAt)
+		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.SpentAt, &e.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("time entry not found")

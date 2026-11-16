@@ -6,6 +6,7 @@ import type { CalendarMonth, CalendarMonthCell, CalendarMonthTask, Project, Save
 import { APIError } from '@/api/types'
 import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import AppFooter from '@/components/AppFooter.vue'
+import TimeBlockCalendar from '@/components/TimeBlockCalendar.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
 import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
@@ -31,6 +32,33 @@ const jumpYear = ref(new Date().getFullYear())
 const completing = ref<Record<number, boolean>>({})
 
 const timezone = computed(() => user.value?.timezone || 'UTC')
+
+type CalendarMode = 'month' | 'week' | 'day'
+const CALENDAR_MODES: { key: CalendarMode; label: string }[] = [
+  { key: 'month', label: 'Month' },
+  { key: 'week', label: 'Week' },
+  { key: 'day', label: 'Day' },
+]
+
+function modeFromQuery(): CalendarMode {
+  const v = route.query.view
+  return v === 'week' || v === 'day' ? v : 'month'
+}
+
+const mode = ref<CalendarMode>(modeFromQuery())
+
+function setMode(next: CalendarMode) {
+  if (next === mode.value) return
+  mode.value = next
+  const query = { ...route.query }
+  if (next === 'month') delete query.view
+  else query.view = next
+  void router.replace({ query })
+}
+
+watch(() => route.query.view, () => {
+  mode.value = modeFromQuery()
+})
 
 function selectHome() {
   void router.push('/')
@@ -224,10 +252,24 @@ useLiveUpdates((event, batch) => {
         <div class="calendar-toolbar d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
           <div>
             <h1 class="h3 fw-bold mb-1">Task calendar</h1>
-            <p class="text-muted mb-0 small">Tasks with due dates — open and completed. Drag a task to another day to reschedule it.</p>
+            <p v-if="mode === 'month'" class="text-muted mb-0 small">Tasks with due dates — open and completed. Drag a task to another day to reschedule it.</p>
+            <p v-else class="text-muted mb-0 small">Block out hours for your tasks. Drag to move, drag the bottom edge to resize, and log a block once you've done the work. Only you see your blocks.</p>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
-            <div v-if="view" class="btn-group btn-group-sm" role="group" aria-label="Month navigation">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Calendar view">
+              <button
+                v-for="m in CALENDAR_MODES"
+                :key="m.key"
+                type="button"
+                class="btn"
+                :class="mode === m.key ? 'btn-secondary' : 'btn-outline-secondary'"
+                :aria-pressed="mode === m.key"
+                @click="setMode(m.key)"
+              >
+                {{ m.label }}
+              </button>
+            </div>
+            <div v-if="view && mode === 'month'" class="btn-group btn-group-sm" role="group" aria-label="Month navigation">
               <button
                 type="button"
                 class="btn btn-outline-secondary"
@@ -256,7 +298,7 @@ useLiveUpdates((event, batch) => {
               </button>
             </div>
 
-            <div v-if="view" class="dropdown calendar-jump">
+            <div v-if="view && mode === 'month'" class="dropdown calendar-jump">
               <button
                 id="calendar-jump-toggle"
                 type="button"
@@ -316,6 +358,9 @@ useLiveUpdates((event, batch) => {
           </div>
         </div>
 
+        <TimeBlockCalendar v-if="mode !== 'month'" :mode="mode" :timezone="timezone" />
+
+        <template v-else>
         <p v-if="error" class="text-danger">{{ error }}</p>
         <p v-else-if="busy && !view" class="text-muted">Loading calendar…</p>
 
@@ -420,6 +465,7 @@ useLiveUpdates((event, batch) => {
           </span>
           <RouterLink to="/settings#integrations">Subscribe or sync via ICS on Profile</RouterLink>
         </div>
+        </template>
       </div>
 
       <!-- Clean Reusable Footer inside right content area -->

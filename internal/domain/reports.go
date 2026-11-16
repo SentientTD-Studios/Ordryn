@@ -54,7 +54,8 @@ type Timesheet struct {
 }
 
 // TimesheetForUser returns logged time the viewer may see: their own on any
-// project they can open, and everyone's on projects where they hold View team workload.
+// project they can open and on their personal tasks, and everyone's on projects
+// where they hold View team workload. Entries fall on the day the work was spent.
 func TimesheetForUser(ctx context.Context, userID int, in TimesheetInput) (*Timesheet, error) {
 	_ = ctx
 	loc, err := time.LoadLocation(in.TZ)
@@ -88,6 +89,7 @@ func TimesheetForUser(ctx context.Context, userID int, in TimesheetInput) (*Time
 	entries, err := storage.QueryTimeEntries(storage.TimeEntryQuery{
 		ViewerID: userID, VisibleProjects: scope.visible, PeopleProjects: scope.people,
 		From: from, To: to.AddDate(0, 0, 1), UserID: in.UserID, ProjectID: in.ProjectID, Limit: limit + 1,
+		IncludePersonal: in.ProjectID == 0 && (in.UserID == 0 || in.UserID == userID),
 	})
 	if err != nil {
 		return nil, err

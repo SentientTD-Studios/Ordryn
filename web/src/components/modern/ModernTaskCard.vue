@@ -352,7 +352,7 @@ function formatMinutes(total: number) {
           <span v-if="density !== 'dense'" class="ms-1">{{ refinementLabel(task.refinement) }}</span>
         </span>
         <span
-          v-if="isKanbanTask() && (task.time_spent_minutes ?? 0) > 0"
+          v-if="(task.time_spent_minutes ?? 0) > 0"
           class="d-flex align-items-center gap-1 text-muted small text-nowrap"
           title="Time logged"
         >
@@ -434,7 +434,7 @@ function formatMinutes(total: number) {
             <span class="ms-1">{{ refinementLabel(task.refinement) }}</span>
           </span>
           <span
-            v-if="isKanbanTask() && (task.time_spent_minutes ?? 0) > 0"
+            v-if="(task.time_spent_minutes ?? 0) > 0"
             class="text-muted small text-nowrap"
             title="Time logged"
           >

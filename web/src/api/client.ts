@@ -145,6 +145,7 @@ import type {
   TaskEvent,
   TaskList,
   TaskTimeEntry,
+  TimeBlock,
   TaskComment,
   TaskCommentRevision,
   CommentAuditList,
@@ -1474,10 +1475,47 @@ export const api = {
     return request<TaskTimeEntry[]>(`/api/v2/tasks/${taskId}/time-entries`)
   },
 
-  addTimeEntry(taskId: number, minutes: number, note = '') {
+  /** spentAt (ISO) is when the work happened; omit for now. */
+  addTimeEntry(taskId: number, minutes: number, note = '', spentAt?: string) {
     return request<TaskTimeEntry>(`/api/v2/tasks/${taskId}/time-entries`, {
       method: 'POST',
-      body: JSON.stringify({ minutes, note }),
+      body: JSON.stringify(spentAt ? { minutes, note, spent_at: spentAt } : { minutes, note }),
+    })
+  },
+
+  /** The caller's time blocks overlapping [from, to) (ISO timestamps, at most 42 days). */
+  listTimeBlocks(from: string, to: string) {
+    const qs = new URLSearchParams({ from, to })
+    return request<TimeBlock[]>(`/api/v2/time-blocks?${qs}`)
+  },
+
+  listTaskTimeBlocks(taskId: number) {
+    return request<TimeBlock[]>(`/api/v2/tasks/${taskId}/time-blocks`)
+  },
+
+  createTimeBlock(taskId: number, startAt: string, endAt: string) {
+    return request<TimeBlock>('/api/v2/time-blocks', {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId, start_at: startAt, end_at: endAt }),
+    })
+  },
+
+  moveTimeBlock(blockId: number, startAt: string, endAt: string) {
+    return request<TimeBlock>(`/api/v2/time-blocks/${blockId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ start_at: startAt, end_at: endAt }),
+    })
+  },
+
+  deleteTimeBlock(blockId: number) {
+    return request<void>(`/api/v2/time-blocks/${blockId}`, { method: 'DELETE' })
+  },
+
+  /** Records a started block as time spent on its task. */
+  logTimeBlock(blockId: number, note = '') {
+    return request<{ block: TimeBlock; time_entry: TaskTimeEntry }>(`/api/v2/time-blocks/${blockId}/log`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
     })
   },
 
