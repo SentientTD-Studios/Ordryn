@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { CustomFieldDef, ProjectMember } from '@/api/types'
 import { api } from '@/api/client'
 import { useCustomFieldDefs } from '@/composables/useCustomFieldDefs'
@@ -8,6 +8,13 @@ const props = defineProps<{
   projectId: number | '' | null
   modelValue: Record<string, unknown>
   readOnly?: boolean
+  /**
+   * Compact rail mode: empty fields hide behind an "Add field" menu and
+   * descriptions move into tooltips.
+   */
+  compact?: boolean
+  /** Changing this (e.g. the task id) re-hides fields revealed for the previous task. */
+  revealKey?: unknown
 }>()
 
 const emit = defineEmits<{
@@ -35,11 +42,40 @@ watch(
 
 const visible = computed(() => defs.value.filter((d) => (d.show_on || ['sidebar']).includes('sidebar')))
 
+// Fields revealed by "Add field" or edited stay put, even if cleared again.
+const revealed = ref(new Set<string>())
+watch(
+  () => [props.projectId, props.revealKey],
+  () => {
+    revealed.value = new Set()
+  },
+)
+
+function hasValue(def: CustomFieldDef): boolean {
+  if (def.type === 'boolean') return boolValue(def)
+  if (def.type === 'user') return userValue(def) !== ''
+  return stringValue(def).trim() !== ''
+}
+
+const shown = computed(() =>
+  props.compact ? visible.value.filter((d) => hasValue(d) || revealed.value.has(d.field_key)) : visible.value,
+)
+const addable = computed(() => (props.compact && !props.readOnly ? visible.value.filter((d) => !shown.value.includes(d)) : []))
+
+async function reveal(def: CustomFieldDef) {
+  revealed.value = new Set(revealed.value).add(def.field_key)
+  await nextTick()
+  document.getElementById(`cf-${def.field_key}`)?.focus()
+}
+
 function current(key: string): unknown {
   return props.modelValue[key]
 }
 
 function setField(def: CustomFieldDef, value: unknown) {
+  if (props.compact && !revealed.value.has(def.field_key)) {
+    revealed.value = new Set(revealed.value).add(def.field_key)
+  }
   emit('update:modelValue', { ...props.modelValue, [def.field_key]: value })
 }
 
@@ -77,9 +113,14 @@ function memberLabel(m: ProjectMember): string {
 </script>
 
 <template>
-  <div v-if="visible.length" class="task-sidebar-fields">
-    <div v-for="def in visible" :key="def.field_key" class="form-group mt-2">
-      <label v-if="def.type !== 'boolean'" class="form-label" :for="`cf-${def.field_key}`">{{ def.label }}</label>
+  <div v-if="shown.length || addable.length" class="task-sidebar-fields" :class="{ 'is-compact': compact }">
+    <div v-for="def in shown" :key="def.field_key" class="form-group mt-2" :class="`cf-type-${def.type}`">
+      <label
+        v-if="def.type !== 'boolean'"
+        class="form-label"
+        :for="`cf-${def.field_key}`"
+        :title="compact ? def.description || undefined : undefined"
+      >{{ def.label }}</label>
 
       <select
         v-if="def.type === 'enum'"
@@ -145,7 +186,7 @@ function memberLabel(m: ProjectMember): string {
         v-else-if="def.type === 'markdown'"
         :id="`cf-${def.field_key}`"
         class="form-control"
-        rows="4"
+        :rows="compact ? 3 : 4"
         :disabled="readOnly"
         :readonly="readOnly"
         :value="stringValue(def)"
@@ -161,7 +202,11 @@ function memberLabel(m: ProjectMember): string {
           :checked="boolValue(def)"
           @change="setField(def, ($event.target as HTMLInputElement).checked)"
         />
-        <label class="form-check-label" :for="`cf-${def.field_key}`">{{ def.label }}</label>
+        <label
+          class="form-check-label"
+          :for="`cf-${def.field_key}`"
+          :title="compact ? def.description || undefined : undefined"
+        >{{ def.label }}</label>
       </div>
 
       <input
@@ -175,7 +220,24 @@ function memberLabel(m: ProjectMember): string {
         @input="setField(def, ($event.target as HTMLInputElement).value)"
       />
 
-      <div v-if="def.description" class="form-text">{{ def.description }}</div>
+      <div v-if="def.description" :class="compact ? 'visually-hidden' : 'form-text'">{{ def.description }}</div>
+    </div>
+    <div v-if="addable.length" class="dropdown task-sidebar-fields-add">
+      <button
+        type="button"
+        class="btn btn-sm btn-link text-decoration-none p-0"
+        data-bs-toggle="dropdown"
+        aria-expanded="false"
+      >
+        <i class="bi bi-plus-lg me-1" />Add field
+      </button>
+      <ul class="dropdown-menu shadow-sm">
+        <li v-for="def in addable" :key="def.field_key">
+          <button type="button" class="dropdown-item small" :title="def.description || undefined" @click="reveal(def)">
+            {{ def.label }}
+          </button>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
