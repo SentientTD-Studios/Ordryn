@@ -16,6 +16,11 @@ const props = defineProps<{
   canManage: boolean
 }>()
 
+const emit = defineEmits<{
+  /** Whether the panel renders anything, and how many files it lists. */
+  summary: [state: { visible: boolean; count: number }]
+}>()
+
 const MAX_FILES = 20
 
 const toast = useToast()
@@ -67,6 +72,12 @@ watch(
     loaded.value = false
     void load()
   },
+  { immediate: true },
+)
+
+watch(
+  () => ({ visible: files.value.length > 0 || canUpload.value, count: files.value.length }),
+  (state) => emit('summary', state),
   { immediate: true },
 )
 

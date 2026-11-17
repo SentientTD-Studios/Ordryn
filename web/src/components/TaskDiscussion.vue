@@ -35,6 +35,10 @@ const props = defineProps<{
   /** Grow with the parent column instead of capping the thread at 360px. */
   fillHeight?: boolean
 }>()
+const emit = defineEmits<{
+  /** How many comments the thread holds, for tab badges. */
+  summary: [state: { visible: boolean; count: number }]
+}>()
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
@@ -687,6 +691,12 @@ onUnmounted(() => {
   window.removeEventListener('scroll', onMentionReposition, true)
   window.removeEventListener('resize', onMentionReposition)
 })
+
+watch(
+  () => comments.value.filter((c) => !c.deleted).length,
+  (count) => emit('summary', { visible: true, count }),
+  { immediate: true },
+)
 
 defineExpose({ reload, isDirty, flushUnsaved })
 </script>

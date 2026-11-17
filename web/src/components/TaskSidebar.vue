@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useTaskTextLimits } from '@/utils/taskText'
@@ -40,6 +40,7 @@ import { batchTouchesDiscussion } from '@/utils/liveEvents'
 import { assignableTags, archiveConfirmMessage, isArchivedTask, isProtectedTag } from '@/utils/tags'
 import { ESTIMATE_STEP, MAX_ESTIMATE_HOURS, parseEstimateInput } from '@/utils/estimates'
 import { useProjectCeremonies } from '@/composables/useProjectCeremonies'
+import { formatDuration } from '@/utils/timeBlocks'
 
 const {
   open,
@@ -307,6 +308,97 @@ const reviewerLabel = computed(() => {
   if (isMyReview.value) return 'You'
   return reviewerName.value || `User #${reviewerId.value}`
 })
+
+// Kanban header: secondary actions live in the "more" menu.
+const canSaveAsTemplate = computed(() => showTaskNumber.value && !isSubtask.value && !loading.value)
+const canToggleArchive = computed(
+  () =>
+    !loading.value &&
+    mode.value === 'edit' &&
+    (taskIsArchived.value ? canRestoreTask.value : canArchiveTask.value),
+)
+const showHeaderMenu = computed(
+  () =>
+    showTaskNumber.value ||
+    canSaveAsTemplate.value ||
+    canToggleArchive.value ||
+    (canDeleteTask.value && !loading.value),
+)
+
+// Kanban tool tabs. Each panel reports whether it renders anything and a count.
+type ToolTabKey = 'discussion' | 'related' | 'agents' | 'github' | 'files' | 'time' | 'activity'
+type PanelSummary = { visible: boolean; count: number }
+const panelSummary = reactive<Partial<Record<'discussion' | 'links' | 'agents' | 'github' | 'files' | 'time', PanelSummary>>>({})
+const preferredToolTab = ref<ToolTabKey>('discussion')
+const activityTabOpened = ref(false)
+
+const toolTabs = computed(() => {
+  if (!isKanbanTask.value || !taskId.value || (mode.value !== 'edit' && mode.value !== 'view')) return []
+  const s = panelSummary
+  const tabs: { key: ToolTabKey; label: string; icon: string; badge: string }[] = []
+  const badge = (n: number | undefined) => (n ? String(n) : '')
+  if (showDiscussion.value) {
+    tabs.push({ key: 'discussion', label: 'Discussion', icon: 'bi-chat-left-text', badge: badge(s.discussion?.count) })
+  }
+  const relatedCount = (relatedParent.value ? 1 : 0) + relatedChildren.value.length
+  if (relatedCount || s.links?.visible) {
+    tabs.push({ key: 'related', label: 'Related', icon: 'bi-diagram-3', badge: badge(relatedCount + (s.links?.count ?? 0)) })
+  }
+  if (s.files?.visible) tabs.push({ key: 'files', label: 'Files', icon: 'bi-paperclip', badge: badge(s.files.count) })
+  tabs.push({ key: 'time', label: 'Time', icon: 'bi-clock', badge: s.time?.count ? formatDuration(s.time.count) : '' })
+  if (s.github?.visible) tabs.push({ key: 'github', label: 'GitHub', icon: 'bi-github', badge: '' })
+  if (currentTask.value?.project_id && s.agents?.visible) {
+    tabs.push({ key: 'agents', label: 'Agents', icon: 'bi-robot', badge: badge(s.agents.count) })
+  }
+  tabs.push({ key: 'activity', label: 'Activity', icon: 'bi-list-ul', badge: '' })
+  return tabs
+})
+
+/** The chosen tab, or the first one while the chosen tab has nothing to show. */
+const activeToolTab = computed<ToolTabKey | null>(() => {
+  const tabs = toolTabs.value
+  if (tabs.some((t) => t.key === preferredToolTab.value)) return preferredToolTab.value
+  return tabs[0]?.key ?? null
+})
+
+watch(activeToolTab, (key) => {
+  if (key === 'activity') activityTabOpened.value = true
+})
+watch(taskId, () => {
+  preferredToolTab.value = 'discussion'
+})
+
+function selectToolTab(key: ToolTabKey) {
+  preferredToolTab.value = key
+}
+
+function onToolTabKeydown(e: KeyboardEvent, index: number) {
+  const tabs = toolTabs.value
+  let next = -1
+  if (e.key === 'ArrowRight') next = (index + 1) % tabs.length
+  else if (e.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length
+  else if (e.key === 'Home') next = 0
+  else if (e.key === 'End') next = tabs.length - 1
+  if (next < 0) return
+  e.preventDefault()
+  selectToolTab(tabs[next].key)
+  void nextTick(() => document.getElementById(`task-tab-${tabs[next].key}`)?.focus())
+}
+
+/** Outside kanban tabs every pane shows, stacked. */
+function toolPaneShown(key: ToolTabKey) {
+  return !toolTabs.value.length || activeToolTab.value === key
+}
+
+function toolPaneAttrs(key: ToolTabKey) {
+  if (!toolTabs.value.length) return {}
+  return {
+    id: `task-pane-${key}`,
+    role: 'tabpanel',
+    'aria-labelledby': `task-tab-${key}`,
+    class: 'kanban-tab-pane',
+  }
+}
 
 function taskInSelectedProject(t: Task): boolean {
   if (projectId.value === '') return t.project_id == null || t.project_id === 0
@@ -1358,26 +1450,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
                 @click="goToTaskInProject"
               >#{{ taskId }}</a>
               </h5>
-              <button
-                v-if="showTaskNumber"
-                type="button"
-                class="btn btn-sm btn-outline-secondary"
-                title="Copy link"
-                aria-label="Copy task link"
-                @click="copyPermalink"
-              >
-                <i class="bi bi-link-45deg" /> Copy link
-              </button>
               <TaskWatchButton v-if="showTaskNumber && taskId" :task-id="taskId" />
-              <button
-                v-if="showTaskNumber && !isSubtask && !loading"
-                type="button"
-                class="btn btn-sm btn-outline-secondary"
-                title="Save this task as a reusable template"
-                @click="saveTemplateOpen = true"
-              >
-                <i class="bi bi-files" /> Save as template
-              </button>
             </div>
             <div class="task-header-actions">
               <button
@@ -1399,23 +1472,13 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
                 Release
               </button>
               <button
-                v-if="!loading && mode === 'edit' && ((taskIsArchived && canRestoreTask) || (!taskIsArchived && canArchiveTask))"
+                v-if="canSaveTask && !loading && mode === 'add'"
                 type="button"
-                class="btn btn-sm task-header-btn"
-                :class="taskIsArchived ? 'btn-success' : 'btn-warning'"
-                :disabled="saving"
-                @click="taskIsArchived ? restoreCurrentTask() : archiveCurrentTask()"
+                class="btn btn-sm btn-outline-primary task-header-btn"
+                :disabled="saving || !title.trim()"
+                @click="save(true)"
               >
-                {{ taskIsArchived ? 'Restore' : 'Archive' }}
-              </button>
-              <button
-                v-if="canDeleteTask && !loading"
-                type="button"
-                class="btn btn-sm btn-danger task-header-btn"
-                :disabled="saving"
-                @click="deleteCurrentTask"
-              >
-                Delete
+                Save &amp; Add Another
               </button>
               <button
                 v-if="canSaveTask && !loading"
@@ -1426,15 +1489,49 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
               >
                 {{ saving ? 'Saving…' : submitText }}
               </button>
-              <button
-                v-if="canSaveTask && !loading && mode === 'add'"
-                type="button"
-                class="btn btn-sm btn-outline-primary task-header-btn"
-                :disabled="saving || !title.trim()"
-                @click="save(true)"
-              >
-                Save &amp; Add Another
-              </button>
+              <div v-if="showHeaderMenu" class="dropdown task-header-menu">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                  aria-label="More task actions"
+                  title="More actions"
+                >
+                  <i class="bi bi-three-dots" />
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                  <li v-if="showTaskNumber">
+                    <button type="button" class="dropdown-item" @click="copyPermalink">
+                      <i class="bi bi-link-45deg me-2" />Copy link
+                    </button>
+                  </li>
+                  <li v-if="canSaveAsTemplate">
+                    <button type="button" class="dropdown-item" @click="saveTemplateOpen = true">
+                      <i class="bi bi-files me-2" />Save as template
+                    </button>
+                  </li>
+                  <li v-if="(showTaskNumber || canSaveAsTemplate) && (canToggleArchive || (canDeleteTask && !loading))">
+                    <hr class="dropdown-divider" />
+                  </li>
+                  <li v-if="canToggleArchive">
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      :disabled="saving"
+                      @click="taskIsArchived ? restoreCurrentTask() : archiveCurrentTask()"
+                    >
+                      <i class="bi me-2" :class="taskIsArchived ? 'bi-arrow-counterclockwise' : 'bi-archive'" />
+                      {{ taskIsArchived ? 'Restore' : 'Archive' }}
+                    </button>
+                  </li>
+                  <li v-if="canDeleteTask && !loading">
+                    <button type="button" class="dropdown-item text-danger" :disabled="saving" @click="deleteCurrentTask">
+                      <i class="bi bi-trash me-2" />Delete
+                    </button>
+                  </li>
+                </ul>
+              </div>
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary task-header-btn task-header-close"
@@ -1577,58 +1674,29 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
         </div>
         </div>
         <div :class="{ 'kanban-task-aside': isKanbanTask }">
-        <div class="form-group mt-2 kanban-order-parent">
-          <label for="parent_id">Parent task (optional):</label>
+        <!-- Kanban rail group headings; placed among the fields with CSS order. -->
+        <template v-if="isKanbanTask">
+          <h6 class="kanban-rail-heading kanban-order-h-details">Details</h6>
+          <h6 v-if="mode === 'edit' || mode === 'view'" class="kanban-rail-heading kanban-order-h-people">People</h6>
+          <h6 class="kanban-rail-heading kanban-order-h-dates">Dates</h6>
+          <h6 class="kanban-rail-heading kanban-order-h-organize">Organize</h6>
+        </template>
+        <div class="form-group mt-2 kanban-prop kanban-order-parent">
+          <label for="parent_id">Parent task</label>
           <ParentTaskCombobox
             v-model="parentId"
             input-id="parent_id"
             :options="parentOptions"
             :disabled="parentPickerDisabled"
-            placeholder="Type to search parent tasks…"
+            placeholder="Search tasks…"
             @change="onParentChange"
           />
           <small v-if="isSubtask" class="form-hint d-block mt-1">
             Subtask of {{ parentTitle || 'selected parent' }}. Project is inherited.
           </small>
         </div>
-        <div
-          v-if="(mode === 'edit' || mode === 'view') && (relatedParent || relatedChildren.length)"
-          class="form-group mt-2 kanban-order-related"
-        >
-          <label class="d-block">Related tasks</label>
-          <div v-if="relatedParent" class="mb-1">
-            <span class="form-hint d-block">Parent</span>
-            <button
-              type="button"
-              class="btn btn-link text-start text-decoration-none p-0"
-              @click="openRelated(relatedParent.id)"
-            >
-              {{ relatedParent.title }}
-            </button>
-          </div>
-          <div v-if="relatedChildren.length">
-            <span class="form-hint d-block">Subtasks</span>
-            <ul class="list-unstyled mb-0">
-              <li v-for="child in relatedChildren" :key="child.id">
-                <button
-                  type="button"
-                  class="btn btn-link text-start text-decoration-none p-0"
-                  @click="openRelated(child.id)"
-                >
-                  {{ child.title }}
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div v-if="(mode === 'edit' || mode === 'view') && taskId" class="form-group mt-2 kanban-order-related">
-          <TaskLinksPanel ref="linksPanel" :task-id="taskId" :can-edit="canEditDetails" @open="openRelated" />
-        </div>
-        <div v-if="(mode === 'edit' || mode === 'view') && taskId && currentTask?.project_id" class="form-group mt-2 kanban-order-related">
-          <TaskAgentsPanel :task-id="taskId" />
-        </div>
-        <div class="form-group mt-2 kanban-order-project">
-          <label for="project_id">{{ isCompanyMode ? 'Project:' : 'Project (optional):' }}</label>
+        <div class="form-group mt-2 kanban-prop kanban-order-project">
+          <label for="project_id">Project</label>
           <select
             id="project_id"
             v-model="projectId"
@@ -1648,8 +1716,8 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             This project is archived, so new tasks cannot be added.
           </small>
         </div>
-        <div v-if="isKanbanTask" class="form-group mt-2 kanban-order-status">
-          <label for="status_id">Status:</label>
+        <div v-if="isKanbanTask" class="form-group mt-2 kanban-prop kanban-order-status">
+          <label for="status_id">Status</label>
           <select id="status_id" v-model="statusId" class="form-select" :disabled="!canChangeStatus">
             <option v-if="!statuses.length" value="">No statuses</option>
             <option v-for="s in statuses" :key="s.id" :value="s.id" :disabled="statusOptionDisabled(s)">
@@ -1657,8 +1725,8 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             </option>
           </select>
         </div>
-        <div v-if="isKanbanTask" class="form-group mt-2 kanban-order-sprint">
-          <label for="sprint_id">Sprint:</label>
+        <div v-if="isKanbanTask" class="form-group mt-2 kanban-prop kanban-order-sprint">
+          <label for="sprint_id">Sprint</label>
           <select
             id="sprint_id"
             class="form-select"
@@ -1677,7 +1745,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             </option>
           </select>
         </div>
-        <div v-if="isKanbanTask && (mode === 'edit' || mode === 'view')" class="form-group mt-2 kanban-order-claim">
+        <div v-if="isKanbanTask && (mode === 'edit' || mode === 'view')" class="form-group mt-2 kanban-prop kanban-order-claim">
           <label class="d-block">Claimed by</label>
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <span class="badge border" :class="claimedBy ? 'text-bg-primary' : 'text-bg-light text-muted'">
@@ -1685,7 +1753,7 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             </span>
           </div>
         </div>
-        <div v-if="showReviewer" class="form-group mt-2 kanban-order-claim task-reviewer">
+        <div v-if="showReviewer" class="form-group mt-2 kanban-prop kanban-order-reviewer task-reviewer">
           <label class="d-block" for="task-reviewer-input">Reviewer</label>
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <span class="badge border" :class="reviewerId ? 'text-bg-info' : 'text-bg-light text-muted'">
@@ -1717,8 +1785,8 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             </button>
           </form>
         </div>
-        <div v-if="isKanbanTask" class="form-group mt-2 kanban-order-estimate">
-          <label for="estimate_hours">Estimate (hours):</label>
+        <div v-if="isKanbanTask" class="form-group mt-2 kanban-prop kanban-order-estimate">
+          <label for="estimate_hours">Estimate (hours)</label>
           <input
             id="estimate_hours"
             v-model="estimateHours"
@@ -1732,14 +1800,15 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             :disabled="readOnly"
             :readonly="readOnly"
             placeholder="e.g. 2.5"
+            title="Quarter hours (0.25, 0.5, 0.75)"
             aria-describedby="estimate_hours_hint"
           />
           <small id="estimate_hours_hint" class="form-hint" :class="{ 'text-danger': estimateInvalid }">
             Quarter hours (0.25, 0.5, 0.75).
           </small>
         </div>
-        <div v-if="showRefinementField" class="form-group mt-2 kanban-order-estimate">
-          <label for="task_refinement">Refinement:</label>
+        <div v-if="showRefinementField" class="form-group mt-2 kanban-prop kanban-order-refinement">
+          <label for="task_refinement">Refinement</label>
           <select
             id="task_refinement"
             v-model="refinement"
@@ -1751,16 +1820,8 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             <option value="refined">Refined</option>
           </select>
         </div>
-        <TaskGitHubPanel
-          v-if="(mode === 'edit' || mode === 'view') && taskId"
-          class="kanban-order-github"
-          :task-id="taskId"
-          :project-id="projectId === '' ? null : Number(projectId)"
-          :initial-issue="currentTask?.github ?? null"
-          :read-only="readOnly"
-        />
-        <div class="form-group mt-2 kanban-order-priority">
-          <label for="priority">Priority:</label>
+        <div class="form-group mt-2 kanban-prop kanban-order-priority">
+          <label for="priority">Priority</label>
           <select id="priority" v-model.number="priority" class="form-select" :disabled="readOnly">
             <option :value="0">None</option>
             <option :value="1">Low</option>
@@ -1773,10 +1834,12 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             v-model="customFieldValues"
             :project-id="Number(projectId)"
             :read-only="readOnly"
+            :compact="isKanbanTask"
+            :reveal-key="taskId"
           />
         </div>
-        <div class="form-group mt-2 kanban-order-due">
-          <label for="start_date">Start Date (optional):</label>
+        <div class="form-group mt-2 kanban-prop kanban-order-start">
+          <label for="start_date">Start date</label>
           <input
             id="start_date"
             v-model="startDate"
@@ -1787,17 +1850,17 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             :readonly="readOnly"
           />
         </div>
-        <div class="form-group mt-2 kanban-order-due">
-          <label for="due_date">Due Date (optional):</label>
+        <div class="form-group mt-2 kanban-prop kanban-order-due">
+          <label for="due_date">Due date</label>
           <input id="due_date" v-model="dueDate" type="date" class="form-control" :disabled="readOnly" :readonly="readOnly" />
-          <div v-if="!readOnly" class="btn-group btn-group-sm mt-1 flex-wrap" role="group" aria-label="Due date presets">
+          <div v-if="!readOnly" class="btn-group btn-group-sm mt-1 flex-wrap due-presets" role="group" aria-label="Due date presets">
             <button type="button" class="btn btn-outline-secondary" @click="applyDuePreset('today')">Today</button>
             <button type="button" class="btn btn-outline-secondary" @click="applyDuePreset('tomorrow')">Tomorrow</button>
             <button type="button" class="btn btn-outline-secondary" @click="applyDuePreset('week')">+1 week</button>
             <button type="button" class="btn btn-outline-secondary" @click="applyDuePreset('clear')">Clear</button>
           </div>
         </div>
-        <div v-if="!isSubtask && (!readOnly || recurrenceDraft.enabled)" class="form-group mt-2 kanban-order-due">
+        <div v-if="!isSubtask && (!readOnly || recurrenceDraft.enabled)" class="form-group mt-2 kanban-order-recurrence">
           <TaskRecurrenceEditor
             v-model="recurrenceDraft"
             :read-only="readOnly"
@@ -1892,34 +1955,121 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
             <small class="form-hint">New tag names are created on save (max 5 tags per task).</small>
           </div>
         </div>
-
-        <TaskAttachmentsPanel
-          v-if="(mode === 'edit' || mode === 'view') && taskId"
-          class="kanban-order-time"
-          :task-id="taskId"
-          :can-edit="canEditDetails"
-          :can-manage="projectId === '' || hasProjectPerm(selectedProject, PROJECT_PERMS.PROJECT_MANAGE)"
-        />
-        <TaskTimePanel
-          v-if="(mode === 'edit' || mode === 'view') && taskId"
-          class="form-group mt-3 border-top pt-3 kanban-order-time"
-          :task-id="taskId"
-          :initial-minutes="currentTask?.time_spent_minutes ?? 0"
-          :can-log="canLogTime"
-        />
         </div>
 
+        <!--
+          Task tools. On a kanban task they sit behind tabs under the description;
+          elsewhere every pane shows, stacked, in this order.
+        -->
         <div :class="{ 'kanban-task-rest': isKanbanTask }">
-        <TaskDiscussion
-          v-if="showDiscussion && taskId"
-          ref="discussionRef"
-          :task-id="taskId"
-          :project-id="currentTask?.project_id ?? null"
-          :current-user-id="user?.id ?? null"
-          :is-owner="discussionCanModerate"
-          :can-edit-task="canEditDetails"
-          :fill-height="isKanbanTask"
-        />
+        <div v-if="toolTabs.length" class="kanban-tabs" role="tablist" aria-label="Task sections">
+          <button
+            v-for="(t, i) in toolTabs"
+            :id="`task-tab-${t.key}`"
+            :key="t.key"
+            type="button"
+            role="tab"
+            class="kanban-tab"
+            :class="{ active: activeToolTab === t.key }"
+            :aria-selected="activeToolTab === t.key"
+            :aria-controls="`task-pane-${t.key}`"
+            :tabindex="activeToolTab === t.key ? 0 : -1"
+            @click="selectToolTab(t.key)"
+            @keydown="onToolTabKeydown($event, i)"
+          >
+            <i class="bi" :class="t.icon" aria-hidden="true" />
+            <span>{{ t.label }}</span>
+            <span v-if="t.badge" class="kanban-tab-count">{{ t.badge }}</span>
+          </button>
+        </div>
+
+        <div v-if="(mode === 'edit' || mode === 'view') && taskId" v-show="toolPaneShown('related')" v-bind="toolPaneAttrs('related')">
+          <div
+            v-if="relatedParent || relatedChildren.length"
+            class="form-group mt-2"
+          >
+            <label class="d-block">Related tasks</label>
+            <div v-if="relatedParent" class="mb-1">
+              <span class="form-hint d-block">Parent</span>
+              <button
+                type="button"
+                class="btn btn-link text-start text-decoration-none p-0"
+                @click="openRelated(relatedParent.id)"
+              >
+                {{ relatedParent.title }}
+              </button>
+            </div>
+            <div v-if="relatedChildren.length">
+              <span class="form-hint d-block">Subtasks</span>
+              <ul class="list-unstyled mb-0">
+                <li v-for="child in relatedChildren" :key="child.id">
+                  <button
+                    type="button"
+                    class="btn btn-link text-start text-decoration-none p-0"
+                    @click="openRelated(child.id)"
+                  >
+                    {{ child.title }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="form-group mt-2">
+            <TaskLinksPanel
+              ref="linksPanel"
+              :task-id="taskId"
+              :can-edit="canEditDetails"
+              @open="openRelated"
+              @summary="(s) => (panelSummary.links = s)"
+            />
+          </div>
+        </div>
+        <div
+          v-if="(mode === 'edit' || mode === 'view') && taskId && currentTask?.project_id"
+          v-show="toolPaneShown('agents')"
+          class="form-group mt-2"
+          v-bind="toolPaneAttrs('agents')"
+        >
+          <TaskAgentsPanel :task-id="taskId" @summary="(s) => (panelSummary.agents = s)" />
+        </div>
+        <div v-if="(mode === 'edit' || mode === 'view') && taskId" v-show="toolPaneShown('github')" v-bind="toolPaneAttrs('github')">
+          <TaskGitHubPanel
+            :task-id="taskId"
+            :project-id="projectId === '' ? null : Number(projectId)"
+            :initial-issue="currentTask?.github ?? null"
+            :read-only="readOnly"
+            @summary="(s) => (panelSummary.github = s)"
+          />
+        </div>
+        <div v-if="(mode === 'edit' || mode === 'view') && taskId" v-show="toolPaneShown('files')" v-bind="toolPaneAttrs('files')">
+          <TaskAttachmentsPanel
+            :task-id="taskId"
+            :can-edit="canEditDetails"
+            :can-manage="projectId === '' || hasProjectPerm(selectedProject, PROJECT_PERMS.PROJECT_MANAGE)"
+            @summary="(s) => (panelSummary.files = s)"
+          />
+        </div>
+        <div v-if="(mode === 'edit' || mode === 'view') && taskId" v-show="toolPaneShown('time')" v-bind="toolPaneAttrs('time')">
+          <TaskTimePanel
+            :class="isKanbanTask ? 'form-group mt-3' : 'form-group mt-3 border-top pt-3'"
+            :task-id="taskId"
+            :initial-minutes="currentTask?.time_spent_minutes ?? 0"
+            :can-log="canLogTime"
+            @summary="(s) => (panelSummary.time = s)"
+          />
+        </div>
+        <div v-if="showDiscussion && taskId" v-show="toolPaneShown('discussion')" v-bind="toolPaneAttrs('discussion')">
+          <TaskDiscussion
+            ref="discussionRef"
+            :task-id="taskId"
+            :project-id="currentTask?.project_id ?? null"
+            :current-user-id="user?.id ?? null"
+            :is-owner="discussionCanModerate"
+            :can-edit-task="canEditDetails"
+            :fill-height="isKanbanTask"
+            @summary="(s) => (panelSummary.discussion = s)"
+          />
+        </div>
 
         <div v-if="canSaveTask && !isKanbanTask" class="task-header-actions mt-3">
           <button type="submit" class="btn btn-sm btn-primary task-header-btn" :disabled="saving">
@@ -1955,7 +2105,14 @@ async function runSidebarDelete(opts: { mode: 'cascade' | 'reparent'; new_parent
           </button>
         </div>
 
-        <TaskActivityLog v-if="(mode === 'edit' || mode === 'view') && taskId" ref="activityLog" :task-id="taskId" />
+        <!-- On a kanban task the log mounts (and loads) the first time its tab opens. -->
+        <div
+          v-if="(mode === 'edit' || mode === 'view') && taskId && (!isKanbanTask || activityTabOpened)"
+          v-show="toolPaneShown('activity')"
+          v-bind="toolPaneAttrs('activity')"
+        >
+          <TaskActivityLog ref="activityLog" :task-id="taskId" :bare="isKanbanTask" />
+        </div>
         </div>
       </form>
         </div>
@@ -2093,7 +2250,7 @@ textarea.task-description-input {
 
 .kanban-task-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     'head aside'
@@ -2150,32 +2307,257 @@ textarea.task-description-input {
   font-size: 0.875rem;
 }
 
-.kanban-task-aside .kanban-order-status,
-.kanban-task-aside :deep(.kanban-order-status) { order: 1; }
-.kanban-task-aside .kanban-order-sprint,
-.kanban-task-aside :deep(.kanban-order-sprint) { order: 2; }
-.kanban-task-aside .kanban-order-claim,
-.kanban-task-aside :deep(.kanban-order-claim) { order: 3; }
-.kanban-task-aside .kanban-order-project,
-.kanban-task-aside :deep(.kanban-order-project) { order: 4; }
-.kanban-task-aside .kanban-order-parent,
-.kanban-task-aside :deep(.kanban-order-parent) { order: 5; }
-.kanban-task-aside .kanban-order-related,
-.kanban-task-aside :deep(.kanban-order-related) { order: 6; }
-.kanban-task-aside .kanban-order-priority,
-.kanban-task-aside :deep(.kanban-order-priority) { order: 7; }
-.kanban-task-aside .kanban-order-fields,
-.kanban-task-aside :deep(.kanban-order-fields) { order: 8; }
-.kanban-task-aside .kanban-order-estimate,
-.kanban-task-aside :deep(.kanban-order-estimate) { order: 9; }
-.kanban-task-aside .kanban-order-due,
-.kanban-task-aside :deep(.kanban-order-due) { order: 10; }
-.kanban-task-aside .kanban-order-tags,
-.kanban-task-aside :deep(.kanban-order-tags) { order: 11; }
-.kanban-task-aside .kanban-order-github,
-.kanban-task-aside :deep(.kanban-order-github) { order: 12; }
-.kanban-task-aside .kanban-order-time,
-.kanban-task-aside :deep(.kanban-order-time) { order: 13; }
+/* Rail order: grouped under the headings below. */
+.kanban-task-aside .kanban-order-h-details { order: 0; }
+.kanban-task-aside .kanban-order-status { order: 1; }
+.kanban-task-aside .kanban-order-sprint { order: 2; }
+.kanban-task-aside .kanban-order-priority { order: 3; }
+.kanban-task-aside .kanban-order-estimate { order: 4; }
+.kanban-task-aside .kanban-order-refinement { order: 5; }
+.kanban-task-aside .kanban-order-project { order: 6; }
+.kanban-task-aside .kanban-order-fields { order: 7; }
+.kanban-task-aside .kanban-order-h-people { order: 10; }
+.kanban-task-aside .kanban-order-claim { order: 11; }
+.kanban-task-aside .kanban-order-reviewer { order: 12; }
+.kanban-task-aside .kanban-order-h-dates { order: 20; }
+.kanban-task-aside .kanban-order-start { order: 21; }
+.kanban-task-aside .kanban-order-due { order: 22; }
+.kanban-task-aside .kanban-order-recurrence { order: 23; }
+.kanban-task-aside .kanban-order-h-organize { order: 30; }
+.kanban-task-aside .kanban-order-parent { order: 31; }
+.kanban-task-aside .kanban-order-tags { order: 32; }
+
+.kanban-rail-heading {
+  margin: 0.9rem 0 0.35rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--ordryn-card-border, #dee2e6);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ordryn-muted, #64748b);
+}
+
+.kanban-rail-heading.kanban-order-h-details {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Property rows: label on the left, value on the right. */
+.kanban-task-aside .kanban-prop,
+.kanban-task-aside :deep(.task-sidebar-fields .form-group) {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  column-gap: 0.5rem;
+  align-items: center;
+  margin: 0 !important;
+  padding: 0.15rem 0;
+}
+
+.kanban-task-aside .kanban-prop > label,
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > label) {
+  grid-column: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.kanban-task-aside .kanban-prop > :not(label),
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > :not(label)) {
+  grid-column: 2;
+}
+
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > textarea),
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-check) {
+  grid-column: 1 / -1;
+}
+
+/* Long-text fields stack: label above a normal bordered box. */
+.kanban-task-aside :deep(.task-sidebar-fields .form-group.cf-type-markdown) {
+  row-gap: 0.25rem;
+  padding: 0.35rem 0;
+}
+
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-check) {
+  margin: 0.15rem 0;
+}
+
+.kanban-task-aside :deep(.task-sidebar-fields-add) {
+  padding: 0.25rem 0;
+}
+
+.kanban-task-aside :deep(.task-sidebar-fields-add > .btn) {
+  font-size: 0.8rem;
+}
+
+/* No number spinners in the rail; they read as clutter on empty values. */
+.kanban-task-aside input[type='number'],
+.kanban-task-aside :deep(input[type='number']) {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.kanban-task-aside input[type='number']::-webkit-inner-spin-button,
+.kanban-task-aside input[type='number']::-webkit-outer-spin-button,
+.kanban-task-aside :deep(input[type='number']::-webkit-inner-spin-button),
+.kanban-task-aside :deep(input[type='number']::-webkit-outer-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Inline-looking controls: no chrome until hovered or focused. */
+.kanban-task-aside .kanban-prop > .form-select:not(.is-invalid),
+.kanban-task-aside .kanban-prop > .form-control:not(.is-invalid),
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-select),
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-control:not(textarea)) {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  padding-left: 0.4rem;
+}
+
+.kanban-task-aside .kanban-prop > .form-select:not(.is-invalid):hover:not(:disabled),
+.kanban-task-aside .kanban-prop > .form-control:not(.is-invalid):hover:not(:disabled),
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-select:hover:not(:disabled)),
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-control:hover:not(:disabled)) {
+  border-color: var(--ordryn-card-border, #dee2e6);
+  background-color: var(--ordryn-input-bg, var(--ordryn-card-bg, #fff));
+}
+
+.kanban-task-aside .kanban-prop > .form-select:not(.is-invalid):focus,
+.kanban-task-aside .kanban-prop > .form-control:not(.is-invalid):focus,
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-select:focus),
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-control:focus) {
+  border-color: var(--ordryn-accent, #2563eb);
+  background-color: var(--ordryn-input-bg, var(--ordryn-card-bg, #fff));
+}
+
+/* Read-only values read as text, not as disabled dropdowns. */
+.kanban-task-aside .kanban-prop > .form-select:disabled,
+.kanban-task-aside :deep(.task-sidebar-fields .form-group > .form-select:disabled) {
+  background-image: none;
+  opacity: 1;
+  color: var(--ordryn-text);
+}
+
+.kanban-task-aside #estimate_hours_hint:not(.text-danger) {
+  display: none;
+}
+
+.kanban-task-aside .due-presets {
+  justify-self: start;
+}
+
+.kanban-task-aside .due-presets .btn {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+}
+
+/* Tool tabs under the description. */
+.kanban-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -1.5rem;
+  padding: 0.5rem 1.5rem 0;
+  background: var(--ordryn-card-bg, #fff);
+  border-bottom: 1px solid var(--ordryn-card-border, #dee2e6);
+}
+
+.kanban-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.kanban-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  margin-bottom: -1px;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--ordryn-muted, #64748b);
+  cursor: pointer;
+}
+
+.kanban-tab:hover {
+  color: var(--ordryn-text);
+}
+
+.kanban-tab.active {
+  color: var(--ordryn-text);
+  border-bottom-color: var(--ordryn-accent, #2563eb);
+}
+
+.kanban-tab:focus-visible {
+  outline: 2px solid var(--ordryn-accent, #2563eb);
+  outline-offset: -2px;
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+
+.kanban-tab-count {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--ordryn-muted-bg, #f1f5f9);
+  color: var(--ordryn-muted, #64748b);
+}
+
+.kanban-tab.active .kanban-tab-count {
+  background: color-mix(in srgb, var(--ordryn-accent, #2563eb) 15%, transparent);
+  color: var(--ordryn-accent, #2563eb);
+}
+
+.kanban-tab-pane {
+  padding-top: 0.75rem;
+}
+
+/* The tab already names the section. */
+.kanban-tab-pane :deep(.task-discussion > h3) {
+  display: none;
+}
+
+.kanban-tab-pane :deep(.task-discussion--fill) {
+  margin-top: 0;
+}
+
+.kanban-tab-pane > :deep(.form-group:first-child),
+.kanban-tab-pane > :deep(div:first-child > .form-group:first-child) {
+  margin-top: 0 !important;
+}
+
+.kanban-tab-pane :deep(label:not(.form-label):not(.form-check-label)) {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ordryn-muted, #64748b);
+}
+
+.task-header-actions > .task-header-menu > .btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-header-menu .dropdown-menu {
+  font-size: 0.875rem;
+}
 
 .kanban-title-group {
   margin-bottom: 0.75rem;
@@ -2275,6 +2657,16 @@ textarea.task-description-input {
   .task-header-actions > .task-header-close.btn {
     width: 30px;
     padding: 0 !important;
+  }
+
+  .task-header-actions > .task-header-menu > .btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .kanban-tabs {
+    margin: -0.85rem -1rem 0;
+    padding: 0.35rem 1rem 0;
   }
 
   .kanban-task-body {

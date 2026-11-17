@@ -9,6 +9,10 @@ import { isOpenRun, runStatusBadge, triggerLabel } from '@/utils/projectAgents'
 import { batchTouchesTask } from '@/utils/liveEvents'
 
 const props = defineProps<{ taskId: number }>()
+const emit = defineEmits<{
+  /** Whether the panel renders anything, and how many runs it lists. */
+  summary: [state: { visible: boolean; count: number }]
+}>()
 const toast = useToast()
 
 const data = ref<TaskAgentRuns>({ runs: [], agents: [] })
@@ -44,6 +48,12 @@ watch(
     note.value = ''
     void load()
   },
+  { immediate: true },
+)
+
+watch(
+  () => ({ visible: visible.value, count: data.value.runs.length }),
+  (state) => emit('summary', state),
   { immediate: true },
 )
 

@@ -23,6 +23,11 @@ const props = defineProps<{
   canLog: boolean
 }>()
 
+const emit = defineEmits<{
+  /** Always visible; count is the logged total in minutes. */
+  summary: [state: { visible: boolean; count: number }]
+}>()
+
 const toast = useToast()
 const { askConfirm } = useConfirm()
 const { user } = useAuth()
@@ -198,6 +203,12 @@ watch(
     void loadEntries()
     void loadBlocks()
   },
+  { immediate: true },
+)
+
+watch(
+  totalMinutes,
+  (count) => emit('summary', { visible: true, count }),
   { immediate: true },
 )
 </script>
