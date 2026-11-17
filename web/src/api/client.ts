@@ -5,6 +5,9 @@ import type {
   AdminUser,
   SiteRole,
   SiteRolesList,
+  AdminChat,
+  ChatServer,
+  ChatServerWithSecret,
   SiteRoleWrite,
   AdminExtensionsList,
   AdminExtensionsReloadResponse,
@@ -1781,6 +1784,39 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ role_id }),
     })
+  },
+
+  getAdminChat() {
+    return request<AdminChat>('/api/v2/admin/chat')
+  },
+
+  setChatSignIn(signin_enabled: boolean) {
+    return request<AdminChat>('/api/v2/admin/chat', {
+      method: 'PUT',
+      body: JSON.stringify({ signin_enabled }),
+    })
+  },
+
+  addChatServer(payload: { name: string; url: string; directory_sync?: boolean }) {
+    return request<ChatServerWithSecret>('/api/v2/admin/chat/servers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateChatServer(id: number, payload: { name?: string; url?: string; enabled?: boolean; directory_sync?: boolean }) {
+    return request<ChatServer>(`/api/v2/admin/chat/servers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteChatServer(id: number) {
+    return request<{ ok: boolean }>(`/api/v2/admin/chat/servers/${id}`, { method: 'DELETE' })
+  },
+
+  rotateChatServerSecret(id: number) {
+    return request<ChatServerWithSecret>(`/api/v2/admin/chat/servers/${id}/rotate-secret`, { method: 'POST' })
   },
 
   listSiteRoles() {

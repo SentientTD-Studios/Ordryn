@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"GoTodo/internal/storage"
 )
 
 const (
@@ -38,6 +40,46 @@ type DeviceAuthRecord struct {
 	KeyPrefix   string           `json:"key_prefix,omitempty"`
 	KeyName     string           `json:"key_name,omitempty"`
 	UserID      int              `json:"user_id,omitempty"`
+	// Scopes is empty for a full-access personal key, or the identity scope
+	// (see NormalizeDeviceScopes) for a sign-in-only key.
+	Scopes    []string   `json:"scopes,omitempty"`
+	KeyID     int        `json:"key_id,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// ChatServer is the registered chat server that started a sign-in-only
+	// request (see storage.ChatServer); nil for every other request.
+	ChatServer *DeviceChatServer `json:"chat_server,omitempty"`
+}
+
+// DeviceChatServer identifies the registered chat server behind a request.
+type DeviceChatServer struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// IsIdentity reports whether the request asked for a sign-in-only key.
+func (r *DeviceAuthRecord) IsIdentity() bool {
+	return len(r.Scopes) == 1 && r.Scopes[0] == storage.APIScopeProfileRead
+}
+
+// NormalizeDeviceScopes validates the scopes a device asks for. No scopes means
+// a full-access personal key (the original behaviour); ["profile:read"] means
+// an identity key. Anything else is rejected rather than silently widened.
+func NormalizeDeviceScopes(scopes []string) ([]string, error) {
+	var out []string
+	for _, s := range scopes {
+		s = strings.TrimSpace(strings.ToLower(s))
+		if s == "" {
+			continue
+		}
+		if s != storage.APIScopeProfileRead {
+			return nil, fmt.Errorf("unsupported scope %q", s)
+		}
+		if len(out) == 0 {
+			out = append(out, s)
+		}
+	}
+	return out, nil
 }
 
 // Allowed device deep-link scheme/host for post-approval return to native apps.
@@ -208,8 +250,13 @@ func DeviceDecisionRedirectURI(base string, approved bool) string {
 }
 
 // CreateDeviceAuthRequest stores a new pending device authorization request.
-func CreateDeviceAuthRequest(ctx context.Context, clientName, redirectURI string) (*DeviceAuthRecord, error) {
+// chat is the authenticated chat server for a sign-in-only request, or nil.
+func CreateDeviceAuthRequest(ctx context.Context, clientName, redirectURI string, scopes []string, chat *DeviceChatServer) (*DeviceAuthRecord, error) {
 	safeRedirect, err := SafeDeviceRedirectURI(redirectURI)
+	if err != nil {
+		return nil, err
+	}
+	scopes, err = NormalizeDeviceScopes(scopes)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +274,11 @@ func CreateDeviceAuthRequest(ctx context.Context, clientName, redirectURI string
 		ClientName:  NormalizeClientName(clientName),
 		RedirectURI: safeRedirect,
 		Status:      DeviceAuthPending,
+		Scopes:      scopes,
+		ChatServer:  chat,
+	}
+	if chat != nil {
+		record.ClientName = NormalizeClientName(chat.Name)
 	}
 	if err := saveDeviceAuthRecord(ctx, record); err != nil {
 		return nil, err
@@ -245,7 +297,7 @@ func GetDeviceAuthByUserCode(ctx context.Context, userCode string) (*DeviceAuthR
 }
 
 // ApproveDeviceAuth marks a request approved and stores the one-time API key payload.
-func ApproveDeviceAuth(ctx context.Context, userCode string, userID int, apiKey, keyPrefix, keyName string) error {
+func ApproveDeviceAuth(ctx context.Context, userCode string, userID int, apiKey string, key *storage.APIKey) error {
 	record, err := loadDeviceAuthByUserCode(ctx, userCode)
 	if err != nil {
 		return err
@@ -256,8 +308,10 @@ func ApproveDeviceAuth(ctx context.Context, userCode string, userID int, apiKey,
 	record.Status = DeviceAuthApproved
 	record.UserID = userID
 	record.APIKey = apiKey
-	record.KeyPrefix = keyPrefix
-	record.KeyName = keyName
+	record.KeyPrefix = key.KeyPrefix
+	record.KeyName = key.Name
+	record.KeyID = key.ID
+	record.ExpiresAt = key.ExpiresAt
 	return saveDeviceAuthRecord(ctx, record)
 }
 

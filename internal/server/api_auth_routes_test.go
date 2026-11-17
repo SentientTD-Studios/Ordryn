@@ -32,6 +32,7 @@ var publicAPIAllowlist = map[string]string{
 	"/auth/device/code":        "devicePublic",
 	"/auth/device/token":       "devicePublic",
 	"/auth/device/status":      "device user_code poll",
+	"/chat/directory":          "chat server client credentials (HTTP Basic), checked in the handler",
 }
 
 var protectedWrappers = []string{

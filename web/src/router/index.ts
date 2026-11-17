@@ -246,6 +246,12 @@ const router = createRouter({
       meta: { requiresAuth: true, permission: 'admin' },
     },
     {
+      path: '/admin/chat',
+      name: 'admin-chat',
+      component: () => import('@/views/AdminChatView.vue'),
+      meta: { requiresAuth: true, permission: 'settings:manage' },
+    },
+    {
       path: '/admin/site-roles',
       name: 'admin-site-roles',
       component: () => import('@/views/AdminSiteRolesView.vue'),

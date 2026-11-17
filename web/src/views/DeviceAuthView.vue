@@ -93,7 +93,7 @@ onMounted(() => {
     <header class="page-head">
       <div>
         <h1>Approve device</h1>
-        <p class="lede">Link an Android or API client with a one-time code.</p>
+        <p class="lede">Link an app or API client with a one-time code.</p>
       </div>
     </header>
 
@@ -109,9 +109,22 @@ onMounted(() => {
     <p v-if="returningToApp" class="muted">Returning to the app…</p>
 
     <div v-if="status && !returningToApp" class="stack">
-      <p>
+      <p v-if="status.chat_server">
+        Chat server <strong>{{ status.chat_server.name }}</strong>
+        (<code>{{ status.chat_server.url }}</code>) is asking to sign you in. It's
+        <strong>{{ status.status }}</strong>. Only approve if you started signing in there.
+      </p>
+      <p v-else>
         Client <strong>{{ status.client_name || 'Unknown' }}</strong>
         is <strong>{{ status.status }}</strong>.
+      </p>
+      <p v-if="status.status === 'pending' && status.access === 'identity'" class="muted">
+        Sign-in only: this app will see your profile (name, username, email, avatar) and which organizations
+        you belong to. It can't read or change your projects or tasks.
+      </p>
+      <p v-else-if="status.status === 'pending'" class="muted">
+        Full access: this app will be able to act as you, including reading and changing your projects
+        and tasks. Only approve apps you trust.
       </p>
       <div v-if="status.status === 'pending'" class="actions">
         <button type="button" class="primary" :disabled="busy" @click="approve">Approve</button>

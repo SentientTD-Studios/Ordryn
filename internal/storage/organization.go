@@ -1384,3 +1384,45 @@ func CountOrganizationInvitesWithRole(slug string, orgID int) (int, error) {
 	}
 	return n, err
 }
+
+// OrganizationMembership is one user's membership in one organization, across
+// every organization on the site (for admin directory sync).
+type OrganizationMembership struct {
+	OrganizationID   int
+	OrganizationName string
+	IsCompany        bool
+	UserID           int
+	Role             string
+}
+
+// ListAllOrganizationMemberships returns every human member of every
+// organization. Agent accounts are excluded.
+func ListAllOrganizationMemberships() ([]OrganizationMembership, error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer CloseDatabase(pool)
+
+	rows, err := pool.Query(context.Background(), `
+		SELECT o.id, o.name, o.is_company, om.user_id, om.role
+		FROM organization_members om
+		JOIN organizations o ON o.id = om.organization_id
+		JOIN users u ON u.id = om.user_id
+		WHERE NOT COALESCE(u.is_agent, FALSE)
+		ORDER BY o.id, om.user_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []OrganizationMembership{}
+	for rows.Next() {
+		var m OrganizationMembership
+		if err := rows.Scan(&m.OrganizationID, &m.OrganizationName, &m.IsCompany, &m.UserID, &m.Role); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

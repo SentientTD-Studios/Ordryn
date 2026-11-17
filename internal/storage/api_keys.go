@@ -47,6 +47,18 @@ type APIKey struct {
 // but only through the task allowlist and its scopes, optionally in one project.
 const APIKeyKindLocalAgent = "local_agent"
 
+// APIKeyKindIdentity marks a short-lived personal key minted by the device flow
+// for an app that only needs to know who the user is ("Sign in with Ordryn").
+// It can read the profile and organization list and revoke itself, nothing else.
+const APIKeyKindIdentity = "identity"
+
+// APIScopeProfileRead is the only scope an identity key carries.
+const APIScopeProfileRead = "profile:read"
+
+// IdentityKeyTTL bounds how long an identity key stays valid. Apps are expected
+// to exchange it for their own session at once and revoke it.
+const IdentityKeyTTL = 10 * time.Minute
+
 // Project API key scopes.
 const (
 	APIScopeTasksRead     = "tasks:read"
@@ -67,6 +79,8 @@ type APIKeyPrincipal struct {
 	IsAgent bool
 	// IsLocalAgent is true for a personal local agent key (see APIKeyKindLocalAgent).
 	IsLocalAgent bool
+	// IsIdentity is true for a sign-in-only key (see APIKeyKindIdentity).
+	IsIdentity bool
 	// LimitProjectID is the one project a local agent key may reach, or 0 for
 	// every project its owner belongs to.
 	LimitProjectID int
@@ -162,6 +176,17 @@ func CreateOrRotateLocalAgentAPIKey(userID int, name string, scopes []string, li
 	}
 	return createPersonalAPIKey(APIKey{UserID: userID, Name: name, Kind: APIKeyKindLocalAgent,
 		Scopes: scopes, LimitProjectID: limitProjectID, ExpiresAt: expiresAt})
+}
+
+// CreateOrRotateIdentityAPIKey revokes any same-name personal keys, then mints
+// an identity key that expires after IdentityKeyTTL.
+func CreateOrRotateIdentityAPIKey(userID int, name string) (string, *APIKey, error) {
+	if err := RevokeAPIKeysByName(userID, name); err != nil {
+		return "", nil, err
+	}
+	expires := time.Now().Add(IdentityKeyTTL)
+	return createPersonalAPIKey(APIKey{UserID: userID, Name: name, Kind: APIKeyKindIdentity,
+		Scopes: []string{APIScopeProfileRead}, ExpiresAt: &expires})
 }
 
 func createPersonalAPIKey(k APIKey) (string, *APIKey, error) {
@@ -358,6 +383,12 @@ func LookupAPIKey(rawKey string) (*APIKeyPrincipal, error) {
 		if limitProjectID != nil {
 			p.LimitProjectID = *limitProjectID
 		}
+	case APIKeyKindIdentity:
+		// Same shape rule as local agent keys: personal keys of human accounts only.
+		if projectID != nil || p.IsAgent || limitProjectID != nil {
+			return nil, fmt.Errorf("invalid key")
+		}
+		p.IsIdentity = true
 	default:
 		return nil, fmt.Errorf("invalid key")
 	}
