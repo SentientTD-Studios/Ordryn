@@ -20,6 +20,7 @@ type PersonTeam struct {
 type Person struct {
 	UserSummary
 	Teams []PersonTeam
+	IsGuest bool
 }
 
 // IsUserBannedByID reports whether the account is banned (deactivated). A missing
@@ -83,7 +84,7 @@ func ListPeople(everyone bool, teamIDs []int) ([]Person, error) {
 	ctx := context.Background()
 	rows, err := pool.Query(ctx, `
 		SELECT u.id, u.email, COALESCE(u.user_name, ''), u.full_name, u.first_name, u.last_name, COALESCE(u.is_banned, FALSE),
-		       u.role_id, COALESCE(r.name, ''), COALESCE(r.display_name, '')
+		       u.role_id, COALESCE(r.name, ''), COALESCE(r.display_name, ''), COALESCE(u.is_guest, FALSE)
 		FROM users u
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE NOT COALESCE(u.is_agent, FALSE)
@@ -100,7 +101,7 @@ func ListPeople(everyone bool, teamIDs []int) ([]Person, error) {
 	for rows.Next() {
 		var roleDisplay string
 		var p Person
-		if err := rows.Scan(&p.ID, &p.Email, &p.UserName, &p.FullName, &p.FirstName, &p.LastName, &p.IsBanned, &p.RoleID, &p.RoleName, &roleDisplay); err != nil {
+		if err := rows.Scan(&p.ID, &p.Email, &p.UserName, &p.FullName, &p.FirstName, &p.LastName, &p.IsBanned, &p.RoleID, &p.RoleName, &roleDisplay, &p.IsGuest); err != nil {
 			return nil, err
 		}
 		p.RoleName = SiteRoleLabel(p.RoleName, roleDisplay)

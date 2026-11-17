@@ -312,19 +312,19 @@ func SpawnNextOccurrence(ctx context.Context, actorID, taskID int) (int, error) 
 	nextDue := next.Format(recurrence.DateLayout)
 
 	in := CreateTaskInput{
-		Title:          src.Title,
-		Description:    src.Description,
-		DueDate:        nextDue,
-		Priority:       src.Priority,
-		EstimatePoints: nil,
-		TagIDs:         copyableTagIDs(taskID),
-		Fields:         copyableFieldValues(taskID),
+		Title:         src.Title,
+		Description:   src.Description,
+		DueDate:       nextDue,
+		Priority:      src.Priority,
+		EstimateHours: nil,
+		TagIDs:        copyableTagIDs(taskID),
+		Fields:        copyableFieldValues(taskID),
 	}
 	if src.ProjectID > 0 {
 		pid := src.ProjectID
 		in.ProjectID = &pid
 		if mode, err := storage.GetProjectWorkflowMode(src.ProjectID); err == nil && mode == storage.WorkflowKanban {
-			in.EstimatePoints = src.EstimatePoints
+			in.EstimateHours = src.EstimateHours
 		}
 	}
 

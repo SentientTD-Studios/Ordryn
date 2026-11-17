@@ -28,6 +28,7 @@ type apiTaskJSON struct {
 	Description       string             `json:"description"`
 	Completed         bool               `json:"completed"`
 	DueDate           string             `json:"due_date"`
+	StartDate         string             `json:"start_date,omitempty"`
 	ProjectID         *int               `json:"project_id,omitempty"`
 	Project           string             `json:"project,omitempty"`
 	Priority          int                `json:"priority"`
@@ -41,11 +42,14 @@ type apiTaskJSON struct {
 	ModifiedAt        string             `json:"modified_at"`
 	StatusID          *int               `json:"status_id,omitempty"`
 	StatusName        string             `json:"status_name,omitempty"`
-	EstimatePoints    *int               `json:"estimate_points,omitempty"`
+	EstimateHours     *float64           `json:"estimate_hours,omitempty"`
+	Refinement        string             `json:"refinement,omitempty"`
 	TimeSpentMinutes  int                `json:"time_spent_minutes,omitempty"`
 	ProjectWorkflow   string             `json:"project_workflow,omitempty"`
 	ClaimedBy         *int               `json:"claimed_by"`
 	ClaimedByName     string             `json:"claimed_by_name,omitempty"`
+	ReviewerID        *int               `json:"reviewer_id"`
+	ReviewerName      string             `json:"reviewer_name,omitempty"`
 	SprintID          *int               `json:"sprint_id,omitempty"`
 	SprintName        string             `json:"sprint_name,omitempty"`
 	ParentTitle       string             `json:"parent_title,omitempty"`
@@ -66,36 +70,40 @@ type apiTaskListResponse struct {
 }
 
 type apiTaskCreateRequest struct {
-	Title          string                     `json:"title"`
-	Description    string                     `json:"description"`
-	DueDate        string                     `json:"due_date"`
-	ProjectID      *int                       `json:"project_id"`
-	ParentID       *int                       `json:"parent_id"`
-	Priority       *int                       `json:"priority"`
-	Completed      *bool                      `json:"completed"`
-	TagIDs         []int                      `json:"tag_ids"`
-	StatusID       *int                       `json:"status_id"`
-	EstimatePoints *int                       `json:"estimate_points"`
-	SprintID       *int                       `json:"sprint_id"`
-	Fields         map[string]json.RawMessage `json:"fields"`
-	Recurrence     *apiRecurrenceInput        `json:"recurrence"`
+	Title         string                     `json:"title"`
+	Description   string                     `json:"description"`
+	DueDate       string                     `json:"due_date"`
+	StartDate     string                     `json:"start_date"`
+	ProjectID     *int                       `json:"project_id"`
+	ParentID      *int                       `json:"parent_id"`
+	Priority      *int                       `json:"priority"`
+	Completed     *bool                      `json:"completed"`
+	TagIDs        []int                      `json:"tag_ids"`
+	StatusID      *int                       `json:"status_id"`
+	EstimateHours *float64                   `json:"estimate_hours"`
+	Refinement    *string                    `json:"refinement"`
+	SprintID      *int                       `json:"sprint_id"`
+	Fields        map[string]json.RawMessage `json:"fields"`
+	Recurrence    *apiRecurrenceInput        `json:"recurrence"`
 }
 
 type apiTaskPatchRequest struct {
-	Title          *string         `json:"title"`
-	Description    *string         `json:"description"`
-	DueDate        *string         `json:"due_date"`
-	ProjectID      optionalInt     `json:"project_id"`
-	ParentID       **int           `json:"parent_id"`
-	Priority       *int            `json:"priority"`
-	Completed      *bool           `json:"completed"`
-	TagIDs         *[]int          `json:"tag_ids"`
-	ClearDue       *bool           `json:"clear_due_date"`
-	StatusID       **int           `json:"status_id"`
-	EstimatePoints optionalInt     `json:"estimate_points"`
-	SprintID       optionalInt     `json:"sprint_id"`
-	Fields         optionalJSONMap    `json:"fields"`
-	Recurrence     optionalRecurrence `json:"recurrence"`
+	Title         *string            `json:"title"`
+	Description   *string            `json:"description"`
+	DueDate       *string            `json:"due_date"`
+	StartDate     optionalString     `json:"start_date"`
+	ProjectID     optionalInt        `json:"project_id"`
+	ParentID      **int              `json:"parent_id"`
+	Priority      *int               `json:"priority"`
+	Completed     *bool              `json:"completed"`
+	TagIDs        *[]int             `json:"tag_ids"`
+	ClearDue      *bool              `json:"clear_due_date"`
+	StatusID      **int              `json:"status_id"`
+	EstimateHours optionalFloat      `json:"estimate_hours"`
+	Refinement    optionalString     `json:"refinement"`
+	SprintID      optionalInt        `json:"sprint_id"`
+	Fields        optionalJSONMap    `json:"fields"`
+	Recurrence    optionalRecurrence `json:"recurrence"`
 }
 
 // optionalJSONMap distinguishes omitted vs present object for JSON merge patches.
@@ -317,6 +325,7 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 		Description:       t.Description,
 		Completed:         t.Completed,
 		DueDate:           t.DueDate,
+		StartDate:         t.StartDate,
 		Priority:          t.Priority,
 		Position:          t.Position,
 		ChildCount:        t.ChildCount,
@@ -325,7 +334,8 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 		CreatedAt:         t.DateCreated,
 		ModifiedAt:        t.DateModified,
 		StatusName:        t.StatusName,
-		EstimatePoints:    t.EstimatePoints,
+		EstimateHours:     t.EstimateHours,
+		Refinement:        t.Refinement,
 		TimeSpentMinutes:  t.TimeSpentMinutes,
 		ProjectWorkflow:   t.ProjectWorkflow,
 		ClaimedByName:     t.ClaimedByName,
@@ -350,6 +360,11 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 	if t.ClaimedBy > 0 {
 		cid := t.ClaimedBy
 		out.ClaimedBy = &cid
+	}
+	if t.ReviewerID > 0 {
+		rid := t.ReviewerID
+		out.ReviewerID = &rid
+		out.ReviewerName = t.ReviewerName
 	}
 	if t.SprintID > 0 {
 		sid := t.SprintID
@@ -474,6 +489,13 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 		case "time-entries":
 			handleTaskTimeEntries(w, r, id, parts[2:])
 			return
+		case "time-blocks":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusNotFound, "not_found", "Not found.")
+				return
+			}
+			handleTaskTimeBlocks(w, r, id)
+			return
 		case "attachments":
 			apiV1TaskAttachments(w, r, id, parts[2:])
 			return
@@ -483,6 +505,20 @@ func APIV1TasksRouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			apiV1TaskClaim(w, r, id)
+			return
+		case "reviewer":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskReviewer(w, r, id)
+			return
+		case "snooze":
+			if len(parts) != 2 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid task path.")
+				return
+			}
+			apiV1TaskSnooze(w, r, id)
 			return
 		case "archive":
 			if len(parts) != 2 || r.Method != http.MethodPost {
@@ -644,18 +680,20 @@ func apiV1CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	in := domain.CreateTaskInput{
-		Title:          req.Title,
-		Description:    req.Description,
-		DueDate:        req.DueDate,
-		ProjectID:      req.ProjectID,
-		ParentID:       req.ParentID,
-		Priority:       priority,
-		Completed:      completed,
-		TagIDs:         req.TagIDs,
-		StatusID:       req.StatusID,
-		EstimatePoints: req.EstimatePoints,
-		SprintID:       req.SprintID,
-		Fields:         req.Fields,
+		Title:         req.Title,
+		Description:   req.Description,
+		DueDate:       req.DueDate,
+		StartDate:     req.StartDate,
+		ProjectID:     req.ProjectID,
+		ParentID:      req.ParentID,
+		Priority:      priority,
+		Completed:     completed,
+		TagIDs:        req.TagIDs,
+		StatusID:      req.StatusID,
+		EstimateHours: req.EstimateHours,
+		Refinement:    req.Refinement,
+		SprintID:      req.SprintID,
+		Fields:        req.Fields,
 	}
 	newID, err := domain.CreateTask(r.Context(), userID, in)
 	if err != nil {
@@ -719,8 +757,10 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 	if req.ClearDue != nil && *req.ClearDue {
 		in.ClearDue = true
 	}
+	in.StartDate = req.StartDate.toPatchString()
 	in.ProjectID = req.ProjectID.toPatchInt(true)
-	in.EstimatePoints = req.EstimatePoints.toPatchInt(false)
+	in.EstimateHours = req.EstimateHours.toPatchFloat()
+	in.Refinement = req.Refinement.toPatchString()
 	in.SprintID = req.SprintID.toPatchInt(true)
 	if req.Fields.Set {
 		in.Fields = req.Fields.Values
@@ -1606,4 +1646,33 @@ func apiV1DeleteTag(w http.ResponseWriter, r *http.Request, tagID int) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// optionalFloat distinguishes omitted / null / value for JSON patch fields.
+type optionalFloat struct {
+	Set   bool
+	Null  bool
+	Value float64
+}
+
+func (o *optionalFloat) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(b) == "null" {
+		o.Null = true
+		return nil
+	}
+	return json.Unmarshal(b, &o.Value)
+}
+
+func (o optionalFloat) toPatchFloat() **float64 {
+	if !o.Set {
+		return nil
+	}
+	if o.Null {
+		var clear *float64
+		return &clear
+	}
+	v := o.Value
+	ptr := &v
+	return &ptr
 }

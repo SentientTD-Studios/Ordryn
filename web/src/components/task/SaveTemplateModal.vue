@@ -73,7 +73,7 @@ async function save() {
         </div>
         <div class="modal-body py-3">
           <p class="text-muted small mb-3">
-            Saves the title, description, priority, tags<template v-if="draft.estimate_points != null">, estimate</template><template
+            Saves the title, description, priority, tags<template v-if="draft.estimate_hours != null">, estimate</template><template
               v-if="draft.subtasks.length"> and {{ draft.subtasks.length }} subtask{{ draft.subtasks.length === 1 ? '' : 's' }}</template>.
             Use it from <strong>Templates</strong> above the task list.
           </p>

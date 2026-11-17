@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"GoTodo/internal/mailer"
+	"GoTodo/internal/workers"
 )
 
 const (
@@ -223,17 +224,19 @@ func PurgeEmailAudit(retentionDays int) (int64, error) {
 
 // StartEmailAuditPurgeWorker deletes expired audit rows on an hourly ticker.
 func StartEmailAuditPurgeWorker() {
+	const name = "email-audit-purge"
+	workers.Register(name, time.Hour)
 	go func() {
-		runEmailAuditPurge()
+		workers.Run(name, runEmailAuditPurge)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			runEmailAuditPurge()
+			workers.Run(name, runEmailAuditPurge)
 		}
 	}()
 }
 
-func runEmailAuditPurge() {
+func runEmailAuditPurge() error {
 	days := DefaultEmailAuditRetentionDays
 	if s, err := GetSiteSettings(); err == nil && s != nil {
 		days = ClampEmailAuditRetentionDays(s.EmailAuditRetentionDays)
@@ -241,11 +244,12 @@ func runEmailAuditPurge() {
 	n, err := PurgeEmailAudit(days)
 	if err != nil {
 		log.Printf("email audit purge: %v", err)
-		return
+		return err
 	}
 	if n > 0 {
 		log.Printf("email audit purge: deleted %d row(s) older than %d day(s)", n, days)
 	}
+	return nil
 }
 
 // MigrateEmailAuditAddRateLimitedStatus allows audit rows when core mail is rate-limited.

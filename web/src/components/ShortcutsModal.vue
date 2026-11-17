@@ -28,7 +28,7 @@ import { RouterLink } from 'vue-router'
             <tbody>
               <tr>
                 <td><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd></td>
-                <td>Find a project (works on every page)</td>
+                <td>Search tasks and projects, jump to <code>#123</code>, or run a command (works on every page)</td>
               </tr>
               <tr>
                 <td><kbd>n</kbd></td>
@@ -36,7 +36,7 @@ import { RouterLink } from 'vue-router'
               </tr>
               <tr>
                 <td><kbd>/</kbd></td>
-                <td>Focus search</td>
+                <td>Search everything you can open (on a project's list view, its keyword filter)</td>
               </tr>
               <tr>
                 <td><kbd>Esc</kbd></td>

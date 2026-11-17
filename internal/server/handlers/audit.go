@@ -116,9 +116,21 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 		return "Title changed"
 	case "estimate_changed":
 		if to, ok := meta["to"]; ok && to != nil {
-			return fmt.Sprintf("Estimate · %v", to)
+			// Entries before the move to hours have no unit and were story points.
+			if meta["unit"] == "hours" {
+				return fmt.Sprintf("Estimate · %vh", to)
+			}
+			return fmt.Sprintf("Estimate · %v pts", to)
 		}
 		return "Estimate cleared"
+	case "refinement_changed":
+		switch meta["to"] {
+		case storage.RefinementNeeded:
+			return "Needs refinement"
+		case storage.RefinementRefined:
+			return "Refined"
+		}
+		return "Refinement cleared"
 	case "due_date_changed":
 		if to, ok := meta["to"].(string); ok && to != "" {
 			return "Due date · " + to
@@ -174,6 +186,20 @@ func formatEventLabel(eventType string, meta map[string]interface{}) string {
 		return "Claimed"
 	case "unclaimed":
 		return "Unclaimed"
+	case "reviewer_set":
+		return "Review requested"
+	case "reviewer_cleared":
+		return "Reviewer removed"
+	case "start_date_changed":
+		if to, ok := meta["to"].(string); ok && to != "" {
+			return "Start date · " + to
+		}
+		return "Start date removed"
+	case "submitted_via_form":
+		if name, ok := meta["form"].(string); ok && name != "" {
+			return "Requested via form · " + name
+		}
+		return "Requested via form"
 	case "status_changed":
 		if name, ok := meta["to"].(string); ok && name != "" {
 			return "Status changed · " + name

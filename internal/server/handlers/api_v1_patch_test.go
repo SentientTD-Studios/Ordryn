@@ -119,25 +119,25 @@ func TestAPITaskPatchProjectIDJSON(t *testing.T) {
 	})
 }
 
-func TestAPITaskPatchEstimatePointsJSONNullClears(t *testing.T) {
+func TestAPITaskPatchEstimateHoursJSONNullClears(t *testing.T) {
 	var req apiTaskPatchRequest
-	if err := json.Unmarshal([]byte(`{"estimate_points":null}`), &req); err != nil {
+	if err := json.Unmarshal([]byte(`{"estimate_hours":null}`), &req); err != nil {
 		t.Fatal(err)
 	}
-	if !req.EstimatePoints.Set || !req.EstimatePoints.Null {
-		t.Fatalf("null estimate_points: %+v", req.EstimatePoints)
+	if !req.EstimateHours.Set || !req.EstimateHours.Null {
+		t.Fatalf("null estimate_hours: %+v", req.EstimateHours)
 	}
-	got := req.EstimatePoints.toPatchInt(false)
+	got := req.EstimateHours.toPatchFloat()
 	if got == nil || *got != nil {
-		t.Fatalf("null estimate_points patch=%#v, want explicit clear", got)
+		t.Fatalf("null estimate_hours patch=%#v, want explicit clear", got)
 	}
 
 	var keep apiTaskPatchRequest
 	if err := json.Unmarshal([]byte(`{"title":"Keep estimate"}`), &keep); err != nil {
 		t.Fatal(err)
 	}
-	if keep.EstimatePoints.toPatchInt(false) != nil {
-		t.Fatal("omitted estimate_points should leave the field unchanged")
+	if keep.EstimateHours.toPatchFloat() != nil {
+		t.Fatal("omitted estimate_hours should leave the field unchanged")
 	}
 }
 

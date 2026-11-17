@@ -5,6 +5,8 @@ import type { APIKey, Project } from '@/api/types'
 import { APIError } from '@/api/types'
 import { pathPrefix } from '@/base'
 import { useToast } from '@/composables/useToast'
+import { useSite } from '@/composables/useSite'
+import { siteKeyEnvVar } from '@/utils/siteSlug'
 import { apiRoot } from '@/utils/projectAgents'
 import { siteUrl } from '@/utils/ollamaAgentScript'
 import { EXPIRY_PRESETS, expiresAtFromPreset, type ExpiryPreset } from '@/utils/projectApiKeys'
@@ -18,6 +20,7 @@ import {
 
 const emit = defineEmits<{ created: [] }>()
 const { push } = useToast()
+const { siteName } = useSite()
 
 const projects = ref<Project[]>([])
 const name = ref('')
@@ -35,16 +38,16 @@ const limitName = computed(() => {
   if (minted.value) return minted.value.project_name ?? ''
   return projects.value.find((p) => p.id === projectId.value)?.name ?? ''
 })
-const serverName = computed(() => localServerName(limitName.value))
+const serverName = computed(() => localServerName(limitName.value, siteName.value))
 const snippets = computed(() =>
-  localAgentSnippets(client.value, root.value, serverName.value, minted.value?.key),
+  localAgentSnippets(client.value, root.value, serverName.value, minted.value?.key, siteKeyEnvVar(siteName.value)),
 )
 const mintedCanWrite = computed(() =>
   minted.value
     ? minted.value.scopes.some((s) => s !== 'tasks:read')
     : canWriteTasks.value || canComment.value,
 )
-const agentsMd = computed(() => agentsMdSnippet(site.value, serverName.value, mintedCanWrite.value))
+const agentsMd = computed(() => agentsMdSnippet(site.value, serverName.value, mintedCanWrite.value, siteName.value))
 
 async function loadProjects() {
   try {

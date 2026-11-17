@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"GoTodo/internal/workers"
 )
 
 // Audit sources combined by the unified admin audit view.
@@ -454,31 +456,41 @@ func PurgeAuditEvents(retentionDays int) (int64, error) {
 
 // StartAuditPurgeWorker deletes expired audit rows on an hourly ticker.
 func StartAuditPurgeWorker() {
+	const name = "audit-purge"
+	workers.Register(name, time.Hour)
 	go func() {
-		runAuditPurge()
+		workers.Run(name, runAuditPurge)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			runAuditPurge()
+			workers.Run(name, runAuditPurge)
 		}
 	}()
 }
 
-func runAuditPurge() {
+func runAuditPurge() error {
 	s, err := GetSiteSettings()
-	if err != nil || s == nil {
-		return
+	if err != nil {
+		return fmt.Errorf("site settings: %w", err)
+	}
+	if s == nil {
+		return nil
 	}
 	days := ClampAuditRetentionDays(s.AuditRetentionDays)
-	if err := PurgeAutomationRuns(days); err != nil {
-		log.Printf("audit purge: automation runs: %v", err)
+	runsErr := PurgeAutomationRuns(days)
+	if runsErr != nil {
+		log.Printf("audit purge: automation runs: %v", runsErr)
 	}
 	n, err := PurgeAuditEvents(days)
 	if err != nil {
 		log.Printf("audit purge: %v", err)
-		return
+		return err
 	}
 	if n > 0 {
 		log.Printf("audit purge: deleted %d row(s) older than %d day(s)", n, days)
 	}
+	if runsErr != nil {
+		return fmt.Errorf("automation runs: %w", runsErr)
+	}
+	return nil
 }

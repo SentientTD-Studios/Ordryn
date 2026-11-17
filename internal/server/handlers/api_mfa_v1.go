@@ -17,6 +17,10 @@ type apiMFACodeRequest struct {
 }
 
 func writeMFADomainError(w http.ResponseWriter, err error, invalidStatus int, invalidCode, invalidMessage string) {
+	if errors.Is(err, domain.ErrForbidden) {
+		utils.APIJSONError(w, http.StatusForbidden, "mfa_required_by_policy", sharingClientMessage(err, "Two-factor authentication is required."))
+		return
+	}
 	if errors.Is(err, domain.ErrValidation) {
 		utils.APIJSONError(w, invalidStatus, invalidCode, invalidMessage)
 		return

@@ -15,11 +15,22 @@ const props = defineProps<{
   readOnly: boolean
 }>()
 
+const emit = defineEmits<{
+  /** Whether the panel renders anything, and whether an issue is linked. */
+  summary: [state: { visible: boolean; count: number }]
+}>()
+
 const toast = useToast()
 const { askConfirm } = useConfirm()
 
 const projectLinked = ref(false)
 const issue = ref<TaskGitHubIssue | null>(props.initialIssue)
+
+watch(
+  () => ({ visible: projectLinked.value, count: issue.value ? 1 : 0 }),
+  (state) => emit('summary', state),
+  { immediate: true },
+)
 const issueRef = ref('')
 const busy = ref(false)
 

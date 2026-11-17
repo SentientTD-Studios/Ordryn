@@ -7,9 +7,11 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { keyExpiryLabel, scopeLabel } from '@/utils/projectApiKeys'
 import LocalAgentKeysCard from './LocalAgentKeysCard.vue'
+import { useAuth } from '@/composables/useAuth'
 
 const { push } = useToast()
 const { askConfirm } = useConfirm()
+const { hasSitePermission } = useAuth()
 const keys = ref<APIKey[]>([])
 const keyName = ref('')
 const mintedKey = ref('')
@@ -85,7 +87,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <LocalAgentKeysCard @created="loadKeys" />
+  <LocalAgentKeysCard v-if="hasSitePermission('agents:local')" @created="loadKeys" />
+  <div v-else id="local-agents-section" class="card mb-4">
+    <div class="card-header">
+      <h3 class="card-title mb-0">Local AI agents</h3>
+    </div>
+    <div class="card-body small text-muted">
+      Local AI agents are turned off for your role. Ask an admin if you need them. Any local agent keys you made
+      earlier stop working while this is off.
+    </div>
+  </div>
   <div id="api-keys-section" class="card mb-4">
     <div class="card-header">
       <h3 class="card-title mb-0">API keys</h3>

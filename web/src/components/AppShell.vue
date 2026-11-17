@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, provide } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { startLiveUpdates, stopLiveUpdates } from '@/composables/useLiveUpdates'
 import { usePageActivity } from '@/composables/usePageActivity'
-import { api } from '@/api/client'
+import { api, MFA_ENROLLMENT_REQUIRED } from '@/api/client'
+import { useToast } from '@/composables/useToast'
 import ModernHeader from '@/components/modern/ModernHeader.vue'
 import MobileNavDrawer from '@/components/modern/MobileNavDrawer.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -17,6 +18,8 @@ import ChangelogModal from '@/components/ChangelogModal.vue'
 import ShortcutsModal from '@/components/ShortcutsModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import ProjectSwitcher from '@/components/modern/ProjectSwitcher.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
+import { useCommandPalette } from '@/composables/useCommandPalette'
 import { resetProjectNav, useProjectNav } from '@/composables/useProjectNav'
 import { useTaskUrlSync } from '@/composables/useTaskUrlSync'
 
@@ -89,15 +92,17 @@ function closeMobileNav() {
 }
 
 const projectNav = useProjectNav()
+const commandPalette = useCommandPalette()
 
 function onMobileNavKeydown(e: KeyboardEvent) {
-  // Ctrl/Cmd+K toggles the project switcher from anywhere in the app.
+  // Ctrl/Cmd+K toggles the command palette from anywhere in the app (tasks,
+  // projects, pages, actions). The project switcher stays on the sidebar button.
   if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
     if (!isAuthenticated.value || route.name === 'share') return
     e.preventDefault()
     closeMobileNav()
     if (projectNav.switcherOpen.value) projectNav.closeSwitcher()
-    else projectNav.openSwitcher()
+    commandPalette.toggle()
     return
   }
   if (e.key === 'Escape' && mobileNavOpen.value) {
@@ -141,16 +146,30 @@ usePageActivity(() => {
   void loadPendingInvites()
 })
 
+// The security policy requires two-factor authentication: send people to set it up.
+const router = useRouter()
+const { push: toast } = useToast()
+let mfaNoticeShown = false
+function onMFAEnrollmentRequired() {
+  if (route.name !== 'settings') void router.push({ name: 'settings', hash: '#mfa-section' })
+  if (!mfaNoticeShown) {
+    mfaNoticeShown = true
+    toast('This site requires two-factor authentication. Set it up to continue.', 'error')
+  }
+}
+
 onMounted(() => {
   initKeyboardShortcuts()
   void refreshSite()
   window.addEventListener('keydown', onMobileNavKeydown)
+  window.addEventListener(MFA_ENROLLMENT_REQUIRED, onMFAEnrollmentRequired)
 })
 
 onUnmounted(() => {
   destroyKeyboardShortcuts()
   stopLiveUpdates()
   window.removeEventListener('keydown', onMobileNavKeydown)
+  window.removeEventListener(MFA_ENROLLMENT_REQUIRED, onMFAEnrollmentRequired)
   document.body.classList.remove('ordryn-mobile-nav-open')
 })
 </script>
@@ -159,6 +178,16 @@ onUnmounted(() => {
   <div class="ordryn-app-shell">
     <ModernHeader :mobile-nav-open="mobileNavOpen" @toggle-mobile-nav="toggleMobileNav" />
     <MobileNavDrawer :open="mobileNavOpen" @close="closeMobileNav" />
+
+    <div v-if="siteInfo?.maintenance" class="container py-2" role="status">
+      <div class="alert alert-warning mb-0 d-flex gap-2 align-items-start">
+        <i class="bi bi-cone-striped mt-1" aria-hidden="true" />
+        <div>
+          <strong>Maintenance in progress.</strong>
+          {{ siteInfo.maintenance_message || "The site is read-only for now; changes can't be saved until it's done." }}
+        </div>
+      </div>
+    </div>
 
     <div
       v-if="showAnnouncement && siteInfo?.global_announcement_text"
@@ -193,5 +222,6 @@ onUnmounted(() => {
     <ChangelogModal v-if="showChangelog" />
     <ShortcutsModal />
     <ProjectSwitcher v-if="isAuthenticated" />
+    <CommandPalette v-if="isAuthenticated" />
   </div>
 </template>

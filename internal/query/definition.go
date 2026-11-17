@@ -542,6 +542,7 @@ var builtinFields = map[string]fieldKindInfo{
 	"status_changed_date": {id: kDate},
 	"days_in_status":      {id: kNumber},
 	"claimed_by":          {id: kUser},
+	"reviewer":            {id: kUser},
 	"created_by":          {id: kUser},
 	"sprint":              {id: kSprint},
 	"estimate":            {id: kNumber},
@@ -555,7 +556,7 @@ func BuiltinFieldNames() []string {
 	return []string{
 		"id", "title", "description", "text", "project", "completed", "workflow_status",
 		"priority", "tags", "due_date", "created_date", "modified_date", "completed_date",
-		"status_changed_date", "days_in_status", "claimed_by", "created_by", "sprint", "estimate", "is_subtask", "has_subtasks", "favorite",
+		"status_changed_date", "days_in_status", "claimed_by", "reviewer", "created_by", "sprint", "estimate", "is_subtask", "has_subtasks", "favorite",
 	}
 }
 
@@ -654,7 +655,7 @@ func (k fieldKindInfo) normalizeValue(field string, raw json.RawMessage) (any, e
 			}
 			return int(f), nil
 		}
-		if field == "id" || field == "estimate" || field == "days_in_status" {
+		if field == "id" || field == "days_in_status" {
 			if f != float64(int64(f)) {
 				return nil, invalid("%s must be a whole number.", field)
 			}
@@ -814,7 +815,7 @@ func Refs(d Definition, ft FieldTypes) References {
 				add("p", id, &r.Projects)
 			case n.Field == "sprint":
 				add("s", id, &r.Sprints)
-			case n.Field == "claimed_by" || n.Field == "created_by":
+			case n.Field == "claimed_by" || n.Field == "reviewer" || n.Field == "created_by":
 				add("u", id, &r.Users)
 			case strings.HasPrefix(n.Field, "cf:"):
 				if k, ok := fieldKind(n.Field, ft); ok && k.id == kUser {

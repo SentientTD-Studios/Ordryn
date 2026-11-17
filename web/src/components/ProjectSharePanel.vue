@@ -261,7 +261,7 @@ async function onRoleChange(userId: number, role: string) {
 async function removeMember(userId: number) {
   const ok = await askConfirm({
     title: 'Remove member?',
-    message: 'Remove this member from the project?',
+    message: 'Remove this member from the project? Their claims, review requests and watches on its tasks are cleared, and they stop seeing its tasks, including ones they created.',
     confirmLabel: 'Remove',
     danger: true,
   })

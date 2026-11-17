@@ -40,6 +40,7 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 	defer CloseDatabase(pool)
 
 	var p UserProfile
+	var guest bool
 	err = pool.QueryRow(context.Background(), `
 		SELECT u.id, u.email, COALESCE(u.user_name, ''), COALESCE(u.timezone, 'America/New_York'),
 		       COALESCE(u.items_per_page, 15), u.role_id, COALESCE(r.permissions, '{}'),
@@ -47,19 +48,23 @@ func GetUserProfileByID(userID int) (*UserProfile, error) {
 		       COALESCE(u.home_split_view, false),
 		       COALESCE(u.username_change_available, false),
 		       COALESCE(u.mfa_enabled, false),
-		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name, u.session_version
+		       COALESCE(u.avatar_url, ''), u.first_name, u.last_name, u.session_version,
+		       COALESCE(u.is_guest, FALSE)
 		FROM users u
 		LEFT JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1`, userID).Scan(
 		&p.ID, &p.Email, &p.UserName, &p.Timezone, &p.ItemsPerPage, &p.RoleID, &p.Permissions,
 		&p.AllowProjectInvites, &p.HomeSplitView, &p.UsernameChangeAvailable,
-		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName, &p.SessionVersion,
+		&p.MFAEnabled, &p.AvatarURL, &p.FirstName, &p.LastName, &p.SessionVersion, &guest,
 	)
 	if err != nil {
 		return nil, err
 	}
 	if p.Permissions == nil {
 		p.Permissions = []string{}
+	}
+	if guest {
+		p.Permissions = GuestEffectivePerms(p.Permissions)
 	}
 	return &p, nil
 }

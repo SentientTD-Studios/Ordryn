@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"GoTodo/internal/storage"
@@ -127,8 +128,9 @@ func TestUpdateTaskLogsEstimateChanged(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	five := 5
-	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{EstimatePoints: ptrToIntPtr(five)}); err != nil {
+	hours := 5.25
+	hoursPtr := &hours
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{EstimateHours: &hoursPtr}); err != nil {
 		t.Fatalf("set estimate: %v", err)
 	}
 	changed := eventsOfType(t, taskID, 1, "estimate_changed")
@@ -138,27 +140,33 @@ func TestUpdateTaskLogsEstimateChanged(t *testing.T) {
 	if _, ok := changed[0].Metadata["from"]; ok {
 		t.Errorf("initial estimate should omit from, got %v", changed[0].Metadata["from"])
 	}
-	if eventMetaInt(changed[0], "to") != 5 {
-		t.Errorf("to=%v want 5", changed[0].Metadata["to"])
+	if to, _ := changed[0].Metadata["to"].(float64); to != 5.25 || changed[0].Metadata["unit"] != "hours" {
+		t.Errorf("to=%v unit=%v want 5.25 hours", changed[0].Metadata["to"], changed[0].Metadata["unit"])
 	}
 
-	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{EstimatePoints: ptrToIntPtr(five)}); err != nil {
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{EstimateHours: &hoursPtr}); err != nil {
 		t.Fatalf("same estimate: %v", err)
 	}
 	if got := eventsOfType(t, taskID, 1, "estimate_changed"); len(got) != 1 {
 		t.Fatalf("after no-op estimate_changed count=%d want 1", len(got))
 	}
 
-	var clear *int
-	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{EstimatePoints: &clear}); err != nil {
+	bad := 1.1
+	badPtr := &bad
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{EstimateHours: &badPtr}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("non-quarter estimate err=%v want validation", err)
+	}
+
+	var clear *float64
+	if _, err := UpdateTask(ctx, 1, taskID, UpdateTaskInput{EstimateHours: &clear}); err != nil {
 		t.Fatalf("clear estimate: %v", err)
 	}
 	cleared := eventsOfType(t, taskID, 1, "estimate_changed")
 	if len(cleared) != 2 {
 		t.Fatalf("after clear estimate_changed count=%d want 2", len(cleared))
 	}
-	if eventMetaInt(cleared[0], "from") != 5 {
-		t.Errorf("cleared from=%v want 5", cleared[0].Metadata["from"])
+	if from, _ := cleared[0].Metadata["from"].(float64); from != 5.25 {
+		t.Errorf("cleared from=%v want 5.25", cleared[0].Metadata["from"])
 	}
 	if _, ok := cleared[0].Metadata["to"]; ok {
 		t.Errorf("cleared estimate should omit to, got %v", cleared[0].Metadata["to"])

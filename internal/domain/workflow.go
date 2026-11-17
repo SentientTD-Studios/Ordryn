@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
@@ -480,31 +481,34 @@ func AssignWorkflowOnProjectEnter(taskID, projectID int, completed bool) error {
 	return storage.AssignTaskStatusAndCompleted(taskID, def.ID, false)
 }
 
+// MaxTimeEntryBackdateDays caps how far back a time entry can be dated.
+const MaxTimeEntryBackdateDays = 366
+
+// timeEntryFutureSlack tolerates client clocks running a little ahead.
+const timeEntryFutureSlack = 5 * time.Minute
+
 // ListTimeEntriesForUser lists time entries if the user can read the task.
 func ListTimeEntriesForUser(ctx context.Context, userID, taskID int) ([]storage.TaskTimeEntry, error) {
 	_ = ctx
-	canRead, _, projectID, err := storage.CanUserAccessTask(taskID, userID)
+	canRead, _, _, err := storage.CanUserAccessTask(taskID, userID)
 	if err != nil {
 		return nil, err
 	}
 	if !canRead {
 		return nil, ErrNotFound
 	}
-	if projectID == 0 {
-		return nil, fmt.Errorf("%w: time tracking is only available on kanban project tasks", ErrValidation)
-	}
-	mode, err := storage.GetProjectWorkflowMode(projectID)
-	if err != nil {
-		return nil, err
-	}
-	if mode != storage.WorkflowKanban {
-		return nil, fmt.Errorf("%w: time tracking is only available on kanban project tasks", ErrValidation)
-	}
 	return storage.ListTaskTimeEntries(taskID)
 }
 
-// AddTimeEntryForUser adds minutes to a writable kanban task.
+// AddTimeEntryForUser logs minutes worked just now on a task the user can log time on.
 func AddTimeEntryForUser(ctx context.Context, userID, taskID, minutes int, note string) (*storage.TaskTimeEntry, error) {
+	return AddTimeEntryAtForUser(ctx, userID, taskID, minutes, note, nil)
+}
+
+// AddTimeEntryAtForUser logs minutes worked on a task. spentAt is when the
+// work happened (nil = now); it may be back-dated but not in the future.
+// Personal tasks are open to their owner; project tasks need Log time.
+func AddTimeEntryAtForUser(ctx context.Context, userID, taskID, minutes int, note string, spentAt *time.Time) (*storage.TaskTimeEntry, error) {
 	_ = ctx
 	canRead, writeRole, projectID, err := storage.CanUserAccessTask(taskID, userID)
 	if err != nil {
@@ -516,16 +520,6 @@ func AddTimeEntryForUser(ctx context.Context, userID, taskID, minutes int, note 
 	if err := denyMissingTaskPerm(projectID, writeRole, storage.PermTimeWrite); err != nil {
 		return nil, err
 	}
-	if projectID == 0 {
-		return nil, fmt.Errorf("%w: time tracking is only available on kanban project tasks", ErrValidation)
-	}
-	mode, err := storage.GetProjectWorkflowMode(projectID)
-	if err != nil {
-		return nil, err
-	}
-	if mode != storage.WorkflowKanban {
-		return nil, fmt.Errorf("%w: time tracking is only available on kanban project tasks", ErrValidation)
-	}
 	if minutes <= 0 || minutes > storage.MaxTimeEntryMinutes {
 		return nil, fmt.Errorf("%w: minutes must be between 1 and %d", ErrValidation, storage.MaxTimeEntryMinutes)
 	}
@@ -533,7 +527,18 @@ func AddTimeEntryForUser(ctx context.Context, userID, taskID, minutes int, note 
 	if len(note) > storage.MaxTimeEntryNote {
 		return nil, fmt.Errorf("%w: note must be %d characters or less", ErrValidation, storage.MaxTimeEntryNote)
 	}
-	entry, err := storage.CreateTaskTimeEntry(taskID, userID, minutes, note)
+	now := time.Now()
+	when := now
+	if spentAt != nil {
+		when = *spentAt
+		if when.After(now.Add(timeEntryFutureSlack)) {
+			return nil, fmt.Errorf("%w: time can't be logged in the future", ErrValidation)
+		}
+		if when.Before(now.AddDate(0, 0, -MaxTimeEntryBackdateDays)) {
+			return nil, fmt.Errorf("%w: time can be logged at most %d days back", ErrValidation, MaxTimeEntryBackdateDays)
+		}
+	}
+	entry, err := storage.CreateTaskTimeEntry(taskID, userID, minutes, note, when)
 	if err != nil {
 		return nil, err
 	}

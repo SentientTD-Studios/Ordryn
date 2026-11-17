@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
 import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
-import type { Organization, OrganizationInvite, OrganizationMember, OrganizationProjectRoster, OrgMemberProjectImpact, OrgMemberRoleImpact, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
+import type { Organization, OrganizationInvite, OrganizationMember, OrganizationProjectRoster, OrgMemberProjectImpact, OrgMemberRoleImpact, OrgRemovalProject, ProjectPermInfo, ProjectRoleDef } from '@/api/types'
 import { APIError } from '@/api/types'
 import RolePermissionFields from '@/components/RolePermissionFields.vue'
 import UserSearchCombobox from '@/components/UserSearchCombobox.vue'
@@ -13,6 +13,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useSite } from '@/composables/useSite'
 import { slugifyRoleName } from '@/utils/projectPerms'
 import { personLabel } from '@/utils/personLabel'
+import { orgRemovalModeLabel, splitOrgRemovalProjects } from '@/utils/orgRemoval'
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
@@ -54,6 +55,13 @@ const formCopyFromId = ref<number | null>(null)
 const slugTouched = ref(false)
 const roleListEl = ref<HTMLElement | null>(null)
 let sortable: Sortable | null = null
+const removeTarget = ref<OrganizationMember | null>(null)
+const removeAutomatic = ref<OrgRemovalProject[]>([])
+const removeOptional = ref<OrgRemovalProject[]>([])
+const removeChosen = ref<number[]>([])
+const removeLoading = ref(false)
+const removeError = ref('')
+const removeSaving = ref(false)
 const roleChangeOpen = ref(false)
 const roleChangeSaving = ref(false)
 const roleChangeMember = ref<OrganizationMember | null>(null)
@@ -335,22 +343,54 @@ async function confirmMemberRoleChange() {
   }
 }
 
+/** Opens the removal dialog, listing which of the organization's projects the person leaves. */
 async function removeMember(userId: number) {
-  if (!selectedId.value) return
-  const ok = await askConfirm({
-    title: 'Remove member?',
-    message: 'Remove this person from the organization? They keep access to projects they were already imported onto.',
-    confirmLabel: 'Remove',
-    danger: true,
-  })
-  if (!ok) return
+  const orgId = selectedId.value
+  const member = members.value.find((m) => m.user_id === userId)
+  if (!orgId || !member) return
+  removeTarget.value = member
+  removeAutomatic.value = []
+  removeOptional.value = []
+  removeChosen.value = []
+  removeError.value = ''
+  removeLoading.value = true
   try {
-    await api.removeOrganizationMember(selectedId.value, userId)
+    const { projects } = await api.organizationMemberRemovalImpact(orgId, userId)
+    if (removeTarget.value?.user_id !== userId) return
+    const split = splitOrgRemovalProjects(projects)
+    removeAutomatic.value = split.automatic
+    removeOptional.value = split.optional
+    removeChosen.value = split.preselected
+  } catch (err) {
+    removeError.value = err instanceof APIError ? err.message : 'Could not load their projects'
+  } finally {
+    removeLoading.value = false
+  }
+}
+
+function closeRemoveMember() {
+  removeTarget.value = null
+}
+
+function toggleRemoveProject(id: number, on: boolean) {
+  removeChosen.value = on ? [...new Set([...removeChosen.value, id])] : removeChosen.value.filter((x) => x !== id)
+}
+
+async function confirmRemoveMember() {
+  const orgId = selectedId.value
+  const member = removeTarget.value
+  if (!orgId || !member) return
+  removeSaving.value = true
+  try {
+    await api.removeOrganizationMember(orgId, member.user_id, removeChosen.value)
     toast.push('Member removed', 'info')
+    closeRemoveMember()
     await loadDetail()
     await loadOrgs()
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Remove failed', 'error')
+  } finally {
+    removeSaving.value = false
   }
 }
 
@@ -879,6 +919,74 @@ onBeforeUnmount(destroySortable)
           </div>
         </div>
         <p v-else class="text-muted">{{ canCreateOrganizations ? 'Select or create an organization.' : 'Select an organization.' }}</p>
+      </div>
+    </div>
+
+    <div
+      v-if="removeTarget"
+      class="modal fade show d-block"
+      style="background: rgba(0,0,0,0.5);"
+      tabindex="-1"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="remove-member-title"
+      @click.self="closeRemoveMember"
+      @keydown.esc="closeRemoveMember"
+    >
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow" style="background: var(--ordryn-card-bg); color: var(--ordryn-text)">
+          <div class="modal-header border-0">
+            <h5 id="remove-member-title" class="modal-title">Remove {{ personLabel(removeTarget) }}?</h5>
+            <button type="button" class="btn-close" aria-label="Close" @click="closeRemoveMember" />
+          </div>
+          <div class="modal-body pt-0">
+            <p class="small">
+              They leave this {{ orgNoun }}. On every project they leave, their claims, review requests and watches
+              are cleared, and the project's tasks stop showing for them.
+            </p>
+            <p v-if="removeError" class="small text-danger">{{ removeError }}</p>
+            <p v-else-if="removeLoading" class="small text-muted">Loading their projects…</p>
+            <template v-else>
+              <h6 class="h6">Projects they leave</h6>
+              <ul v-if="removeAutomatic.length" class="small mb-3">
+                <li v-for="p in removeAutomatic" :key="p.id">
+                  {{ p.name }} <span class="text-muted">({{ orgRemovalModeLabel(p.mode) }})</span>
+                </li>
+              </ul>
+              <p v-else class="small text-muted">None: no project's people come from this {{ orgNoun }} alone.</p>
+
+              <template v-if="removeOptional.length">
+                <h6 class="h6">Also remove them from</h6>
+                <p class="small text-muted mb-2">
+                  They were put on these by hand, so they stay unless you tick them.
+                </p>
+                <div v-for="p in removeOptional" :key="p.id" class="form-check small">
+                  <input
+                    :id="`remove-from-${p.id}`"
+                    class="form-check-input"
+                    type="checkbox"
+                    :checked="removeChosen.includes(p.id)"
+                    @change="toggleRemoveProject(p.id, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="form-check-label" :for="`remove-from-${p.id}`">
+                    {{ p.name }} <span class="text-muted">({{ orgRemovalModeLabel(p.mode) }})</span>
+                  </label>
+                </div>
+              </template>
+            </template>
+          </div>
+          <div class="modal-footer border-0">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @click="closeRemoveMember">Cancel</button>
+            <button
+              type="button"
+              class="btn btn-sm btn-danger"
+              :disabled="removeSaving || removeLoading || !!removeError"
+              @click="confirmRemoveMember"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -67,6 +67,9 @@ func NormalizeLocalAgentKeyInput(userID int, in CreateLocalAgentKeyInput, now ti
 // CreateLocalAgentKey mints a local agent key acting as userID. A key with the
 // same name is rotated, like other personal keys.
 func CreateLocalAgentKey(userID int, in CreateLocalAgentKeyInput) (string, *storage.APIKey, error) {
+	if !storage.UserHasSitePermission(userID, storage.SitePermAgentsLocal) {
+		return "", nil, fmt.Errorf("%w: your role can't use local AI agents", ErrForbidden)
+	}
 	name, scopes, err := NormalizeLocalAgentKeyInput(userID, in, time.Now())
 	if err != nil {
 		return "", nil, err

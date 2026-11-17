@@ -125,7 +125,7 @@ func TestCompanyProjectSharing(t *testing.T) {
 	if !can(proj.ID, ann, storage.PermProjectManage) {
 		t.Fatal("promotion to Manager should apply on the project")
 	}
-	if err := RemoveOrganizationMemberForUser(ctx, admin, pod.ID, ann); err != nil {
+	if err := RemoveOrganizationMemberForUser(ctx, admin, pod.ID, ann, nil); err != nil {
 		t.Fatal(err)
 	}
 	if role(proj.ID, ann) != storage.CompanyViewRoleSlug {

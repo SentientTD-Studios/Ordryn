@@ -103,6 +103,12 @@ func authenticateBearer(w http.ResponseWriter, r *http.Request, token string) bo
 		return false
 	}
 	if p.IsLocalAgent {
+		// Checked live so taking the permission away stops keys already handed out.
+		if !storage.UserHasSitePermission(p.UserID, storage.SitePermAgentsLocal) {
+			APIJSONError(w, http.StatusForbidden, "agents_disabled",
+				"Local AI agents are turned off for your account. Ask an admin to allow them for your role.")
+			return false
+		}
 		if err := authorizeLocalAgentKeyRequest(r, p); err != nil {
 			writeScopedKeyError(w, err)
 			return false
@@ -204,6 +210,16 @@ func authorizeLocalAgentKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) 
 	case len(parts) == 1 && parts[0] == "me" && r.Method == http.MethodGet:
 		return require(storage.APIScopeTasksRead)
 
+	// /search: pinned to the key's project, like the task list.
+	case len(parts) == 1 && parts[0] == "search" && r.Method == http.MethodGet:
+		if err := require(storage.APIScopeTasksRead); err != nil {
+			return err
+		}
+		q := r.URL.Query()
+		q.Set("project", strconv.Itoa(pid))
+		r.URL.RawQuery = q.Encode()
+		return nil
+
 	// /tasks
 	case len(parts) == 1 && parts[0] == "tasks":
 		switch r.Method {
@@ -269,7 +285,8 @@ func authorizeLocalAgentKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) 
 				return err
 			}
 			return inProject(taskID)
-		case parts[2] == "claim" && (r.Method == http.MethodPost || r.Method == http.MethodDelete):
+		case (parts[2] == "claim" && (r.Method == http.MethodPost || r.Method == http.MethodDelete)) ||
+			(parts[2] == "reviewer" && (r.Method == http.MethodPut || r.Method == http.MethodDelete)):
 			if err := require(storage.APIScopeTasksWrite); err != nil {
 				return err
 			}
@@ -363,6 +380,16 @@ func authorizeProjectKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) err
 			return err
 		}
 		return requireTaskInProject(taskID, pid)
+
+	// /search: pinned to the key's project, like the task list.
+	case len(parts) == 1 && parts[0] == "search" && r.Method == http.MethodGet:
+		if err := require(storage.APIScopeTasksRead); err != nil {
+			return err
+		}
+		q := r.URL.Query()
+		q.Set("project", strconv.Itoa(pid))
+		r.URL.RawQuery = q.Encode()
+		return nil
 
 	// /tasks
 	case len(parts) == 1 && parts[0] == "tasks":
@@ -518,16 +545,16 @@ func checkScopedTaskBody(r *http.Request, projectID int, create bool, agent *sto
 // agentBodyFields maps task body keys to the guardrail that governs them.
 // Keys not listed here are refused for agents (fail closed).
 var agentBodyFields = map[string]string{
-	"title":           storage.AgentFieldTitle,
-	"description":     storage.AgentFieldDescription,
-	"priority":        storage.AgentFieldPriority,
-	"due_date":        storage.AgentFieldDueDate,
-	"clear_due_date":  storage.AgentFieldDueDate,
-	"tag_ids":         storage.AgentFieldTags,
-	"estimate_points": storage.AgentFieldEstimate,
-	"sprint_id":       storage.AgentFieldSprint,
-	"fields":          storage.AgentFieldCustomFields,
-	"status_id":       storage.AgentFieldStatus,
+	"title":          storage.AgentFieldTitle,
+	"description":    storage.AgentFieldDescription,
+	"priority":       storage.AgentFieldPriority,
+	"due_date":       storage.AgentFieldDueDate,
+	"clear_due_date": storage.AgentFieldDueDate,
+	"tag_ids":        storage.AgentFieldTags,
+	"estimate_hours": storage.AgentFieldEstimate,
+	"sprint_id":      storage.AgentFieldSprint,
+	"fields":         storage.AgentFieldCustomFields,
+	"status_id":      storage.AgentFieldStatus,
 }
 
 // checkAgentTaskFields enforces an agent's guardrails on a task create or update.

@@ -58,6 +58,22 @@ type AgentInput struct {
 	MaxRunsPerHour   *int
 }
 
+// requireAgentsProject checks the site permission to add and configure project AI agents.
+func requireAgentsProject(userID int) error {
+	if !storage.UserHasSitePermission(userID, storage.SitePermAgentsProject) {
+		return fmt.Errorf("%w: your role can't add or configure AI agents", ErrForbidden)
+	}
+	return nil
+}
+
+// onlyPauses reports whether the patch does nothing but pause the agent, which
+// any project manager may do without the AI agent permission.
+func (in AgentInput) onlyPauses() bool {
+	paused := in
+	paused.Enabled = nil
+	return in.Enabled != nil && !*in.Enabled && paused == (AgentInput{})
+}
+
 // ListProjectAgents returns a project's agents for a manager.
 func ListProjectAgents(userID, projectID int) ([]storage.ProjectAgent, error) {
 	if _, err := requireProjectManage(projectID, userID); err != nil {
@@ -86,6 +102,9 @@ func loadAgent(projectID, agentID int) (*storage.ProjectAgent, error) {
 func CreateProjectAgent(userID, projectID int, in AgentInput) (*storage.ProjectAgent, error) {
 	proj, err := requireProjectManage(projectID, userID)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireAgentsProject(userID); err != nil {
 		return nil, err
 	}
 	if proj.Archived {
@@ -152,6 +171,11 @@ func CreateProjectAgent(userID, projectID int, in AgentInput) (*storage.ProjectA
 func UpdateProjectAgent(userID, projectID, agentID int, in AgentInput) (*storage.ProjectAgent, error) {
 	if _, err := requireProjectManage(projectID, userID); err != nil {
 		return nil, err
+	}
+	if !in.onlyPauses() {
+		if err := requireAgentsProject(userID); err != nil {
+			return nil, err
+		}
 	}
 	a, err := loadAgent(projectID, agentID)
 	if err != nil {
@@ -419,6 +443,9 @@ func CreateAgentAPIKey(userID, projectID, agentID int, name string, expiresAt *t
 	if _, err := requireProjectManage(projectID, userID); err != nil {
 		return "", nil, err
 	}
+	if err := requireAgentsProject(userID); err != nil {
+		return "", nil, err
+	}
 	a, err := loadAgent(projectID, agentID)
 	if err != nil {
 		return "", nil, err
@@ -481,6 +508,9 @@ func RotateAgentWebhookSecret(userID, projectID, agentID int) (string, error) {
 	if _, err := requireProjectManage(projectID, userID); err != nil {
 		return "", err
 	}
+	if err := requireAgentsProject(userID); err != nil {
+		return "", err
+	}
 	a, err := loadAgent(projectID, agentID)
 	if err != nil {
 		return "", err
@@ -500,6 +530,9 @@ func RotateAgentWebhookSecret(userID, projectID, agentID int) (string, error) {
 func TestAgentWebhook(userID, projectID, agentID int) error {
 	proj, err := requireProjectManage(projectID, userID)
 	if err != nil {
+		return err
+	}
+	if err := requireAgentsProject(userID); err != nil {
 		return err
 	}
 	a, err := loadAgent(projectID, agentID)

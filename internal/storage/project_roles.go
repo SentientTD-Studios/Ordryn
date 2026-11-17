@@ -30,6 +30,9 @@ const (
 	PermCommentsModerate = "comments:moderate"
 	PermInsightsPeople   = "insights:people"
 	PermQueriesManage    = "queries:manage"
+	PermRefinementRun    = "refinement:facilitate"
+	PermRetroRun         = "retro:facilitate"
+	PermStandupRun       = "standup:facilitate"
 
 	MaxProjectRoleSlugLen = 40
 	MaxProjectRoleNameLen = 80
@@ -90,6 +93,9 @@ var projectPermCatalog = []ProjectPermInfo{
 	{ID: PermCommentsModerate, Label: "Moderate comments", Description: "Edit or delete other members' discussion posts", Group: "Project"},
 	{ID: PermInsightsPeople, Label: "View team workload", Description: "See per-person claimed and completed work on the Team dashboard", Group: "Project"},
 	{ID: PermQueriesManage, Label: "Manage shared queries", Description: "Edit and delete queries other people shared with the organization or team. Applies through organization roles, or through the site role on a company site", Group: "Project"},
+	{ID: PermRefinementRun, Label: "Run refinement sessions", Description: "Create, start, manage and end backlog refinement sessions", Group: "Ceremonies"},
+	{ID: PermRetroRun, Label: "Run retrospectives", Description: "Create, start, manage and end retrospectives", Group: "Ceremonies"},
+	{ID: PermStandupRun, Label: "Run standups", Description: "Create, start, manage and end standups", Group: "Ceremonies"},
 	{ID: PermProjectManage, Label: "Manage project", Description: "Members, invites, board columns, sprints, and project settings", Group: "Project"},
 }
 

@@ -1,8 +1,8 @@
 import { onUnmounted } from 'vue'
 import { withBase } from '@/base'
-import { LIVE_RESYNC, coalesceLiveEvents } from '@/utils/liveEvents'
+import { LIVE_CEREMONY_UPDATED, LIVE_RESYNC, coalesceLiveEvents } from '@/utils/liveEvents'
 
-export { LIVE_RESYNC } from '@/utils/liveEvents'
+export { LIVE_CEREMONY_UPDATED, LIVE_RESYNC } from '@/utils/liveEvents'
 
 export type LiveEvent = {
   type: string
@@ -107,8 +107,16 @@ export function isOwnFocusedLiveEvent(event: LiveEvent, userId?: number | null):
   return document.hasFocus()
 }
 
-/** Subscribe while the caller is mounted; debounce bursts of events. */
-export function useLiveUpdates(handler: LiveHandler, debounceMs = 200): void {
+/**
+ * Subscribe while the caller is mounted; debounce bursts of events.
+ * Ceremony session events fire on every facilitator step and change no task lists,
+ * so they only reach handlers that pass `{ ceremonies: true }`.
+ */
+export function useLiveUpdates(
+  handler: LiveHandler,
+  debounceMs = 200,
+  opts: { ceremonies?: boolean } = {},
+): void {
   let timer: ReturnType<typeof setTimeout> | null = null
   const queued: LiveEvent[] = []
 
@@ -123,6 +131,7 @@ export function useLiveUpdates(handler: LiveHandler, debounceMs = 200): void {
   }
 
   const unsub = subscribeLiveUpdates((event) => {
+    if (event.type === LIVE_CEREMONY_UPDATED && !opts.ceremonies) return
     queued.push(event)
     if (timer) return
     timer = setTimeout(flush, debounceMs)

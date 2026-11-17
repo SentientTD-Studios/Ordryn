@@ -6,6 +6,7 @@ import { APIError } from '@/api/types'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { personLabel } from '@/utils/personLabel'
+import OffboardDialog from '@/components/OffboardDialog.vue'
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
@@ -13,6 +14,12 @@ const { askConfirm } = useConfirm()
 const data = ref<PeopleList | null>(null)
 const search = ref('')
 const showInactive = ref(false)
+// Deactivating opens the offboarding dialog; reactivating is a plain confirm.
+const offboarding = ref<Person | null>(null)
+function onOffboarded() {
+  offboarding.value = null
+  void load()
+}
 
 const email = ref('')
 const userName = ref('')
@@ -20,6 +27,7 @@ const firstName = ref('')
 const lastName = ref('')
 const teamId = ref<number | ''>('')
 const siteRoleId = ref<number | ''>('')
+const asGuest = ref(false)
 const busy = ref(false)
 const setPasswordLink = ref('')
 const linkFor = ref('')
@@ -73,6 +81,7 @@ async function createPerson() {
       ...(namesRequired.value ? { first_name: firstName.value.trim(), last_name: lastName.value.trim() } : {}),
       team_id: teamId.value === '' ? undefined : teamId.value,
       site_role_id: siteRoleId.value === '' ? undefined : siteRoleId.value,
+      ...(asGuest.value ? { guest: true } : {}),
     })
     if (result.set_password_url) {
       setPasswordLink.value = result.set_password_url
@@ -121,6 +130,26 @@ async function saveName(person: Person) {
     toast.push(err instanceof APIError ? err.message : 'Could not save the name', 'error')
   } finally {
     savingName.value = false
+  }
+}
+
+async function setGuest(person: Person, guest: boolean) {
+  const who = personLabel(person)
+  const ok = await askConfirm({
+    title: guest ? `Make ${who} a guest?` : `Make ${who} a member?`,
+    message: guest
+      ? `${who} leaves the company: projects shared with everyone stop reaching them, and what they can open follows the guest policy (Admin → Guests).`
+      : `${who} joins the company again and gets everything shared with it.`,
+    confirmLabel: guest ? 'Make guest' : 'Make member',
+    warning: guest,
+  })
+  if (!ok) return
+  try {
+    await api.setPersonGuest(person.id, guest)
+    toast.push(guest ? `${who} is now a guest` : `${who} is now a member`, 'success')
+    await load()
+  } catch (err) {
+    toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
   }
 }
 
@@ -207,6 +236,15 @@ onMounted(load)
                 <option v-for="r in data.site_roles" :key="r.id" :value="r.id">{{ r.label }}</option>
               </select>
             </div>
+            <div v-if="data?.can_manage_guests && data?.guests_enabled" class="col-12">
+              <div class="form-check">
+                <input id="person-guest" v-model="asGuest" class="form-check-input" type="checkbox" />
+                <label class="form-check-label" for="person-guest">Guest account</label>
+              </div>
+              <div class="form-text">
+                For people outside the company, such as clients. They only see what the guest policy allows.
+              </div>
+            </div>
           </div>
           <p class="form-text mt-3 mb-2">
             They'll get a link to choose their own password. The link works for 7 days. If email isn't set up, the link
@@ -289,6 +327,7 @@ onMounted(load)
               <div v-else class="fw-semibold">
                 {{ personLabel(p) }}
                 <span v-if="p.is_owner" class="badge text-bg-primary ms-1">Owner</span>
+                <span v-if="p.is_guest" class="badge text-bg-warning ms-1" title="From outside the company">Guest</span>
                 <button
                   v-if="p.can_edit_name"
                   class="btn btn-sm btn-link p-0 ms-1 align-baseline"
@@ -315,8 +354,26 @@ onMounted(load)
               <span v-else class="badge text-bg-secondary">Deactivated</span>
             </td>
             <td class="text-end">
+              <template v-if="data?.can_manage_guests && !p.is_owner">
+                <button
+                  v-if="p.is_guest"
+                  class="btn btn-sm btn-outline-secondary me-1"
+                  type="button"
+                  @click="setGuest(p, false)"
+                >
+                  Make member
+                </button>
+                <button
+                  v-else-if="data?.guests_enabled"
+                  class="btn btn-sm btn-outline-secondary me-1"
+                  type="button"
+                  @click="setGuest(p, true)"
+                >
+                  Make guest
+                </button>
+              </template>
               <template v-if="p.can_manage">
-                <button v-if="p.active" class="btn btn-sm btn-outline-danger" type="button" @click="setActive(p, false)">
+                <button v-if="p.active" class="btn btn-sm btn-outline-danger" type="button" @click="offboarding = p">
                   Deactivate
                 </button>
                 <button v-else class="btn btn-sm btn-outline-secondary" type="button" @click="setActive(p, true)">
@@ -331,5 +388,12 @@ onMounted(load)
         </tbody>
       </table>
     </div>
+    <OffboardDialog
+      v-if="offboarding"
+      :person="offboarding"
+      :candidates="data?.people ?? []"
+      @close="offboarding = null"
+      @done="onOffboarded"
+    />
   </div>
 </template>

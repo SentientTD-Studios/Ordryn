@@ -22,7 +22,7 @@ type TaskTemplate struct {
 	Description    string
 	Priority       int
 	TagNames       []string
-	EstimatePoints *int
+	EstimateHours  *float64
 	// DueOffsetDays sets the new task's due date to today plus this many days.
 	DueOffsetDays *int
 	Subtasks      []string
@@ -69,14 +69,15 @@ func CreateTaskTemplatesTable() error {
 
 const taskTemplateSelect = `
 	SELECT tt.id, tt.owner_id, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''), tt.project_id, tt.name, tt.title,
-		tt.description, tt.priority, tt.tag_names, tt.estimate_points, tt.due_offset_days, tt.subtasks,
+		tt.description, tt.priority, tt.tag_names, tt.estimate_hours, tt.due_offset_days, tt.subtasks,
 		tt.created_at, tt.updated_at
 	FROM task_templates tt
 	LEFT JOIN users u ON u.id = tt.owner_id`
 
 func scanTaskTemplate(row pgx.Row) (TaskTemplate, error) {
 	var t TaskTemplate
-	var projectID, estimate, offset sql.NullInt64
+	var projectID, offset sql.NullInt64
+	var estimate sql.NullFloat64
 	err := row.Scan(&t.ID, &t.OwnerID, &t.OwnerName, &projectID, &t.Name, &t.Title, &t.Description, &t.Priority,
 		&t.TagNames, &estimate, &offset, &t.Subtasks, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
@@ -87,8 +88,8 @@ func scanTaskTemplate(row pgx.Row) (TaskTemplate, error) {
 		t.ProjectID = &v
 	}
 	if estimate.Valid {
-		v := int(estimate.Int64)
-		t.EstimatePoints = &v
+		v := estimate.Float64
+		t.EstimateHours = &v
 	}
 	if offset.Valid {
 		v := int(offset.Int64)
@@ -183,17 +184,17 @@ func SaveTaskTemplate(t *TaskTemplate) error {
 	if t.ID == 0 {
 		return pool.QueryRow(ctx, `
 			INSERT INTO task_templates (owner_id, project_id, name, title, description, priority, tag_names,
-				estimate_points, due_offset_days, subtasks)
+				estimate_hours, due_offset_days, subtasks)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			RETURNING id, created_at, updated_at`,
 			t.OwnerID, t.ProjectID, t.Name, t.Title, t.Description, t.Priority, t.TagNames,
-			t.EstimatePoints, t.DueOffsetDays, t.Subtasks).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
+			t.EstimateHours, t.DueOffsetDays, t.Subtasks).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 	}
 	tag, err := pool.Exec(ctx, `
 		UPDATE task_templates SET name = $2, title = $3, description = $4, priority = $5, tag_names = $6,
-			estimate_points = $7, due_offset_days = $8, subtasks = $9, updated_at = NOW()
+			estimate_hours = $7, estimate_points = NULL, due_offset_days = $8, subtasks = $9, updated_at = NOW()
 		WHERE id = $1`,
-		t.ID, t.Name, t.Title, t.Description, t.Priority, t.TagNames, t.EstimatePoints, t.DueOffsetDays, t.Subtasks)
+		t.ID, t.Name, t.Title, t.Description, t.Priority, t.TagNames, t.EstimateHours, t.DueOffsetDays, t.Subtasks)
 	if err != nil {
 		return err
 	}

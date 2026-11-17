@@ -9,6 +9,7 @@ import AppFooter from '@/components/AppFooter.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useSidebarState } from '@/composables/useSidebarState'
 import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { formatHours } from '@/utils/estimates'
 
 const LAST_PROJECT_KEY = 'ordryn.teamDashboardProject'
 
@@ -24,7 +25,7 @@ const loading = ref(true)
 const error = ref('')
 const projectId = ref<number | null>(null)
 const sprintId = ref<number | null>(null)
-const unit = ref<'tasks' | 'points'>('tasks')
+const unit = ref<'tasks' | 'hours'>('tasks')
 
 const activeProjects = computed(() => projects.value.filter((p) => !p.archived))
 
@@ -107,7 +108,7 @@ useLiveUpdates((event, batch) => {
 
 // ---- Throughput ----
 const throughputMax = computed(() => {
-  const vals = (insights.value?.throughput ?? []).map((w) => (unit.value === 'points' ? w.points : w.tasks))
+  const vals = (insights.value?.throughput ?? []).map((w) => (unit.value === 'hours' ? w.hours : w.tasks))
   return Math.max(1, ...vals)
 })
 const throughputAvg = computed(() => {
@@ -115,7 +116,7 @@ const throughputAvg = computed(() => {
   // Leave out the current, unfinished week.
   const full = weeks.slice(0, -1)
   if (!full.length) return 0
-  const sum = full.reduce((n, w) => n + (unit.value === 'points' ? w.points : w.tasks), 0)
+  const sum = full.reduce((n, w) => n + (unit.value === 'hours' ? w.hours : w.tasks), 0)
   return Math.round((sum / full.length) * 10) / 10
 })
 
@@ -139,9 +140,9 @@ const PAD = { top: 12, right: 12, bottom: 28, left: 36 }
 
 const burndown = computed(() => insights.value?.burndown ?? null)
 const burndownTotal = computed(() =>
-  burndown.value ? (unit.value === 'points' ? burndown.value.total_points : burndown.value.total_tasks) : 0,
+  burndown.value ? (unit.value === 'hours' ? burndown.value.total_hours : burndown.value.total_tasks) : 0,
 )
-const usePointsFallback = computed(() => unit.value === 'points' && burndown.value != null && burndown.value.total_points === 0)
+const useHoursFallback = computed(() => unit.value === 'hours' && burndown.value != null && burndown.value.total_hours === 0)
 
 const chart = computed(() => {
   const bd = burndown.value
@@ -153,11 +154,11 @@ const chart = computed(() => {
   const x = (i: number) => PAD.left + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW)
   const y = (v: number) => PAD.top + plotH - (v / yMax) * plotH
   const ideal = bd.days
-    .map((d, i) => `${x(i)},${y(unit.value === 'points' ? d.ideal_points : d.ideal_tasks)}`)
+    .map((d, i) => `${x(i)},${y(unit.value === 'hours' ? d.ideal_hours : d.ideal_tasks)}`)
     .join(' ')
   const actualPts: { x: number; y: number; date: string; value: number }[] = []
   bd.days.forEach((d, i) => {
-    const v = unit.value === 'points' ? d.remaining_points : d.remaining_tasks
+    const v = unit.value === 'hours' ? d.remaining_hours : d.remaining_tasks
     if (v != null) actualPts.push({ x: x(i), y: y(v), date: d.date, value: v })
   })
   const ticks = [0, Math.round(yMax / 2), yMax].filter((v, i, a) => a.indexOf(v) === i)
@@ -180,9 +181,9 @@ const burndownStatus = computed(() => {
   if (!bd) return ''
   const lastActual = [...bd.days].reverse().find((d) => d.remaining_tasks != null)
   if (!lastActual) return 'Sprint has not started yet.'
-  const rem = unit.value === 'points' ? lastActual.remaining_points! : lastActual.remaining_tasks!
-  const ideal = unit.value === 'points' ? lastActual.ideal_points : lastActual.ideal_tasks
-  const label = unit.value === 'points' ? 'points' : rem === 1 ? 'task' : 'tasks'
+  const rem = unit.value === 'hours' ? lastActual.remaining_hours! : lastActual.remaining_tasks!
+  const ideal = unit.value === 'hours' ? lastActual.ideal_hours : lastActual.ideal_tasks
+  const label = unit.value === 'hours' ? 'hours' : rem === 1 ? 'task' : 'tasks'
   const delta = Math.round((rem - ideal) * 10) / 10
   const pace = delta > 0.5 ? `${delta} behind the ideal line` : delta < -0.5 ? `${-delta} ahead of the ideal line` : 'on the ideal line'
   return `${rem} ${label} left, ${pace}.`
@@ -235,11 +236,11 @@ const burndownStatus = computed(() => {
               <button
                 type="button"
                 class="btn"
-                :class="unit === 'points' ? 'btn-primary' : 'btn-outline-secondary'"
-                :aria-pressed="unit === 'points'"
-                @click="unit = 'points'"
+                :class="unit === 'hours' ? 'btn-primary' : 'btn-outline-secondary'"
+                :aria-pressed="unit === 'hours'"
+                @click="unit = 'hours'"
               >
-                Points
+                Hours
               </button>
             </div>
             <RouterLink to="/dashboard" class="btn btn-sm btn-outline-secondary">My dashboard</RouterLink>
@@ -261,7 +262,7 @@ const burndownStatus = computed(() => {
                 <div class="card-body py-3">
                   <div class="text-muted small fw-medium">Open</div>
                   <div class="display-6 fw-bold">{{ insights.summary.open }}</div>
-                  <div v-if="insights.summary.open_points" class="small text-muted">{{ insights.summary.open_points }} pts</div>
+                  <div v-if="insights.summary.open_hours" class="small text-muted">{{ formatHours(insights.summary.open_hours) }} estimated</div>
                 </div>
               </div>
             </div>
@@ -323,7 +324,7 @@ const burndownStatus = computed(() => {
                   <strong>{{ burndown.sprint.name }}</strong>:
                   {{ burndownTotal }} {{ unit }} in scope. {{ burndownStatus }}
                 </p>
-                <p v-if="usePointsFallback" class="small text-muted">No tasks in this sprint have estimates, so there are no points to chart.</p>
+                <p v-if="useHoursFallback" class="small text-muted">No tasks in this sprint have estimates, so there are no hours to chart.</p>
                 <svg
                   v-if="chart"
                   class="burndown-chart w-100"
@@ -364,7 +365,7 @@ const burndownStatus = computed(() => {
               <div class="card border-0 shadow-xs h-100">
                 <div class="card-header bg-transparent border-0 pt-3 pb-0">
                   <h2 class="h5 fw-bold mb-0">Throughput</h2>
-                  <p class="small text-muted mb-0">{{ unit === 'points' ? 'Points' : 'Tasks' }} completed per week</p>
+                  <p class="small text-muted mb-0">{{ unit === 'hours' ? 'Hours' : 'Tasks' }} completed per week</p>
                 </div>
                 <div class="card-body">
                   <div class="throughput-bars" role="list">
@@ -373,14 +374,14 @@ const burndownStatus = computed(() => {
                       :key="w.week_start"
                       class="throughput-col"
                       role="listitem"
-                      :aria-label="`Week of ${weekLabel(w.week_start)}: ${unit === 'points' ? w.points : w.tasks} ${unit}`"
+                      :aria-label="`Week of ${weekLabel(w.week_start)}: ${unit === 'hours' ? w.hours : w.tasks} ${unit}`"
                     >
-                      <span class="throughput-value">{{ unit === 'points' ? w.points : w.tasks }}</span>
+                      <span class="throughput-value">{{ unit === 'hours' ? w.hours : w.tasks }}</span>
                       <div class="throughput-track">
                         <div
                           class="throughput-bar"
                           :class="{ 'is-current': i === insights.throughput.length - 1 }"
-                          :style="{ height: `${((unit === 'points' ? w.points : w.tasks) / throughputMax) * 100}%` }"
+                          :style="{ height: `${((unit === 'hours' ? w.hours : w.tasks) / throughputMax) * 100}%` }"
                         />
                       </div>
                       <span class="throughput-label">{{ weekLabel(w.week_start) }}</span>
@@ -411,7 +412,7 @@ const burndownStatus = computed(() => {
                       </span>
                       <span class="small text-muted text-nowrap">
                         <template v-if="insights.workflow_mode === 'kanban'">
-                          {{ m.claimed_open }} claimed<template v-if="m.claimed_points"> ({{ m.claimed_points }} pts)</template> ·
+                          {{ m.claimed_open }} claimed<template v-if="m.claimed_hours"> ({{ formatHours(m.claimed_hours) }})</template> ·
                         </template>
                         {{ m.completed }} done
                       </span>

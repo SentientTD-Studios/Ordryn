@@ -113,6 +113,14 @@ func ResolveCommentMentions(projectID int, body string) []storage.ProjectMember 
 		seen[m.UserID] = struct{}{}
 		out = append(out, m)
 	}
+	// @team handles add the team's members on the project.
+	for _, m := range teamMentionMembers(projectID, wanted, members) {
+		if _, ok := seen[m.UserID]; ok {
+			continue
+		}
+		seen[m.UserID] = struct{}{}
+		out = append(out, m)
+	}
 	return out
 }
 
@@ -172,6 +180,9 @@ func ListCommentsForUser(ctx context.Context, userID, taskID int) ([]storage.Tas
 	}
 	attachCommentLinks(taskID, projectID, userID, comments)
 	attachCommentRoles(projectID, comments)
+	if err := storage.AttachCommentExtras(comments, userID); err != nil {
+		return nil, err
+	}
 	return comments, nil
 }
 

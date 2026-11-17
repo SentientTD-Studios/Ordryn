@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { QueryOptions, QueryResults, QuerySortKey, QueryTask } from '@/api/types'
 import { PRIORITY_LABELS } from '@/utils/queryDefinition'
+import { formatHours } from '@/utils/estimates'
 
 const props = defineProps<{
   results: QueryResults
@@ -107,12 +108,14 @@ function cell(t: QueryTask, col: string): string {
       return t.days_in_status != null ? String(t.days_in_status) : ''
     case 'claimed_by':
       return t.claimed_by_name ?? ''
+    case 'reviewer':
+      return t.reviewer_name ?? ''
     case 'created_by':
       return t.created_by_name ?? ''
     case 'sprint':
       return t.sprint_name ?? ''
     case 'estimate':
-      return t.estimate_points != null ? String(t.estimate_points) : ''
+      return formatHours(t.estimate_hours)
     case 'parent':
       return t.parent_title ?? ''
     case 'description':

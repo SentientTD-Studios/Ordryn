@@ -98,7 +98,7 @@ type HookTaskSnapshot struct {
 	SprintID       int
 	SprintName     string
 	ParentID       int
-	EstimatePoints int
+	EstimateHours  float64
 	Tags           []string
 	TagIDs         []int
 	CustomFields   map[string]string
@@ -601,13 +601,13 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 	var projectID sql.NullInt64
 	var parentID sql.NullInt64
 	var statusID sql.NullInt64
-	var estimate sql.NullInt64
+	var estimate sql.NullFloat64
 	err = pool.QueryRow(context.Background(), `
 		SELECT t.id, t.title, COALESCE(t.description, ''), COALESCE(t.completed, false), COALESCE(t.priority, 0),
 		       t.project_id, COALESCE(p.name, ''), COALESCE(p.workflow_mode, 'classic'), COALESCE(t.status_id, 0), COALESCE(ps.name, ''),
 		       t.user_id, COALESCE(t.claimed_by, 0), COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''),
 		       COALESCE(CAST(t.due_date AS TEXT), ''), COALESCE(t.sprint_id, 0), COALESCE(sp.name, ''),
-		       t.parent_id, COALESCE(t.estimate_points, 0)
+		       t.parent_id, COALESCE(t.estimate_hours, 0)
 		FROM tasks t
 		LEFT JOIN projects p ON p.id = t.project_id
 		LEFT JOIN project_statuses ps ON ps.id = t.status_id
@@ -632,7 +632,7 @@ func GetHookTaskSnapshot(taskID int) (*HookTaskSnapshot, error) {
 		s.StatusID = int(statusID.Int64)
 	}
 	if estimate.Valid {
-		s.EstimatePoints = int(estimate.Int64)
+		s.EstimateHours = estimate.Float64
 	}
 	if tags, err := GetTagsForTask(taskID); err == nil {
 		s.Tags = make([]string, 0, len(tags))

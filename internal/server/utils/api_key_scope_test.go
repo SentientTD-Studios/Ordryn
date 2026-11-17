@@ -193,6 +193,21 @@ func TestProjectKeyPinsTaskListToProject(t *testing.T) {
 	}
 }
 
+func TestProjectKeyPinsSearchToProject(t *testing.T) {
+	p := projectKey(storage.APIScopeTasksRead)
+	r := httptest.NewRequest(http.MethodGet, "/api/v2/search?project=99&q=bug", nil)
+	if err := authorizeProjectKeyRequest(r, p); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.URL.Query().Get("project"); got != "10" {
+		t.Fatalf("project=%q want 10", got)
+	}
+	noRead := projectKey(storage.APIScopeCommentsWrite)
+	if got := scopedStatus(t, noRead, http.MethodGet, "/api/v2/search?q=x", ""); got != http.StatusForbidden {
+		t.Errorf("search without tasks:read: status %d, want 403", got)
+	}
+}
+
 func TestProjectKeyBodyIsRestoredForHandler(t *testing.T) {
 	p := projectKey(allScopes...)
 	const body = `{"title":"keep me","project_id":10}`

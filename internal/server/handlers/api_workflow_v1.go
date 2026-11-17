@@ -59,6 +59,7 @@ type apiTimeEntryJSON struct {
 	UserID    int    `json:"user_id"`
 	Minutes   int    `json:"minutes"`
 	Note      string `json:"note"`
+	SpentAt   string `json:"spent_at"`
 	CreatedAt string `json:"created_at"`
 	UserEmail string `json:"user_email,omitempty"`
 	UserName  string `json:"user_name,omitempty"`
@@ -67,6 +68,8 @@ type apiTimeEntryJSON struct {
 type apiTimeEntryCreateRequest struct {
 	Minutes int    `json:"minutes"`
 	Note    string `json:"note"`
+	// SpentAt (RFC 3339) is when the work happened; omit for now.
+	SpentAt string `json:"spent_at"`
 }
 
 func statusToAPIJSON(s storage.ProjectStatus) apiProjectStatusJSON {
@@ -100,6 +103,7 @@ func timeEntryToAPIJSON(e storage.TaskTimeEntry) apiTimeEntryJSON {
 		UserID:    e.UserID,
 		Minutes:   e.Minutes,
 		Note:      e.Note,
+		SpentAt:   e.SpentAt.UTC().Format(time.RFC3339),
 		CreatedAt: e.CreatedAt.UTC().Format(time.RFC3339),
 		UserEmail: e.UserEmail,
 		UserName:  e.UserName,
@@ -342,6 +346,48 @@ func apiV1TaskClaim(w http.ResponseWriter, r *http.Request, taskID int) {
 	_ = json.NewEncoder(w).Encode(taskToAPIJSON(task))
 }
 
+type apiTaskReviewerRequest struct {
+	UserID   int    `json:"user_id"`
+	UserName string `json:"user_name"`
+}
+
+// apiV1TaskReviewer handles PUT/DELETE /api/v2/tasks/{id}/reviewer.
+func apiV1TaskReviewer(w http.ResponseWriter, r *http.Request, taskID int) {
+	userID, ok := apiUserFromRequest(r)
+	if !ok {
+		utils.APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var req apiTaskReviewerRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+			return
+		}
+		if err := domain.SetTaskReviewerForUser(r.Context(), userID, taskID, req.UserID, req.UserName); err != nil {
+			writeWorkflowDomainError(w, err)
+			return
+		}
+	case http.MethodDelete:
+		if err := domain.ClearTaskReviewerForUser(r.Context(), userID, taskID); err != nil {
+			writeWorkflowDomainError(w, err)
+			return
+		}
+	default:
+		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+		return
+	}
+	tz := GetUserTimezoneByID(userID)
+	task, err := tasks.FetchTaskByIDForUser(taskID, userID, tz, 1)
+	if err != nil {
+		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load task.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(taskToAPIJSON(task))
+}
+
 func handleTaskTimeEntries(w http.ResponseWriter, r *http.Request, taskID int, rest []string) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -369,7 +415,16 @@ func handleTaskTimeEntries(w http.ResponseWriter, r *http.Request, taskID int, r
 				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 				return
 			}
-			e, err := domain.AddTimeEntryForUser(r.Context(), userID, taskID, req.Minutes, req.Note)
+			var spentAt *time.Time
+			if raw := strings.TrimSpace(req.SpentAt); raw != "" {
+				t, err := time.Parse(time.RFC3339, raw)
+				if err != nil {
+					utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "spent_at must be an RFC 3339 timestamp.")
+					return
+				}
+				spentAt = &t
+			}
+			e, err := domain.AddTimeEntryAtForUser(r.Context(), userID, taskID, req.Minutes, req.Note, spentAt)
 			if err != nil {
 				writeWorkflowDomainError(w, err)
 				return
@@ -411,6 +466,9 @@ type apiProjectSprintJSON struct {
 	IsLocked    bool    `json:"is_locked"`
 	TaskCount   int     `json:"task_count"`
 	CreatedAt   string  `json:"created_at"`
+	// Totals over the sprint's tasks; only the sprint list fills them.
+	TimeSpentMinutes int     `json:"time_spent_minutes"`
+	EstimateHours    float64 `json:"estimate_hours"`
 }
 
 type apiSprintCreateRequest struct {
@@ -462,6 +520,9 @@ func sprintToAPIJSON(s storage.ProjectSprint) apiProjectSprintJSON {
 		IsLocked:    storage.SprintIsLocked(s.LockDate, now),
 		TaskCount:   s.TaskCount,
 		CreatedAt:   s.CreatedAt.UTC().Format(time.RFC3339),
+
+		TimeSpentMinutes: s.TimeSpentMinutes,
+		EstimateHours:    s.EstimateHours,
 	}
 }
 

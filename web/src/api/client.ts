@@ -1,7 +1,30 @@
 import { withBase } from '@/base'
 import type {
+  SearchResults,
+  OrgRemovalProject,
   AdminSettings,
+  SystemHealth,
+  GuestPolicy,
+  Passkey,
+  PasskeyCeremony,
   AdminSettingsPatch,
+  OffboardInput,
+  OffboardingPreview,
+  OffboardResult,
+  AdminSSOPatch,
+  AdminSecurityPolicy,
+  AdminSecurityPolicyPatch,
+  AdminSSOSettings,
+  BackupStatus,
+  AuditStreamPatch,
+  AuditStreamSettings,
+  FromTemplateResult,
+  ProjectTemplate,
+  PortfolioProject,
+  ProjectHealth,
+  ProjectStatusUpdate,
+  TimesheetReport,
+  WorkloadReport,
   AdminUser,
   SiteRole,
   SiteRolesList,
@@ -29,11 +52,33 @@ import type {
   AutomationRule,
   AutomationRuleInput,
   AutomationRun,
+  CeremonySettings,
+  CeremonySettingsPatch,
+  RefinementAction,
+  RefinementSession,
+  RefinementSessionSummary,
+  RefinementStartInput,
+  RefinementState,
+  CeremonySessionSummary,
+  RetroSession,
+  RetroStartInput,
+  RetroStep,
+  StandupEntry,
+  StandupSession,
+  StandupStartInput,
+  StandupStep,
   CalendarInfo,
   CalendarMonth,
   ChangelogEntry,
   DashboardStats,
   ProjectInsights,
+  ProjectTimeline,
+  Planner,
+  RequestForm,
+  RequestFormInput,
+  PublicRequestForm,
+  Onboarding,
+  CompanyHomeSummary,
   DeviceDecisionResult,
   DeviceStatus,
   EmailAuditList,
@@ -103,6 +148,7 @@ import type {
   TaskEvent,
   TaskList,
   TaskTimeEntry,
+  TimeBlock,
   TaskComment,
   TaskCommentRevision,
   CommentAuditList,
@@ -160,11 +206,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         : typeof data === 'string' && data.includes('<html')
           ? 'Request failed (proxy returned an HTML error page).'
           : res.statusText || 'Request failed'
+    if (body?.error === MFA_ENROLLMENT_REQUIRED && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(MFA_ENROLLMENT_REQUIRED))
+    }
     throw new APIError(res.status, body?.error || 'request_failed', message, data)
   }
 
   return data as T
 }
+
+/** Error code (and window event) when the security policy requires setting up MFA first. */
+export const MFA_ENROLLMENT_REQUIRED = 'mfa_enrollment_required'
 
 async function download(path: string, fallbackName: string, init: RequestInit = {}): Promise<void> {
   const res = await fetch(withBase(path), { credentials: 'include', ...init })
@@ -226,7 +278,7 @@ async function upload<T>(path: string, field: string, file: Blob | File): Promis
 
 export const api = {
   health() {
-    return request<{ version: string; api_enabled: boolean; redis_ok: boolean; mode: string }>(
+    return request<{ version: string; api_enabled: boolean; redis_ok: boolean; db_ok: boolean; mode: string }>(
       '/api/v2/health',
     )
   },
@@ -255,6 +307,43 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
+  },
+
+  passkeyLoginBegin() {
+    return request<PasskeyCeremony>('/api/v2/auth/passkey/begin', { method: 'POST' })
+  },
+
+  passkeyLoginFinish(token: string, credential: unknown) {
+    return request<User>('/api/v2/auth/passkey/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, credential }),
+    })
+  },
+
+  listPasskeys() {
+    return request<Passkey[]>('/api/v2/me/passkeys')
+  },
+
+  passkeyRegisterBegin(password: string) {
+    return request<PasskeyCeremony>('/api/v2/me/passkeys/register/begin', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+  },
+
+  passkeyRegisterFinish(token: string, name: string, credential: unknown) {
+    return request<Passkey>('/api/v2/me/passkeys/register/finish', {
+      method: 'POST',
+      body: JSON.stringify({ token, name, credential }),
+    })
+  },
+
+  renamePasskey(id: number, name: string) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+  },
+
+  deletePasskey(id: number) {
+    return request<void>(`/api/v2/me/passkeys/${id}`, { method: 'DELETE' })
   },
 
   getMFA() {
@@ -507,6 +596,151 @@ export const api = {
     return request<AutomationRun[]>(`/api/v2/projects/${projectId}/automations/runs${qs}`)
   },
 
+  getCeremonySettings(projectId: number) {
+    return request<CeremonySettings>(`/api/v2/projects/${projectId}/ceremonies`)
+  },
+
+  updateCeremonySettings(projectId: number, patch: CeremonySettingsPatch) {
+    return request<CeremonySettings>(`/api/v2/projects/${projectId}/ceremonies`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  listRefinementSessions(projectId: number, limit = 25) {
+    return request<RefinementSessionSummary[]>(
+      `/api/v2/projects/${projectId}/ceremonies/refinement/sessions?limit=${limit}`,
+    )
+  },
+
+  getActiveRefinementSession(projectId: number) {
+    return request<{ session: RefinementSession | null }>(
+      `/api/v2/projects/${projectId}/ceremonies/refinement/sessions/active`,
+    )
+  },
+
+  getRefinementSession(projectId: number, sessionId: number) {
+    return request<RefinementSession>(`/api/v2/projects/${projectId}/ceremonies/refinement/sessions/${sessionId}`)
+  },
+
+  startRefinementSession(projectId: number, input: RefinementStartInput) {
+    return request<RefinementSession>(`/api/v2/projects/${projectId}/ceremonies/refinement/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  listCeremonySessions(projectId: number, kind: 'retro' | 'standup', limit = 25) {
+    return request<CeremonySessionSummary[]>(`/api/v2/projects/${projectId}/ceremonies/${kind}/sessions?limit=${limit}`)
+  },
+
+  getActiveRetro(projectId: number) {
+    return request<{ session: RetroSession | null }>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/active`)
+  },
+
+  startRetro(projectId: number, input: RetroStartInput) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  retroStep(projectId: number, sessionId: number, revision: number, step: RetroStep) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify({ ...step, revision }),
+    })
+  },
+
+  addRetroItem(
+    projectId: number,
+    sessionId: number,
+    item: { type: 'card' | 'action'; body: string; column?: string; card_id?: number },
+  ) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(item),
+    })
+  },
+
+  updateRetroItem(
+    projectId: number,
+    sessionId: number,
+    itemId: number,
+    patch: { body?: string; column?: string; parent_id?: number | null },
+  ) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  deleteRetroItem(projectId: number, sessionId: number, itemId: number) {
+    return request<RetroSession>(`/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  voteRetroCard(projectId: number, sessionId: number, itemId: number, on: boolean) {
+    return request<RetroSession>(
+      `/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}/vote`,
+      { method: on ? 'PUT' : 'DELETE' },
+    )
+  },
+
+  retroActionToTask(projectId: number, sessionId: number, itemId: number) {
+    return request<RetroSession>(
+      `/api/v2/projects/${projectId}/ceremonies/retro/sessions/${sessionId}/items/${itemId}/task`,
+      { method: 'POST' },
+    )
+  },
+
+  getActiveStandup(projectId: number) {
+    return request<{ session: StandupSession | null }>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/active`)
+  },
+
+  startStandup(projectId: number, input: StandupStartInput) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  standupStep(projectId: number, sessionId: number, revision: number, step: StandupStep) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify({ ...step, revision }),
+    })
+  },
+
+  joinStandup(projectId: number, sessionId: number) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'join' }),
+    })
+  },
+
+  saveStandupEntry(projectId: number, sessionId: number, entry: StandupEntry) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/entry`, {
+      method: 'PUT',
+      body: JSON.stringify(entry),
+    })
+  },
+
+  createStandupBlocker(projectId: number, sessionId: number, title: string) {
+    return request<StandupSession>(`/api/v2/projects/${projectId}/ceremonies/standup/sessions/${sessionId}/blockers`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    })
+  },
+
+  refinementAction(projectId: number, sessionId: number, revision: number, action: RefinementAction) {
+    return request<RefinementSession>(
+      `/api/v2/projects/${projectId}/ceremonies/refinement/sessions/${sessionId}/actions`,
+      { method: 'POST', body: JSON.stringify({ ...action, revision }) },
+    )
+  },
+
   getTaskAgentRuns(taskId: number) {
     return request<TaskAgentRuns>(`/api/v2/tasks/${taskId}/agent-runs`)
   },
@@ -520,6 +754,17 @@ export const api = {
 
   cancelAgentRun(taskId: number, runId: number) {
     return request<AgentRun>(`/api/v2/tasks/${taskId}/agent-runs/${runId}/cancel`, { method: 'POST' })
+  },
+
+  /** Site search (see tasks.ParseSearchQuery for the query syntax). */
+  /** scope 'titles' matches titles and ids only (live results); 'all' (default) also descriptions, tags and comments. */
+  search(params: { q: string; project?: number; page?: number; per_page?: number; scope?: 'all' | 'titles' }) {
+    const qs = new URLSearchParams({ q: params.q })
+    if (params.scope && params.scope !== 'all') qs.set('scope', params.scope)
+    if (params.project) qs.set('project', String(params.project))
+    if (params.page) qs.set('page', String(params.page))
+    if (params.per_page) qs.set('per_page', String(params.per_page))
+    return request<SearchResults>(`/api/v2/search?${qs}`)
   },
 
   listTasks(params: Record<string, string | number | undefined> = {}) {
@@ -582,12 +827,14 @@ export const api = {
     title: string
     description?: string
     due_date?: string
+    start_date?: string
     project_id?: number | null
     parent_id?: number | null
     priority?: number
     tag_ids?: number[]
     status_id?: number | null
-    estimate_points?: number | null
+    estimate_hours?: number | null
+    refinement?: RefinementState
     sprint_id?: number | null
     fields?: Record<string, unknown>
     recurrence?: TaskRecurrenceInput
@@ -605,13 +852,15 @@ export const api = {
       description: string
       due_date: string
       clear_due_date: boolean
+      start_date: string | null
       project_id: number | null
       parent_id: number | null
       priority: number
       completed: boolean
       tag_ids: number[]
       status_id: number | null
-      estimate_points: number | null
+      estimate_hours: number | null
+      refinement: RefinementState
       sprint_id: number | null
       fields: Record<string, unknown>
       recurrence: TaskRecurrenceInput | null
@@ -1136,8 +1385,17 @@ export const api = {
     return request<OrgMemberRoleImpact>(`/api/v2/organizations/${orgId}/members/${userId}/project-impact`)
   },
 
-  removeOrganizationMember(orgId: number, userId: number) {
-    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, { method: 'DELETE' })
+  /** The organization's projects a member is on, and which removing them leaves on its own. */
+  organizationMemberRemovalImpact(orgId: number, userId: number) {
+    return request<{ projects: OrgRemovalProject[] }>(`/api/v2/organizations/${orgId}/members/${userId}/removal-impact`)
+  },
+
+  /** Remove a member; `removeFromProjects` also takes them off those hand-assigned projects. */
+  removeOrganizationMember(orgId: number, userId: number, removeFromProjects: number[] = []) {
+    return request<void>(`/api/v2/organizations/${orgId}/members/${userId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ remove_from_projects: removeFromProjects }),
+    })
   },
 
   listOrganizationRoles(orgId: number) {
@@ -1220,10 +1478,47 @@ export const api = {
     return request<TaskTimeEntry[]>(`/api/v2/tasks/${taskId}/time-entries`)
   },
 
-  addTimeEntry(taskId: number, minutes: number, note = '') {
+  /** spentAt (ISO) is when the work happened; omit for now. */
+  addTimeEntry(taskId: number, minutes: number, note = '', spentAt?: string) {
     return request<TaskTimeEntry>(`/api/v2/tasks/${taskId}/time-entries`, {
       method: 'POST',
-      body: JSON.stringify({ minutes, note }),
+      body: JSON.stringify(spentAt ? { minutes, note, spent_at: spentAt } : { minutes, note }),
+    })
+  },
+
+  /** The caller's time blocks overlapping [from, to) (ISO timestamps, at most 42 days). */
+  listTimeBlocks(from: string, to: string) {
+    const qs = new URLSearchParams({ from, to })
+    return request<TimeBlock[]>(`/api/v2/time-blocks?${qs}`)
+  },
+
+  listTaskTimeBlocks(taskId: number) {
+    return request<TimeBlock[]>(`/api/v2/tasks/${taskId}/time-blocks`)
+  },
+
+  createTimeBlock(taskId: number, startAt: string, endAt: string) {
+    return request<TimeBlock>('/api/v2/time-blocks', {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId, start_at: startAt, end_at: endAt }),
+    })
+  },
+
+  moveTimeBlock(blockId: number, startAt: string, endAt: string) {
+    return request<TimeBlock>(`/api/v2/time-blocks/${blockId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ start_at: startAt, end_at: endAt }),
+    })
+  },
+
+  deleteTimeBlock(blockId: number) {
+    return request<void>(`/api/v2/time-blocks/${blockId}`, { method: 'DELETE' })
+  },
+
+  /** Records a started block as time spent on its task. */
+  logTimeBlock(blockId: number, note = '') {
+    return request<{ block: TimeBlock; time_entry: TaskTimeEntry }>(`/api/v2/time-blocks/${blockId}/log`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
     })
   },
 
@@ -1247,6 +1542,18 @@ export const api = {
   deleteTaskComment(taskId: number, commentId: number) {
     return request<void>(`/api/v2/tasks/${taskId}/comments/${commentId}`, {
       method: 'DELETE',
+    })
+  },
+
+  setCommentReaction(taskId: number, commentId: number, code: string, on: boolean) {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}/reactions/${encodeURIComponent(code)}`, {
+      method: on ? 'PUT' : 'DELETE',
+    })
+  },
+
+  setCommentResolved(taskId: number, commentId: number, resolved: boolean) {
+    return request<TaskComment>(`/api/v2/tasks/${taskId}/comments/${commentId}/resolve`, {
+      method: resolved ? 'POST' : 'DELETE',
     })
   },
 
@@ -1274,6 +1581,80 @@ export const api = {
 
   unclaimTask(taskId: number) {
     return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'DELETE' })
+  },
+
+  setTaskReviewer(taskId: number, userName: string) {
+    return request<Task>(`/api/v2/tasks/${taskId}/reviewer`, {
+      method: 'PUT',
+      body: JSON.stringify({ user_name: userName }),
+    })
+  },
+
+  clearTaskReviewer(taskId: number) {
+    return request<Task>(`/api/v2/tasks/${taskId}/reviewer`, { method: 'DELETE' })
+  },
+
+  planner(days = 14) {
+    return request<Planner>(`/api/v2/planner?days=${days}`)
+  },
+
+  snoozeTask(taskId: number, until: string) {
+    return request<{ snoozed_until: string }>(`/api/v2/tasks/${taskId}/snooze`, {
+      method: 'PUT',
+      body: JSON.stringify({ until }),
+    })
+  },
+
+  unsnoozeTask(taskId: number) {
+    return request<void>(`/api/v2/tasks/${taskId}/snooze`, { method: 'DELETE' })
+  },
+
+  listRequestForms(projectId: number) {
+    return request<RequestForm[]>(`/api/v2/projects/${projectId}/forms`)
+  },
+
+  createRequestForm(projectId: number, input: RequestFormInput) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  updateRequestForm(projectId: number, formId: number, input: RequestFormInput) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms/${formId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    })
+  },
+
+  rotateRequestForm(projectId: number, formId: number) {
+    return request<RequestForm>(`/api/v2/projects/${projectId}/forms/${formId}/rotate`, { method: 'POST' })
+  },
+
+  deleteRequestForm(projectId: number, formId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/forms/${formId}`, { method: 'DELETE' })
+  },
+
+  getRequestForm(token: string) {
+    return request<PublicRequestForm>(`/api/v2/forms/${encodeURIComponent(token)}`)
+  },
+
+  submitRequestForm(token: string, summary: string, answers: Record<string, string>) {
+    return request<{ task_id: number }>(`/api/v2/forms/${encodeURIComponent(token)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ summary, answers }),
+    })
+  },
+
+  getOnboarding() {
+    return request<Onboarding>('/api/v2/me/onboarding')
+  },
+
+  setOnboardingDismissed(dismissed: boolean) {
+    return request<Onboarding>('/api/v2/me/onboarding', {
+      method: 'PATCH',
+      body: JSON.stringify({ dismissed }),
+    })
   },
 
   listNotifications(params: { page?: number; per_page?: number; unread?: boolean } = {}) {
@@ -1331,10 +1712,13 @@ export const api = {
     return request<ProjectInvite[]>(`/api/v2/projects/${projectId}/invites`)
   },
 
-  searchUsers(q: string, init: RequestInit & { projectId?: number } = {}) {
-    const { projectId, ...rest } = init
+  searchUsers(q: string, init: RequestInit & { projectId?: number; includeTeams?: boolean } = {}) {
+    const { projectId, includeTeams, ...rest } = init
     const qs = new URLSearchParams({ q })
-    if (projectId && projectId > 0) qs.set('project_id', String(projectId))
+    if (projectId && projectId > 0) {
+      qs.set('project_id', String(projectId))
+      if (includeTeams) qs.set('include_teams', '1')
+    }
     return request<UserSearchHit[]>(`/api/v2/users/search?${qs}`, rest)
   },
 
@@ -1511,6 +1895,10 @@ export const api = {
     return (await request<{ counts: Record<string, number> }>(`/api/v2/projects/${projectId}/status-counts${qs}`)).counts
   },
 
+  projectTimeline(projectId: number) {
+    return request<ProjectTimeline>(`/api/v2/projects/${projectId}/timeline`)
+  },
+
   projectInsights(projectId: number, sprintId?: number) {
     const qs = sprintId ? `?sprint_id=${sprintId}` : ''
     return request<ProjectInsights>(`/api/v2/projects/${projectId}/insights${qs}`)
@@ -1668,7 +2056,105 @@ export const api = {
   },
 
   getCompanyHome() {
-    return request<{ content: string; can_edit: boolean }>('/api/v2/company-home')
+    return request<{ content: string; can_edit: boolean; summary?: CompanyHomeSummary }>('/api/v2/company-home')
+  },
+
+  getSystemHealth() {
+    return request<SystemHealth>('/api/v2/admin/system/health')
+  },
+
+  getMaintenance() {
+    return request<{ enabled: boolean; message: string; started_at: string | null }>('/api/v2/admin/maintenance')
+  },
+
+  setMaintenance(enabled: boolean, message: string) {
+    return request<{ enabled: boolean; message: string; started_at: string | null }>('/api/v2/admin/maintenance', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, message }),
+    })
+  },
+
+  getBackupStatus() {
+    return request<BackupStatus>('/api/v2/admin/backups')
+  },
+
+  downloadBackup() {
+    return download('/api/v2/admin/backups/download', 'ordryn-backup.tar.gz')
+  },
+
+  downloadStoredBackup(name: string) {
+    return download(`/api/v2/admin/backups/files/${encodeURIComponent(name)}`, name)
+  },
+
+  getAuditStream() {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream')
+  },
+
+  updateAuditStream(payload: AuditStreamPatch) {
+    return request<AuditStreamSettings>('/api/v2/admin/audit-stream', { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  testAuditStream() {
+    return request<{ ok: boolean }>('/api/v2/admin/audit-stream/test', { method: 'POST' })
+  },
+
+  listProjectTemplates() {
+    return request<{ templates: ProjectTemplate[] }>('/api/v2/project-templates')
+  },
+
+  createProjectFromTemplate(templateId: number, payload: { name: string; description?: string; include_tasks: boolean }) {
+    return request<FromTemplateResult>(`/api/v2/project-templates/${templateId}/projects`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getProjectTemplateFlag(projectId: number) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`)
+  },
+
+  setProjectTemplateFlag(projectId: number, isTemplate: boolean) {
+    return request<{ is_template: boolean }>(`/api/v2/projects/${projectId}/template`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_template: isTemplate }),
+    })
+  },
+
+  getPortfolio(archived = false) {
+    return request<{ projects: PortfolioProject[] }>(`/api/v2/portfolio${archived ? '?archived=1' : ''}`)
+  },
+
+  listProjectStatusUpdates(projectId: number) {
+    return request<{ updates: ProjectStatusUpdate[] }>(`/api/v2/projects/${projectId}/status-updates`)
+  },
+
+  postProjectStatusUpdate(projectId: number, health: ProjectHealth, body: string) {
+    return request<ProjectStatusUpdate>(`/api/v2/projects/${projectId}/status-updates`, {
+      method: 'POST',
+      body: JSON.stringify({ health, body }),
+    })
+  },
+
+  deleteProjectStatusUpdate(projectId: number, updateId: number) {
+    return request<void>(`/api/v2/projects/${projectId}/status-updates/${updateId}`, { method: 'DELETE' })
+  },
+
+  getTimesheet(params: { from: string; to: string; user_id?: number; project_id?: number }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to })
+    if (params.user_id) qs.set('user_id', String(params.user_id))
+    if (params.project_id) qs.set('project_id', String(params.project_id))
+    return request<TimesheetReport>(`/api/v2/reports/time?${qs}`)
+  },
+
+  downloadTimesheet(params: { from: string; to: string; user_id?: number; project_id?: number }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to, format: 'csv' })
+    if (params.user_id) qs.set('user_id', String(params.user_id))
+    if (params.project_id) qs.set('project_id', String(params.project_id))
+    return download(`/api/v2/reports/time?${qs}`, `timesheet-${params.from}-to-${params.to}.csv`)
+  },
+
+  getWorkload() {
+    return request<WorkloadReport>('/api/v2/reports/workload')
   },
 
   getAdminSettings() {
@@ -1680,6 +2166,26 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
+  },
+
+  getAdminSSO() {
+    return request<AdminSSOSettings>('/api/v2/admin/sso')
+  },
+
+  patchAdminSSO(payload: AdminSSOPatch) {
+    return request<AdminSSOSettings>('/api/v2/admin/sso', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  getSecurityPolicy() {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy')
+  },
+
+  patchSecurityPolicy(payload: AdminSecurityPolicyPatch) {
+    return request<AdminSecurityPolicy>('/api/v2/admin/security-policy', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  testAdminSSO() {
+    return request<{ status: string; authorization_endpoint: string }>('/api/v2/admin/sso/test', { method: 'POST' })
   },
 
   testImageHosting(payload: AdminSettingsPatch) {
@@ -1756,11 +2262,34 @@ export const api = {
     })
   },
 
+  getOffboardingPreview(id: number) {
+    return request<OffboardingPreview>(`/api/v2/people/${id}/offboarding`)
+  },
+
+  offboardPerson(id: number, payload: OffboardInput) {
+    return request<OffboardResult>(`/api/v2/people/${id}/offboard`, { method: 'POST', body: JSON.stringify(payload) })
+  },
+
   setPersonActive(id: number, active: boolean) {
     return request<{ ok: boolean; active: boolean }>(
       `/api/v2/people/${id}/${active ? 'reactivate' : 'deactivate'}`,
       { method: 'POST' },
     )
+  },
+
+  setPersonGuest(id: number, guest: boolean) {
+    return request<{ ok: boolean; guest: boolean }>(`/api/v2/people/${id}/guest`, {
+      method: 'POST',
+      body: JSON.stringify({ guest }),
+    })
+  },
+
+  getGuestPolicy() {
+    return request<GuestPolicy>('/api/v2/admin/guest-policy')
+  },
+
+  saveGuestPolicy(policy: GuestPolicy) {
+    return request<GuestPolicy>('/api/v2/admin/guest-policy', { method: 'PUT', body: JSON.stringify(policy) })
   },
 
   listAdminUsers() {

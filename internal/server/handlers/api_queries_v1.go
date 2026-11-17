@@ -297,13 +297,15 @@ func queryColumnText(t tasks.Task, col string) string {
 		return ""
 	case "claimed_by":
 		return t.ClaimedByName
+	case "reviewer":
+		return t.ReviewerName
 	case "created_by":
 		return t.CreatedByName
 	case "sprint":
 		return t.SprintName
 	case "estimate":
-		if t.EstimatePoints != nil {
-			return strconv.Itoa(*t.EstimatePoints)
+		if t.EstimateHours != nil {
+			return strconv.FormatFloat(*t.EstimateHours, 'f', -1, 64)
 		}
 		return ""
 	case "parent":
@@ -407,7 +409,7 @@ var queryFieldLabels = map[string]string{
 	"project": "Project", "completed": "Completed", "workflow_status": "Status", "priority": "Priority",
 	"tags": "Tags", "due_date": "Due date", "created_date": "Created date", "modified_date": "Changed date",
 	"completed_date":      "Completed date",
-	"status_changed_date": "Entered status on", "days_in_status": "Days in status", "claimed_by": "Claimed by", "created_by": "Created by",
+	"status_changed_date": "Entered status on", "days_in_status": "Days in status", "claimed_by": "Claimed by", "reviewer": "Reviewer", "created_by": "Created by",
 	"sprint": "Sprint", "estimate": "Estimate", "is_subtask": "Is a subtask", "has_subtasks": "Has subtasks",
 	"favorite": "Favorite", "parent": "Parent",
 }

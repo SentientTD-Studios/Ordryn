@@ -5,16 +5,20 @@ import (
 	"time"
 
 	"GoTodo/internal/storage"
+	"GoTodo/internal/workers"
 )
 
 // StartOverdueHookWorker notifies once per overdue and due-soon project task per due date.
 func StartOverdueHookWorker() {
+	const name = "due-date-hooks"
+	workers.Register(name, time.Hour)
+	run := func() error { runDueHookPasses(); return nil }
 	go func() {
-		runDueHookPasses()
+		workers.Run(name, run)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			runDueHookPasses()
+			workers.Run(name, run)
 		}
 	}()
 }

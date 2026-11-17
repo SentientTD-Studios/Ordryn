@@ -45,6 +45,11 @@ type TaskComment struct {
 	// AuthorIsSystem is true when a project automation rule wrote the comment.
 	AuthorIsSystem bool
 	Links          []TaskCommentLink
+	// Filled by AttachCommentExtras.
+	Reactions        []CommentReaction
+	ResolvedAt       *time.Time
+	ResolvedByUserID int
+	ResolvedByName   string
 }
 
 // TaskCommentLink is a task mentioned in a comment that the viewer can open.

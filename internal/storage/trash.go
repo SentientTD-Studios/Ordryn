@@ -8,6 +8,8 @@ import (
 	"log"
 	"time"
 
+	"GoTodo/internal/workers"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -243,7 +245,7 @@ func ListTrashCandidates(userID, limit int) ([]TrashedTask, error) {
 		LEFT JOIN users u ON u.id = t.deleted_by
 		WHERE t.deleted_at IS NOT NULL
 		  AND (par.id IS NULL OR par.deleted_at IS NULL OR par.delete_batch IS DISTINCT FROM t.delete_batch)
-		  AND (t.user_id = $1 OR (t.project_id IS NOT NULL AND (
+		  AND ((t.user_id = $1 AND t.project_id IS NULL) OR (t.project_id IS NOT NULL AND (
 			EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = $1)
 			OR p.user_id = $1)))
 		ORDER BY t.deleted_at DESC, t.id DESC
@@ -282,20 +284,30 @@ func PurgeExpiredTrash(days int) (int64, error) {
 
 // StartTrashPurgeWorker empties expired trash hourly.
 func StartTrashPurgeWorker() {
+	const name = "trash-purge"
+	workers.Register(name, time.Hour)
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
-			days := DefaultTrashRetentionDays
-			if s, err := GetSiteSettings(); err == nil && s != nil {
-				days = s.TrashRetentionDays
-			}
-			if n, err := PurgeExpiredTrash(days); err != nil {
-				log.Printf("trash purge: %v", err)
-			} else if n > 0 {
-				log.Printf("trash purge: deleted %d task(s) older than %d day(s)", n, ClampTrashRetentionDays(days))
-			}
+			workers.Run(name, runTrashPurge)
 			<-ticker.C
 		}
 	}()
+}
+
+func runTrashPurge() error {
+	days := DefaultTrashRetentionDays
+	if s, err := GetSiteSettings(); err == nil && s != nil {
+		days = s.TrashRetentionDays
+	}
+	n, err := PurgeExpiredTrash(days)
+	if err != nil {
+		log.Printf("trash purge: %v", err)
+		return err
+	}
+	if n > 0 {
+		log.Printf("trash purge: deleted %d task(s) older than %d day(s)", n, ClampTrashRetentionDays(days))
+	}
+	return nil
 }

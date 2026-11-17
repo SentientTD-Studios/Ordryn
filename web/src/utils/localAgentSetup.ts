@@ -1,6 +1,8 @@
 // Setup snippets for local agent keys: personal keys an AI agent on your own
 // machine uses to read (and, if allowed, update) your tasks over MCP or REST.
 
+import { siteKeyEnvVar, siteSlug } from './siteSlug.ts'
+
 export type LocalAgentClient = 'claude' | 'codex' | 'gemini' | 'json' | 'rest'
 
 export const LOCAL_AGENT_CLIENTS: { id: LocalAgentClient; label: string }[] = [
@@ -12,17 +14,19 @@ export const LOCAL_AGENT_CLIENTS: { id: LocalAgentClient; label: string }[] = [
 ]
 
 export const KEY_PLACEHOLDER = '<YOUR_KEY>'
-export const KEY_ENV_VAR = 'GOTODO_API_KEY'
+/** The env var when the site has no name; real setups use siteKeyEnvVar(siteName). */
+export const KEY_ENV_VAR = siteKeyEnvVar()
 
-/** MCP server name: "gotodo", or "gotodo-<project>" for a project-limited key. */
-export function localServerName(projectName?: string | null): string {
+/** MCP server name: the site's slug (e.g. "acme"), or "acme-<project>" for a project-limited key. */
+export function localServerName(projectName?: string | null, siteName?: string | null): string {
+  const base = siteSlug(siteName)
   const slug = (projectName ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 32)
     .replace(/-+$/g, '')
-  return slug ? `gotodo-${slug}` : 'gotodo'
+  return slug ? `${base}-${slug}` : base
 }
 
 export type Snippet = { title: string; note?: string; code: string }
@@ -33,6 +37,7 @@ export function localAgentSnippets(
   root: string,
   name: string,
   key: string = KEY_PLACEHOLDER,
+  envVar: string = KEY_ENV_VAR,
 ): Snippet[] {
   const mcpUrl = `${root}/mcp`
   const auth = `Bearer ${key}`
@@ -49,12 +54,12 @@ export function localAgentSnippets(
       return [
         {
           title: 'Add to ~/.codex/config.toml',
-          code: `[mcp_servers.${tomlKey(name)}]\nurl = "${mcpUrl}"\nbearer_token_env_var = "${KEY_ENV_VAR}"`,
+          code: `[mcp_servers.${tomlKey(name)}]\nurl = "${mcpUrl}"\nbearer_token_env_var = "${envVar}"`,
         },
         {
           title: 'Set the key in your environment',
           note: 'Codex reads the key from this variable, so it never sits in the config file.',
-          code: `# PowerShell\nsetx ${KEY_ENV_VAR} "${key}"\n# bash / zsh (add to your shell profile)\nexport ${KEY_ENV_VAR}="${key}"`,
+          code: `# PowerShell\nsetx ${envVar} "${key}"\n# bash / zsh (add to your shell profile)\nexport ${envVar}="${key}"`,
         },
       ]
     case 'gemini':
@@ -84,11 +89,11 @@ export function localAgentSnippets(
 }
 
 /** A note for the repo's AGENTS.md / CLAUDE.md / GEMINI.md so the agent knows where tasks live. */
-export function agentsMdSnippet(site: string, name: string, canWrite: boolean): string {
+export function agentsMdSnippet(site: string, name: string, canWrite: boolean, siteName = 'Ordryn'): string {
   const lines = [
     '## Tasks',
     '',
-    `Tasks for this repo are tracked in GoTodo (${site}), available through the \`${name}\` MCP server.`,
+    `Tasks for this repo are tracked in ${siteName.trim() || 'Ordryn'} (${site}), available through the \`${name}\` MCP server.`,
     `When I mention a task as #123 or paste a ${site}/tasks/123 link, read it with \`get_task\``,
     '(include_comments: true) and treat its description and discussion as the requirements.',
   ]

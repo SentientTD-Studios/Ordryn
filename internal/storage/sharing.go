@@ -966,6 +966,22 @@ func TaskListVisibleCondition(alias, userParam string, projectFilter *int) strin
 	return TaskHomeVisibleCondition(alias, userParam)
 }
 
+// TaskProjectOpenSQL is true when the task has no project or userParam can
+// still open its project. AND it onto any query that picks tasks by their
+// creator (user_id), so people never keep seeing tasks of a project they left
+// or were removed from. Unaliased, it refers to tasks.
+func TaskProjectOpenSQL(alias, userParam string) string {
+	prefix := "tasks."
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return fmt.Sprintf(`(%[1]sproject_id IS NULL OR EXISTS (
+		SELECT 1 FROM project_members pm_open WHERE pm_open.project_id = %[1]sproject_id AND pm_open.user_id = %[2]s
+	) OR EXISTS (
+		SELECT 1 FROM projects p_open WHERE p_open.id = %[1]sproject_id AND p_open.user_id = %[2]s
+	))`, prefix, userParam)
+}
+
 func taskVisibleCondition(alias, userParam string, writeRolesOnly bool) string {
 	// Default to tasks. when unaliased so EXISTS subqueries correlate to the
 	// outer tasks row (bare project_id would resolve to pm.project_id).
@@ -977,12 +993,13 @@ func taskVisibleCondition(alias, userParam string, writeRolesOnly bool) string {
 	if writeRolesOnly {
 		memberRoleFilter = " AND pm.role <> 'viewer'"
 	}
-	// Trashed tasks are invisible everywhere except the trash itself.
-	return fmt.Sprintf(`(%sdeleted_at IS NULL AND (%suser_id = %s OR (%sproject_id IS NOT NULL AND EXISTS (
+	// Trashed tasks are invisible everywhere except the trash itself. Creating a
+	// task counts only while its creator can still open the task's project.
+	return fmt.Sprintf(`(%sdeleted_at IS NULL AND ((%suser_id = %s AND %s) OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM project_members pm WHERE pm.project_id = %sproject_id AND pm.user_id = %s%s
 	)) OR (%sproject_id IS NOT NULL AND EXISTS (
 		SELECT 1 FROM projects p_own WHERE p_own.id = %sproject_id AND p_own.user_id = %s
-	))))`, prefix, prefix, userParam, prefix, prefix, userParam, memberRoleFilter, prefix, prefix, userParam)
+	))))`, prefix, prefix, userParam, TaskProjectOpenSQL(alias, userParam), prefix, prefix, userParam, memberRoleFilter, prefix, prefix, userParam)
 }
 
 // CanUserAccessTask reports whether userID can read the task and their effective write role.

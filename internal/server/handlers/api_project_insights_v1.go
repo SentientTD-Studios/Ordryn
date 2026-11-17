@@ -11,27 +11,27 @@ import (
 )
 
 type apiInsightsSummaryJSON struct {
-	Open       int `json:"open"`
-	Done       int `json:"done"`
-	Overdue    int `json:"overdue"`
-	Unclaimed  int `json:"unclaimed"`
-	OpenPoints int `json:"open_points"`
+	Open      int     `json:"open"`
+	Done      int     `json:"done"`
+	Overdue   int     `json:"overdue"`
+	Unclaimed int     `json:"unclaimed"`
+	OpenHours float64 `json:"open_hours"`
 }
 
 type apiInsightsWeekJSON struct {
-	WeekStart string `json:"week_start"`
-	Tasks     int    `json:"tasks"`
-	Points    int    `json:"points"`
+	WeekStart string  `json:"week_start"`
+	Tasks     int     `json:"tasks"`
+	Hours     float64 `json:"hours"`
 }
 
 type apiInsightsMemberJSON struct {
-	UserID        int    `json:"user_id"`
-	Name          string `json:"name"`
-	IsAgent       bool   `json:"is_agent"`
-	IsMember      bool   `json:"is_member"`
-	ClaimedOpen   int    `json:"claimed_open"`
-	ClaimedPoints int    `json:"claimed_points"`
-	Completed     int    `json:"completed"`
+	UserID       int     `json:"user_id"`
+	Name         string  `json:"name"`
+	IsAgent      bool    `json:"is_agent"`
+	IsMember     bool    `json:"is_member"`
+	ClaimedOpen  int     `json:"claimed_open"`
+	ClaimedHours float64 `json:"claimed_hours"`
+	Completed    int     `json:"completed"`
 }
 
 type apiInsightsSprintJSON struct {
@@ -42,18 +42,18 @@ type apiInsightsSprintJSON struct {
 }
 
 type apiBurndownDayJSON struct {
-	Date            string  `json:"date"`
-	RemainingTasks  *int    `json:"remaining_tasks"`
-	RemainingPoints *int    `json:"remaining_points"`
-	IdealTasks      float64 `json:"ideal_tasks"`
-	IdealPoints     float64 `json:"ideal_points"`
+	Date           string   `json:"date"`
+	RemainingTasks *int     `json:"remaining_tasks"`
+	RemainingHours *float64 `json:"remaining_hours"`
+	IdealTasks     float64  `json:"ideal_tasks"`
+	IdealHours     float64  `json:"ideal_hours"`
 }
 
 type apiBurndownJSON struct {
-	Sprint      apiInsightsSprintJSON `json:"sprint"`
-	TotalTasks  int                   `json:"total_tasks"`
-	TotalPoints int                   `json:"total_points"`
-	Days        []apiBurndownDayJSON  `json:"days"`
+	Sprint     apiInsightsSprintJSON `json:"sprint"`
+	TotalTasks int                   `json:"total_tasks"`
+	TotalHours float64               `json:"total_hours"`
+	Days       []apiBurndownDayJSON  `json:"days"`
 }
 
 type apiProjectInsightsJSON struct {
@@ -112,7 +112,7 @@ func apiV1ProjectInsights(w http.ResponseWriter, r *http.Request, projectID int)
 		WorkflowMode: ins.WorkflowMode,
 		Summary: apiInsightsSummaryJSON{
 			Open: ins.Summary.Open, Done: ins.Summary.Done, Overdue: ins.Summary.Overdue,
-			Unclaimed: ins.Summary.Unclaimed, OpenPoints: ins.Summary.OpenPoints,
+			Unclaimed: ins.Summary.Unclaimed, OpenHours: ins.Summary.OpenHours,
 		},
 		Throughput:     make([]apiInsightsWeekJSON, 0, len(ins.Throughput)),
 		CompletedDays:  ins.CompletedDays,
@@ -122,13 +122,13 @@ func apiV1ProjectInsights(w http.ResponseWriter, r *http.Request, projectID int)
 	}
 	for _, wk := range ins.Throughput {
 		out.Throughput = append(out.Throughput, apiInsightsWeekJSON{
-			WeekStart: wk.WeekStart.Format("2006-01-02"), Tasks: wk.Tasks, Points: wk.Points,
+			WeekStart: wk.WeekStart.Format("2006-01-02"), Tasks: wk.Tasks, Hours: wk.Hours,
 		})
 	}
 	for _, m := range ins.Members {
 		out.Members = append(out.Members, apiInsightsMemberJSON{
 			UserID: m.UserID, Name: m.Name, IsAgent: m.IsAgent, IsMember: m.IsMember,
-			ClaimedOpen: m.ClaimedOpen, ClaimedPoints: m.ClaimedPoints, Completed: m.Completed,
+			ClaimedOpen: m.ClaimedOpen, ClaimedHours: m.ClaimedHours, Completed: m.Completed,
 		})
 	}
 	for _, s := range ins.Sprints {
@@ -138,12 +138,12 @@ func apiV1ProjectInsights(w http.ResponseWriter, r *http.Request, projectID int)
 		days := make([]apiBurndownDayJSON, 0, len(bd.Days))
 		for _, d := range bd.Days {
 			days = append(days, apiBurndownDayJSON{
-				Date: d.Date, RemainingTasks: d.RemainingTasks, RemainingPoints: d.RemainingPoints,
-				IdealTasks: d.IdealTasks, IdealPoints: d.IdealPoints,
+				Date: d.Date, RemainingTasks: d.RemainingTasks, RemainingHours: d.RemainingHours,
+				IdealTasks: d.IdealTasks, IdealHours: d.IdealHours,
 			})
 		}
 		out.Burndown = &apiBurndownJSON{
-			Sprint: insightsSprintJSON(bd.Sprint), TotalTasks: bd.TotalTasks, TotalPoints: bd.TotalPoints, Days: days,
+			Sprint: insightsSprintJSON(bd.Sprint), TotalTasks: bd.TotalTasks, TotalHours: bd.TotalHours, Days: days,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

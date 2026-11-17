@@ -32,13 +32,13 @@ type ProjectInsights struct {
 
 // MemberInsight is one person's share of the project's work.
 type MemberInsight struct {
-	UserID        int
-	Name          string
-	IsAgent       bool
-	IsMember      bool
-	ClaimedOpen   int
-	ClaimedPoints int
-	Completed     int
+	UserID       int
+	Name         string
+	IsAgent      bool
+	IsMember     bool
+	ClaimedOpen  int
+	ClaimedHours float64
+	Completed    int
 }
 
 // SprintRef names a dated sprint that can have a burndown.
@@ -51,19 +51,19 @@ type SprintRef struct {
 
 // SprintBurndown is remaining work per day across a sprint, from its current scope.
 type SprintBurndown struct {
-	Sprint      SprintRef
-	TotalTasks  int
-	TotalPoints int
-	Days        []BurndownDay
+	Sprint     SprintRef
+	TotalTasks int
+	TotalHours float64
+	Days       []BurndownDay
 }
 
 // BurndownDay is remaining work at the end of a day. Future days have no actuals.
 type BurndownDay struct {
-	Date            string
-	RemainingTasks  *int
-	RemainingPoints *int
-	IdealTasks      float64
-	IdealPoints     float64
+	Date           string
+	RemainingTasks *int
+	RemainingHours *float64
+	IdealTasks     float64
+	IdealHours     float64
 }
 
 // GetProjectInsightsForUser builds the team dashboard. sprintID 0 picks the
@@ -193,7 +193,7 @@ func projectMemberInsights(projectID int, since time.Time) ([]MemberInsight, err
 		}
 		mi := MemberInsight{UserID: m.UserID, Name: name, IsAgent: m.IsAgent, IsMember: true}
 		if w := work[m.UserID]; w != nil {
-			mi.ClaimedOpen, mi.ClaimedPoints, mi.Completed = w.ClaimedOpen, w.ClaimedPoints, w.Completed
+			mi.ClaimedOpen, mi.ClaimedHours, mi.Completed = w.ClaimedOpen, w.ClaimedHours, w.Completed
 		}
 		seen[m.UserID] = true
 		out = append(out, mi)
@@ -218,7 +218,7 @@ func projectMemberInsights(projectID int, since time.Time) ([]MemberInsight, err
 			}
 			out = append(out, MemberInsight{
 				UserID: id, Name: name,
-				ClaimedOpen: w.ClaimedOpen, ClaimedPoints: w.ClaimedPoints, Completed: w.Completed,
+				ClaimedOpen: w.ClaimedOpen, ClaimedHours: w.ClaimedHours, Completed: w.Completed,
 			})
 		}
 	}
@@ -264,7 +264,7 @@ func BuildBurndown(sprint SprintRef, tasks []storage.SprintTaskState, loc *time.
 	bd := &SprintBurndown{Sprint: sprint, Days: []BurndownDay{}}
 	for _, t := range tasks {
 		bd.TotalTasks++
-		bd.TotalPoints += t.Points
+		bd.TotalHours += t.Hours
 	}
 	days := int(end.Sub(start).Hours()/24+0.5) + 1
 	if days > maxBurndownDays {
@@ -277,23 +277,23 @@ func BuildBurndown(sprint SprintRef, tasks []storage.SprintTaskState, loc *time.
 			frac = 1 - float64(i)/float64(days-1)
 		}
 		d := BurndownDay{
-			Date:        day.Format("2006-01-02"),
-			IdealTasks:  float64(bd.TotalTasks) * frac,
-			IdealPoints: float64(bd.TotalPoints) * frac,
+			Date:       day.Format("2006-01-02"),
+			IdealTasks: float64(bd.TotalTasks) * frac,
+			IdealHours: bd.TotalHours * frac,
 		}
 		if !day.After(now) {
 			endOfDay := day.AddDate(0, 0, 1)
 			if endOfDay.After(now) {
 				endOfDay = now
 			}
-			remTasks, remPoints := 0, 0
+			remTasks, remHours := 0, 0.0
 			for _, t := range tasks {
 				if !completedAt(t, endOfDay) {
 					remTasks++
-					remPoints += t.Points
+					remHours += t.Hours
 				}
 			}
-			d.RemainingTasks, d.RemainingPoints = &remTasks, &remPoints
+			d.RemainingTasks, d.RemainingHours = &remTasks, &remHours
 		}
 		bd.Days = append(bd.Days, d)
 	}

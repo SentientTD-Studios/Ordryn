@@ -6,6 +6,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"GoTodo/internal/storage"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -20,12 +22,28 @@ const (
 // password reset and password change. The error wraps ErrValidation and its
 // message is safe to show to the user.
 func ValidatePassword(password string) error {
-	if utf8.RuneCountInString(password) < MinPasswordLength {
-		return fmt.Errorf("%w: password must be at least %d characters long", ErrValidation, MinPasswordLength)
+	if min := PasswordMinLength(); utf8.RuneCountInString(password) < min {
+		return fmt.Errorf("%w: password must be at least %d characters long", ErrValidation, min)
 	}
 	if len(password) > MaxPasswordBytes {
 		return fmt.Errorf("%w: password is too long; use at most %d bytes (72 plain letters and numbers, fewer with accented characters or emoji)",
 			ErrValidation, MaxPasswordBytes)
+	}
+	return nil
+}
+
+// PasswordMinLength is the site's minimum (Admin → Security), never below MinPasswordLength.
+func PasswordMinLength() int {
+	if n := storage.GetSecurityPolicy().MinPasswordLength; n > MinPasswordLength {
+		return n
+	}
+	return MinPasswordLength
+}
+
+// CheckNewAccountEmail refuses an email whose domain the security policy doesn't allow.
+func CheckNewAccountEmail(email string) error {
+	if !storage.GetSecurityPolicy().EmailDomainAllowed(email) {
+		return fmt.Errorf("%w: new accounts on this site must use an approved email domain", ErrValidation)
 	}
 	return nil
 }

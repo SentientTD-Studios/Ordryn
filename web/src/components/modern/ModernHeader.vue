@@ -10,6 +10,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { usePageActivity } from '@/composables/usePageActivity'
 import { projectRoute } from '@/utils/projectRoute'
+import HeaderSearch from './HeaderSearch.vue'
 
 const emit = defineEmits<{
   'toggle-mobile-nav': []
@@ -189,8 +190,23 @@ async function onLogout() {
         </nav>
       </div>
 
+      <!-- Site search: live title/id results as you type; Enter searches everything (press / anywhere to focus it) -->
+      <div v-if="isAuthenticated" class="d-none d-md-block flex-grow-1 ordryn-header-search">
+        <HeaderSearch />
+      </div>
+
       <!-- Right Actions: Multi-Theme Dropdown & Auth Controls -->
       <div class="d-flex align-items-center gap-1 gap-sm-2 flex-shrink-0">
+        <RouterLink
+          v-if="isAuthenticated"
+          :to="{ name: 'search' }"
+          class="btn btn-sm border-0 shadow-none d-md-none"
+          style="background: var(--ordryn-muted-bg); color: var(--ordryn-text);"
+          aria-label="Search"
+          title="Search"
+        >
+          <i class="bi bi-search" />
+        </RouterLink>
         <!-- Theme Picker Dropdown -->
         <div class="dropdown">
           <button
@@ -304,6 +320,10 @@ async function onLogout() {
   top: 0;
   z-index: 1050;
   padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+.ordryn-header-search {
+  max-width: 26rem;
+  min-width: 10rem;
 }
 .ordryn-header-menu-btn {
   color: var(--ordryn-text);

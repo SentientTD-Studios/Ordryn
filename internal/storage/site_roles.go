@@ -87,7 +87,16 @@ var sitePermCatalog = []SitePermInfo{
 	{ID: SitePermCreateInvites, Label: "Send site invites", Description: "Invite people to join this site, even when user invites are turned off", Group: "Invites"},
 	{ID: SitePermUsersManage, Label: "Manage people", Description: "Create accounts, put people on any team, and deactivate or reactivate accounts. Accounts of admins and other people managers stay with admins", Group: "People"},
 	{ID: SitePermQueriesSite, Label: "Manage site-wide queries", Description: "Share queries with everyone on the site, and edit or delete the ones shared there", Group: "Queries"},
+	agentsLocalPermInfo,
+	agentsProjectPermInfo,
 }
+
+var (
+	agentsLocalPermInfo = SitePermInfo{ID: SitePermAgentsLocal, Label: "Use local AI agents",
+		Description: "Create local agent keys so an AI agent on your own computer can work on your tasks as you. Taking this away stops existing keys", Group: "AI agents"}
+	agentsProjectPermInfo = SitePermInfo{ID: SitePermAgentsProject, Label: "Add AI agents to projects",
+		Description: "Add and configure AI agent members on projects you manage and create their keys. Anyone can still pause or remove an agent on a project they manage", Group: "AI agents"}
+)
 
 // companySitePermCatalog is what a company-mode site role holds beyond the project
 // permissions. Nobody creates organizations in company mode, and there are no invites:
@@ -103,6 +112,8 @@ var companySitePermCatalog = []SitePermInfo{
 	{ID: SitePermUsersManage, Label: "Manage people", Description: "Create accounts and deactivate or reactivate anyone's account. Accounts of admins and other people managers stay with admins", Group: "People"},
 	{ID: SitePermTeamPeople, Label: "Manage team members' accounts", Description: "Create accounts for the teams you're on, and deactivate or reactivate their members. The Company team doesn't count", Group: "People"},
 	{ID: SitePermProfilesEdit, Label: "Edit names", Description: "Set anyone's first and last name, including your own. Admins' names stay with the site owner", Group: "People"},
+	agentsLocalPermInfo,
+	agentsProjectPermInfo,
 }
 
 // SitePermissionCatalog returns the site permissions admins can assign. In company

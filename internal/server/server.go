@@ -6,6 +6,7 @@ import (
 	"GoTodo/internal/hooks"
 	"GoTodo/internal/live"
 	"GoTodo/internal/mailer"
+	"GoTodo/internal/metrics"
 	"GoTodo/internal/server/handlers"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 )
 
 func serveFavicon(w http.ResponseWriter, r *http.Request) {
@@ -40,9 +42,10 @@ func handleBoth(suffix string, fn http.HandlerFunc) {
 
 // handleAPI registers a REST path on the canonical /api/v2 prefix and the
 // /api/v1 compatibility alias, including BASE_PATH mounts. Every API route
-// rejects state-changing requests sent from other websites.
+// rejects state-changing requests sent from other websites, and writes from
+// non-admins while the site is in maintenance mode.
 func handleAPI(suffix string, fn http.HandlerFunc) {
-	fn = utils.RejectCrossSite(fn)
+	fn = metrics.Instrument(suffix, utils.RejectCrossSite(utils.MaintenanceGuard(fn)))
 	handleBoth("/api/v2"+suffix, fn)
 	handleBoth("/api/v1"+suffix, fn)
 }
@@ -101,6 +104,8 @@ func StartServer() error {
 	domain.StartAutomation()
 	domain.StartDueReminderWorker()
 	domain.StartNotificationEmailWorker()
+	domain.StartBackupWorker()
+	domain.StartAuditStreamer()
 
 	registerAPIV1Routes()
 
@@ -113,10 +118,25 @@ func StartServer() error {
 	}
 
 	fmt.Printf("Starting server on %s (mode=%s)\n", addr, mode)
-	return http.ListenAndServe(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux))
+	return newHTTPServer(addr, utils.SecurityHeadersMiddleware(http.DefaultServeMux)).ListenAndServe()
+}
+
+// newHTTPServer sets connection-level timeouts so slow or abandoned clients
+// can't hold sockets and goroutines open forever. There is deliberately no
+// WriteTimeout or ReadTimeout: /api/v2/events is a long-lived SSE stream, and
+// backup downloads and uploads can legitimately take minutes.
+func newHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 }
 
 func registerAPIV1Routes() {
+	// Prometheus scrape target; 404 unless METRICS_TOKEN is set.
+	handleBoth("/metrics", handlers.Metrics)
 	handleAPI("/health", handlers.APIV1Health)
 	handleAPI("/site", handlers.APIV1Site)
 	handleAPI("/setup", utils.AuthPublicChain(handlers.APIV1Setup))
@@ -125,6 +145,8 @@ func registerAPIV1Routes() {
 	handleAPI("/auth/register", authPublic(handlers.APIV1AuthRegister))
 	handleAPI("/auth/login", authPublic(handlers.APIV1AuthLogin))
 	handleAPI("/auth/mfa/verify", authPublic(handlers.APIV1AuthMFAVerify))
+	handleAPI("/auth/passkey/begin", authPublic(handlers.APIV1AuthPasskeyBegin))
+	handleAPI("/auth/passkey/finish", authPublic(handlers.APIV1AuthPasskeyFinish))
 	handleAPI("/auth/logout", handlers.APIV1AuthLogout)
 	handleAPI("/auth/username-available", authPublic(handlers.APIV1UsernameAvailable))
 	handleAPI("/auth/forgot-password", utils.RateLimitMiddleware(5, 0.05, 900, utils.KeyByIP)(handlers.APIV1ForgotPassword))
@@ -142,6 +164,9 @@ func registerAPIV1Routes() {
 	handleAPI("/me/mfa/recovery-codes", utils.AuthSessionChain(handlers.APIV1MeMFARecoveryCodes))
 	handleAPI("/me/username", utils.AuthSessionChain(handlers.APIV1ClaimUsername))
 	handleAPI("/me/avatar", utils.AuthSessionChain(handlers.APIV1MeAvatar))
+	handleAPI("/me/passkeys", utils.AuthSessionChain(handlers.APIV1MePasskeys))
+	handleAPI("/me/passkeys/", utils.AuthSessionChain(handlers.APIV1MePasskeys))
+	handleAPI("/me/onboarding", utils.AuthSessionChain(handlers.APIV1MeOnboarding))
 	handleAPI("/me/notification-preferences", utils.AuthSessionChain(handlers.APIV1MeNotificationPreferences))
 	handleAPI("/me/github", utils.AuthSessionChain(handlers.APIV1MeGitHub))
 	handleAPI("/me/github/pat", utils.AuthSessionChain(handlers.APIV1MeGitHubPAT))
@@ -149,6 +174,8 @@ func registerAPIV1Routes() {
 	handleAPI("/me/extensions", utils.AuthSessionChain(handlers.APIV1MeExtensions))
 	handleAPI("/me/extensions/", utils.AuthSessionChain(handlers.APIV1MeExtensions))
 	handleAPI("/auth/github/callback", handlers.APIV1GitHubOAuthCallback)
+	handleAPI("/auth/sso/start", utils.RateLimitMiddleware(20, 0.2, 300, utils.KeyByIP)(handlers.APIV1SSOStart))
+	handleAPI("/auth/sso/callback", utils.RateLimitMiddleware(20, 0.2, 300, utils.KeyByIP)(handlers.APIV1SSOCallback))
 	handleAPI("/webhooks/github", handlers.APIV1GitHubWebhook)
 	handleAPI("/webhooks/inbound", utils.RateLimitMiddleware(30, 0.5, 60, utils.KeyByIP)(handlers.APIV1InboundWebhook))
 	handleAPI("/ext/callback", utils.RateLimitMiddleware(60, 1.0, 60, utils.KeyByIPAndBearer)(handlers.APIV1ExtCallback))
@@ -167,6 +194,7 @@ func registerAPIV1Routes() {
 	handleAPI("/tasks/", v1(handlers.APIV1TasksRouter))
 	handleAPI("/notifications", v1(handlers.APIV1NotificationsRouter))
 	handleAPI("/notifications/", v1(handlers.APIV1NotificationsRouter))
+	handleAPI("/search", v1(handlers.APIV1Search))
 	handleAPI("/users/search", v1(utils.RateLimitMiddleware(20, 0.4, 60, utils.KeyByUser)(handlers.APIV1UsersSearch)))
 	handleAPI("/project-roles", v1(handlers.APIV1ProjectRolesCatalog))
 	handleAPI("/organizations", v1(handlers.APIV1OrganizationsRouter))
@@ -193,6 +221,8 @@ func registerAPIV1Routes() {
 	handleAPI("/trash", v1(handlers.APIV1TrashRouter))
 	handleAPI("/trash/", v1(handlers.APIV1TrashRouter))
 	handleAPI("/dashboard", v1(handlers.APIV1Dashboard))
+	handleAPI("/planner", v1(handlers.APIV1Planner))
+	handleAPI("/forms/", v1(handlers.APIV1RequestForms))
 	handleAPI("/events", v1(handlers.APIV1Events))
 	handleAPI("/agent", v1(handlers.APIV1AgentRouter))
 	handleAPI("/agent/", v1(handlers.APIV1AgentRouter))
@@ -202,6 +232,8 @@ func registerAPIV1Routes() {
 		utils.RateLimitMiddleware(240, 4.0, 60, utils.KeyByIPAndBearer)(handlers.APIV1MCP))))
 	handleAPI("/calendar", v1(handlers.APIV1CalendarRouter))
 	handleAPI("/calendar/", v1(handlers.APIV1CalendarRouter))
+	handleAPI("/time-blocks", v1(handlers.APIV1TimeBlocksRouter))
+	handleAPI("/time-blocks/", v1(handlers.APIV1TimeBlocksRouter))
 	handleAPI("/export", v1(handlers.APIV1Export))
 	handleAPI("/import", v1(handlers.APIV1ImportRouter))
 	handleAPI("/import/", v1(handlers.APIV1ImportRouter))
@@ -212,15 +244,29 @@ func registerAPIV1Routes() {
 	handleAPI("/admin/project-roles", utils.AdminAPIChain(handlers.APIV1AdminProjectRolesRouter))
 	handleAPI("/admin/project-roles/", utils.AdminAPIChain(handlers.APIV1AdminProjectRolesRouter))
 	handleAPI("/admin/settings", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminSettings))
+	handleAPI("/admin/sso", utils.AdminAPIChain(handlers.APIV1AdminSSO))
+	handleAPI("/admin/sso/test", utils.AdminAPIChain(handlers.APIV1AdminSSOTest))
+	handleAPI("/admin/security-policy", utils.AdminAPIChain(handlers.APIV1AdminSecurityPolicy))
+	handleAPI("/admin/maintenance", utils.AdminAPIChain(handlers.APIV1AdminMaintenance))
+	handleAPI("/admin/system/health", utils.AdminAPIChain(handlers.APIV1AdminSystemHealth))
+	handleAPI("/admin/backups", utils.AdminAPIChain(handlers.APIV1AdminBackups))
+	handleAPI("/admin/backups/", utils.AdminAPIChain(handlers.APIV1AdminBackups))
+	handleAPI("/admin/audit-stream", utils.AdminAPIChain(handlers.APIV1AdminAuditStream))
+	handleAPI("/admin/audit-stream/test", utils.AdminAPIChain(handlers.APIV1AdminAuditStream))
 	handleAPI("/admin/image-hosting/test", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminImageHostingTest))
 	handleAPI("/admin/chat", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminChatRouter))
 	handleAPI("/admin/chat/", utils.SitePermAPIChain(storage.SitePermSettingsManage, handlers.APIV1AdminChatRouter))
 	handleAPI("/chat/directory", handlers.ChatDirectoryChain(handlers.APIV2ChatDirectory))
 	handleAPI("/company-home", v1(handlers.APIV1CompanyHome))
+	handleAPI("/project-templates", v1(handlers.APIV1ProjectTemplatesRouter))
+	handleAPI("/project-templates/", v1(handlers.APIV1ProjectTemplatesRouter))
+	handleAPI("/portfolio", v1(handlers.APIV1Portfolio))
+	handleAPI("/reports/", v1(handlers.APIV1ReportsRouter))
 	handleAPI("/people", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/people/", utils.APIChain(handlers.APIV1PeopleRouter))
 	handleAPI("/admin/users", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
 	handleAPI("/admin/organization-memberships", utils.AdminAPIChain(handlers.APIV1AdminOrganizationMemberships))
+	handleAPI("/admin/guest-policy", utils.AuthSessionChain(handlers.APIV1AdminGuestPolicy))
 	handleAPI("/admin/users/", utils.AdminAPIChain(handlers.APIV1AdminUsersRouter))
 	handleAPI("/admin/site-roles", utils.SitePermAPIChain(storage.SitePermRolesManage, handlers.APIV1AdminSiteRolesRouter))
 	handleAPI("/admin/site-roles/", utils.SitePermAPIChain(storage.SitePermRolesManage, handlers.APIV1AdminSiteRolesRouter))

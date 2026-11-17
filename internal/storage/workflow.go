@@ -16,7 +16,6 @@ const (
 	WorkflowKanban  = "kanban"
 
 	MaxProjectStatuses      = 8
-	MaxEstimatePoints       = 100
 	MaxStatusNameLen        = 40
 	MaxStatusDescriptionLen = 50
 	MaxTimeEntryNote        = 200
@@ -58,7 +57,8 @@ type TaskTimeEntry struct {
 	UserID    int
 	Minutes   int
 	Note      string
-	CreatedAt time.Time
+	SpentAt   time.Time // when the work happened
+	CreatedAt time.Time // when it was logged
 	UserEmail string
 	UserName  string
 }
@@ -67,13 +67,17 @@ type TaskTimeEntry struct {
 type TaskWorkflowFields struct {
 	StatusID         int
 	StatusName       string
-	EstimatePoints   *int
+	EstimateHours    *float64
+	Refinement       string // "", RefinementNeeded or RefinementRefined
 	TimeSpentMinutes int
 	ProjectWorkflow  string
 	ClaimedBy        int
 	ClaimedByName    string
 	SprintID         int
 	SprintName       string
+	ReviewerID       int
+	ReviewerName     string
+	StartDate        string // YYYY-MM-DD or ""
 }
 
 // CreateProjectWorkflowTables creates statuses and time-entry tables.
@@ -347,7 +351,7 @@ func ClearProjectStatusesAndTaskFields(projectID int) error {
 	defer CloseDatabase(pool)
 
 	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL WHERE project_id = $1`, projectID)
+		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, estimate_hours = NULL, refinement_state = NULL, sprint_id = NULL WHERE project_id = $1`, projectID)
 	if err != nil {
 		return err
 	}
@@ -687,7 +691,7 @@ func ClearTaskWorkflowFields(taskID int) error {
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1`,
+		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, estimate_hours = NULL, refinement_state = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $1`,
 		taskID)
 	return err
 }
@@ -703,21 +707,8 @@ func ClearTaskWorkflowFieldsForTasks(taskIDs []int) error {
 	}
 	defer CloseDatabase(pool)
 	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC'
+		`UPDATE tasks SET status_id = NULL, estimate_points = NULL, estimate_hours = NULL, refinement_state = NULL, sprint_id = NULL, date_modified = NOW() AT TIME ZONE 'UTC'
 		 WHERE id = ANY($1)`, taskIDs)
-	return err
-}
-
-// SetTaskEstimatePoints sets or clears estimate_points.
-func SetTaskEstimatePoints(taskID int, points *int) error {
-	pool, err := OpenDatabase()
-	if err != nil {
-		return err
-	}
-	defer CloseDatabase(pool)
-	_, err = pool.Exec(context.Background(),
-		`UPDATE tasks SET estimate_points = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2`,
-		points, taskID)
 	return err
 }
 
@@ -734,15 +725,18 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT t.id, t.status_id, COALESCE(s.name, ''), t.estimate_points,
+		`SELECT t.id, t.status_id, COALESCE(s.name, ''), t.estimate_hours, COALESCE(t.refinement_state, ''),
 		        COALESCE(p.workflow_mode, 'classic'),
 		        COALESCE((SELECT SUM(minutes) FROM task_time_entries e WHERE e.task_id = t.id), 0),
 		        t.claimed_by, COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, ''),
-		        t.sprint_id, COALESCE(sp.name, '')
+		        t.sprint_id, COALESCE(sp.name, ''),
+		        t.reviewer_id, COALESCE(NULLIF(ru.full_name, ''), NULLIF(ru.user_name, ''), ru.email, ''),
+		        COALESCE(CAST(t.start_date AS TEXT), '')
 		 FROM tasks t
 		 LEFT JOIN project_statuses s ON s.id = t.status_id
 		 LEFT JOIN projects p ON p.id = t.project_id
 		 LEFT JOIN users cu ON cu.id = t.claimed_by
+		 LEFT JOIN users ru ON ru.id = t.reviewer_id
 		 LEFT JOIN project_sprints sp ON sp.id = t.sprint_id
 		 WHERE t.id = ANY($1)`, taskIDs)
 	if err != nil {
@@ -754,18 +748,24 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		var id int
 		var statusID sql.NullInt64
 		var statusName string
-		var estimate sql.NullInt64
+		var estimate sql.NullFloat64
+		var refinement string
 		var mode string
 		var spent int
 		var claimedBy sql.NullInt64
 		var claimedByName string
 		var sprintID sql.NullInt64
 		var sprintName string
-		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName); err != nil {
+		var reviewerID sql.NullInt64
+		var reviewerName string
+		var startDate string
+		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &refinement, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName, &startDate); err != nil {
 			return nil, err
 		}
 		f := TaskWorkflowFields{
+			StartDate:        startDate,
 			StatusName:       statusName,
+			Refinement:       refinement,
 			TimeSpentMinutes: spent,
 			ProjectWorkflow:  mode,
 			ClaimedByName:    claimedByName,
@@ -775,14 +775,18 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 			f.StatusID = int(statusID.Int64)
 		}
 		if estimate.Valid {
-			v := int(estimate.Int64)
-			f.EstimatePoints = &v
+			v := estimate.Float64
+			f.EstimateHours = &v
 		}
 		if claimedBy.Valid {
 			f.ClaimedBy = int(claimedBy.Int64)
 		}
 		if sprintID.Valid {
 			f.SprintID = int(sprintID.Int64)
+		}
+		if reviewerID.Valid {
+			f.ReviewerID = int(reviewerID.Int64)
+			f.ReviewerName = reviewerName
 		}
 		out[id] = f
 	}
@@ -836,12 +840,12 @@ func ListTaskTimeEntries(taskID int) ([]TaskTimeEntry, error) {
 	defer CloseDatabase(pool)
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT e.id, e.task_id, e.user_id, e.minutes, COALESCE(e.note,''), e.created_at,
+		`SELECT e.id, e.task_id, e.user_id, e.minutes, COALESCE(e.note,''), e.spent_at, e.created_at,
 		        COALESCE(u.email,''), COALESCE(u.user_name,'')
 		 FROM task_time_entries e
 		 JOIN users u ON u.id = e.user_id
 		 WHERE e.task_id = $1
-		 ORDER BY e.created_at DESC, e.id DESC`, taskID)
+		 ORDER BY e.spent_at DESC, e.id DESC`, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -850,7 +854,7 @@ func ListTaskTimeEntries(taskID int) ([]TaskTimeEntry, error) {
 	var out []TaskTimeEntry
 	for rows.Next() {
 		var e TaskTimeEntry
-		if err := rows.Scan(&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.CreatedAt,
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.SpentAt, &e.CreatedAt,
 			&e.UserEmail, &e.UserName); err != nil {
 			return nil, err
 		}
@@ -859,8 +863,8 @@ func ListTaskTimeEntries(taskID int) ([]TaskTimeEntry, error) {
 	return out, rows.Err()
 }
 
-// CreateTaskTimeEntry inserts a time entry.
-func CreateTaskTimeEntry(taskID, userID, minutes int, note string) (*TaskTimeEntry, error) {
+// CreateTaskTimeEntry inserts a time entry for work done at spentAt.
+func CreateTaskTimeEntry(taskID, userID, minutes int, note string, spentAt time.Time) (*TaskTimeEntry, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -870,11 +874,11 @@ func CreateTaskTimeEntry(taskID, userID, minutes int, note string) (*TaskTimeEnt
 	note = strings.TrimSpace(note)
 	var e TaskTimeEntry
 	err = pool.QueryRow(context.Background(),
-		`INSERT INTO task_time_entries (task_id, user_id, minutes, note)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, task_id, user_id, minutes, COALESCE(note,''), created_at`,
-		taskID, userID, minutes, note).Scan(
-		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.CreatedAt)
+		`INSERT INTO task_time_entries (task_id, user_id, minutes, note, spent_at)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, task_id, user_id, minutes, COALESCE(note,''), spent_at, created_at`,
+		taskID, userID, minutes, note, spentAt).Scan(
+		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.SpentAt, &e.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -891,9 +895,9 @@ func GetTaskTimeEntry(entryID int) (*TaskTimeEntry, error) {
 
 	var e TaskTimeEntry
 	err = pool.QueryRow(context.Background(),
-		`SELECT id, task_id, user_id, minutes, COALESCE(note,''), created_at
+		`SELECT id, task_id, user_id, minutes, COALESCE(note,''), spent_at, created_at
 		 FROM task_time_entries WHERE id = $1`, entryID).Scan(
-		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.CreatedAt)
+		&e.ID, &e.TaskID, &e.UserID, &e.Minutes, &e.Note, &e.SpentAt, &e.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("time entry not found")

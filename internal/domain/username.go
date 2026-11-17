@@ -125,6 +125,11 @@ func SearchUsernames(ctx context.Context, userID int, q string, projectID int) (
 		}
 		return storage.SearchProjectMembersByUsernamePrefix(projectID, q, userSearchLimit)
 	}
+	// Guests only find people on their own projects unless the guest policy
+	// opens the directory to them.
+	if storage.IsGuestUser(userID) && !storage.GetGuestPolicy().Directory {
+		return storage.SearchCoMembersByUsernamePrefix(userID, q, userSearchLimit)
+	}
 	return storage.SearchUsersByUsernamePrefix(q, userID, userSearchLimit)
 }
 

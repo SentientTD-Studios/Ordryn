@@ -243,6 +243,34 @@ func handleOrganizationMembers(w http.ResponseWriter, r *http.Request, userID, o
 		}
 		return
 	}
+	if len(rest) == 2 && rest[1] == "removal-impact" {
+		if r.Method != http.MethodGet {
+			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			return
+		}
+		memberID, err := strconv.Atoi(rest[0])
+		if err != nil || memberID <= 0 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid member id.")
+			return
+		}
+		projects, err := domain.OrganizationMemberRemovalImpactForUser(r.Context(), userID, orgID, memberID)
+		if err != nil {
+			writeProjectRoleDomainError(w, err)
+			return
+		}
+		type projectJSON struct {
+			ID        int    `json:"id"`
+			Name      string `json:"name"`
+			Mode      string `json:"mode"`
+			Automatic bool   `json:"automatic"`
+		}
+		out := make([]projectJSON, 0, len(projects))
+		for _, p := range projects {
+			out = append(out, projectJSON{ID: p.ID, Name: p.Name, Mode: p.Mode, Automatic: p.Automatic})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"projects": out})
+		return
+	}
 	if len(rest) == 2 && rest[1] == "project-impact" {
 		if r.Method != http.MethodGet {
 			utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -300,7 +328,22 @@ func handleOrganizationMembers(w http.ResponseWriter, r *http.Request, userID, o
 		}
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
-		if err := domain.RemoveOrganizationMemberForUser(r.Context(), userID, orgID, memberID); err != nil {
+		// Optional body: {"remove_from_projects": [ids]} also takes the member off
+		// those hand-assigned projects (see removal-impact).
+		var req struct {
+			RemoveFromProjects []int `json:"remove_from_projects"`
+		}
+		if r.ContentLength != 0 {
+			if err := decodeJSONBody(r, &req); err != nil && err.Error() != "empty body" {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+				return
+			}
+		}
+		if len(req.RemoveFromProjects) > 500 {
+			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Too many projects.")
+			return
+		}
+		if err := domain.RemoveOrganizationMemberForUser(r.Context(), userID, orgID, memberID, req.RemoveFromProjects); err != nil {
 			writeProjectRoleDomainError(w, err)
 			return
 		}

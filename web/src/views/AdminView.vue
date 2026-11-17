@@ -10,11 +10,15 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import TimezoneSelect from '@/components/TimezoneSelect.vue'
 import AdminSubnav from '@/components/AdminSubnav.vue'
+import AdminMaintenanceCard from '@/components/AdminMaintenanceCard.vue'
+import AdminBackupsCard from '@/components/AdminBackupsCard.vue'
 import RichBody from '@/components/RichBody.vue'
+import GuestPolicyCard from '@/components/GuestPolicyCard.vue'
+import { clearProjectCeremoniesCache } from '@/composables/useProjectCeremonies'
 
 const toast = useToast()
 const { askConfirm } = useConfirm()
-const { refresh: refreshSite } = useSite()
+const { refresh: refreshSite, isCompanyMode } = useSite()
 // Site settings managers who aren't admins can't change the site mode or what the
 // User role may create.
 const { hasPermission } = useAuth()
@@ -42,6 +46,8 @@ const settings = reactive<AdminSettings>({
   allow_user_invites: false,
   members_can_create_projects: true,
   members_can_create_organizations: true,
+  members_can_use_local_agents: true,
+  members_can_add_project_agents: true,
   site_mode: 'multi',
   company_home: '',
   site_mode_locked: false,
@@ -51,6 +57,7 @@ const settings = reactive<AdminSettings>({
   max_comment_length: 20000,
   trash_retention_days: 30,
   attachments_enabled: false,
+  ceremonies: { refinement: false, retro: false, standup: false },
   attachment_max_bytes: 5 * 1024 * 1024,
   meta_description: '',
   enable_global_announcement: false,
@@ -123,6 +130,8 @@ async function saveSettings() {
         ? {
             members_can_create_projects: settings.members_can_create_projects,
             members_can_create_organizations: settings.members_can_create_organizations,
+            members_can_use_local_agents: settings.members_can_use_local_agents,
+            members_can_add_project_agents: settings.members_can_add_project_agents,
           }
         : {}),
       user_invite_limit: settings.user_invite_limit,
@@ -131,6 +140,7 @@ async function saveSettings() {
       max_comment_length: settings.max_comment_length,
       trash_retention_days: settings.trash_retention_days,
       attachments_enabled: settings.attachments_enabled,
+      ceremonies: { ...settings.ceremonies },
       attachment_max_bytes: settings.attachment_max_bytes,
       meta_description: settings.meta_description,
       enable_global_announcement: settings.enable_global_announcement,
@@ -139,6 +149,7 @@ async function saveSettings() {
       enable_inbound_webhooks: settings.enable_inbound_webhooks,
     })
     Object.assign(settings, saved)
+    clearProjectCeremoniesCache()
     await refreshSite()
     toast.push('Settings saved', 'success')
   } catch (err) {
@@ -301,6 +312,7 @@ onMounted(load)
   <div class="container mt-3">
     <AdminSubnav />
     <h1>Admin</h1>
+    <AdminMaintenanceCard v-if="isAdmin" />
     <div v-if="isAdmin" class="card mb-4" :class="{ 'border-primary': !settings.site_mode_locked }">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h2 class="h5 mb-0">Site mode</h2>
@@ -350,6 +362,7 @@ onMounted(load)
         </form>
       </div>
     </div>
+    <GuestPolicyCard v-if="isAdmin && isCompanyMode" />
     <div class="card mb-4">
       <div class="card-header"><h2 class="h5 mb-0">Site settings</h2></div>
       <div class="card-body">
@@ -456,6 +469,29 @@ onMounted(load)
               </div>
             </div>
           </template>
+          <fieldset v-if="isAdmin" class="mb-3">
+            <legend class="h6 mb-2">AI agents</legend>
+            <div class="form-check mb-2">
+              <input id="admin-members-local-agents" v-model="settings.members_can_use_local_agents" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-members-local-agents">
+                Allow {{ settings.site_mode === 'company' ? 'the User role' : 'regular users' }} to use local AI agents
+              </label>
+              <div class="form-text">
+                Local agent keys let an AI tool on someone's own computer (Claude Code, Codex, Cursor…) work on their
+                tasks as them. Turning this off stops existing keys right away.
+              </div>
+            </div>
+            <div class="form-check">
+              <input id="admin-members-project-agents" v-model="settings.members_can_add_project_agents" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-members-project-agents">
+                Allow {{ settings.site_mode === 'company' ? 'the User role' : 'regular users' }} to add AI agents to projects they manage
+              </label>
+              <div class="form-text">
+                Existing agents keep working, and managers can still pause or remove them. Admins always have both, and
+                you can set these per role on <RouterLink to="/admin/site-roles">Site roles</RouterLink>.
+              </div>
+            </div>
+          </fieldset>
           <div class="row g-3 mb-3">
             <div class="col-sm-6">
               <label for="admin-max-description" class="form-label">Max task description length</label>
@@ -525,6 +561,31 @@ onMounted(load)
               stay downloadable. If a reverse proxy sits in front of the app, its upload limit must be at least this large.
             </div>
           </div>
+          <fieldset class="mb-3">
+            <legend class="form-label fw-semibold fs-6 mb-1">Team ceremonies</legend>
+            <div class="form-check mb-1">
+              <input id="admin-ceremony-standup" v-model="settings.ceremonies.standup" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-ceremony-standup">Standups</label>
+            </div>
+            <div class="form-check mb-1">
+              <input
+                id="admin-ceremony-refinement"
+                v-model="settings.ceremonies.refinement"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label" for="admin-ceremony-refinement">Backlog refinement</label>
+            </div>
+            <div class="form-check mb-1">
+              <input id="admin-ceremony-retro" v-model="settings.ceremonies.retro" class="form-check-input" type="checkbox" />
+              <label class="form-check-label" for="admin-ceremony-retro">Retrospectives</label>
+            </div>
+            <div class="form-text ms-4">
+              Live, facilitator-driven sessions on kanban boards (refinement also adds the Needs Refinement / Refined flag
+              on tasks). All are off by default. Each kanban project still opts in from its settings, and who can run each
+              ceremony is a project role permission.
+            </div>
+          </fieldset>
           <div class="form-check mb-2">
             <input id="admin-changelog" v-model="settings.show_changelog" class="form-check-input" type="checkbox" />
             <label class="form-check-label" for="admin-changelog">Show changelog</label>
@@ -924,5 +985,6 @@ onMounted(load)
         </form>
       </div>
     </div>
+    <AdminBackupsCard v-if="isAdmin" />
   </div>
 </template>

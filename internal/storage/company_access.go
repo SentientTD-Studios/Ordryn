@@ -359,10 +359,13 @@ func RecomputeCompanyProjectAccess(projectID int) error {
 
 	const human = `NOT COALESCE(u.is_agent, FALSE)`
 	siteRole := map[int]int{}
+	guests := map[int]bool{}
+	guestPolicy := GetGuestPolicy()
 	userRows, err := tx.Query(ctx, `
 		SELECT u.id, COALESCE(u.role_id, 0),
 		       COALESCE($1::text = ANY(r.permissions), FALSE),
-		       COALESCE($2::text = ANY(r.permissions), FALSE)
+		       COALESCE($2::text = ANY(r.permissions), FALSE),
+		       COALESCE(u.is_guest, FALSE)
 		FROM users u LEFT JOIN roles r ON r.id = u.role_id
 		WHERE `+human, SitePermAdmin, SitePermProjectsViewAll)
 	if err != nil {
@@ -370,12 +373,17 @@ func RecomputeCompanyProjectAccess(projectID int) error {
 	}
 	for userRows.Next() {
 		var id, roleID int
-		var admin, viewAll bool
-		if err := userRows.Scan(&id, &roleID, &admin, &viewAll); err != nil {
+		var admin, viewAll, guest bool
+		if err := userRows.Scan(&id, &roleID, &admin, &viewAll, &guest); err != nil {
 			userRows.Close()
 			return err
 		}
 		siteRole[id] = roleID
+		if guest {
+			// Guests never get site-wide reach, whatever their site role says.
+			guests[id] = true
+			continue
+		}
 		if admin {
 			admins = append(admins, id)
 		} else if viewAll {
@@ -434,11 +442,32 @@ func RecomputeCompanyProjectAccess(projectID int) error {
 		WHERE g.project_id = $1 AND `+human, projectID); err != nil {
 		return err
 	}
+	// Team shares reach guests only when the guest policy allows it, and a share
+	// with the whole company never does.
 	if err := collect(`SELECT m.user_id, g.level, g.role_id FROM project_access_grants g
 		JOIN organization_members m ON m.organization_id = g.organization_id
+		JOIN organizations o ON o.id = g.organization_id
 		JOIN users u ON u.id = m.user_id
-		WHERE g.project_id = $1 AND `+human, projectID); err != nil {
+		WHERE g.project_id = $1 AND `+human+`
+		  AND (NOT COALESCE(u.is_guest, FALSE) OR ($2 AND NOT o.is_company))`, projectID, guestPolicy.ViaTeams); err != nil {
 		return err
+	}
+	// The guest policy caps what guests get: read only, or full with the guest role.
+	for id := range guests {
+		a, ok := want[id]
+		if !ok {
+			continue
+		}
+		if guestPolicy.AccessLevel == AccessFull && guestPolicy.RoleID > 0 && a.roleID > 0 {
+			// The weaker of the share's role and the guest role.
+			if capped := (companyAccess{roleID: guestPolicy.RoleID}); stronger(a, capped) {
+				a.roleID = guestPolicy.RoleID
+			}
+		} else {
+			a.roleID = 0
+		}
+		a.implicit = false
+		want[id] = a
 	}
 	// Admins always get their own role, which grants everything, whatever a share
 	// says. Someone nothing else reaches is marked implicit.

@@ -30,6 +30,10 @@ type ProjectSprint struct {
 	LockDate    *time.Time
 	CreatedAt   time.Time
 	TaskCount   int
+	// Time totals cover every task in the sprint that is not in the trash,
+	// archived ones included: their work still happened in the sprint.
+	TimeSpentMinutes int
+	EstimateHours    float64
 }
 
 func scanProjectSprint(row projectStatusScanner, s *ProjectSprint) error {
@@ -262,7 +266,10 @@ func ListProjectSprints(projectID int) ([]ProjectSprint, error) {
 
 	rows, err := pool.Query(context.Background(),
 		`SELECT s.id, s.project_id, s.name, s.description, s.start_date, s.end_date, s.lock_date, s.created_at,
-		        COALESCE((SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = s.id AND t.deleted_at IS NULL AND NOT `+ArchivedTaskExistsSQL("t.id")+`), 0)
+		        COALESCE((SELECT COUNT(*) FROM tasks t WHERE t.sprint_id = s.id AND t.deleted_at IS NULL AND NOT `+ArchivedTaskExistsSQL("t.id")+`), 0),
+		        COALESCE((SELECT SUM(e.minutes) FROM task_time_entries e JOIN tasks t ON t.id = e.task_id
+		                  WHERE t.sprint_id = s.id AND t.deleted_at IS NULL), 0),
+		        COALESCE((SELECT SUM(t.estimate_hours) FROM tasks t WHERE t.sprint_id = s.id AND t.deleted_at IS NULL), 0)
 		 FROM project_sprints s
 		 WHERE s.project_id = $1
 		 ORDER BY (s.start_date IS NULL) DESC, s.start_date DESC, s.id DESC`, projectID)
@@ -275,7 +282,8 @@ func ListProjectSprints(projectID int) ([]ProjectSprint, error) {
 	for rows.Next() {
 		var s ProjectSprint
 		var start, end, lock sql.NullTime
-		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &start, &end, &lock, &s.CreatedAt, &s.TaskCount); err != nil {
+		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Description, &start, &end, &lock, &s.CreatedAt, &s.TaskCount,
+			&s.TimeSpentMinutes, &s.EstimateHours); err != nil {
 			return nil, err
 		}
 		s.StartDate = nullTimePtr(start)

@@ -298,6 +298,10 @@ func EnableMFA(userID int, pendingSecret, code string) ([]string, error) {
 
 // DisableMFA turns MFA off after a valid TOTP or recovery code.
 func DisableMFA(userID int, code string) error {
+	if profile, err := storage.GetUserProfileByID(userID); err == nil &&
+		storage.GetSecurityPolicy().MFARequiredForRole(profile.RoleID) {
+		return fmt.Errorf("%w: this site requires two-factor authentication for your role", ErrForbidden)
+	}
 	if err := ConsumeMFACode(userID, code, true); err != nil {
 		return err
 	}

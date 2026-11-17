@@ -7,7 +7,12 @@ import { useToast } from '@/composables/useToast'
 import { LINK_TYPE_LABELS, LINK_TYPE_ORDER, groupTaskLinks, parseTaskRef } from '@/utils/taskLinks'
 
 const props = defineProps<{ taskId: number; canEdit: boolean }>()
-const emit = defineEmits<{ open: [taskId: number]; changed: [] }>()
+const emit = defineEmits<{
+  open: [taskId: number]
+  changed: []
+  /** Whether the panel renders anything, and how many links it lists. */
+  summary: [state: { visible: boolean; count: number }]
+}>()
 const toast = useToast()
 
 const links = ref<TaskLink[]>([])
@@ -65,6 +70,15 @@ async function remove(link: TaskLink) {
 }
 
 watch(() => props.taskId, load, { immediate: true })
+// Report only settled states: a reload after add/remove briefly clears the
+// list, and the host tab should not flicker away meanwhile.
+watch(
+  () => (loaded.value ? { visible: links.value.length > 0 || props.canEdit, count: links.value.length } : null),
+  (state) => {
+    if (state) emit('summary', state)
+  },
+  { immediate: true },
+)
 defineExpose({ reload: load })
 </script>
 

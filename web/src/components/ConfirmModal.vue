@@ -76,10 +76,10 @@ onUnmounted(() => {
 </template>
 
 <style>
-.site-confirm-modal {
+.modal.site-confirm-modal {
   z-index: 2100;
 }
-.site-confirm-backdrop {
+.modal-backdrop.site-confirm-backdrop {
   z-index: 2090;
 }
 </style>

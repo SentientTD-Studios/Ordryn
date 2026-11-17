@@ -49,6 +49,11 @@ function isSearchKey(e: KeyboardEvent): boolean {
   return e.code === 'Slash' && !e.shiftKey
 }
 
+/** Opens the keyboard shortcuts help (the command palette's "Keyboard shortcuts"). */
+export function showShortcutsHelp() {
+  openShortcutsModal()
+}
+
 function openShortcutsModal() {
   const active = document.activeElement
   if (
@@ -72,6 +77,23 @@ function closeOpenModals() {
     const inst = bs.Modal.getInstance(el)
     if (inst) inst.hide()
   }
+}
+
+function focusVisibleInput(id: string): boolean {
+  const el = document.getElementById(id)
+  if (!(el instanceof HTMLInputElement) || el.offsetParent === null) return false
+  el.focus()
+  el.select()
+  return true
+}
+
+/**
+ * Focus site search: the search page's box, else the header's, else open the
+ * search page (the header box is hidden on small screens).
+ */
+export function focusSiteSearch() {
+  if (focusVisibleInput('site-search-page') || focusVisibleInput('global-search')) return
+  void import('@/router').then(({ default: router }) => router.push({ name: 'search' }))
 }
 
 function focusTaskCardElement(id: number) {
@@ -139,13 +161,14 @@ function onKeydown(e: KeyboardEvent) {
 
   if (typing || e.defaultPrevented) return
 
-  if (!taskHandlers) return
-
   if (isSearchKey(e)) {
     e.preventDefault()
-    taskHandlers.focusSearch()
+    if (taskHandlers) taskHandlers.focusSearch()
+    else focusSiteSearch()
     return
   }
+
+  if (!taskHandlers) return
 
   if (e.code === 'KeyN') {
     e.preventDefault()

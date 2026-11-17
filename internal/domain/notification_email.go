@@ -10,6 +10,7 @@ import (
 	"GoTodo/internal/hooks"
 	"GoTodo/internal/mailer"
 	"GoTodo/internal/storage"
+	"GoTodo/internal/workers"
 )
 
 const (
@@ -44,11 +45,13 @@ var sendNotificationMail = mailer.SendNotificationEmail
 // StartNotificationEmailWorker sends instant notification emails and daily
 // digests once a minute.
 func StartNotificationEmailWorker() {
+	const name = "notification-email"
+	workers.Register(name, time.Minute)
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
-			RunNotificationEmailPass(time.Now())
+			workers.Run(name, func() error { RunNotificationEmailPass(time.Now()); return nil })
 			<-ticker.C
 		}
 	}()

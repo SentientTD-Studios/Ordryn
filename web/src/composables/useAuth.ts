@@ -37,6 +37,16 @@ export function useAuth() {
     return user.value
   }
 
+  /** Signs in with a passkey; the browser asks which one. */
+  async function loginWithPasskey() {
+    const { toRequestOptions, assertionToJSON } = await import('@/utils/webauthn')
+    const { token, options } = await api.passkeyLoginBegin()
+    const cred = (await navigator.credentials.get(toRequestOptions(options))) as PublicKeyCredential | null
+    if (!cred) throw new DOMException('No passkey chosen', 'NotAllowedError')
+    user.value = await api.passkeyLoginFinish(token, assertionToJSON(cred))
+    return user.value
+  }
+
   async function register(payload: {
     email: string
     password: string
@@ -138,6 +148,7 @@ export function useAuth() {
     login,
     verifyEmail,
     verifyMFA,
+    loginWithPasskey,
     register,
     completeSetup,
     logout,

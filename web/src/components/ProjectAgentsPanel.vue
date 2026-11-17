@@ -5,7 +5,9 @@ import type { AgentRun, Project, ProjectAgent, ProjectMember, ProjectRoleDef, Pr
 import { APIError } from '@/api/types'
 import { RouterLink } from 'vue-router'
 import { useToast } from '@/composables/useToast'
+import { useSite } from '@/composables/useSite'
 import ProjectAgentEditor from '@/components/ProjectAgentEditor.vue'
+import { useAuth } from '@/composables/useAuth'
 import {
   AGENT_RECIPES,
   handleError,
@@ -25,6 +27,10 @@ const emit = defineEmits<{ changed: [] }>()
 const MAX_AGENTS = 10
 
 const toast = useToast()
+const { hasSitePermission } = useAuth()
+// Adding and configuring agents need this; pausing and removing them don't.
+const canConfigure = computed(() => hasSitePermission('agents:project'))
+const { siteName } = useSite()
 const agents = ref<ProjectAgent[]>([])
 const statuses = ref<ProjectStatus[]>([])
 const roles = ref<ProjectRoleDef[]>([])
@@ -235,7 +241,7 @@ function openRunCount(agentId: number) {
             them into subtasks, draft docs or emails, write checklists, review a plan.
           </li>
           <li>
-            <strong>Reading code</strong> needs an agent with access to a checkout. GoTodo never reads your files.
+            <strong>Reading code</strong> needs an agent with access to a checkout. {{ siteName }} never reads your files.
             The local Ollama script can be given read-only access to one folder to explain bugs and propose patches.
           </li>
           <li>
@@ -243,7 +249,7 @@ function openRunCount(agentId: number) {
             with the repository checked out, connected over MCP, or the local Ollama script set to read and edit a
             folder (edits on its own git branch, never commits). Linking a GitHub repository tells
             it which repo to use; it doesn't give the agent access by itself. How much an agent may do on that machine
-            is up to whoever runs it; the guardrails here only cover GoTodo.
+            is up to whoever runs it; the guardrails here only cover {{ siteName }}.
           </li>
         </ul>
       </details>
@@ -274,8 +280,12 @@ function openRunCount(agentId: number) {
         <li v-if="!agents.length && !loading" class="list-group-item text-muted">No AI agents on this project yet.</li>
       </ul>
 
+      <div v-if="!canConfigure" class="alert alert-secondary small py-2">
+        Your role can't add or configure AI agents. You can still pause or remove the agents here; ask an admin if
+        you need more.
+      </div>
       <button
-        v-if="!showCreate"
+        v-if="!showCreate && canConfigure"
         type="button"
         class="btn btn-sm btn-primary"
         :disabled="agents.length >= MAX_AGENTS || project.archived"
@@ -285,7 +295,7 @@ function openRunCount(agentId: number) {
       </button>
       <p v-if="agents.length >= MAX_AGENTS" class="small text-muted mt-1 mb-0">A project can have up to {{ MAX_AGENTS }} agents.</p>
 
-      <form v-if="showCreate" class="card card-body mb-3" @submit.prevent="createAgent">
+      <form v-if="showCreate && canConfigure" class="card card-body mb-3" @submit.prevent="createAgent">
         <h5 class="h6">New AI agent</h5>
         <fieldset class="mb-3">
           <legend class="form-label small mb-1">What should this agent do?</legend>
@@ -305,7 +315,7 @@ function openRunCount(agentId: number) {
             </label>
           </div>
           <div v-if="recipe?.runner === 'read'" class="alert alert-info small py-2 mt-2 mb-0">
-            This setup needs an agent that can <strong>read</strong> your code. GoTodo never reads files on your
+            This setup needs an agent that can <strong>read</strong> your code. {{ siteName }} never reads files on your
             machine; the agent does. With the local Ollama script (download it from the agent's settings after
             creating it), choose <strong>Read one folder</strong>: it gets read-only, sandboxed access to that folder,
             skips secrets like <code>.env</code>, and can't change anything. It explains and proposes a patch for a person to apply.

@@ -52,3 +52,14 @@ func InitRedis() error {
 	RedisClient = client
 	return nil
 }
+
+// RedisPing round-trips a PING (bounded by ctx) and reports how long it took.
+// It returns an error when Redis isn't configured.
+func RedisPing(ctx context.Context) (time.Duration, error) {
+	if RedisClient == nil {
+		return 0, fmt.Errorf("redis is not configured")
+	}
+	start := time.Now()
+	err := RedisClient.Ping(ctx).Err()
+	return time.Since(start), err
+}

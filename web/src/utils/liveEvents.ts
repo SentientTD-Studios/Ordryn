@@ -8,6 +8,9 @@ export type LiveEventLike = {
 /** Synthetic event sent after the live stream reconnects; views should refetch. */
 export const LIVE_RESYNC = 'live.resync'
 
+/** A ceremony session changed; key is "kind:sessionId". */
+export const LIVE_CEREMONY_UPDATED = 'ceremony.updated'
+
 function eventKey(e: LiveEventLike): string {
   return `${e.type}|${e.task_id ?? ''}|${e.project_id ?? ''}`
 }

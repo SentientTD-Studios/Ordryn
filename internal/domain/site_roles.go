@@ -206,6 +206,9 @@ func UpdateSiteRoleForAdmin(ctx context.Context, actorUserID, roleID int, name *
 		if err := mgr.checkPerms(p); err != nil {
 			return nil, err
 		}
+		if err := checkGuestRolePerms(cur, p); err != nil {
+			return nil, err
+		}
 		perms = &p
 	}
 	updated, err := storage.UpdateSiteRole(roleID, name, perms)
@@ -240,6 +243,18 @@ func DeleteSiteRoleForAdmin(ctx context.Context, actorUserID, roleID int) (*stor
 		}
 		if admins-cur.UserCount < 1 {
 			return nil, 0, fmt.Errorf("%w: deleting this role would leave the site without an admin", ErrConflict)
+		}
+	}
+	// Its guests move to the User role, which must not give them site permissions.
+	if storage.RoleHeldByGuests(roleID) {
+		if memberID, err := storage.GetDefaultRoleID(); err == nil {
+			member, err := storage.GetSiteRole(memberID)
+			if err != nil {
+				return nil, 0, err
+			}
+			if err := guestRoleProblem(member); err != nil {
+				return nil, 0, fmt.Errorf("%w: guests have this role and would move to the %s role", err, member.Label())
+			}
 		}
 	}
 	moved, err := storage.DeleteSiteRole(roleID)
@@ -279,6 +294,9 @@ func SetUserSiteRoleForAdmin(ctx context.Context, actorUserID, targetUserID, rol
 	}
 	if from.ID == to.ID {
 		return from, to, nil
+	}
+	if err := checkGuestRoleChange(targetUserID, to); err != nil {
+		return nil, nil, err
 	}
 	if storage.IsSiteOwner(targetUserID) {
 		return nil, nil, fmt.Errorf("%w: the site owner is always an admin; transfer ownership first", ErrForbidden)

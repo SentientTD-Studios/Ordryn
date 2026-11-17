@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -455,4 +456,38 @@ func AfterExtensionsReload(actorID int) {
 		Type:    TypeExtensionsReloaded,
 		ActorID: actorID,
 	})
+}
+
+// SubscriberCount is how many live-update streams this process is serving.
+func SubscriberCount() int {
+	h := currentHub()
+	if h == nil {
+		return 0
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := 0
+	for _, subs := range h.channels {
+		n += len(subs)
+	}
+	return n
+}
+
+// AfterCeremonyChange tells project members a ceremony session changed. Key is "kind:sessionID"
+// so open session windows can refetch just that session.
+func AfterCeremonyChange(actorID, projectID int, kind string, sessionID int) {
+	h := currentHub()
+	if h == nil || projectID <= 0 {
+		return
+	}
+	users, err := storage.ProjectMemberUserIDs(projectID)
+	if err != nil {
+		return
+	}
+	h.Publish(Event{
+		Type:      TypeCeremonyUpdated,
+		ProjectID: projectID,
+		ActorID:   actorID,
+		Key:       kind + ":" + strconv.Itoa(sessionID),
+	}, users)
 }

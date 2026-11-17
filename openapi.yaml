@@ -60,6 +60,7 @@ tags:
   - name: Projects
   - name: AI Agents
   - name: Automation
+  - name: Ceremonies
   - name: Organizations
   - name: Tags
   - name: Saved Views
@@ -68,7 +69,11 @@ tags:
   - name: GitHub
   - name: Live
   - name: Feedback
+  - name: Request forms
+    description: Forms that turn requests from anyone on the site into project tasks.
   - name: Images
+  - name: Time blocks
+    description: Your own hourly calendar of time set aside for tasks, which can be logged as time spent.
 
 paths:
   /api/v2/health:
@@ -426,6 +431,55 @@ paths:
                 $ref: "#/components/schemas/OK"
         "429":
           $ref: "#/components/responses/RateLimited"
+
+  /api/v2/auth/passkey/begin:
+    post:
+      tags: [Auth]
+      summary: Start signing in with a passkey
+      description: |
+        No email needed: the authenticator offers the passkeys it holds for this site. Returns
+        `options` for `navigator.credentials.get()` and a `token` (valid 5 minutes, usable once).
+      responses:
+        "200":
+          description: Ceremony started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremony"
+
+  /api/v2/auth/passkey/finish:
+    post:
+      tags: [Auth]
+      summary: Finish signing in with a passkey
+      description: |
+        Verifies the assertion and starts a session. A passkey needs the device's PIN or
+        biometric, so it counts as two-factor: there is no separate MFA step, and the security
+        policy's two-factor requirement is met for this session. The same account checks as
+        password sign-in apply (deactivated, single-sign-on-only, unconfirmed email). Any
+        verification failure returns the same 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, credential]
+              properties:
+                token: { type: string }
+                credential:
+                  type: object
+                  description: The assertion response, with binary fields base64url-encoded.
+      responses:
+        "200":
+          description: Signed in; the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v2/auth/mfa/verify:
     post:
@@ -846,6 +900,170 @@ paths:
         "409":
           $ref: "#/components/responses/APIError"
 
+  /api/v2/me/onboarding:
+    get:
+      tags: [Profile]
+      summary: Getting-started checklist
+      description: |
+        Steps worked out from what you've done: create or join a project, add a task, finish a
+        task, and work with someone. Site admins also get site steps: name the site, set up email,
+        and bring in people. People who already had tasks when this was added start with it dismissed.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Onboarding"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Profile]
+      summary: Hide or show the checklist
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dismissed]
+              properties:
+                dismissed:
+                  type: boolean
+      responses:
+        "200":
+          description: Checklist after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Onboarding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/me/passkeys:
+    get:
+      tags: [Profile]
+      summary: List your passkeys
+      description: Browser sessions only; API keys get 403.
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Passkeys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Passkey"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/me/passkeys/register/begin:
+    post:
+      tags: [Profile]
+      summary: Start adding a passkey
+      description: |
+        Needs your current password, unless this session signed in through single sign-on (those
+        accounts may have no password). Returns `options` to pass to
+        `navigator.credentials.create()` (base64url fields) and a `token` for the finish call,
+        valid for 5 minutes. Passkeys are discoverable credentials with user verification
+        required. The relying party ID is the host of `PUBLIC_URL` (or of the request when it's
+        unset). At most 20 passkeys per account. Allowed while the security policy is waiting for
+        you to set up two-factor authentication.
+      security:
+        - SessionCookie: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string }
+      responses:
+        "200":
+          description: Ceremony started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremony"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/me/passkeys/register/finish:
+    post:
+      tags: [Profile]
+      summary: Finish adding a passkey
+      description: Send the `token` and the authenticator's response (`PublicKeyCredential` as JSON). Each token works once.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, credential]
+              properties:
+                token: { type: string }
+                name:
+                  type: string
+                  maxLength: 60
+                  description: Label such as "Work laptop"; defaults to "Passkey".
+                credential:
+                  type: object
+                  description: The registration response, with binary fields base64url-encoded.
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Passkey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/me/passkeys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Profile]
+      summary: Rename a passkey
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+      responses:
+        "204":
+          description: Renamed
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Profile]
+      summary: Remove a passkey
+      description: It can no longer be used to sign in. (Also remove it from your device or password manager.)
+      security:
+        - SessionCookie: []
+      responses:
+        "204":
+          description: Removed
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/me/avatar:
     post:
       tags: [Profile]
@@ -1176,6 +1394,18 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: include_teams
+          in: query
+          required: false
+          description: |
+            With `project_id`, set to `1` to also return up to 5 team handles
+            (`is_team: true`) after the username hits. A team's handle is its name
+            lowercased with other characters turned into underscores
+            ("Design Team" -> `design_team`). Mentioning it notifies the team's
+            members who are on the project; a username with the same handle wins.
+          schema:
+            type: string
+            enum: ["1"]
       responses:
         "200":
           description: Matching usernames
@@ -1434,6 +1664,51 @@ paths:
       responses:
         "303":
           description: Redirects to Settings
+
+  /api/v2/auth/sso/start:
+    get:
+      tags: [Auth]
+      summary: Start single sign-on (browser redirect)
+      description: |
+        Redirects to the configured OpenID Connect provider (authorization code
+        flow with PKCE, a nonce, and a state bound to this browser by a short-lived
+        cookie). Errors redirect to `/login?sso_error=…`.
+      security: []
+      parameters:
+        - name: return
+          in: query
+          description: Path on this site to land on after signing in. Anything else becomes `/`.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirects to the identity provider
+        "303":
+          description: SSO is off or unreachable; redirects to the login page with `sso_error`
+
+  /api/v2/auth/sso/callback:
+    get:
+      tags: [Auth]
+      summary: Single sign-on callback (public redirect)
+      description: |
+        Verifies the ID token, then signs in the account linked to the provider's
+        subject, or the account with the same verified email (linking it), or a new
+        account when automatic creation is on and the email domain is allowed. In
+        company mode, mapped provider groups set team membership. Local TOTP is not
+        asked for: the provider handles the second factor.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "303":
+          description: Signed in and redirected to the `return` path, or back to `/login?sso_error=…`
 
   /api/v2/webhooks/github:
     post:
@@ -1711,6 +1986,109 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/search:
+    get:
+      tags: [Tasks]
+      summary: Search tasks and projects
+      description: |
+        Searches every task in the projects you can open right now, plus your own
+        tasks that have no project. Tasks you created in a project you have since
+        left are not included. Matching is partial and case-insensitive, and
+        results include completed tasks and subtasks (subtasks carry `parent_title`).
+
+        Every word in `q` must appear somewhere in the task: its title,
+        description, a tag name, or a comment (with `scope=titles`, the title
+        only). A word of five or more letters (not a number) also matches titles
+        holding a word one edit away (an inserted, missing, wrong or swapped
+        letter), so `recieve` finds "Receive invoices". A number also matches the
+        task with that id. Put a phrase in double quotes to match it as one term.
+        Qualifiers narrow the search:
+
+        - `#123` or `id:123`: the task with that id
+        - `project:web`: projects whose name contains "web"
+        - `tag:bug`: has a tag whose name contains "bug"
+        - `status:review`: workflow status name contains "review"
+        - `is:open`, `is:done` (also `status:open`, `status:done`)
+        - `is:archived`: also search archived tasks and archived projects
+        - `claimed:me`, `claimed:none`
+
+        Values with spaces are quoted: `project:"web app"`. Exact id matches come
+        first, then tasks whose title holds every word as typed (typo matches come
+        after), then open before done, then
+        the most recently changed. An empty `q` returns no results.
+
+        `projects` lists up to 5 projects whose name contains every word (first
+        page only, and not when `project` is set). A project-scoped API key always
+        searches its own project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 500
+        - name: scope
+          in: query
+          description: >
+            `all` (default) matches titles, descriptions, tag names and comments;
+            `titles` matches titles and ids only, for live results as you type.
+          schema:
+            type: string
+            enum: [all, titles]
+            default: all
+        - name: project
+          in: query
+          description: Only search this project. 404 when you can't open it.
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, tasks, total, page, per_page, total_pages, projects]
+                properties:
+                  query:
+                    type: string
+                  tasks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Task"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+                  total_pages:
+                    type: integer
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v2/tasks:
     get:
       tags: [Tasks]
@@ -1773,6 +2151,11 @@ paths:
           in: query
           schema:
             type: string
+          description: >
+            Keyword filter on top of the other filters: every word must appear in the
+            task's title, description, or a tag name (or be its id); a parent also
+            matches through its subtasks. For searching everything you can open, use
+            `/api/v2/search`.
         - name: sort
           in: query
           schema:
@@ -2574,12 +2957,86 @@ paths:
     delete:
       tags: [Organizations]
       summary: Remove a member or leave the organization
+      description: |
+        The member also leaves the organization's projects whose people it controls:
+        on a multi-user site, projects whose roster is locked to the organization;
+        on a company site, projects they reached only through this team's share.
+        `remove_from_projects` also takes them off hand-assigned projects listed by
+        `removal-impact` (copied or hand-picked rosters, or personal shares on a
+        company site); other ids are ignored. The project's owner is never removed.
+
+        Whenever someone loses access to a project, any way at all, their claims,
+        review requests, user-field values and watches on its tasks are cleared, and
+        tasks they created there stop showing in their lists.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remove_from_projects:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: integer
+      responses:
+        "204":
+          description: Removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/organizations/{id}/members/{userId}/removal-impact:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Organizations]
+      summary: Preview which projects removing a member takes them off
+      description: |
+        The organization's projects the member is on (not ones they own). `automatic`
+        projects are left with the organization; the others were assigned by hand and
+        are only left when named in the removal's `remove_from_projects`. `mode` is
+        `lock`, `copy` or `select` (how the organization's people were imported), or on
+        a company site `share` (through this team) or `personal` (a personal share).
       security:
         - SessionCookie: []
         - BearerAuth: []
       responses:
-        "204":
-          description: Removed
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects]
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, mode, automatic]
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        mode:
+                          type: string
+                          enum: [lock, copy, select, share, personal]
+                        automatic:
+                          type: boolean
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -4487,6 +4944,58 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/tasks/{id}/snooze:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Tasks]
+      summary: Snooze a task in your planner
+      description: |
+        Hides the task from your planner's Today sections until `until` (a day after today in your
+        timezone, at most a year ahead). Snoozes are private to you and don't change the task.
+        Any task you can see can be snoozed. Snoozing again replaces the day.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [until]
+              properties:
+                until:
+                  type: string
+                  format: date
+      responses:
+        "200":
+          description: Snoozed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snoozed_until:
+                    type: string
+                    format: date
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Clear your snooze on a task
+      description: Wakes a snoozed task now, or dismisses one that came back from a snooze. Succeeds when there is no snooze.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Cleared
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/tasks/{id}/claim:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -4512,6 +5021,73 @@ paths:
     delete:
       tags: [Tasks]
       summary: Release claim on a kanban task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/tasks/{id}/reviewer:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [Tasks]
+      summary: Ask a project member to review a task
+      description: |
+        Sets the task's reviewer. Needs `tasks:edit` on the task's project. Works on
+        classic and kanban project tasks; personal tasks can't have a reviewer.
+        The reviewer must be a person (not an AI agent) who can see the task. They
+        get a "Review requested" notification (unless they set it themselves or
+        turned review requests off) and start watching the task. Fires
+        `task.updated` with `reviewer_id` in the changed fields. Setting the
+        current reviewer again is a no-op.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Give `user_id`, or `user_name` when `user_id` is omitted or 0.
+              properties:
+                user_id:
+                  type: integer
+                  minimum: 1
+                user_name:
+                  type: string
+                  description: Username, with or without a leading `@`.
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: Remove a task's reviewer
+      description: |
+        Needs `tasks:edit`, except that the reviewer can always remove themselves.
+        Succeeds when no reviewer is set.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -4714,7 +5290,7 @@ paths:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [Tasks]
-      summary: List time entries for a kanban task
+      summary: List time entries for a task
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -4748,6 +5324,10 @@ paths:
                 note:
                   type: string
                   maxLength: 200
+                spent_at:
+                  type: string
+                  format: date-time
+                  description: When the work happened; defaults to now. Not in the future, at most 366 days back.
       responses:
         "201":
           description: Created
@@ -4755,6 +5335,177 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskTimeEntry"
+
+  /api/v2/tasks/{id}/time-blocks:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Time blocks]
+      summary: List your own time blocks on a task
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Your blocks on the task, earliest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeBlock"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/time-blocks:
+    get:
+      tags: [Time blocks]
+      summary: List your time blocks in a range
+      description: |
+        Blocks overlapping [from, to), earliest first. The range may be at most 42 days.
+        Blocks on tasks in the trash or that you can no longer open are left out.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Time blocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeBlock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [Time blocks]
+      summary: Block time for a task on your calendar
+      description: Any task you can open. A task can have many blocks; a block can span up to 24 hours.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TimeBlockSpan"
+                - type: object
+                  required: [task_id]
+                  properties:
+                    task_id:
+                      type: integer
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeBlock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/time-blocks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Time blocks]
+      summary: Move or resize one of your blocks
+      description: Logged blocks can't move (409); delete their time entry first.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimeBlockSpan"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeBlock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [Time blocks]
+      summary: Delete one of your blocks
+      description: Time already logged from the block stays on the task.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/time-blocks/{id}/log:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Time blocks]
+      summary: Log a block as time spent
+      description: |
+        Creates a time entry for the block's length, dated when the block began. The block
+        must have started and needs Log time on project tasks. Each block logs once (409 after).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 200
+      responses:
+        "200":
+          description: The logged block and its new time entry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  block:
+                    $ref: "#/components/schemas/TimeBlock"
+                  time_entry:
+                    $ref: "#/components/schemas/TaskTimeEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v2/projects/{id}/automations:
     parameters:
@@ -5384,6 +6135,73 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v2/tasks/{id}/comments/{commentId}/reactions/{code}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: ["+1", "-1", tada, heart, smile, eyes, rocket, check]
+    put:
+      tags: [Tasks]
+      summary: Add your reaction to a comment
+      description: Anyone who can open the task's discussion. Adding the same reaction twice does nothing.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment with `reactions` (code, count, mine, names)
+    delete:
+      tags: [Tasks]
+      summary: Remove your reaction
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment with `reactions`
+
+  /api/v2/tasks/{id}/comments/{commentId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Tasks]
+      summary: Mark a comment resolved
+      description: |
+        For answered questions. The author, anyone who can edit the task, comment
+        moderators, and admins may resolve or reopen. The comment gets `resolved_at`
+        and `resolved_by_name`; clients mark resolved comments with a checkmark.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags: [Tasks]
+      summary: Reopen a resolved comment
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The comment
+
   /api/v2/tasks/{id}/comments/{commentId}/revisions:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -5781,6 +6599,573 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/projects/{id}/ceremonies:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Ceremony switches and estimate settings for a project
+      description: |
+        Which built-in ceremonies a site admin has enabled (`site`), which this project opted into
+        (`project`), and which are usable now (`active`: site on, project on, kanban board). Also the
+        project's points-to-hours rate and whether new tasks start flagged "Needs Refinement".
+        Any project member can read it.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Ceremony settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeremonySettings"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Ceremonies]
+      summary: Change ceremony opt-ins and estimate settings (project:manage)
+      description: |
+        Opting in needs a kanban board and the ceremony enabled site-wide. Changing `hours_per_point`
+        re-derives every estimate that still comes from legacy story points; estimates entered in
+        hours are left alone.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ceremonies:
+                  type: object
+                  additionalProperties: { type: boolean }
+                  example: { refinement: true }
+                hours_per_point: { type: number, minimum: 0.25, maximum: 100, multipleOf: 0.25 }
+                new_tasks_need_refinement: { type: boolean }
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeremonySettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Refinement session history, newest first
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 100, default: 25 }
+      responses:
+        "200":
+          description: Sessions with outcome counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RefinementSessionSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Ceremonies]
+      summary: Start a refinement session (refinement:facilitate)
+      description: |
+        The caller becomes the facilitator. Without `task_ids` the queue is the project's open tasks
+        flagged "Needs Refinement" (plus unflagged ones with `include_unflagged`), in board order,
+        optionally limited to one sprint (`sprint_id`) or the backlog (`backlog: true`). Only one
+        session per project runs at a time.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 120 }
+                sprint_id: { type: integer }
+                backlog: { type: boolean }
+                include_unflagged: { type: boolean }
+                task_ids: { type: array, items: { type: integer } }
+      responses:
+        "201":
+          description: The new session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefinementSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions/active:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: The running refinement session, if any
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: "`session` is null when none is running"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    allOf:
+                      - $ref: "#/components/schemas/RefinementSession"
+                    nullable: true
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Ceremonies]
+      summary: One refinement session
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefinementSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/ceremonies/refinement/sessions/{sessionId}/actions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Ceremonies]
+      summary: Drive a refinement session (facilitator)
+      description: |
+        Only the current facilitator may act, except `take_over`, which any member with
+        `refinement:facilitate` can use to become the facilitator. `revision` must match the
+        session's current revision (409 otherwise). `refine` flags the current task (or `task_id`)
+        "Refined" and moves on; `skip` moves on without changing the flag. Every change is pushed
+        to project members as a `ceremony.updated` live event with `key` `refinement:{sessionId}`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, revision]
+              properties:
+                action:
+                  type: string
+                  enum: [next, prev, goto, refine, skip, add, remove, end, take_over]
+                revision: { type: integer }
+                task_id: { type: integer, description: "refine, skip, remove" }
+                task_ids: { type: array, items: { type: integer }, description: add }
+                index: { type: integer, description: goto }
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefinementSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Retrospective history, newest first
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100, default: 25 } }
+      responses:
+        "200":
+          description: Retros with item counts
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CeremonySessionSummary" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Ceremonies]
+      summary: Start a retrospective (retro:facilitate)
+      description: |
+        The caller facilitates. Omitted fields use the project's retro defaults. The retro starts in the
+        Collect phase; one retro per project runs at a time.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 120 }
+                sprint_id: { type: integer }
+                template: { type: string, enum: [went_well, start_stop_continue, four_ls, mad_sad_glad] }
+                max_votes: { type: integer, minimum: 0, maximum: 20 }
+                anonymous: { type: boolean }
+      responses:
+        "201":
+          description: The new retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/active:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: The running retrospective, if any
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: "`session` is null when none is running"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { allOf: [{ $ref: "#/components/schemas/RetroSession" }], nullable: true }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Ceremonies]
+      summary: One retrospective
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/actions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Drive a retrospective (facilitator)
+      description: |
+        `phase` moves to collect, group, vote or act (any order). Only the facilitator may act, except
+        `take_over` (any member with `retro:facilitate`). `revision` must match (409 otherwise).
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, revision]
+              properties:
+                action: { type: string, enum: [phase, end, take_over] }
+                revision: { type: integer }
+                phase: { type: string, enum: [collect, group, vote, act] }
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Add a card or action item (any member)
+      description: Cards are added while collecting or grouping; action items in the Act phase. Text is up to 500 characters.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, body]
+              properties:
+                type: { type: string, enum: [card, action] }
+                column: { type: string, description: Column key (cards). }
+                body: { type: string, maxLength: 500 }
+                card_id: { type: integer, description: The card that prompted an action item (optional). }
+      responses:
+        "201":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items/{itemId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+      - { name: itemId, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Ceremonies]
+      summary: Edit, move or group a card; edit an action item
+      description: |
+        `body`: the author only. `column`: the author or facilitator while collecting or grouping.
+        `parent_id`: anyone in the Group phase; stacks the card under a top-level card (merging groups), `null` ungroups.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body: { type: string, maxLength: 500 }
+                column: { type: string }
+                parent_id: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Ceremonies]
+      summary: Delete a card or action item (author or facilitator)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items/{itemId}/vote:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+      - { name: itemId, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [Ceremonies]
+      summary: Vote for a top-level card (Vote phase)
+      description: One vote per card per person, up to the retro's `max_votes`; 409 once they are used up.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Ceremonies]
+      summary: Take back a vote (Vote phase)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated retro
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+
+  /api/v2/projects/{id}/ceremonies/retro/sessions/{sessionId}/items/{itemId}/task:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+      - { name: itemId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Turn an action item into a task (tasks:create)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "201":
+          description: Updated retro; the action item now has `task_id`
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetroSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: Standup history, newest first
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100, default: 25 } }
+      responses:
+        "200":
+          description: Standups with check-in and blocker counts
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CeremonySessionSummary" } }
+    post:
+      tags: [Ceremonies]
+      summary: Start a standup (standup:facilitate)
+      description: |
+        Participants are the project's human members (plus the facilitator). Claimed work is scoped to
+        the sprint running today, when there is one. Omitted fields use the project defaults.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 120 }
+                speaker_seconds: { type: integer, minimum: 0, maximum: 900 }
+                shuffle: { type: boolean }
+      responses:
+        "201":
+          description: The new standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/active:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Ceremonies]
+      summary: The running standup, if any
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: "`session` is null when none is running"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { allOf: [{ $ref: "#/components/schemas/StandupSession" }], nullable: true }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Ceremonies]
+      summary: One standup
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      responses:
+        "200":
+          description: Standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}/actions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Drive a standup (facilitator) or join it (anyone)
+      description: |
+        `join` adds the caller to the end of the speaking order and needs no `revision`. Everything else is
+        the facilitator's (or `take_over` by a member with `standup:facilitate`) and needs the current `revision`.
+        `shuffle` reorders only the people who haven't spoken yet.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [next, prev, goto, add_participant, remove_participant, shuffle, end, take_over, join] }
+                revision: { type: integer }
+                index: { type: integer, description: goto }
+                user_id: { type: integer, description: add_participant / remove_participant }
+      responses:
+        "200":
+          description: Updated standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}/entry:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [Ceremonies]
+      summary: Save your own check-in (participants)
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                done: { type: string, maxLength: 2000 }
+                today: { type: string, maxLength: 2000 }
+                blockers: { type: string, maxLength: 2000 }
+                blocker_task_ids: { type: array, maxItems: 10, items: { type: integer }, description: Tasks in this project; others are dropped. }
+      responses:
+        "200":
+          description: Updated standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v2/projects/{id}/ceremonies/standup/sessions/{sessionId}/blockers:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - { name: sessionId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Ceremonies]
+      summary: Create a task for a blocker and link it to your check-in (tasks:create)
+      description: The task goes into the standup's sprint, or the backlog when that sprint no longer accepts tasks.
+      security: [{ SessionCookie: [] }, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+      responses:
+        "201":
+          description: Updated standup
+          content: { application/json: { schema: { $ref: "#/components/schemas/StandupSession" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /api/v2/projects/{id}/insights:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -5812,6 +7197,32 @@ paths:
                 $ref: "#/components/schemas/ProjectInsights"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Project timeline (Gantt) data
+      description: |
+        The project's tasks that have a start or due date (not trashed or archived), ordered by
+        start (or due) date, with the "blocks" links between them. A task with only one date is a
+        single day on the timeline. Returns at most 2000 tasks; `truncated` is true when more exist.
+        `undated_count` counts open tasks with neither date. Any project member can read it.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTimeline"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -6966,6 +8377,257 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v2/planner:
+    get:
+      tags: [Tasks]
+      summary: Today / Upcoming planner
+      description: |
+        The caller's open tasks, grouped for a daily plan. "Your" tasks are the same set as the home
+        list: personal tasks, classic project tasks you can edit, and kanban tasks you claimed.
+        Dates use the caller's timezone. Sections: `overdue` (due before today), `due_today`,
+        `woken` (a snooze ran out; the task stays here until completed or the snooze is cleared),
+        `upcoming` (due within `days`, grouped by day), and `snoozed` (hidden until `snoozed_until`).
+        A snoozed task is only in `snoozed` until its day, even when overdue. At most 500 tasks.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          description: How many days ahead Upcoming covers (1-60, default 14).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      responses:
+        "200":
+          description: Planner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Planner"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v2/projects/{id}/forms:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Request forms]
+      summary: List a project's request forms
+      description: Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Forms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequestForm"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Request forms]
+      summary: Create a request form
+      description: |
+        Needs `project:manage`. Anyone signed in to the site who has the form's link (`path`) can
+        file a request, which becomes a task in this project. Tasks are created with the access of
+        the form's owner (whoever saved it last), so a form closes if its owner can no longer
+        create tasks here. At most 25 forms per project and 20 questions per form.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestFormInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/forms/{formId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: formId
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      tags: [Request forms]
+      summary: Update a request form
+      description: Replaces the form's settings and makes the caller its owner. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestFormInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Request forms]
+      summary: Delete a request form
+      description: Tasks it created stay. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/forms/{formId}/rotate:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: formId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Request forms]
+      summary: Give a form a new link
+      description: The old link stops working. Needs `project:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Form with its new token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestForm"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/forms/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Request forms]
+      summary: Open a request form by link
+      description: |
+        Any signed-in user with the link can open an enabled form; they don't need to be on the
+        project. A turned-off form (or one whose owner lost access) returns 400.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Form to fill in
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, title, intro, project_name, fields]
+                properties:
+                  token: { type: string }
+                  title: { type: string }
+                  intro: { type: string }
+                  project_name: { type: string }
+                  fields:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RequestFormField"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/forms/{token}/submit:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Request forms]
+      summary: File a request
+      description: |
+        Creates a task in the form's project: `summary` becomes the title, and the answers are
+        written into the description with a "Requested by @username" line (never the email). The
+        task gets the form's priority and tags, and its activity log records the submitter. Each
+        person can file 20 requests an hour across all forms. The submitter doesn't get access to
+        the task.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [summary]
+              properties:
+                summary:
+                  type: string
+                  maxLength: 140
+                answers:
+                  type: object
+                  description: Answers keyed by question `id`. Dates are YYYY-MM-DD; select answers must match an option.
+                  additionalProperties:
+                    type: string
+      responses:
+        "201":
+          description: Filed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v2/dashboard:
     get:
       tags: [Dashboard]
@@ -7220,6 +8882,125 @@ paths:
         "400":
           description: Provider unset or settings invalid
 
+  /api/v2/admin/sso:
+    get:
+      tags: [Admin]
+      summary: Get single sign-on settings
+      description: Admins only. The client secret is never returned.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: SSO settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSSOSettings"
+    patch:
+      tags: [Admin]
+      summary: Update single sign-on settings
+      description: |
+        Admins only. Omitted fields stay as they are. `client_secret` is write-only
+        ("" clears it). Turning `enabled` on needs an issuer URL, client ID, and
+        client secret. `sso_only` turns off password sign-in and self-registration
+        for everyone except admins (`403 sso_required`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSSOPatch"
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSSOSettings"
+        "400":
+          description: Validation error
+
+  /api/v2/admin/security-policy:
+    get:
+      tags: [Admin]
+      summary: Get the sign-in policy
+      description: Admins only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSecurityPolicy"
+    patch:
+      tags: [Admin]
+      summary: Update the sign-in policy
+      description: |
+        Admins only. Omitted fields stay as they are.
+
+        - `require_mfa` (`off`, `all`, `roles` with `mfa_role_ids`): browser
+          sessions of people who must use two-factor authentication but haven't
+          set it up get `403 mfa_enrollment_required` everywhere except `GET /me`
+          and `/me/mfa*`, and turning MFA off returns `403 mfa_required_by_policy`.
+          Single sign-on sessions and API keys are exempt.
+        - `min_password_length` (8–64) applies to new and changed passwords.
+        - `session_idle_minutes` (0 or 5–43200) and `session_max_hours` (0–2160)
+          sign browser sessions out; they can't extend the default lifetime.
+        - `allowed_email_domains` limits new accounts (sign-up, invites, people
+          managers, single sign-on).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSecurityPolicyPatch"
+      responses:
+        "200":
+          description: Saved policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSecurityPolicy"
+        "400":
+          description: Validation error
+
+  /api/v2/admin/sso/test:
+    post:
+      tags: [Admin]
+      summary: Check the saved issuer URL
+      description: Admins only. Fetches the provider's discovery document.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Provider found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  authorization_endpoint:
+                    type: string
+                  token_endpoint:
+                    type: string
+        "400":
+          description: No issuer URL saved
+        "502":
+          description: Discovery failed
+
   /api/v2/announcements/dismiss:
     post:
       tags: [Announcements]
@@ -7314,7 +9095,8 @@ paths:
       summary: Update site settings
       description: |
         Needs admin, or `settings:manage` on a company site. `site_mode` and
-        `members_can_create_*` stay with admins (403 otherwise).
+        `members_can_create_*`, `members_can_use_local_agents`, and
+        `members_can_add_project_agents` stay with admins (403 otherwise).
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7422,11 +9204,14 @@ paths:
   /api/v2/company-home:
     get:
       tags: [Auth]
-      summary: Company home page content
+      summary: Company home page
       description: |
-        Company mode only (404 otherwise). Markdown that signed-in people see when no
-        project is shared with them yet; set as `company_home` in site settings.
-        `can_edit` is true for admins and `settings:manage` holders.
+        Company mode only (404 otherwise). `content` is the Markdown welcome set as
+        `company_home` in site settings; `can_edit` is true for admins and `settings:manage`
+        holders. `summary` is the caller's own picture: open work (tasks they claimed, plus
+        unclaimed tasks they created) with overdue / due today / due this week counts, up to
+        12 of their projects (overdue work first, then busiest) with open and overdue counts,
+        and the teams they're on. Dates use the caller's timezone.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -7440,6 +9225,38 @@ paths:
                 properties:
                   content: { type: string }
                   can_edit: { type: boolean }
+                  summary:
+                    type: object
+                    properties:
+                      today: { type: string, format: date }
+                      my_work:
+                        type: object
+                        properties:
+                          open: { type: integer }
+                          overdue: { type: integer }
+                          due_today: { type: integer }
+                          due_week: { type: integer }
+                      projects:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+                            slug: { type: string }
+                            open: { type: integer }
+                            overdue: { type: integer }
+                      total_projects:
+                        type: integer
+                        description: All your unarchived projects, including any not listed.
+                      teams:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+                            members: { type: integer }
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -7482,6 +9299,7 @@ paths:
                         role_name: { type: string }
                         can_manage: { type: boolean }
                         can_edit_name: { type: boolean }
+                        is_guest: { type: boolean, description: Company-mode guest account }
                         teams:
                           type: array
                           items:
@@ -7494,6 +9312,8 @@ paths:
                   manages_everyone: { type: boolean }
                   can_create: { type: boolean, description: False for those who only edit names }
                   names_required: { type: boolean, description: True in company mode; new accounts need first_name and last_name }
+                  can_manage_guests: { type: boolean, description: "Company mode, site admins: may make accounts guests or members" }
+                  guests_enabled: { type: boolean, description: The guest policy allows new guests }
                   teams:
                     type: array
                     items:
@@ -7544,6 +9364,7 @@ paths:
                 last_name: { type: string, description: Required in company mode }
                 team_id: { type: integer, description: "Company-mode team to join; omit for no team (admins and users:manage only)." }
                 site_role_id: { type: integer, description: Omit for the default User role. }
+                guest: { type: boolean, description: "Create a guest account (company mode, site admins, guests enabled). The role must hold no site permission but Create projects." }
       responses:
         "201":
           description: Account created
@@ -7605,6 +9426,99 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v2/people/{id}/guest:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Make an account a guest, or a guest a member
+      description: |
+        Company mode, site admins only. A guest leaves the Company team, so shares with the whole
+        company stop reaching them. What else they reach follows the guest policy. Making a member
+        again rejoins the company. Making a guest needs guests enabled, and refuses the site
+        owner, yourself, agents, and accounts whose site role holds site permissions other than
+        Create projects.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guest]
+              properties:
+                guest: { type: boolean }
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  guest: { type: boolean }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/admin/guest-policy:
+    get:
+      tags: [Admin]
+      summary: Guest policy
+      description: Company mode, site admins only. Also returns how many guest accounts exist.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestPolicy"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Admin]
+      summary: Set the guest policy
+      description: |
+        Decides what guest accounts reach. Shares with the whole company never reach guests.
+        - `enabled`: new guests can be made.
+        - `access_level`: `view` makes every project shared with a guest read only. `full` gives
+          the weaker of the share's role and `role_id`, which must hold no site permission but
+          Create projects.
+        - `via_teams`: shares with a team a guest is on reach them. Otherwise only personal
+          shares do.
+        - `directory`: guests can look up anyone's username. Otherwise only people on their
+          projects.
+
+        Whatever their site role says, guests hold no site permission but Create projects.
+        Saving recomputes every project's access at once.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestPolicy"
+      responses:
+        "200":
+          description: Saved policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/people/{id}/deactivate:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -7640,6 +9554,700 @@ paths:
           description: Reactivated
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/offboarding:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Admin]
+      summary: What an account still holds
+      description: Counts used before offboarding. Same reach rules as deactivate.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claimed_tasks:
+                    type: integer
+                  owned_projects:
+                    type: integer
+                    description: Owner memberships (multi mode) or projects they created (company mode).
+                  personal_keys:
+                    type: integer
+                  project_keys:
+                    type: integer
+                  agents_created:
+                    type: integer
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/people/{id}/offboard:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Deactivate an account and hand off its work
+      description: |
+        Deactivates like `/deactivate`, then optionally:
+        `transfer_projects` makes `successor_id` an owner (multi mode) or gives them a
+        full share (company mode) on every project the account owns; `claims`
+        `release` clears its claims on open tasks and `reassign` moves them to the
+        successor where they can claim (released elsewhere); `revoke_keys` revokes
+        every personal and project API key it made. Validation runs before anything changes.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                successor_id:
+                  type: integer
+                claims:
+                  type: string
+                  enum: [keep, release, reassign]
+                transfer_projects:
+                  type: boolean
+                revoke_keys:
+                  type: boolean
+      responses:
+        "200":
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claims_reassigned:
+                    type: integer
+                  claims_released:
+                    type: integer
+                  projects_transferred:
+                    type: integer
+                  keys_revoked:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/admin/system/health:
+    get:
+      tags: [Admin]
+      summary: System health
+      description: >-
+        Admins only. Database pool and Redis latency, process stats, and the state of each
+        background worker (last run, duration, last error, and whether it is late or stuck).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemHealth"
+        "401":
+          description: Not authenticated
+        "403":
+          description: Not an admin
+
+  /api/v2/admin/maintenance:
+    get:
+      tags: [Admin]
+      summary: Get maintenance mode
+      description: Admins only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: State
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Maintenance"
+    put:
+      tags: [Admin]
+      summary: Turn maintenance (read-only) mode on or off
+      description: |
+        Admins only. While it's on, every POST, PUT, PATCH, and DELETE from anyone
+        but an admin returns `503 maintenance` with `Retry-After`, except signing in
+        and out. Reads keep working, and `GET /site` reports `maintenance` so clients
+        can show a banner. Background jobs keep running.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                message:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Maintenance"
+
+  /api/v2/admin/backups:
+    get:
+      tags: [Admin]
+      summary: Backup status
+      description: Admins only. Whether pg_dump is available, the schedule from the environment, and stored backups.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pg_dump_available:
+                    type: boolean
+                  pg_dump_version:
+                    type: string
+                  scheduled:
+                    type: boolean
+                  schedule:
+                    type: object
+                    properties:
+                      dir:
+                        type: string
+                      interval_hours:
+                        type: integer
+                      keep:
+                        type: integer
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        size:
+                          type: integer
+                        created_at:
+                          type: string
+                          format: date-time
+
+  /api/v2/admin/backups/download:
+    get:
+      tags: [Admin]
+      summary: Download a fresh backup
+      description: |
+        Admins only. Streams a .tar.gz with `database.dump` (pg_dump custom format),
+        `uploads/` (when images are stored on this server), and `manifest.json` with
+        restore steps. Needs pg_dump on the server (PATH or `PG_DUMP_PATH`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Archive
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "503":
+          description: pg_dump isn't installed
+
+  /api/v2/admin/backups/files/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Admin]
+      summary: Download a stored (scheduled) backup
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Archive
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/admin/audit-stream:
+    get:
+      tags: [Admin]
+      summary: Get audit streaming settings
+      description: Admins only. Secrets are never returned.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStream"
+    put:
+      tags: [Admin]
+      summary: Configure audit streaming
+      description: |
+        Admins only. While enabled, new admin events (plus project and task events
+        when included) are POSTed to `url` about every 15 seconds as
+        `{"site": "...", "events": [{source, id, occurred_at, actor_user_id, actor,
+        event_type, target_type, target_id, target, metadata}]}`, in order, up to 200
+        per batch. With a `secret`, requests carry `X-Ordryn-Timestamp` and
+        `X-Ordryn-Signature: sha256=HMAC(secret, timestamp + "." + body)`;
+        `auth_header` is sent as `Authorization`. A batch is retried until the
+        endpoint answers 2xx. Turning it on starts from new events (no backfill);
+        use the audit CSV export for history. `secret` and `auth_header` are
+        write-only ("" clears).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                url:
+                  type: string
+                secret:
+                  type: string
+                  writeOnly: true
+                auth_header:
+                  type: string
+                  writeOnly: true
+                include_project:
+                  type: boolean
+                include_task:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStream"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/admin/audit-stream/test:
+    post:
+      tags: [Admin]
+      summary: Send a test event to the audit stream endpoint
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Delivered
+        "502":
+          description: The endpoint failed
+
+  /api/v2/project-templates:
+    get:
+      tags: [Projects]
+      summary: List project templates you can start from
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        workflow_mode:
+                          type: string
+                        open_tasks:
+                          type: integer
+
+  /api/v2/project-templates/{id}/projects:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Projects]
+      summary: Create a project from a template
+      description: |
+        Creates a project you own with the template's workflow mode, board columns
+        (done/default flags, descriptions, WIP limits, status gates, order), project
+        roles, project tags, sprint settings, and automation rules. Rules that name a
+        specific sprint, person, or agent are skipped (`rules_skipped`). With
+        `include_tasks`, open tasks and their open subtasks are copied with priority,
+        estimate, column, and tags. Members, comments, and history are not copied.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                include_tasks:
+                  type: boolean
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_id:
+                    type: integer
+                  name:
+                    type: string
+                  tasks_copied:
+                    type: integer
+                  rules_copied:
+                    type: integer
+                  rules_skipped:
+                    type: integer
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/projects/{id}/template:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: Whether the project is a template
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Flag
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_template:
+                    type: boolean
+    put:
+      tags: [Projects]
+      summary: Mark or unmark the project as a template
+      description: Needs Manage project.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_template:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/portfolio:
+    get:
+      tags: [Projects]
+      summary: Portfolio of projects
+      description: |
+        Every project the caller can open (live ones; `archived=1` adds archived),
+        with open, overdue, due-in-7-days, unclaimed, and done counts, tasks done in
+        the last 7 days, and the latest status update.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: archived
+          in: query
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PortfolioProject"
+
+  /api/v2/projects/{id}/status-updates:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [Projects]
+      summary: List a project's status updates (newest first)
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 100
+      responses:
+        "200":
+          description: Updates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectStatusUpdate"
+    post:
+      tags: [Projects]
+      summary: Post a status update
+      description: Project managers only. `body` is Markdown (4000 characters at most).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [health]
+              properties:
+                health:
+                  type: string
+                  enum: [on_track, at_risk, off_track]
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Posted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectStatusUpdate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/projects/{id}/status-updates/{updateId}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: updateId
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      tags: [Projects]
+      summary: Delete a status update
+      description: Project managers only.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/reports/time:
+    get:
+      tags: [Reports]
+      summary: Timesheet
+      description: |
+        Logged time between `from` and `to` (inclusive, YYYY-MM-DD in your time zone;
+        defaults to the last 7 days; at most 366 days). You see your own entries on any
+        project you can open, and everyone's on projects where your role has
+        `insights:people`. `format=csv` downloads a CSV. At most 5000 entries
+        (`truncated` says when more matched).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: Timesheet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from:
+                    type: string
+                  to:
+                    type: string
+                  total_minutes:
+                    type: integer
+                  truncated:
+                    type: boolean
+                  by_person:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  by_project:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        logged_at:
+                          type: string
+                          format: date-time
+                        user_id:
+                          type: integer
+                        user_name:
+                          type: string
+                        project_id:
+                          type: integer
+                        project_name:
+                          type: string
+                        task_id:
+                          type: integer
+                        task_title:
+                          type: string
+                        minutes:
+                          type: integer
+                        note:
+                          type: string
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v2/reports/workload:
+    get:
+      tags: [Reports]
+      summary: Workload across projects
+      description: |
+        Per person: open claimed tasks and estimated hours, claimed overdue tasks, projects with
+        open claims, tasks completed and minutes logged in the last 7 days. Covers every
+        project where your role has `insights:people` (`project_count`).
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Workload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_count:
+                    type: integer
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user_id:
+                          type: integer
+                        user_name:
+                          type: string
+                        claimed_open:
+                          type: integer
+                        claimed_hours:
+                          type: number
+                        claimed_overdue:
+                          type: integer
+                        projects:
+                          type: integer
+                        done_last_week:
+                          type: integer
+                        minutes_last_week:
+                          type: integer
 
   /api/v2/admin/users:
     get:
@@ -8962,9 +11570,123 @@ components:
           type: boolean
         redis_ok:
           type: boolean
+          description: Redis answered a PING within 2 seconds.
+        db_ok:
+          type: boolean
+          description: >-
+            The database pool handed out a connection and Postgres answered within 2 seconds.
+            False while every connection is busy, so uptime monitors can alert on it.
         mode:
           type: string
           enum: [full, api]
+
+    DBPoolStats:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        ping_ms:
+          type: number
+        max_conns:
+          type: integer
+        total_conns:
+          type: integer
+        acquired_conns:
+          type: integer
+          description: Equal to max_conns (with ok=false) means the pool is exhausted.
+        idle_conns:
+          type: integer
+        empty_acquire_count:
+          type: integer
+          description: >-
+            Cumulative count of acquires that found no idle connection, either waiting for a
+            busy one to free up or dialing a new one. Dials after idle connections are reaped
+            count too, so a modest number with a low empty_acquire_wait_ms is normal.
+        empty_acquire_wait_ms:
+          type: number
+          description: Cumulative time spent in the acquires counted by empty_acquire_count.
+        acquire_wait_total_ms:
+          type: number
+          description: >-
+            Cumulative time spent in every successful connection acquire, including ones that
+            got an idle connection immediately. Not only waiting; see empty_acquire_wait_ms for that.
+
+    WorkerStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pending, ok, running, error, late, stuck]
+          description: >-
+            late = no pass started for over twice the interval (minimum 5 minutes);
+            stuck = the current pass has run that long.
+        interval_seconds:
+          type: integer
+        runs:
+          type: integer
+        failures:
+          type: integer
+        running:
+          type: boolean
+        last_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_duration_ms:
+          type: number
+        last_error:
+          type: string
+        last_error_at:
+          type: string
+          format: date-time
+
+    SystemHealth:
+      type: object
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        process:
+          type: object
+          properties:
+            version:
+              type: string
+            started_at:
+              type: string
+              format: date-time
+            uptime_seconds:
+              type: integer
+            goroutines:
+              type: integer
+            heap_alloc_bytes:
+              type: integer
+            sys_bytes:
+              type: integer
+            gc_cycles:
+              type: integer
+            live_streams:
+              type: integer
+        database:
+          $ref: "#/components/schemas/DBPoolStats"
+        redis:
+          type: object
+          properties:
+            ok:
+              type: boolean
+            ping_ms:
+              type: number
+            error:
+              type: string
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerStatus"
 
     SiteInfo:
       type: object
@@ -9024,6 +11746,22 @@ components:
         setup_required:
           type: boolean
           description: True until first-time setup (POST /api/v2/setup) creates the admin account.
+        sso_enabled:
+          type: boolean
+          description: Single sign-on is set up; show "Sign in with {sso_label}".
+        sso_label:
+          type: string
+        sso_only:
+          type: boolean
+          description: Password sign-in and self-registration are off for everyone but admins.
+        min_password_length:
+          type: integer
+          description: Minimum length for new passwords (security policy).
+        maintenance:
+          type: boolean
+          description: The site is read-only for everyone but admins.
+        maintenance_message:
+          type: string
 
     ProjectAccess:
       type: object
@@ -9157,6 +11895,24 @@ components:
         can_edit_name:
           type: boolean
           description: Company mode; true when the user may set their own first and last name (people:profile).
+        is_guest:
+          type: boolean
+          description: Company mode; a guest account from outside the company.
+
+    GuestPolicy:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        access_level: { type: string, enum: [view, full] }
+        role_id:
+          type: integer
+          nullable: true
+          description: Site role guests get on full shares (required for `full`).
+        via_teams: { type: boolean }
+        directory: { type: boolean }
+        guest_count:
+          type: integer
+          readOnly: true
 
     MFARequired:
       type: object
@@ -9207,6 +11963,9 @@ components:
       properties:
         user_name:
           type: string
+        is_team:
+          type: boolean
+          description: True for a team handle (only with `include_teams=1`).
 
     UserPatch:
       type: object
@@ -9648,6 +12407,208 @@ components:
           type: string
           description: Set when the system paused the rule (error streak or hourly limit).
 
+    CeremonySettings:
+      type: object
+      properties:
+        kanban: { type: boolean }
+        site:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Ceremonies a site admin enabled.
+        project:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Ceremonies this project opted into.
+        active:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Usable now (site on, project on, kanban board).
+        hours_per_point: { type: number, description: Hours one legacy story point converts to. }
+        new_tasks_need_refinement: { type: boolean }
+        can_manage: { type: boolean }
+        can_facilitate:
+          type: object
+          additionalProperties: { type: boolean }
+        retro:
+          $ref: "#/components/schemas/RetroConfig"
+        standup:
+          $ref: "#/components/schemas/StandupConfig"
+        retro_templates:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              columns: { type: array, items: { $ref: "#/components/schemas/RetroColumn" } }
+
+    RetroConfig:
+      type: object
+      description: A project's retrospective defaults; each retro copies them when it starts.
+      properties:
+        template: { type: string, enum: [went_well, start_stop_continue, four_ls, mad_sad_glad] }
+        max_votes: { type: integer, minimum: 0, maximum: 20, description: Votes per person; 0 = unlimited. }
+        anonymous: { type: boolean, description: Hide card authors from everyone but themselves. }
+
+    StandupConfig:
+      type: object
+      properties:
+        speaker_seconds: { type: integer, minimum: 0, maximum: 900, description: Per-person timer; 0 turns it off. }
+        shuffle: { type: boolean, description: Randomize the speaking order when a standup starts. }
+
+    RetroColumn:
+      type: object
+      properties:
+        key: { type: string }
+        title: { type: string }
+
+    CeremonySessionSummary:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            counts:
+              type: object
+              additionalProperties: { type: integer }
+              description: Items by type (card, action, entry) and, for standups, `blocked` check-ins.
+
+    RetroSession:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            phase: { type: string, enum: [collect, group, vote, act] }
+            template: { type: string }
+            columns: { type: array, items: { $ref: "#/components/schemas/RetroColumn" } }
+            anonymous: { type: boolean }
+            max_votes: { type: integer }
+            votes_used: { type: integer }
+            can_facilitate: { type: boolean }
+            is_facilitator: { type: boolean }
+            can_create_task: { type: boolean }
+            cards:
+              type: array
+              description: |
+                While collecting, other people's cards are `hidden` (no body or author). With `anonymous`,
+                authors are only shown on your own cards. `votes` are filled in the Act phase and after the retro ends.
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  column: { type: string }
+                  body: { type: string }
+                  author_id: { type: integer, nullable: true }
+                  author_name: { type: string }
+                  mine: { type: boolean }
+                  hidden: { type: boolean }
+                  parent_id: { type: integer, nullable: true, description: Top card of the group this card is stacked under. }
+                  votes: { type: integer }
+                  voted_by_me: { type: boolean }
+            actions:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  body: { type: string }
+                  author_id: { type: integer, nullable: true }
+                  author_name: { type: string }
+                  card_id: { type: integer, nullable: true }
+                  task_id: { type: integer, nullable: true }
+                  task_title: { type: string }
+                  mine: { type: boolean }
+
+    StandupSession:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            current: { type: integer, description: Index of the speaker; equals the participant count once everyone has spoken. }
+            current_user_id: { type: integer, nullable: true }
+            speaker_since: { type: string, format: date-time }
+            speaker_seconds: { type: integer }
+            server_time: { type: string, format: date-time, description: Compare with speaker_since to run the timer without clock skew. }
+            can_facilitate: { type: boolean }
+            is_facilitator: { type: boolean }
+            can_create_task: { type: boolean }
+            joined: { type: boolean }
+            participants:
+              type: array
+              items:
+                type: object
+                properties:
+                  user_id: { type: integer }
+                  name: { type: string }
+                  entry:
+                    type: object
+                    nullable: true
+                    properties:
+                      done: { type: string }
+                      today: { type: string }
+                      blockers: { type: string }
+                      blocker_task_ids: { type: array, items: { type: integer } }
+                  updated_at: { type: string, format: date-time, nullable: true }
+                  blocker_tasks: { type: array, items: { type: object } }
+                  claimed: { type: array, items: { type: object }, description: Open tasks they have claimed (in the standup's sprint when it has one). Empty after the standup ends. }
+
+    CeremonySessionMeta:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        kind: { type: string, enum: [refinement, retro, standup] }
+        title: { type: string }
+        status: { type: string, enum: [active, ended] }
+        facilitator_id: { type: integer, nullable: true }
+        facilitator_name: { type: string }
+        sprint_id: { type: integer, nullable: true }
+        sprint_name: { type: string }
+        revision: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time, nullable: true }
+
+    RefinementSessionSummary:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            queued: { type: integer }
+            refined: { type: integer }
+            skipped: { type: integer }
+
+    RefinementSession:
+      allOf:
+        - $ref: "#/components/schemas/CeremonySessionMeta"
+        - type: object
+          properties:
+            queue: { type: array, items: { type: integer } }
+            current: { type: integer, description: Index into queue; equal to its length past the last task. }
+            current_task_id: { type: integer, nullable: true }
+            outcomes:
+              type: object
+              additionalProperties: { type: string, enum: [refined, skipped] }
+              description: Keyed by task id.
+            can_facilitate: { type: boolean }
+            is_facilitator: { type: boolean }
+            tasks:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  parent_id: { type: integer, nullable: true }
+                  parent_title: { type: string }
+                  title: { type: string }
+                  priority: { type: integer }
+                  completed: { type: boolean }
+                  status_name: { type: string }
+                  sprint_id: { type: integer, nullable: true }
+                  sprint_name: { type: string }
+                  claimed_by_name: { type: string }
+                  estimate_hours: { type: number, nullable: true }
+                  refinement: { type: string, enum: ["", needs_refinement, refined] }
+                  deleted: { type: boolean }
+
     AutomationRun:
       type: object
       properties:
@@ -10065,6 +13026,14 @@ components:
         created_at:
           type: string
           format: date-time
+        time_spent_minutes:
+          type: integer
+          description: |
+            Minutes logged on the sprint's tasks (archived included, trash excluded).
+            Filled on the sprint list; 0 elsewhere.
+        estimate_hours:
+          type: number
+          description: Sum of the sprint's task estimates. Filled on the sprint list; 0 elsewhere.
 
     TaskTimeEntry:
       type: object
@@ -10079,13 +13048,65 @@ components:
           type: integer
         note:
           type: string
+        spent_at:
+          type: string
+          format: date-time
+          description: When the work happened (defaults to when it was logged)
         created_at:
           type: string
           format: date-time
+          description: When the entry was logged
         user_email:
           type: string
         user_name:
           type: string
+
+    TimeBlock:
+      type: object
+      description: Time on the caller's own calendar set aside for a task. Private to its owner.
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        task_title:
+          type: string
+        task_completed:
+          type: boolean
+        project_id:
+          type: integer
+          description: Omitted for personal tasks
+        project_name:
+          type: string
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        minutes:
+          type: integer
+        logged:
+          type: boolean
+          description: True once the block was recorded as a time entry
+        time_entry_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    TimeBlockSpan:
+      type: object
+      required: [start_at, end_at]
+      properties:
+        start_at:
+          type: string
+          format: date-time
+          description: On a 15-minute boundary
+        end_at:
+          type: string
+          format: date-time
+          description: After start_at, on a 15-minute boundary, at most 24 hours later
 
     TaskComment:
       type: object
@@ -10554,7 +13575,7 @@ components:
             done: { type: integer }
             overdue: { type: integer }
             unclaimed: { type: integer }
-            open_points: { type: integer }
+            open_hours: { type: number }
         throughput:
           type: array
           description: Oldest week first; weeks start on Monday in the viewer's timezone.
@@ -10563,7 +13584,7 @@ components:
             properties:
               week_start: { type: string, format: date }
               tasks: { type: integer }
-              points: { type: integer }
+              hours: { type: number }
         completed_days:
           type: integer
           description: Window in days for each member's `completed` count.
@@ -10580,7 +13601,7 @@ components:
               is_agent: { type: boolean }
               is_member: { type: boolean, description: False for people who have left but still hold claims or recent completions. }
               claimed_open: { type: integer }
-              claimed_points: { type: integer }
+              claimed_hours: { type: number }
               completed: { type: integer }
         sprints:
           type: array
@@ -10594,7 +13615,7 @@ components:
             sprint:
               $ref: "#/components/schemas/InsightsSprint"
             total_tasks: { type: integer }
-            total_points: { type: integer }
+            total_hours: { type: number }
             days:
               type: array
               items:
@@ -10602,9 +13623,9 @@ components:
                 properties:
                   date: { type: string, format: date }
                   remaining_tasks: { type: integer, nullable: true }
-                  remaining_points: { type: integer, nullable: true }
+                  remaining_hours: { type: number, nullable: true }
                   ideal_tasks: { type: number }
-                  ideal_points: { type: number }
+                  ideal_hours: { type: number }
 
     ProjectEvent:
       type: object
@@ -10839,6 +13860,157 @@ components:
           type: string
           maxLength: 50
 
+    Passkey:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+
+    PasskeyCeremony:
+      type: object
+      required: [token, options]
+      properties:
+        token: { type: string }
+        options:
+          type: object
+          description: "`{ publicKey: … }` WebAuthn options with base64url-encoded binary fields."
+
+    PlannerTask:
+      allOf:
+        - $ref: "#/components/schemas/Task"
+        - type: object
+          properties:
+            snoozed_until:
+              type: string
+              format: date
+              description: Your snooze day, when set.
+
+    Planner:
+      type: object
+      required: [today, days, overdue, due_today, woken, upcoming, snoozed]
+      properties:
+        today:
+          type: string
+          format: date
+        days:
+          type: integer
+        overdue:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        due_today:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        woken:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+        upcoming:
+          type: array
+          items:
+            type: object
+            required: [date, tasks]
+            properties:
+              date: { type: string, format: date }
+              tasks:
+                type: array
+                items: { $ref: "#/components/schemas/PlannerTask" }
+        snoozed:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerTask" }
+
+    RequestFormField:
+      type: object
+      required: [id, label, type]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9_]{1,32}$"
+          description: Answer key. Omit on save to get q1, q2, …; `summary` is reserved.
+        label: { type: string, maxLength: 120 }
+        type:
+          type: string
+          enum: [text, textarea, select, date, number]
+        required: { type: boolean }
+        help: { type: string }
+        options:
+          type: array
+          description: Choices for `select` (1-30).
+          items: { type: string }
+
+    RequestFormInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 120 }
+        intro: { type: string, maxLength: 2000 }
+        fields:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/RequestFormField"
+        priority: { type: integer, minimum: 0, maximum: 3 }
+        tag_ids:
+          type: array
+          description: Tags of this project to put on every request.
+          items: { type: integer }
+        enabled:
+          type: boolean
+          description: Defaults to true.
+
+    RequestForm:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        token: { type: string }
+        path:
+          type: string
+          description: Site-relative link to share, `/f/{token}`.
+        title: { type: string }
+        intro: { type: string }
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/RequestFormField"
+        priority: { type: integer }
+        tag_ids:
+          type: array
+          items: { type: integer }
+        enabled: { type: boolean }
+        owner_id:
+          type: integer
+          nullable: true
+          description: The manager whose access creates the tasks.
+        submissions: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Onboarding:
+      type: object
+      required: [dismissed, complete, steps]
+      properties:
+        dismissed: { type: boolean }
+        complete:
+          type: boolean
+          description: Every step is done.
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id, label, description, href, done]
+            properties:
+              id:
+                type: string
+                enum: [project, task, complete, teammate, site_name, email, people]
+              label: { type: string }
+              description: { type: string }
+              href:
+                type: string
+                description: App path where the step is done.
+              done: { type: boolean }
+              admin_only: { type: boolean }
+
     Task:
       type: object
       properties:
@@ -10852,6 +14024,10 @@ components:
           type: boolean
         due_date:
           type: string
+        start_date:
+          type: string
+          format: date
+          description: Planned start (YYYY-MM-DD); omitted when not set.
         project_id:
           type: integer
           nullable: true
@@ -10889,9 +14065,16 @@ components:
           nullable: true
         status_name:
           type: string
-        estimate_points:
-          type: integer
+        estimate_hours:
+          type: number
           nullable: true
+          multipleOf: 0.25
+          maximum: 999.75
+          description: Estimate in hours (quarter-hour steps). Kanban projects only.
+        refinement:
+          type: string
+          enum: ["", needs_refinement, refined]
+          description: Refinement flag. Setting a flag needs refinement enabled for the project; an empty string clears it.
         time_spent_minutes:
           type: integer
         project_workflow:
@@ -10904,6 +14087,13 @@ components:
         claimed_by_name:
           type: string
           description: Display name of the claimer
+        reviewer_id:
+          type: integer
+          nullable: true
+          description: User id of the member asked to review this task; null when none
+        reviewer_name:
+          type: string
+          description: Display name of the reviewer
         sprint_id:
           type: integer
           nullable: true
@@ -10988,6 +14178,41 @@ components:
         linked_at:
           type: string
           format: date-time
+
+    ProjectTimeline:
+      type: object
+      required: [project_id, tasks, links, undated_count, truncated]
+      properties:
+        project_id:
+          type: integer
+        tasks:
+          type: array
+          items:
+            type: object
+            required: [id, title, completed, priority, parent_id]
+            properties:
+              id: { type: integer }
+              title: { type: string }
+              start_date: { type: string, format: date }
+              due_date: { type: string, format: date }
+              completed: { type: boolean }
+              priority: { type: integer }
+              parent_id: { type: integer, nullable: true }
+              status_name: { type: string }
+              claimed_by_name: { type: string }
+        links:
+          type: array
+          description: "`from_task_id` blocks `to_task_id`; both are in `tasks`."
+          items:
+            type: object
+            required: [from_task_id, to_task_id]
+            properties:
+              from_task_id: { type: integer }
+              to_task_id: { type: integer }
+        undated_count:
+          type: integer
+        truncated:
+          type: boolean
 
     TaskWatch:
       type: object
@@ -11264,6 +14489,10 @@ components:
           description: Site-configurable limit (default 20000 characters; see max_description_length / max_comment_length on GET /site).
         due_date:
           type: string
+        start_date:
+          type: string
+          format: date
+          description: Planned start (YYYY-MM-DD). Must be on or before `due_date`.
         project_id:
           type: integer
           nullable: true
@@ -11282,9 +14511,16 @@ components:
         status_id:
           type: integer
           nullable: true
-        estimate_points:
-          type: integer
+        estimate_hours:
+          type: number
           nullable: true
+          multipleOf: 0.25
+          maximum: 999.75
+          description: Estimate in hours (quarter-hour steps). Kanban projects only.
+        refinement:
+          type: string
+          enum: ["", needs_refinement, refined]
+          description: Refinement flag. Setting a flag needs refinement enabled for the project; an empty string clears it.
         sprint_id:
           type: integer
           nullable: true
@@ -11311,6 +14547,12 @@ components:
           type: string
         clear_due_date:
           type: boolean
+        start_date:
+          type: string
+          nullable: true
+          description: >
+            Planned start (YYYY-MM-DD); `null` or `""` clears it. The start must be on
+            or before the due date, including when only the due date changes.
         project_id:
           type: integer
           nullable: true
@@ -11333,9 +14575,16 @@ components:
         status_id:
           type: integer
           nullable: true
-        estimate_points:
-          type: integer
+        estimate_hours:
+          type: number
           nullable: true
+          multipleOf: 0.25
+          maximum: 999.75
+          description: Estimate in hours (quarter-hour steps). Kanban projects only.
+        refinement:
+          type: string
+          enum: ["", needs_refinement, refined]
+          description: Refinement flag. Setting a flag needs refinement enabled for the project; an empty string clears it.
         sprint_id:
           type: integer
           nullable: true
@@ -11641,7 +14890,7 @@ components:
         description: { type: string }
         priority: { type: integer, minimum: 0, maximum: 3 }
         tag_names: { type: array, maxItems: 5, items: { type: string } }
-        estimate_points: { type: integer, nullable: true }
+        estimate_hours: { type: number, nullable: true, multipleOf: 0.25, maximum: 999.75 }
         due_offset_days: { type: integer, nullable: true, minimum: 0, maximum: 365 }
         subtasks: { type: array, maxItems: 20, items: { type: string } }
 
@@ -11799,7 +15048,7 @@ components:
         than OR, so "A and B or C" is "(A and B) or C" (nest a group to change that). A row without a
         join uses its group's `op`. Fields include id,
         title, description, text, project, completed, workflow_status, priority, tags, due_date,
-        created_date, modified_date, completed_date, status_changed_date, days_in_status, claimed_by, created_by, sprint, estimate,
+        created_date, modified_date, completed_date, status_changed_date, days_in_status, claimed_by, reviewer, created_by, sprint, estimate,
         is_subtask, has_subtasks, favorite and cf:<custom field key>. Date values accept YYYY-MM-DD
         or macros such as @today-7, @start_of_week and @end_of_week; `between` (dates only) takes [from, to] and includes both ends; people accept @me; sprints accept @current_sprint.
       properties:
@@ -12439,6 +15688,11 @@ components:
         attachments_enabled:
           type: boolean
           description: Lets members upload files to tasks they can edit. Off by default; existing files stay downloadable when turned off.
+        ceremonies:
+          type: object
+          additionalProperties: { type: boolean }
+          example: { refinement: true }
+          description: Built-in team ceremonies switched on site-wide. Each kanban project still opts in; all are off by default.
         attachment_max_bytes:
           type: integer
           minimum: 16384
@@ -12450,6 +15704,12 @@ components:
         members_can_create_organizations:
           type: boolean
           description: Whether the member site role has orgs:create. Admins can always create organizations.
+        members_can_use_local_agents:
+          type: boolean
+          description: Whether the member site role has agents:local (create and use local agent keys). Taking it away stops existing local agent keys. Admins always have it.
+        members_can_add_project_agents:
+          type: boolean
+          description: Whether the member site role has agents:project (add and configure project AI agents and mint their keys). Pausing or removing an agent never needs it. Admins always have it.
         site_mode:
           type: string
           enum: [multi, company]
@@ -12573,6 +15833,11 @@ components:
         attachments_enabled:
           type: boolean
           description: Lets members upload files to tasks they can edit. Off by default; existing files stay downloadable when turned off.
+        ceremonies:
+          type: object
+          additionalProperties: { type: boolean }
+          example: { refinement: true }
+          description: Built-in team ceremonies switched on site-wide. Each kanban project still opts in; all are off by default.
         attachment_max_bytes:
           type: integer
           minimum: 16384
@@ -12584,6 +15849,12 @@ components:
         members_can_create_organizations:
           type: boolean
           description: Whether the member site role has orgs:create. Admins can always create organizations.
+        members_can_use_local_agents:
+          type: boolean
+          description: Whether the member site role has agents:local (create and use local agent keys). Taking it away stops existing local agent keys. Admins always have it.
+        members_can_add_project_agents:
+          type: boolean
+          description: Whether the member site role has agents:project (add and configure project AI agents and mint their keys). Pausing or removing an agent never needs it. Admins always have it.
         company_home:
           type: string
           maxLength: 20000
@@ -12794,7 +16065,7 @@ components:
       properties:
         id:
           type: string
-          enum: ["projects:create", "orgs:create", createinvites]
+          enum: ["projects:create", "orgs:create", createinvites, "users:manage", "queries:site", "agents:local", "agents:project"]
         label:
           type: string
         description:
@@ -12951,6 +16222,210 @@ components:
           type: string
         key:
           type: string
+    AdminSecurityPolicy:
+      type: object
+      properties:
+        require_mfa:
+          type: string
+          enum: ["off", all, roles]
+        mfa_role_ids:
+          type: array
+          items:
+            type: integer
+        min_password_length:
+          type: integer
+        session_idle_minutes:
+          type: integer
+          description: 0 = off.
+        session_max_hours:
+          type: integer
+          description: 0 = the server default.
+        allowed_email_domains:
+          type: array
+          items:
+            type: string
+        default_session_hours:
+          type: integer
+          readOnly: true
+    AdminSecurityPolicyPatch:
+      type: object
+      properties:
+        require_mfa:
+          type: string
+          enum: ["off", all, roles]
+        mfa_role_ids:
+          type: array
+          items:
+            type: integer
+        min_password_length:
+          type: integer
+          minimum: 8
+          maximum: 64
+        session_idle_minutes:
+          type: integer
+        session_max_hours:
+          type: integer
+        allowed_email_domains:
+          type: array
+          items:
+            type: string
+    AdminSSOSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        label:
+          type: string
+          description: Text after "Sign in with" on the login page.
+        issuer_url:
+          type: string
+        client_id:
+          type: string
+        client_secret_set:
+          type: boolean
+        scopes:
+          type: string
+          description: Space-separated scopes requested alongside `openid`.
+        auto_create:
+          type: boolean
+          description: Create an account on first sign-in when the email domain is allowed.
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        sso_only:
+          type: boolean
+        groups_claim:
+          type: string
+          description: ID token claim with the person's groups (company mode team sync).
+        team_map:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Provider group → company-mode team id.
+        redirect_uri:
+          type: string
+          description: Callback URL to register with the provider.
+    AdminSSOPatch:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        label:
+          type: string
+        issuer_url:
+          type: string
+        client_id:
+          type: string
+        client_secret:
+          type: string
+          writeOnly: true
+        scopes:
+          type: string
+        auto_create:
+          type: boolean
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        sso_only:
+          type: boolean
+        groups_claim:
+          type: string
+        team_map:
+          type: object
+          additionalProperties:
+            type: integer
+    Maintenance:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+    AuditStream:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        url:
+          type: string
+        secret_set:
+          type: boolean
+        auth_header_set:
+          type: boolean
+        include_project:
+          type: boolean
+        include_task:
+          type: boolean
+        last_success_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_error:
+          type: string
+        last_error_at:
+          type: string
+          format: date-time
+          nullable: true
+    ProjectStatusUpdate:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        author_id:
+          type: integer
+        author_name:
+          type: string
+        health:
+          type: string
+          enum: [on_track, at_risk, off_track]
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PortfolioProject:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        workflow_mode:
+          type: string
+        archived:
+          type: boolean
+        owner_name:
+          type: string
+        organization_name:
+          type: string
+        open:
+          type: integer
+        overdue:
+          type: integer
+        due_this_week:
+          type: integer
+        unclaimed:
+          type: integer
+        done_last_week:
+          type: integer
+        done:
+          type: integer
+        latest_update:
+          allOf:
+            - $ref: "#/components/schemas/ProjectStatusUpdate"
+          nullable: true
+        can_post_update:
+          type: boolean
     ImageHostingTestResult:
       type: object
       properties:

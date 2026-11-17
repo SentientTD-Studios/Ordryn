@@ -44,6 +44,12 @@ type adminSettingsJSON struct {
 	// Stored on the member site role, not site_settings; admins can always create both.
 	MembersCanCreateProjects      bool `json:"members_can_create_projects"`
 	MembersCanCreateOrganizations bool `json:"members_can_create_organizations"`
+	// AI agent permissions on the member site role; admins always have both.
+	MembersCanUseLocalAgents   bool `json:"members_can_use_local_agents"`
+	MembersCanAddProjectAgents bool `json:"members_can_add_project_agents"`
+
+	// Ceremonies are built-in team ceremonies (refinement, ...) switched on site-wide; projects opt in.
+	Ceremonies map[string]bool `json:"ceremonies"`
 
 	// SiteMode can change only while SiteModeLocked is false (no projects or organizations yet).
 	SiteMode       string `json:"site_mode"`
@@ -103,8 +109,11 @@ type adminSettingsPatch struct {
 	AttachmentsEnabled        *bool  `json:"attachments_enabled"`
 	AttachmentMaxBytes        *int64 `json:"attachment_max_bytes"`
 
-	MembersCanCreateProjects      *bool `json:"members_can_create_projects"`
-	MembersCanCreateOrganizations *bool `json:"members_can_create_organizations"`
+	MembersCanCreateProjects      *bool           `json:"members_can_create_projects"`
+	MembersCanCreateOrganizations *bool           `json:"members_can_create_organizations"`
+	MembersCanUseLocalAgents      *bool           `json:"members_can_use_local_agents"`
+	MembersCanAddProjectAgents    *bool           `json:"members_can_add_project_agents"`
+	Ceremonies                    map[string]bool `json:"ceremonies"`
 
 	SiteMode    *string `json:"site_mode"`
 	CompanyHome *string `json:"company_home"`
@@ -181,10 +190,11 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Site settings managers aren't admins: the site mode and what the User role may
-	// create stay with admins.
-	if req.SiteMode != nil || req.MembersCanCreateProjects != nil || req.MembersCanCreateOrganizations != nil {
+	// create or use stay with admins.
+	if req.SiteMode != nil || req.MembersCanCreateProjects != nil || req.MembersCanCreateOrganizations != nil ||
+		req.MembersCanUseLocalAgents != nil || req.MembersCanAddProjectAgents != nil {
 		if actorID, ok := apiUserFromRequest(r); !ok || !storage.UserHasSitePermission(actorID, storage.SitePermAdmin) {
-			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only admins can change the site mode or what new accounts can create.")
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", "Only admins can change the site mode or what new accounts can create or use.")
 			return
 		}
 	}
@@ -440,6 +450,16 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
 		return
 	}
+	if len(req.Ceremonies) > 0 {
+		if err := domain.SetSiteCeremonies(req.Ceremonies); err != nil {
+			if errors.Is(err, domain.ErrValidation) {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", sharingClientMessage(err, "Invalid request."))
+				return
+			}
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
+			return
+		}
+	}
 	if req.CompanyHome != nil {
 		if err := storage.SetCompanyHome(strings.TrimSpace(*req.CompanyHome)); err != nil {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to save settings.")
@@ -577,13 +597,22 @@ func taskTextLengthFromPatch(w http.ResponseWriter, field string, n int) (int, b
 type adminSettingsExtras struct {
 	Projects       bool
 	Organizations  bool
+	LocalAgents    bool
+	ProjectAgents  bool
 	SiteModeLocked bool
 	CompanyHome    string
+	Ceremonies     map[string]bool
 }
 
 func loadAdminSettingsExtras() (adminSettingsExtras, error) {
 	var p adminSettingsExtras
 	var err error
+	if p.LocalAgents, err = storage.RoleHasPermission(storage.MemberRoleName, storage.SitePermAgentsLocal); err != nil {
+		return p, err
+	}
+	if p.ProjectAgents, err = storage.RoleHasPermission(storage.MemberRoleName, storage.SitePermAgentsProject); err != nil {
+		return p, err
+	}
 	if p.Projects, err = storage.RoleHasPermission(storage.MemberRoleName, storage.SitePermProjectsCreate); err != nil {
 		return p, err
 	}
@@ -591,6 +620,9 @@ func loadAdminSettingsExtras() (adminSettingsExtras, error) {
 		return p, err
 	}
 	if p.SiteModeLocked, err = storage.SiteModeLocked(); err != nil {
+		return p, err
+	}
+	if p.Ceremonies, err = storage.GetSiteCeremonyFeatures(); err != nil {
 		return p, err
 	}
 	if p.CompanyHome, err = storage.GetCompanyHome(); err != nil {
@@ -608,6 +640,16 @@ func saveMemberCreatePerms(req adminSettingsPatch) error {
 	// Nobody creates organizations in company mode; teams come from Manage teams.
 	if req.MembersCanCreateOrganizations != nil && !storage.IsCompanyMode() {
 		if err := storage.SetRolePermission(storage.MemberRoleName, storage.SitePermOrgsCreate, *req.MembersCanCreateOrganizations); err != nil {
+			return err
+		}
+	}
+	if req.MembersCanUseLocalAgents != nil {
+		if err := storage.SetRolePermission(storage.MemberRoleName, storage.SitePermAgentsLocal, *req.MembersCanUseLocalAgents); err != nil {
+			return err
+		}
+	}
+	if req.MembersCanAddProjectAgents != nil {
+		if err := storage.SetRolePermission(storage.MemberRoleName, storage.SitePermAgentsProject, *req.MembersCanAddProjectAgents); err != nil {
 			return err
 		}
 	}
@@ -644,9 +686,12 @@ func adminSettingsView(s *storage.SiteSettings, perms adminSettingsExtras) admin
 		AttachmentMaxBytes:            storage.ClampAttachmentMaxBytes(s.AttachmentMaxBytes),
 		MembersCanCreateProjects:      perms.Projects,
 		MembersCanCreateOrganizations: perms.Organizations,
+		MembersCanUseLocalAgents:      perms.LocalAgents,
+		MembersCanAddProjectAgents:    perms.ProjectAgents,
 		SiteMode:                      s.SiteMode,
 		SiteModeLocked:                perms.SiteModeLocked,
 		CompanyHome:                   perms.CompanyHome,
+		Ceremonies:                    perms.Ceremonies,
 		EmailProvider:                 s.Email.Provider,
 		EmailFromAddress:              s.Email.FromAddress,
 		EmailFromName:                 s.Email.FromName,

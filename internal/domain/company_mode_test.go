@@ -124,10 +124,10 @@ func TestCompanyMode(t *testing.T) {
 	if err := DeleteOrganizationForUser(ctx, admin, companyID); !errors.Is(err, ErrValidation) {
 		t.Fatalf("delete company: err=%v, want ErrValidation", err)
 	}
-	if err := RemoveOrganizationMemberForUser(ctx, bob, companyID, bob); !errors.Is(err, ErrValidation) {
+	if err := RemoveOrganizationMemberForUser(ctx, bob, companyID, bob, nil); !errors.Is(err, ErrValidation) {
 		t.Fatalf("leave company: err=%v, want ErrValidation", err)
 	}
-	if err := RemoveOrganizationMemberForUser(ctx, admin, companyID, bob); !errors.Is(err, ErrValidation) {
+	if err := RemoveOrganizationMemberForUser(ctx, admin, companyID, bob, nil); !errors.Is(err, ErrValidation) {
 		t.Fatalf("remove from company: err=%v, want ErrValidation", err)
 	}
 	if _, err := InviteToOrganization(ctx, admin, companyID, "bob@example.com", storage.CompanyMemberRole); !errors.Is(err, ErrValidation) {
