@@ -114,6 +114,12 @@ func authenticateBearer(w http.ResponseWriter, r *http.Request, token string) bo
 			return false
 		}
 	}
+	if p.IsIdentity {
+		if err := authorizeIdentityKeyRequest(r, p); err != nil {
+			writeScopedKeyError(w, err)
+			return false
+		}
+	}
 	if p.IsProjectScoped() {
 		// Agent keys act as the agent, whose own checks run in
 		// authorizeProjectKeyRequest; other project keys act as their creator.
@@ -139,6 +145,34 @@ func writeScopedKeyError(w http.ResponseWriter, err error) {
 		return
 	}
 	APIJSONError(w, http.StatusInternalServerError, "internal_error", "Request failed.")
+}
+
+func errIdentityEndpoint() error {
+	return &scopedKeyError{http.StatusForbidden, "forbidden",
+		"Sign-in keys can only read the profile and organizations, and revoke themselves."}
+}
+
+// authorizeIdentityKeyRequest is the allowlist for identity keys (device-flow
+// "Sign in with Ordryn" for other apps). Anything not matched here is denied.
+func authorizeIdentityKeyRequest(r *http.Request, p *storage.APIKeyPrincipal) error {
+	if !p.HasScope(storage.APIScopeProfileRead) {
+		return errScopedMissing(storage.APIScopeProfileRead)
+	}
+	parts := strings.Split(apiRoutePath(r), "/")
+	switch {
+	// /me: who signed in.
+	case len(parts) == 1 && parts[0] == "me" && r.Method == http.MethodGet:
+		return nil
+	// /organizations: the caller's organizations and whether they manage each.
+	case len(parts) == 1 && parts[0] == "organizations" && r.Method == http.MethodGet:
+		return nil
+	// /api-keys/{id}: the key may revoke itself and no other key.
+	case len(parts) == 2 && parts[0] == "api-keys" && r.Method == http.MethodDelete:
+		if id, ok := positiveInt(parts[1]); ok && id == p.KeyID {
+			return nil
+		}
+	}
+	return errIdentityEndpoint()
 }
 
 func errLocalAgentEndpoint() error {

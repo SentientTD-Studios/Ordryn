@@ -215,6 +215,39 @@ Rules run as the protected site account **`@automation`** (`users.is_system`; cr
 
 **Safety:** changes made by Automation never trigger other rules (no chains, no loops). Timed rules act once per task per episode, such as once per due date. A rule pauses itself after 10 failed runs in a row or 200 runs in an hour. Members can opt out of Automation notices under profile â notifications. Reference: `/docs/api/v2#automation` and [`openapi.yaml`](openapi.yaml) (tag **Automation**).
 
+## Ordryn Chat sign-in
+
+Ordryn Chat servers can offer **Sign in with Ordryn**, but only ones a site admin has
+registered. Under **Admin → Chat servers** (`settings:manage`):
+
+1. Turn on **Allow chat servers to use Sign in with Ordryn**.
+2. Add each chat server's address (for example `https://chat.ordryn.com`), a name, and whether it may
+   run directory sync. Ordryn issues a
+   client ID and secret, shown once as `ORDRYN_URL` / `ORDRYN_CLIENT_ID` / `ORDRYN_CLIENT_SECRET` lines
+   for the chat server's environment file.
+
+- **Only registered servers.** A sign-in-only device request (`scopes: ["profile:read"]`) must carry a
+  registered server's `client_id` and `client_secret`, or it's refused with `401 invalid_client`. The
+  same happens if chat sign-in is off or that server is disabled. Chat credentials can't ask for a
+  full-access key. The Android app and other full-access device clients are unaffected.
+- **People see who's asking.** The approval page names the chat server and its address. Approval is
+  re-checked, so removing or disabling a server also stops sign-ins already in progress.
+- **What a chat server gets:** a sign-in-only key that can read the profile and organization list and
+  revoke itself, and that expires in 10 minutes. The chat server swaps it for its own session at once.
+- **Managing:** rename, change the address, disable, issue a new secret (the old one stops working at
+  once), or remove. Every change goes to the audit log. Secrets are stored hashed.
+
+- **Directory sync (optional, per server):** with **Allow directory sync** on, the chat server can read
+  `GET /api/v2/chat/directory` using the same credentials over HTTP Basic. That returns users (name,
+  email, ban status, site role, with agents and `@automation` left out), site roles and organization
+  memberships. The chat server uses it to disable people banned or removed here, map site roles, and keep
+  organization channels current. The credentials reach nothing else, and no admin API key or
+  service account is needed. Turning the switch off, disabling the server or rotating its secret stops sync
+  at once.
+
+Reference: [`openapi.yaml`](openapi.yaml) (`/api/v2/admin/chat`, `/api/v2/chat/directory`,
+`/api/v2/auth/device/code`).
+
 ## Requirements
 
 - Go 1.24+

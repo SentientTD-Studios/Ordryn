@@ -203,3 +203,29 @@ func TestAPIDeviceTokenMethodNotAllowed(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusMethodNotAllowed, rec.Body.String())
 	}
 }
+
+func TestNormalizeDeviceScopes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		in      []string
+		want    []string
+		wantErr bool
+	}{
+		{name: "none means full access", in: nil, want: nil},
+		{name: "blank entries ignored", in: []string{" ", ""}, want: nil},
+		{name: "identity", in: []string{"profile:read"}, want: []string{"profile:read"}},
+		{name: "case and dupes", in: []string{"Profile:Read", "profile:read"}, want: []string{"profile:read"}},
+		{name: "unknown scope rejected", in: []string{"tasks:write"}, wantErr: true},
+		{name: "mixed rejected", in: []string{"profile:read", "admin"}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := utils.NormalizeDeviceScopes(tc.in)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if len(got) != len(tc.want) || (len(got) == 1 && got[0] != tc.want[0]) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

@@ -665,6 +665,26 @@ paths:
                   type: string
                   description: Optional native deep link; must be ordryn://auth-complete
                   example: ordryn://auth-complete
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                    enum: ["profile:read"]
+                  description: |
+                    Omit for a full-access personal key. `["profile:read"]` requests a
+                    sign-in-only ("identity") key for apps that just need to know who the
+                    user is: it may call `GET /api/v2/me`, `GET /api/v2/organizations`, and
+                    `DELETE /api/v2/api-keys/{its own id}`, and expires after 10 minutes.
+                    Apps should exchange it for their own session and revoke it at once.
+                    Only chat servers registered under Admin → Chat servers may request it,
+                    and must send `client_id` and `client_secret`.
+                client_id:
+                  type: string
+                  description: A registered chat server's client ID (required with `["profile:read"]`)
+                  example: chat_3f9a1c0b2d4e5f6a7b8c9d0e
+                client_secret:
+                  type: string
+                  description: That chat server's secret (required with `["profile:read"]`)
       responses:
         "200":
           description: Device codes issued
@@ -674,6 +694,10 @@ paths:
                 $ref: "#/components/schemas/DeviceCodeResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          description: |
+            `invalid_client`: a sign-in-only request without valid chat server credentials, or
+            chat sign-in is off, or that chat server is disabled.
 
   /api/v2/auth/device/token:
     post:
@@ -705,8 +729,20 @@ paths:
                     type: string
                   key_prefix:
                     type: string
-                  key_name:
+                  name:
                     type: string
+                  key_id:
+                    type: integer
+                    description: Id of the minted key (lets an identity key revoke itself)
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                    description: Present for identity keys
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: Present when the key expires (identity keys)
         "400":
           description: Pending, denied, expired, or invalid (OAuth-style error body)
 
@@ -10230,6 +10266,236 @@ paths:
                 items:
                   $ref: "#/components/schemas/AdminUser"
 
+  /api/v2/admin/chat:
+    get:
+      tags: [Admin]
+      summary: Chat sign-in settings and registered chat servers
+      description: |
+        Which Ordryn Chat servers may use "Sign in with Ordryn". Needs `settings:manage`.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Settings and servers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminChat"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Admin]
+      summary: Turn chat sign-in on or off for every chat server
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signin_enabled]
+              properties:
+                signin_enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated settings and servers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminChat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/admin/chat/servers:
+    post:
+      tags: [Admin]
+      summary: Register a chat server
+      description: |
+        Adds an accepted chat server address and issues its client ID and secret. The
+        secret is returned only here; Ordryn stores a hash.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url]
+              properties:
+                name:
+                  type: string
+                  maxLength: 60
+                  example: Company chat
+                url:
+                  type: string
+                  description: https origin (http only for localhost), no path
+                  example: https://chat.ordryn.com
+                directory_sync:
+                  type: boolean
+                  description: Let this chat server read the directory (GET /api/v2/chat/directory)
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatServerWithSecret"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v2/admin/chat/servers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [Admin]
+      summary: Rename, re-address, enable or disable a chat server
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                url:
+                  type: string
+                enabled:
+                  type: boolean
+                directory_sync:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatServer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [Admin]
+      summary: Remove a chat server
+      description: Its credentials stop working at once.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/admin/chat/servers/{id}/rotate-secret:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [Admin]
+      summary: Issue a new secret for a chat server
+      description: The old secret stops working at once. The new one is returned only here.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: New secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatServerWithSecret"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v2/chat/directory:
+    get:
+      tags: [Admin]
+      summary: User directory for Ordryn Chat directory sync
+      description: |
+        Every user (agents and the automation account excluded) with ban status and site role,
+        the site roles, and every organization membership. For a registered chat server with
+        **Directory sync** allowed under Admin → Chat servers. Authenticate with HTTP Basic
+        (client ID : client secret); session cookies and API keys aren't accepted. Refused
+        when chat sign-in is off for the site or the chat server is disabled.
+      security:
+        - ChatClientBasic: []
+      responses:
+        "200":
+          description: Directory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatDirectory"
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`directory_sync_disabled`: directory sync isn't allowed for this chat server"
+
+  /api/v2/admin/organization-memberships:
+    get:
+      tags: [Admin]
+      summary: List every organization membership on the site
+      description: |
+        Every human member of every organization, with whether their role can manage
+        the organization. For admin integrations that mirror organizations (such as
+        Ordryn Chat directory sync) without joining each one. Agent accounts are excluded.
+      security:
+        - SessionCookie: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Memberships, ordered by organization then user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminOrganizationMembership"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v2/admin/users/{id}/ban:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -11154,6 +11420,12 @@ components:
       in: cookie
       name: session
       description: httpOnly session cookie from /api/v2/auth/login or register
+    ChatClientBasic:
+      type: http
+      scheme: basic
+      description: |
+        A registered Ordryn Chat server's client ID (username) and secret (password), from
+        Admin → Chat servers. Only accepted by /api/v2/chat/directory.
 
   parameters:
     ID:
@@ -14844,6 +15116,11 @@ components:
         redirect_uri:
           type: string
           description: Echo of the validated native deep link, when requested
+        scopes:
+          type: array
+          items:
+            type: string
+          description: Echo of the requested scopes (identity requests only)
 
     DeviceStatus:
       type: object
@@ -14857,6 +15134,18 @@ components:
         redirect_uri:
           type: string
           description: Native deep link to open after a decision (when requested at code issuance)
+        access:
+          type: string
+          enum: [identity, full]
+          description: What approving grants. identity = sign-in only (profile:read); full = acts as the user
+        chat_server:
+          type: object
+          description: The registered chat server asking to sign the user in (identity requests)
+          properties:
+            name:
+              type: string
+            url:
+              type: string
 
     DeviceDecisionResponse:
       type: object
@@ -15662,6 +15951,114 @@ components:
           type: string
         interval:
           type: integer
+
+    ChatServer:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        url:
+          type: string
+          example: https://chat.ordryn.com
+        client_id:
+          type: string
+        secret_hint:
+          type: string
+          description: Last characters of the secret, for telling secrets apart
+        enabled:
+          type: boolean
+        directory_sync:
+          type: boolean
+          description: May read GET /api/v2/chat/directory with its client credentials
+        created_by:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ChatServerWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/ChatServer"
+        - type: object
+          properties:
+            client_secret:
+              type: string
+              description: Shown once. Set it as ORDRYN_CLIENT_SECRET on the chat server.
+
+    ChatDirectory:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              email:
+                type: string
+              user_name:
+                type: string
+              full_name:
+                type: string
+              is_banned:
+                type: boolean
+              role_id:
+                type: integer
+              role_name:
+                type: string
+        site_roles:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              label:
+                type: string
+              built_in:
+                type: boolean
+        organization_memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOrganizationMembership"
+
+    AdminChat:
+      type: object
+      properties:
+        signin_enabled:
+          type: boolean
+          description: Off refuses Sign in with Ordryn and directory sync for every chat server
+        servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatServer"
+
+    AdminOrganizationMembership:
+      type: object
+      properties:
+        organization_id:
+          type: integer
+        organization_name:
+          type: string
+        is_company:
+          type: boolean
+        user_id:
+          type: integer
+        role:
+          type: string
+          description: Organization role slug (owner, or a site/organization role)
+        can_manage:
+          type: boolean
+          description: True when the role can change the organization's members and roles
 
     SitePermInfo:
       type: object

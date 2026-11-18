@@ -35,16 +35,38 @@ func APIV1DeviceStatus(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load authorization request.")
 		return
 	}
+	access := "full"
+	if record.IsIdentity() {
+		access = "identity"
+	}
 	resp := map[string]interface{}{
 		"user_code":   record.UserCode,
 		"client_name": record.ClientName,
 		"status":      string(record.Status),
+		"access":      access,
 	}
 	if record.RedirectURI != "" {
 		resp["redirect_uri"] = record.RedirectURI
 	}
+	if record.ChatServer != nil {
+		resp["chat_server"] = map[string]string{"name": record.ChatServer.Name, "url": record.ChatServer.URL}
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// chatServerStillAllowed re-checks a request's chat server at approval time,
+// in case an admin removed or disabled it after the request started.
+func chatServerStillAllowed(record *utils.DeviceAuthRecord) bool {
+	if record.ChatServer == nil {
+		return !record.IsIdentity() // identity requests always come from a chat server
+	}
+	on, err := storage.GetChatSignInEnabled()
+	if err != nil || !on {
+		return false
+	}
+	cs, err := storage.GetChatServer(record.ChatServer.ID)
+	return err == nil && cs.Enabled
 }
 
 // APIV1DeviceApprove approves a pending device authorization (JSON).
@@ -81,13 +103,28 @@ func APIV1DeviceApprove(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Authorization request is no longer pending.")
 		return
 	}
+	if !chatServerStillAllowed(record) {
+		_ = utils.DenyDeviceAuth(r.Context(), userCode)
+		utils.APIJSONError(w, http.StatusForbidden, "forbidden",
+			"This chat server is no longer allowed to use Sign in with Ordryn.")
+		return
+	}
 	clientName := utils.NormalizeClientName(record.ClientName)
-	plaintext, keyRecord, err := storage.CreateOrRotateAPIKey(userID, clientName)
+	if record.ChatServer != nil {
+		clientName = utils.NormalizeClientName("Ordryn Chat: " + record.ChatServer.Name)
+	}
+	var plaintext string
+	var keyRecord *storage.APIKey
+	if record.IsIdentity() {
+		plaintext, keyRecord, err = storage.CreateOrRotateIdentityAPIKey(userID, clientName)
+	} else {
+		plaintext, keyRecord, err = storage.CreateOrRotateAPIKey(userID, clientName)
+	}
 	if err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to create API key.")
 		return
 	}
-	if err := utils.ApproveDeviceAuth(r.Context(), userCode, userID, plaintext, keyRecord.KeyPrefix, keyRecord.Name); err != nil {
+	if err := utils.ApproveDeviceAuth(r.Context(), userCode, userID, plaintext, keyRecord); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to approve authorization request.")
 		return
 	}

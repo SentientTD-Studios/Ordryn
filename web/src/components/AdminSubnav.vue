@@ -19,6 +19,7 @@ const fetchedCount = ref(0)
 const allLinks = [
   { name: 'admin', label: 'Settings', to: '/admin', perm: 'settings:manage' },
   { name: 'admin-extensions', label: 'Extensions', to: '/admin/extensions', perm: 'settings:manage' },
+  { name: 'admin-chat', label: 'Chat servers', to: '/admin/chat', perm: 'settings:manage' },
   { name: 'admin-security', label: 'Security', to: '/admin/security', perm: 'admin' },
   { name: 'admin-system', label: 'System', to: '/admin/system', perm: 'admin' },
   { name: 'admin-requests', label: 'Requests', to: '/admin/requests', perm: 'admin', company: false },

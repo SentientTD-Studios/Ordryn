@@ -1468,6 +1468,29 @@ export type SiteRole = {
   locked: boolean
 }
 
+/** An Ordryn Chat server allowed to use Sign in with Ordryn (Admin → Chat servers). */
+export type ChatServer = {
+  id: number
+  name: string
+  url: string
+  client_id: string
+  secret_hint: string
+  enabled: boolean
+  /** May read the user directory (GET /api/v2/chat/directory) for chat directory sync. */
+  directory_sync: boolean
+  created_by: number
+  created_at: string
+  last_used_at?: string | null
+}
+
+/** Returned when a chat server is added or its secret rotated; the only time the secret is shown. */
+export type ChatServerWithSecret = ChatServer & { client_secret: string }
+
+export type AdminChat = {
+  signin_enabled: boolean
+  servers: ChatServer[]
+}
+
 export type SiteRolesList = {
   catalog: ProjectPermInfo[]
   roles: SiteRole[]
@@ -1762,6 +1785,10 @@ export type DeviceStatus = {
   client_name: string
   status: string
   redirect_uri?: string
+  /** "identity": sign-in only (profile + organizations, expires in minutes). "full": acts as you. */
+  access?: 'identity' | 'full'
+  /** The registered chat server asking to sign you in (identity requests). */
+  chat_server?: { name: string; url: string }
 }
 
 export type DeviceDecisionResult = {

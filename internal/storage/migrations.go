@@ -611,6 +611,10 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSearchWords failed: %v\n", err)
 		errCount++
 	}
+	if err := CreateChatServersTables(); err != nil {
+		fmt.Printf("migration: CreateChatServersTables failed: %v\n", err)
+		errCount++
+	}
 
 	if errCount == 0 {
 		return nil
