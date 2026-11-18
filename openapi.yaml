@@ -10345,6 +10345,9 @@ paths:
                 directory_sync:
                   type: boolean
                   description: Let this chat server read the directory (GET /api/v2/chat/directory)
+                task_events:
+                  type: boolean
+                  description: Let this chat server link channels to projects and read their activity (GET /api/v2/chat/events)
       responses:
         "201":
           description: Registered
@@ -10384,6 +10387,8 @@ paths:
                 enabled:
                   type: boolean
                 directory_sync:
+                  type: boolean
+                task_events:
                   type: boolean
       responses:
         "200":
@@ -10470,6 +10475,149 @@ paths:
           description: "`invalid_client`: missing or rejected chat server credentials"
         "403":
           description: "`directory_sync_disabled`: directory sync isn't allowed for this chat server"
+
+  /api/v2/chat/projects:
+    get:
+      tags: [Admin]
+      summary: Projects an Ordryn user could link to an Ordryn Chat channel
+      description: |
+        The user's non-archived projects, and whether they can manage each one (linking needs
+        that). For a registered chat server with **Task events** allowed under Admin → Chat
+        servers; authenticate with HTTP Basic (client ID : client secret).
+      security:
+        - ChatClientBasic: []
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: The Ordryn user acting in the chat server (their linked account)
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChatProject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`task_events_disabled`: task events aren't allowed for this chat server"
+
+  /api/v2/chat/links/{linkId}:
+    parameters:
+      - name: linkId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{1,64}$"
+        description: The chat server's own id for the channel link
+    put:
+      tags: [Admin]
+      summary: Link an Ordryn Chat channel to a project
+      description: |
+        Creates or re-points a link on behalf of `user_id`, who must be able to manage the
+        project. Every later event re-checks that; once they can't, the link is paused (and
+        resumes if they regain access). Same authentication as GET /api/v2/chat/projects.
+      security:
+        - ChatClientBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, user_id]
+              properties:
+                project_id:
+                  type: integer
+                user_id:
+                  type: integer
+      responses:
+        "200":
+          description: Linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatLink"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`forbidden`: the user can't manage this project; `task_events_disabled`"
+    delete:
+      tags: [Admin]
+      summary: Remove an Ordryn Chat channel link
+      security:
+        - ChatClientBasic: []
+      responses:
+        "200":
+          description: Removed (also when it didn't exist)
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`task_events_disabled`: task events aren't allowed for this chat server"
+
+  /api/v2/chat/events:
+    get:
+      tags: [Admin]
+      summary: Read queued project activity for an Ordryn Chat server
+      description: |
+        Deletes this chat server's events up to and including `after` (acknowledging them) and
+        returns up to 200 newer ones in order, plus the state of every link. Events are kept
+        for 72 hours. Same authentication as GET /api/v2/chat/projects.
+      security:
+        - ChatClientBasic: []
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: The last event id the chat server has handled
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          format: int64
+                        link_id:
+                          type: string
+                        payload:
+                          $ref: "#/components/schemas/ChatEventPayload"
+                  links:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChatLink"
+                  more:
+                    type: boolean
+                    description: More events are waiting; read again with the last id
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`task_events_disabled`: task events aren't allowed for this chat server"
 
   /api/v2/admin/organization-memberships:
     get:
@@ -15972,6 +16120,9 @@ components:
         directory_sync:
           type: boolean
           description: May read GET /api/v2/chat/directory with its client credentials
+        task_events:
+          type: boolean
+          description: May link its channels to projects and read their activity (GET /api/v2/chat/events)
         created_by:
           type: integer
         created_at:
@@ -15990,6 +16141,77 @@ components:
             client_secret:
               type: string
               description: Shown once. Set it as ORDRYN_CLIENT_SECRET on the chat server.
+
+    ChatProject:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        can_manage:
+          type: boolean
+
+    ChatLink:
+      type: object
+      properties:
+        link_id:
+          type: string
+        project_id:
+          type: integer
+        project_name:
+          type: string
+        user_id:
+          type: integer
+          description: The Ordryn user who made the link
+        active:
+          type: boolean
+        paused_reason:
+          type: string
+
+    ChatEventPayload:
+      type: object
+      properties:
+        event_id:
+          type: string
+        type:
+          type: string
+          example: task.completed
+        project_id:
+          type: integer
+        project_name:
+          type: string
+        task_id:
+          type: integer
+        title:
+          type: string
+        status:
+          type: string
+        old_status:
+          type: string
+        actor:
+          type: string
+        actor_id:
+          type: integer
+        comment:
+          type: string
+        url:
+          type: string
+        due_date:
+          type: string
+        claimed_by:
+          type: string
+        priority:
+          type: string
+        sprint:
+          type: string
+        member:
+          type: string
+        changed:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
 
     ChatDirectory:
       type: object

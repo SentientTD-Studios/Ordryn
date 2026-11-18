@@ -1478,6 +1478,7 @@ export type ChatServer = {
   enabled: boolean
   /** May read the user directory (GET /api/v2/chat/directory) for chat directory sync. */
   directory_sync: boolean
+  task_events: boolean
   created_by: number
   created_at: string
   last_used_at?: string | null
