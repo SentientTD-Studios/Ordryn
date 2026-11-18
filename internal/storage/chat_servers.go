@@ -26,10 +26,13 @@ type ChatServer struct {
 	Enabled    bool   `json:"enabled"`
 	// DirectorySync lets the chat server read the user directory (users, site
 	// roles, organization memberships) with its client credentials.
-	DirectorySync bool       `json:"directory_sync"`
-	CreatedBy     int        `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
+	DirectorySync bool `json:"directory_sync"`
+	// TaskEvents lets the chat server link its channels to projects and read
+	// those projects' activity (GET /api/v2/chat/events).
+	TaskEvents bool       `json:"task_events"`
+	CreatedBy  int        `json:"created_by"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
 var (
@@ -73,7 +76,9 @@ func CreateChatServersTables() error {
 		)`,
 		`INSERT INTO chat_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
 		`ALTER TABLE chat_servers ADD COLUMN IF NOT EXISTS directory_sync BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE chat_servers ADD COLUMN IF NOT EXISTS task_events BOOLEAN NOT NULL DEFAULT FALSE`,
 	}
+	stmts = append(stmts, chatLinkTables...)
 	for _, q := range stmts {
 		if _, err := pool.Exec(context.Background(), q); err != nil {
 			return fmt.Errorf("failed to create chat server tables: %v", err)
@@ -133,11 +138,11 @@ func SetChatSignInEnabled(on bool) error {
 	return err
 }
 
-const chatServerCols = `id, name, url, client_id, secret_hint, enabled, directory_sync, created_by, created_at, last_used_at`
+const chatServerCols = `id, name, url, client_id, secret_hint, enabled, directory_sync, task_events, created_by, created_at, last_used_at`
 
 func scanChatServer(row pgx.Row) (*ChatServer, error) {
 	var s ChatServer
-	err := row.Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.CreatedBy, &s.CreatedAt, &s.LastUsedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.TaskEvents, &s.CreatedBy, &s.CreatedAt, &s.LastUsedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrChatServerNotFound
 	}
@@ -199,7 +204,7 @@ func newChatSecret() (secret, hash, hint string, err error) {
 
 // CreateChatServer registers a chat server and returns its secret, which is
 // shown once and stored only as a hash. rawURL must already be normalized.
-func CreateChatServer(name, rawURL string, directorySync bool, createdBy int) (*ChatServer, string, error) {
+func CreateChatServer(name, rawURL string, directorySync, taskEvents bool, createdBy int) (*ChatServer, string, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, "", err
@@ -214,9 +219,9 @@ func CreateChatServer(name, rawURL string, directorySync bool, createdBy int) (*
 		return nil, "", err
 	}
 	s, err := scanChatServer(pool.QueryRow(context.Background(),
-		`INSERT INTO chat_servers (name, url, client_id, secret_hash, secret_hint, directory_sync, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+chatServerCols,
-		name, rawURL, chatClientIDPrefix+id, hash, hint, directorySync, createdBy))
+		`INSERT INTO chat_servers (name, url, client_id, secret_hash, secret_hint, directory_sync, task_events, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+chatServerCols,
+		name, rawURL, chatClientIDPrefix+id, hash, hint, directorySync, taskEvents, createdBy))
 	if isUniqueViolation(err) {
 		return nil, "", ErrChatServerURLTaken
 	}
@@ -226,9 +231,9 @@ func CreateChatServer(name, rawURL string, directorySync bool, createdBy int) (*
 	return s, secret, nil
 }
 
-// UpdateChatServer changes a chat server's name, URL, enabled or directory
-// sync flag (nil = keep).
-func UpdateChatServer(id int, name, rawURL *string, enabled, directorySync *bool) (*ChatServer, error) {
+// UpdateChatServer changes a chat server's name, URL, enabled, directory sync
+// or task events flag (nil = keep).
+func UpdateChatServer(id int, name, rawURL *string, enabled, directorySync, taskEvents *bool) (*ChatServer, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -236,8 +241,8 @@ func UpdateChatServer(id int, name, rawURL *string, enabled, directorySync *bool
 	defer CloseDatabase(pool)
 	s, err := scanChatServer(pool.QueryRow(context.Background(),
 		`UPDATE chat_servers SET name = COALESCE($2, name), url = COALESCE($3, url), enabled = COALESCE($4, enabled),
-		        directory_sync = COALESCE($5, directory_sync)
-		 WHERE id = $1 RETURNING `+chatServerCols, id, name, rawURL, enabled, directorySync))
+		        directory_sync = COALESCE($5, directory_sync), task_events = COALESCE($6, task_events)
+		 WHERE id = $1 RETURNING `+chatServerCols, id, name, rawURL, enabled, directorySync, taskEvents))
 	if isUniqueViolation(err) {
 		return nil, ErrChatServerURLTaken
 	}
@@ -291,11 +296,11 @@ func AuthenticateChatServer(clientID, secret string) (*ChatServer, error) {
 	var hash string
 	var on bool
 	err = pool.QueryRow(context.Background(),
-		`SELECT cs.id, cs.name, cs.url, cs.client_id, cs.secret_hint, cs.enabled, cs.directory_sync, cs.created_by,
+		`SELECT cs.id, cs.name, cs.url, cs.client_id, cs.secret_hint, cs.enabled, cs.directory_sync, cs.task_events, cs.created_by,
 		        cs.created_at, cs.last_used_at, cs.secret_hash, COALESCE(st.signin_enabled, FALSE)
 		 FROM chat_servers cs LEFT JOIN chat_settings st ON st.id = 1
 		 WHERE cs.client_id = $1`, clientID).
-		Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.CreatedBy, &s.CreatedAt,
+		Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.TaskEvents, &s.CreatedBy, &s.CreatedAt,
 			&s.LastUsedAt, &hash, &on)
 	if errors.Is(err, pgx.ErrNoRows) {
 		HashAPIKey(secret) // similar timing for unknown IDs

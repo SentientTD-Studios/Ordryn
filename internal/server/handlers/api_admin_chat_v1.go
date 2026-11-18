@@ -15,8 +15,8 @@ import (
 //
 //	GET    /api/v2/admin/chat                                  settings + servers
 //	PUT    /api/v2/admin/chat                                  {signin_enabled}
-//	POST   /api/v2/admin/chat/servers                          {name, url, directory_sync?} → server + client_secret (once)
-//	PATCH  /api/v2/admin/chat/servers/{id}                     {name?, url?, enabled?, directory_sync?}
+//	POST   /api/v2/admin/chat/servers                          {name, url, directory_sync?, task_events?} → server + client_secret (once)
+//	PATCH  /api/v2/admin/chat/servers/{id}                     {name?, url?, enabled?, directory_sync?, task_events?}
 //	DELETE /api/v2/admin/chat/servers/{id}
 //	POST   /api/v2/admin/chat/servers/{id}/rotate-secret       → server + client_secret (once)
 
@@ -37,6 +37,7 @@ type apiChatServerWriteRequest struct {
 	URL           *string `json:"url"`
 	Enabled       *bool   `json:"enabled"`
 	DirectorySync *bool   `json:"directory_sync"`
+	TaskEvents    *bool   `json:"task_events"`
 }
 
 func writeJSONStatus(w http.ResponseWriter, status int, v interface{}) {
@@ -137,7 +138,7 @@ func apiV1AdminCreateChatServer(w http.ResponseWriter, r *http.Request, userID i
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	cs, secret, err := storage.CreateChatServer(name, u, req.DirectorySync != nil && *req.DirectorySync, userID)
+	cs, secret, err := storage.CreateChatServer(name, u, req.DirectorySync != nil && *req.DirectorySync, req.TaskEvents != nil && *req.TaskEvents, userID)
 	if errors.Is(err, storage.ErrChatServerURLTaken) {
 		utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
 		return
@@ -147,7 +148,7 @@ func apiV1AdminCreateChatServer(w http.ResponseWriter, r *http.Request, userID i
 		return
 	}
 	logAdminEvent(r, "chat_server_added", "chat_server", int64(cs.ID), cs.Name,
-		map[string]interface{}{"url": cs.URL, "client_id": cs.ClientID, "directory_sync": cs.DirectorySync})
+		map[string]interface{}{"url": cs.URL, "client_id": cs.ClientID, "directory_sync": cs.DirectorySync, "task_events": cs.TaskEvents})
 	writeJSONStatus(w, http.StatusCreated, apiChatServerWithSecretJSON{ChatServer: *cs, ClientSecret: secret})
 }
 
@@ -159,7 +160,7 @@ func apiV1AdminChatServer(w http.ResponseWriter, r *http.Request, id int) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 			return
 		}
-		if req.Name == nil && req.URL == nil && req.Enabled == nil && req.DirectorySync == nil {
+		if req.Name == nil && req.URL == nil && req.Enabled == nil && req.DirectorySync == nil && req.TaskEvents == nil {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 			return
 		}
@@ -188,7 +189,7 @@ func apiV1AdminChatServer(w http.ResponseWriter, r *http.Request, id int) {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load chat server.")
 			return
 		}
-		cs, err := storage.UpdateChatServer(id, req.Name, req.URL, req.Enabled, req.DirectorySync)
+		cs, err := storage.UpdateChatServer(id, req.Name, req.URL, req.Enabled, req.DirectorySync, req.TaskEvents)
 		switch {
 		case errors.Is(err, storage.ErrChatServerURLTaken):
 			utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
@@ -212,6 +213,9 @@ func apiV1AdminChatServer(w http.ResponseWriter, r *http.Request, id int) {
 		}
 		if before.DirectorySync != cs.DirectorySync {
 			meta["directory_sync"] = map[string]interface{}{"from": before.DirectorySync, "to": cs.DirectorySync}
+		}
+		if before.TaskEvents != cs.TaskEvents {
+			meta["task_events"] = map[string]interface{}{"from": before.TaskEvents, "to": cs.TaskEvents}
 		}
 		if len(meta) > 0 {
 			logAdminEvent(r, "chat_server_updated", "chat_server", int64(cs.ID), cs.Name, meta)

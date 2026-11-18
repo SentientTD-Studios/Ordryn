@@ -20,6 +20,7 @@ const editingId = ref<number | null>(null)
 const formName = ref('')
 const formURL = ref('')
 const formSync = ref(false)
+const formEvents = ref(false)
 const editing = computed(() => servers.value.find((s) => s.id === editingId.value) || null)
 
 /** Credentials to hand to the chat server's admin; shown once after add or rotate. */
@@ -64,6 +65,7 @@ function resetForm() {
   formName.value = ''
   formURL.value = ''
   formSync.value = false
+  formEvents.value = false
 }
 
 function startEdit(s: ChatServer) {
@@ -71,6 +73,7 @@ function startEdit(s: ChatServer) {
   formName.value = s.name
   formURL.value = s.url
   formSync.value = s.directory_sync
+  formEvents.value = s.task_events
 }
 
 async function save() {
@@ -80,10 +83,10 @@ async function save() {
   saving.value = true
   try {
     if (editing.value) {
-      await api.updateChatServer(editing.value.id, { name, url, directory_sync: formSync.value })
+      await api.updateChatServer(editing.value.id, { name, url, directory_sync: formSync.value, task_events: formEvents.value })
       toast.push('Chat server updated', 'success')
     } else {
-      issued.value = await api.addChatServer({ name, url, directory_sync: formSync.value })
+      issued.value = await api.addChatServer({ name, url, directory_sync: formSync.value, task_events: formEvents.value })
       toast.push('Chat server added', 'success')
     }
     resetForm()
@@ -95,7 +98,7 @@ async function save() {
   }
 }
 
-async function setFlag(s: ChatServer, patch: { enabled?: boolean; directory_sync?: boolean }) {
+async function setFlag(s: ChatServer, patch: { enabled?: boolean; directory_sync?: boolean; task_events?: boolean }) {
   try {
     await api.updateChatServer(s.id, patch)
     await load()
@@ -168,6 +171,11 @@ onMounted(load)
       status, site roles) and organization memberships with the same credentials. It uses them to disable people who
       are banned or removed here and to keep organization channels current. Nothing else is reachable with them.
     </p>
+    <p class="text-muted">
+      With <strong>Project updates</strong> allowed, people on that chat server can link a private channel they own
+      to a project they can manage here, and the project's task activity is posted into it. Each link is made on
+      behalf of one person and pauses on its own if they can no longer manage the project.
+    </p>
 
     <div class="card card-body mb-4">
       <div class="form-check form-switch">
@@ -184,7 +192,7 @@ onMounted(load)
           <strong>Allow chat servers to use Sign in with Ordryn</strong>
         </label>
       </div>
-      <div class="form-text">Turning this off stops sign-in and directory sync on every chat server below, without removing them.</div>
+      <div class="form-text">Turning this off stops sign-in, directory sync and project updates on every chat server below, without removing them.</div>
     </div>
 
     <div v-if="issued" class="alert alert-warning">
@@ -210,6 +218,7 @@ onMounted(load)
                   <strong>{{ s.name }}</strong>
                   <span v-if="!s.enabled" class="badge text-bg-secondary ms-1">disabled</span>
                   <span v-if="s.directory_sync" class="badge text-bg-info ms-1">directory sync</span>
+                  <span v-if="s.task_events" class="badge text-bg-info ms-1">project updates</span>
                   <div class="small"><code>{{ s.url }}</code></div>
                   <div class="small text-muted">
                     Client ID <code>{{ s.client_id }}</code> · secret {{ s.secret_hint }}
@@ -227,6 +236,13 @@ onMounted(load)
                     @click="setFlag(s, { directory_sync: !s.directory_sync })"
                   >
                     {{ s.directory_sync ? 'Stop directory sync' : 'Allow directory sync' }}
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    @click="setFlag(s, { task_events: !s.task_events })"
+                  >
+                    {{ s.task_events ? 'Stop project updates' : 'Allow project updates' }}
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" type="button" @click="rotate(s)">New secret</button>
                   <button class="btn btn-sm btn-outline-danger" type="button" @click="remove(s)">Remove</button>
@@ -270,6 +286,13 @@ onMounted(load)
             <input id="chat-server-sync" v-model="formSync" class="form-check-input" type="checkbox" />
             <label class="form-check-label" for="chat-server-sync">Allow directory sync</label>
             <div class="form-text">Lets it read users, site roles and organization memberships.</div>
+          </div>
+          <div class="form-check mb-3">
+            <input id="chat-server-events" v-model="formEvents" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="chat-server-events">Allow project updates</label>
+            <div class="form-text">
+              Lets its users link private channels to projects they manage, and posts those projects' task activity there.
+            </div>
           </div>
           <div class="d-flex gap-2">
             <button class="btn btn-primary" type="submit" :disabled="saving || !formName.trim() || !formURL.trim()">

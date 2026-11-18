@@ -245,8 +245,17 @@ registered. Under **Admin → Chat servers** (`settings:manage`):
   service account is needed. Turning the switch off, disabling the server or rotating its secret stops sync
   at once.
 
+- **Project updates (optional, per server):** with **Allow project updates** on, the chat server's users
+  can link a private channel they own to a project they can **manage** here, and that project's task
+  activity is posted into the channel. The chat server asks on behalf of one of its Ordryn-linked users
+  (`GET /api/v2/chat/projects`, `PUT /api/v2/chat/links/{linkId}`), and Ordryn refuses unless that user can
+  manage the project. Every event re-checks this: once the person who linked it can't manage the project
+  (or is banned), the link pauses, and it resumes if they regain access. Events are queued per chat
+  server and read with `GET /api/v2/chat/events` (kept 72 hours). Personal tasks are never sent, and
+  noisy events (reorders, comment edits, invites, imports) are skipped.
+
 Reference: [`openapi.yaml`](openapi.yaml) (`/api/v2/admin/chat`, `/api/v2/chat/directory`,
-`/api/v2/auth/device/code`).
+`/api/v2/chat/projects`, `/api/v2/chat/links/{linkId}`, `/api/v2/chat/events`, `/api/v2/auth/device/code`).
 
 ## Requirements
 
