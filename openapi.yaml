@@ -10351,6 +10351,9 @@ paths:
                 task_create:
                   type: boolean
                   description: Let this chat server create tasks in linked projects for its users (needs task_events)
+                account_create:
+                  type: boolean
+                  description: Let this chat server create Ordryn accounts for people who sign up on it (POST /api/v2/chat/accounts)
       responses:
         "201":
           description: Registered
@@ -10394,6 +10397,8 @@ paths:
                 task_events:
                   type: boolean
                 task_create:
+                  type: boolean
+                account_create:
                   type: boolean
       responses:
         "200":
@@ -10687,6 +10692,94 @@ paths:
           description: "`invalid_client`: missing or rejected chat server credentials"
         "403":
           description: "`task_events_disabled`: task events aren't allowed for this chat server"
+
+  /api/v2/chat/accounts:
+    post:
+      tags: [Admin]
+      summary: Ask for an Ordryn account for someone who signed up on an Ordryn Chat server
+      description: |
+        Needs "Account creation" allowed for the chat server under Admin → Chat servers, and
+        working email. If the email is free, Ordryn creates an account and emails a link to
+        choose its password; the account can't be used until then. Only that link makes the
+        request `ready`, at which point the chat server links its account to `user_id`.
+        If the email already has an account, nothing is created: the request is
+        `email_in_use` and the address's owner is emailed. A repeat request with the same
+        `chat_user_ref` returns the first one's result and sends no email. At most 30 new
+        requests per chat server per hour.
+      security:
+        - ChatClientBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chat_user_ref, email]
+              properties:
+                chat_user_ref:
+                  type: string
+                  maxLength: 64
+                  description: The chat server's own id for the person
+                email:
+                  type: string
+                user_name:
+                  type: string
+                  description: The chat username; adjusted to Ordryn's rules and made unique
+                display_name:
+                  type: string
+      responses:
+        "201":
+          description: Request made (and its email sent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatAccountRequest"
+        "200":
+          description: An earlier request for this chat_user_ref
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatAccountRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`account_create_disabled`: account creation isn't allowed for this chat server"
+        "429":
+          description: "`rate_limited`: too many requests from this chat server"
+        "503":
+          description: "`email_unavailable`: Ordryn has no working email"
+    get:
+      tags: [Admin]
+      summary: Check account requests made by an Ordryn Chat server
+      security:
+        - ChatClientBasic: []
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Comma-separated request ids (1-200). Ids of other chat servers are left out.
+      responses:
+        "200":
+          description: The requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChatAccountRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`account_create_disabled`: account creation isn't allowed for this chat server"
 
   /api/v2/admin/organization-memberships:
     get:
@@ -16195,6 +16288,9 @@ components:
         task_create:
           type: boolean
           description: May create tasks in linked projects for its users (POST /api/v2/chat/links/{linkId}/tasks)
+        account_create:
+          type: boolean
+          description: May create Ordryn accounts for people who sign up on it (POST /api/v2/chat/accounts)
         created_by:
           type: integer
         created_at:
@@ -16204,6 +16300,24 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    ChatAccountRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        chat_user_ref:
+          type: string
+        status:
+          type: string
+          enum: [pending, ready, email_in_use, expired, gone]
+          description: |
+            pending: waiting for the person to choose a password. ready: link to user_id.
+            email_in_use: the person should link their existing account. expired: the
+            welcome link lapsed unused. gone: the account was deleted or deactivated.
+        user_id:
+          type: integer
+          description: Set when status is ready
 
     ChatServerWithSecret:
       allOf:

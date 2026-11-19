@@ -32,10 +32,14 @@ type ChatServer struct {
 	TaskEvents bool `json:"task_events"`
 	// TaskCreate lets the chat server create tasks in linked projects on
 	// behalf of its users (POST /api/v2/chat/links/{id}/tasks). Needs TaskEvents.
-	TaskCreate bool       `json:"task_create"`
-	CreatedBy  int        `json:"created_by"`
-	CreatedAt  time.Time  `json:"created_at"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	TaskCreate bool `json:"task_create"`
+	// AccountCreate lets the chat server create Ordryn accounts for people
+	// who sign up on it (POST /api/v2/chat/accounts). The person gets an email
+	// to choose their password, and the accounts link once they have.
+	AccountCreate bool       `json:"account_create"`
+	CreatedBy     int        `json:"created_by"`
+	CreatedAt     time.Time  `json:"created_at"`
+	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
 }
 
 var (
@@ -81,9 +85,11 @@ func CreateChatServersTables() error {
 		`ALTER TABLE chat_servers ADD COLUMN IF NOT EXISTS directory_sync BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE chat_servers ADD COLUMN IF NOT EXISTS task_events BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE chat_servers ADD COLUMN IF NOT EXISTS task_create BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE chat_servers ADD COLUMN IF NOT EXISTS account_create BOOLEAN NOT NULL DEFAULT FALSE`,
 	}
 	stmts = append(stmts, chatLinkTables...)
 	stmts = append(stmts, chatTaskTables...)
+	stmts = append(stmts, chatAccountTables...)
 	for _, q := range stmts {
 		if _, err := pool.Exec(context.Background(), q); err != nil {
 			return fmt.Errorf("failed to create chat server tables: %v", err)
@@ -143,11 +149,11 @@ func SetChatSignInEnabled(on bool) error {
 	return err
 }
 
-const chatServerCols = `id, name, url, client_id, secret_hint, enabled, directory_sync, task_events, task_create, created_by, created_at, last_used_at`
+const chatServerCols = `id, name, url, client_id, secret_hint, enabled, directory_sync, task_events, task_create, account_create, created_by, created_at, last_used_at`
 
 func scanChatServer(row pgx.Row) (*ChatServer, error) {
 	var s ChatServer
-	err := row.Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.TaskEvents, &s.TaskCreate, &s.CreatedBy, &s.CreatedAt, &s.LastUsedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.TaskEvents, &s.TaskCreate, &s.AccountCreate, &s.CreatedBy, &s.CreatedAt, &s.LastUsedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrChatServerNotFound
 	}
@@ -209,7 +215,7 @@ func newChatSecret() (secret, hash, hint string, err error) {
 
 // CreateChatServer registers a chat server and returns its secret, which is
 // shown once and stored only as a hash. rawURL must already be normalized.
-func CreateChatServer(name, rawURL string, directorySync, taskEvents, taskCreate bool, createdBy int) (*ChatServer, string, error) {
+func CreateChatServer(name, rawURL string, directorySync, taskEvents, taskCreate, accountCreate bool, createdBy int) (*ChatServer, string, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, "", err
@@ -224,9 +230,9 @@ func CreateChatServer(name, rawURL string, directorySync, taskEvents, taskCreate
 		return nil, "", err
 	}
 	s, err := scanChatServer(pool.QueryRow(context.Background(),
-		`INSERT INTO chat_servers (name, url, client_id, secret_hash, secret_hint, directory_sync, task_events, task_create, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING `+chatServerCols,
-		name, rawURL, chatClientIDPrefix+id, hash, hint, directorySync, taskEvents, taskCreate, createdBy))
+		`INSERT INTO chat_servers (name, url, client_id, secret_hash, secret_hint, directory_sync, task_events, task_create, account_create, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING `+chatServerCols,
+		name, rawURL, chatClientIDPrefix+id, hash, hint, directorySync, taskEvents, taskCreate, accountCreate, createdBy))
 	if isUniqueViolation(err) {
 		return nil, "", ErrChatServerURLTaken
 	}
@@ -237,8 +243,8 @@ func CreateChatServer(name, rawURL string, directorySync, taskEvents, taskCreate
 }
 
 // UpdateChatServer changes a chat server's name, URL, enabled, directory sync
-// task events or task creation flag (nil = keep).
-func UpdateChatServer(id int, name, rawURL *string, enabled, directorySync, taskEvents, taskCreate *bool) (*ChatServer, error) {
+// task events, task creation or account creation flag (nil = keep).
+func UpdateChatServer(id int, name, rawURL *string, enabled, directorySync, taskEvents, taskCreate, accountCreate *bool) (*ChatServer, error) {
 	pool, err := OpenDatabase()
 	if err != nil {
 		return nil, err
@@ -247,8 +253,8 @@ func UpdateChatServer(id int, name, rawURL *string, enabled, directorySync, task
 	s, err := scanChatServer(pool.QueryRow(context.Background(),
 		`UPDATE chat_servers SET name = COALESCE($2, name), url = COALESCE($3, url), enabled = COALESCE($4, enabled),
 		        directory_sync = COALESCE($5, directory_sync), task_events = COALESCE($6, task_events),
-		        task_create = COALESCE($7, task_create)
-		 WHERE id = $1 RETURNING `+chatServerCols, id, name, rawURL, enabled, directorySync, taskEvents, taskCreate))
+		        task_create = COALESCE($7, task_create), account_create = COALESCE($8, account_create)
+		 WHERE id = $1 RETURNING `+chatServerCols, id, name, rawURL, enabled, directorySync, taskEvents, taskCreate, accountCreate))
 	if isUniqueViolation(err) {
 		return nil, ErrChatServerURLTaken
 	}
@@ -302,11 +308,11 @@ func AuthenticateChatServer(clientID, secret string) (*ChatServer, error) {
 	var hash string
 	var on bool
 	err = pool.QueryRow(context.Background(),
-		`SELECT cs.id, cs.name, cs.url, cs.client_id, cs.secret_hint, cs.enabled, cs.directory_sync, cs.task_events, cs.task_create, cs.created_by,
+		`SELECT cs.id, cs.name, cs.url, cs.client_id, cs.secret_hint, cs.enabled, cs.directory_sync, cs.task_events, cs.task_create, cs.account_create, cs.created_by,
 		        cs.created_at, cs.last_used_at, cs.secret_hash, COALESCE(st.signin_enabled, FALSE)
 		 FROM chat_servers cs LEFT JOIN chat_settings st ON st.id = 1
 		 WHERE cs.client_id = $1`, clientID).
-		Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.TaskEvents, &s.TaskCreate, &s.CreatedBy,
+		Scan(&s.ID, &s.Name, &s.URL, &s.ClientID, &s.SecretHint, &s.Enabled, &s.DirectorySync, &s.TaskEvents, &s.TaskCreate, &s.AccountCreate, &s.CreatedBy,
 			&s.CreatedAt, &s.LastUsedAt, &hash, &on)
 	if errors.Is(err, pgx.ErrNoRows) {
 		HashAPIKey(secret) // similar timing for unknown IDs

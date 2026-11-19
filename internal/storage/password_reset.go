@@ -279,5 +279,9 @@ func ResetPasswordWithToken(id, token, passwordHash string) (string, error) {
 	if err := tx.Commit(ctx); err != nil {
 		return "", err
 	}
+	// A chat server's welcome link links the person's chat account once used.
+	if err := ConfirmChatAccountRequest(id, *userID); err != nil {
+		fmt.Printf("password reset: %v\n", err)
+	}
 	return email, nil
 }

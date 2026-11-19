@@ -50,7 +50,7 @@ func TestCreateTaskAfterInsert(t *testing.T) {
 // The storage and event pieces behind POST /api/v2/chat/links/{id}/tasks.
 func TestChatTaskSources(t *testing.T) {
 	ctx := context.Background()
-	cs, _, err := storage.CreateChatServer("Tasks chat", "https://chat-tasks.example.com", false, true, true, 1)
+	cs, _, err := storage.CreateChatServer("Tasks chat", "https://chat-tasks.example.com", false, true, true, false, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestChatTaskSources(t *testing.T) {
 	_ = storage.ReleaseChatTaskSource(cs.ID, "chatmsg_2")
 
 	// The task.created event carries the key, only for this chat server.
-	other, _, err := storage.CreateChatServer("Other chat", "https://chat-other.example.com", false, true, false, 1)
+	other, _, err := storage.CreateChatServer("Other chat", "https://chat-other.example.com", false, true, false, false, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

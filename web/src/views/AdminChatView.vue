@@ -22,6 +22,7 @@ const formURL = ref('')
 const formSync = ref(false)
 const formEvents = ref(false)
 const formCreate = ref(false)
+const formAccounts = ref(false)
 const editing = computed(() => servers.value.find((s) => s.id === editingId.value) || null)
 
 /** Credentials to hand to the chat server's admin; shown once after add or rotate. */
@@ -68,6 +69,7 @@ function resetForm() {
   formSync.value = false
   formEvents.value = false
   formCreate.value = false
+  formAccounts.value = false
 }
 
 function startEdit(s: ChatServer) {
@@ -77,6 +79,7 @@ function startEdit(s: ChatServer) {
   formSync.value = s.directory_sync
   formEvents.value = s.task_events
   formCreate.value = s.task_create
+  formAccounts.value = s.account_create
 }
 
 async function save() {
@@ -92,6 +95,7 @@ async function save() {
         directory_sync: formSync.value,
         task_events: formEvents.value,
         task_create: formEvents.value && formCreate.value,
+        account_create: formAccounts.value,
       })
       toast.push('Chat server updated', 'success')
     } else {
@@ -101,6 +105,7 @@ async function save() {
         directory_sync: formSync.value,
         task_events: formEvents.value,
         task_create: formEvents.value && formCreate.value,
+        account_create: formAccounts.value,
       })
       toast.push('Chat server added', 'success')
     }
@@ -113,7 +118,7 @@ async function save() {
   }
 }
 
-async function setFlag(s: ChatServer, patch: { enabled?: boolean; directory_sync?: boolean; task_events?: boolean; task_create?: boolean }) {
+async function setFlag(s: ChatServer, patch: { enabled?: boolean; directory_sync?: boolean; task_events?: boolean; task_create?: boolean; account_create?: boolean }) {
   try {
     await api.updateChatServer(s.id, patch)
     await load()
@@ -191,6 +196,12 @@ onMounted(load)
       to a project they can manage here, and the project's task activity is posted into it. Each link is made on
       behalf of one person and pauses on its own if they can no longer manage the project.
     </p>
+    <p class="text-muted">
+      With <strong>Account creation</strong> allowed, a chat server can create an account here for someone who signs
+      up on it. Nobody can use the account until the email's owner chooses a password from the email we send, which
+      names the chat server and chat username; only then are the two accounts linked. If the email already has an
+      account, nothing is created and its owner is told.
+    </p>
 
     <div class="card card-body mb-4">
       <div class="form-check form-switch">
@@ -235,6 +246,7 @@ onMounted(load)
                   <span v-if="s.directory_sync" class="badge text-bg-info ms-1">directory sync</span>
                   <span v-if="s.task_events" class="badge text-bg-info ms-1">project updates</span>
                   <span v-if="s.task_events && s.task_create" class="badge text-bg-info ms-1">task creation</span>
+                  <span v-if="s.account_create" class="badge text-bg-info ms-1">account creation</span>
                   <div class="small"><code>{{ s.url }}</code></div>
                   <div class="small text-muted">
                     Client ID <code>{{ s.client_id }}</code> · secret {{ s.secret_hint }}
@@ -267,6 +279,13 @@ onMounted(load)
                     @click="setFlag(s, { task_create: !s.task_create })"
                   >
                     {{ s.task_create ? 'Stop task creation' : 'Allow task creation' }}
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    @click="setFlag(s, { account_create: !s.account_create })"
+                  >
+                    {{ s.account_create ? 'Stop account creation' : 'Allow account creation' }}
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" type="button" @click="rotate(s)">New secret</button>
                   <button class="btn btn-sm btn-outline-danger" type="button" @click="remove(s)">Remove</button>
@@ -330,6 +349,15 @@ onMounted(load)
             <div class="form-text">
               Lets its users turn a chat message into a task in a linked project. Ordryn still checks that they can add
               tasks to that project. Needs project updates.
+            </div>
+          </div>
+          <div class="form-check mb-3">
+            <input id="chat-server-accounts" v-model="formAccounts" class="form-check-input" type="checkbox" />
+            <label class="form-check-label" for="chat-server-accounts">Allow account creation</label>
+            <div class="form-text">
+              When someone signs up on the chat server, it can ask for an account here too, even if sign-up here is
+              invite-only or by request. They get an email to choose a password, and the accounts link once they do.
+              Needs working email. At most 30 per hour.
             </div>
           </div>
           <div class="d-flex gap-2">
