@@ -15,8 +15,8 @@ import (
 //
 //	GET    /api/v2/admin/chat                                  settings + servers
 //	PUT    /api/v2/admin/chat                                  {signin_enabled}
-//	POST   /api/v2/admin/chat/servers                          {name, url, directory_sync?, task_events?, task_create?} → server + client_secret (once)
-//	PATCH  /api/v2/admin/chat/servers/{id}                     {name?, url?, enabled?, directory_sync?, task_events?, task_create?}
+//	POST   /api/v2/admin/chat/servers                          {name, url, directory_sync?, task_events?, task_create?, account_create?} → server + client_secret (once)
+//	PATCH  /api/v2/admin/chat/servers/{id}                     {name?, url?, enabled?, directory_sync?, task_events?, task_create?, account_create?}
 //	DELETE /api/v2/admin/chat/servers/{id}
 //	POST   /api/v2/admin/chat/servers/{id}/rotate-secret       → server + client_secret (once)
 
@@ -39,6 +39,7 @@ type apiChatServerWriteRequest struct {
 	DirectorySync *bool   `json:"directory_sync"`
 	TaskEvents    *bool   `json:"task_events"`
 	TaskCreate    *bool   `json:"task_create"`
+	AccountCreate *bool   `json:"account_create"`
 }
 
 func writeJSONStatus(w http.ResponseWriter, status int, v interface{}) {
@@ -140,7 +141,7 @@ func apiV1AdminCreateChatServer(w http.ResponseWriter, r *http.Request, userID i
 		return
 	}
 	cs, secret, err := storage.CreateChatServer(name, u, req.DirectorySync != nil && *req.DirectorySync, req.TaskEvents != nil && *req.TaskEvents,
-		req.TaskCreate != nil && *req.TaskCreate, userID)
+		req.TaskCreate != nil && *req.TaskCreate, req.AccountCreate != nil && *req.AccountCreate, userID)
 	if errors.Is(err, storage.ErrChatServerURLTaken) {
 		utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
 		return
@@ -151,7 +152,7 @@ func apiV1AdminCreateChatServer(w http.ResponseWriter, r *http.Request, userID i
 	}
 	logAdminEvent(r, "chat_server_added", "chat_server", int64(cs.ID), cs.Name,
 		map[string]interface{}{"url": cs.URL, "client_id": cs.ClientID, "directory_sync": cs.DirectorySync, "task_events": cs.TaskEvents,
-			"task_create": cs.TaskCreate})
+			"task_create": cs.TaskCreate, "account_create": cs.AccountCreate})
 	writeJSONStatus(w, http.StatusCreated, apiChatServerWithSecretJSON{ChatServer: *cs, ClientSecret: secret})
 }
 
@@ -163,7 +164,7 @@ func apiV1AdminChatServer(w http.ResponseWriter, r *http.Request, id int) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
 			return
 		}
-		if req.Name == nil && req.URL == nil && req.Enabled == nil && req.DirectorySync == nil && req.TaskEvents == nil && req.TaskCreate == nil {
+		if req.Name == nil && req.URL == nil && req.Enabled == nil && req.DirectorySync == nil && req.TaskEvents == nil && req.TaskCreate == nil && req.AccountCreate == nil {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Nothing to update.")
 			return
 		}
@@ -192,7 +193,7 @@ func apiV1AdminChatServer(w http.ResponseWriter, r *http.Request, id int) {
 			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to load chat server.")
 			return
 		}
-		cs, err := storage.UpdateChatServer(id, req.Name, req.URL, req.Enabled, req.DirectorySync, req.TaskEvents, req.TaskCreate)
+		cs, err := storage.UpdateChatServer(id, req.Name, req.URL, req.Enabled, req.DirectorySync, req.TaskEvents, req.TaskCreate, req.AccountCreate)
 		switch {
 		case errors.Is(err, storage.ErrChatServerURLTaken):
 			utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
@@ -222,6 +223,9 @@ func apiV1AdminChatServer(w http.ResponseWriter, r *http.Request, id int) {
 		}
 		if before.TaskCreate != cs.TaskCreate {
 			meta["task_create"] = map[string]interface{}{"from": before.TaskCreate, "to": cs.TaskCreate}
+		}
+		if before.AccountCreate != cs.AccountCreate {
+			meta["account_create"] = map[string]interface{}{"from": before.AccountCreate, "to": cs.AccountCreate}
 		}
 		if len(meta) > 0 {
 			logAdminEvent(r, "chat_server_updated", "chat_server", int64(cs.ID), cs.Name, meta)

@@ -261,6 +261,7 @@ func registerAPIV1Routes() {
 	handleAPI("/chat/projects", handlers.ChatEventsChain(handlers.APIV2ChatProjects))
 	handleAPI("/chat/links/", handlers.ChatEventsChain(handlers.APIV2ChatLinks))
 	handleAPI("/chat/events", handlers.ChatEventsChain(handlers.APIV2ChatEvents))
+	handleAPI("/chat/accounts", handlers.ChatDirectoryChain(handlers.APIV2ChatAccounts))
 	handleAPI("/company-home", v1(handlers.APIV1CompanyHome))
 	handleAPI("/project-templates", v1(handlers.APIV1ProjectTemplatesRouter))
 	handleAPI("/project-templates/", v1(handlers.APIV1ProjectTemplatesRouter))

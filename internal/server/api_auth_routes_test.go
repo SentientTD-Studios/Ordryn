@@ -33,6 +33,7 @@ var publicAPIAllowlist = map[string]string{
 	"/auth/device/token":       "devicePublic",
 	"/auth/device/status":      "device user_code poll",
 	"/chat/directory":          "chat server client credentials (HTTP Basic), checked in the handler",
+	"/chat/accounts":           "chat server client credentials (HTTP Basic), checked in the handler",
 	"/chat/projects":           "chat server client credentials (HTTP Basic), checked in the handler",
 	"/chat/links/":             "chat server client credentials (HTTP Basic), checked in the handler",
 	"/chat/events":             "chat server client credentials (HTTP Basic), checked in the handler",

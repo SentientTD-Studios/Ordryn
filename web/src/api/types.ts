@@ -1481,6 +1481,8 @@ export type ChatServer = {
   task_events: boolean
   /** May create tasks in linked projects for its users (POST /api/v2/chat/links/{id}/tasks). Needs task_events. */
   task_create: boolean
+  /** May create accounts for people who sign up on it (POST /api/v2/chat/accounts). */
+  account_create: boolean
   created_by: number
   created_at: string
   last_used_at?: string | null
