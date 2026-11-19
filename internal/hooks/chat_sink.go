@@ -47,6 +47,9 @@ type ChatEventPayload struct {
 	Member      string `json:"member,omitempty"`
 	Changed     string `json:"changed,omitempty"`
 	OccurredAt  string `json:"occurred_at"`
+	// SourceKey is set on task.created, only for the chat server that made
+	// the task from one of its messages (POST /api/v2/chat/links/{id}/tasks).
+	SourceKey string `json:"source_key,omitempty"`
 }
 
 // StartChatSink registers the chat sink with the event stream.
@@ -127,7 +130,15 @@ func HandleChatEvent(ev Event) {
 		if !t.Active {
 			_ = storage.SetChatLinkState(t.ChatServerID, t.LinkID, true, "")
 		}
-		if err := storage.InsertChatEvent(t.ChatServerID, t.LinkID, payload); err != nil {
+		out := payload
+		if ev.Type == EventTaskCreated && taskID > 0 {
+			key, err := storage.ChatTaskSourceKey(t.ChatServerID, taskID)
+			if err != nil {
+				log.Printf("hooks: chat task source: %v", err)
+			}
+			out.SourceKey = key
+		}
+		if err := storage.InsertChatEvent(t.ChatServerID, t.LinkID, out); err != nil {
 			log.Printf("hooks: queue chat event: %v", err)
 		}
 	}

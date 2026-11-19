@@ -2326,14 +2326,14 @@ export const api = {
     })
   },
 
-  addChatServer(payload: { name: string; url: string; directory_sync?: boolean; task_events?: boolean }) {
+  addChatServer(payload: { name: string; url: string; directory_sync?: boolean; task_events?: boolean; task_create?: boolean }) {
     return request<ChatServerWithSecret>('/api/v2/admin/chat/servers', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
-  updateChatServer(id: number, payload: { name?: string; url?: string; enabled?: boolean; directory_sync?: boolean; task_events?: boolean }) {
+  updateChatServer(id: number, payload: { name?: string; url?: string; enabled?: boolean; directory_sync?: boolean; task_events?: boolean; task_create?: boolean }) {
     return request<ChatServer>(`/api/v2/admin/chat/servers/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),

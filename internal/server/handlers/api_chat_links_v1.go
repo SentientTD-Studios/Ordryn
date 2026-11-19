@@ -18,6 +18,8 @@ import (
 //	GET    /api/v2/chat/projects?user_id=N   projects user N can see, and which they can manage
 //	PUT    /api/v2/chat/links/{linkId}       {project_id, user_id}: link on behalf of user N (must manage the project)
 //	DELETE /api/v2/chat/links/{linkId}
+//	POST   /api/v2/chat/links/{linkId}/tasks {user_id, title, description?, source_key}: create a task
+//	       in the linked project as user N ("Task creation" must also be allowed; see api_chat_tasks_v1.go)
 //	GET    /api/v2/chat/events?after=N       acknowledges events ≤ N, returns newer ones and every link's state
 //
 // The chat server says which of its (Ordryn-linked) users is acting; Ordryn
@@ -103,6 +105,10 @@ func APIV2ChatLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	linkID := strings.Trim(utils.ParseAPIV1Subpath(r, "chat/links"), "/")
+	if id, ok := strings.CutSuffix(linkID, "/tasks"); ok && chatLinkIDRe.MatchString(id) {
+		apiV2ChatCreateTask(w, r, cs, id)
+		return
+	}
 	if !chatLinkIDRe.MatchString(linkID) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid link id.")
 		return

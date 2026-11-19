@@ -14,6 +14,7 @@ func TestChatLinkEndpointsNeedChatCredentials(t *testing.T) {
 		{http.MethodGet, "/api/v2/chat/projects?user_id=1", APIV2ChatProjects},
 		{http.MethodPut, "/api/v2/chat/links/abc", APIV2ChatLinks},
 		{http.MethodDelete, "/api/v2/chat/links/abc", APIV2ChatLinks},
+		{http.MethodPost, "/api/v2/chat/links/abc/tasks", APIV2ChatLinks},
 		{http.MethodGet, "/api/v2/chat/events", APIV2ChatEvents},
 	} {
 		rec := httptest.NewRecorder()
@@ -32,6 +33,19 @@ func TestChatLinkIDPattern(t *testing.T) {
 	}
 	for _, bad := range []string{"", "a/b", "a b", "../x", "01234567890123456789012345678901234567890123456789012345678901234"} {
 		if chatLinkIDRe.MatchString(bad) {
+			t.Errorf("%q should be rejected", bad)
+		}
+	}
+}
+
+func TestChatSourceKeyPattern(t *testing.T) {
+	for _, ok := range []string{"chatmsg_42", "a", "x.y:z-1"} {
+		if !chatSourceKeyRe.MatchString(ok) {
+			t.Errorf("%q should be a valid source key", ok)
+		}
+	}
+	for _, bad := range []string{"", "a b", "a/b", string(make([]byte, 101))} {
+		if chatSourceKeyRe.MatchString(bad) {
 			t.Errorf("%q should be rejected", bad)
 		}
 	}

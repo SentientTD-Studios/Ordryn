@@ -1479,6 +1479,8 @@ export type ChatServer = {
   /** May read the user directory (GET /api/v2/chat/directory) for chat directory sync. */
   directory_sync: boolean
   task_events: boolean
+  /** May create tasks in linked projects for its users (POST /api/v2/chat/links/{id}/tasks). Needs task_events. */
+  task_create: boolean
   created_by: number
   created_at: string
   last_used_at?: string | null

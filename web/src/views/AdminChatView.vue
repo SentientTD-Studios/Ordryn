@@ -21,6 +21,7 @@ const formName = ref('')
 const formURL = ref('')
 const formSync = ref(false)
 const formEvents = ref(false)
+const formCreate = ref(false)
 const editing = computed(() => servers.value.find((s) => s.id === editingId.value) || null)
 
 /** Credentials to hand to the chat server's admin; shown once after add or rotate. */
@@ -66,6 +67,7 @@ function resetForm() {
   formURL.value = ''
   formSync.value = false
   formEvents.value = false
+  formCreate.value = false
 }
 
 function startEdit(s: ChatServer) {
@@ -74,6 +76,7 @@ function startEdit(s: ChatServer) {
   formURL.value = s.url
   formSync.value = s.directory_sync
   formEvents.value = s.task_events
+  formCreate.value = s.task_create
 }
 
 async function save() {
@@ -83,10 +86,22 @@ async function save() {
   saving.value = true
   try {
     if (editing.value) {
-      await api.updateChatServer(editing.value.id, { name, url, directory_sync: formSync.value, task_events: formEvents.value })
+      await api.updateChatServer(editing.value.id, {
+        name,
+        url,
+        directory_sync: formSync.value,
+        task_events: formEvents.value,
+        task_create: formEvents.value && formCreate.value,
+      })
       toast.push('Chat server updated', 'success')
     } else {
-      issued.value = await api.addChatServer({ name, url, directory_sync: formSync.value, task_events: formEvents.value })
+      issued.value = await api.addChatServer({
+        name,
+        url,
+        directory_sync: formSync.value,
+        task_events: formEvents.value,
+        task_create: formEvents.value && formCreate.value,
+      })
       toast.push('Chat server added', 'success')
     }
     resetForm()
@@ -98,7 +113,7 @@ async function save() {
   }
 }
 
-async function setFlag(s: ChatServer, patch: { enabled?: boolean; directory_sync?: boolean; task_events?: boolean }) {
+async function setFlag(s: ChatServer, patch: { enabled?: boolean; directory_sync?: boolean; task_events?: boolean; task_create?: boolean }) {
   try {
     await api.updateChatServer(s.id, patch)
     await load()
@@ -219,6 +234,7 @@ onMounted(load)
                   <span v-if="!s.enabled" class="badge text-bg-secondary ms-1">disabled</span>
                   <span v-if="s.directory_sync" class="badge text-bg-info ms-1">directory sync</span>
                   <span v-if="s.task_events" class="badge text-bg-info ms-1">project updates</span>
+                  <span v-if="s.task_events && s.task_create" class="badge text-bg-info ms-1">task creation</span>
                   <div class="small"><code>{{ s.url }}</code></div>
                   <div class="small text-muted">
                     Client ID <code>{{ s.client_id }}</code> · secret {{ s.secret_hint }}
@@ -243,6 +259,14 @@ onMounted(load)
                     @click="setFlag(s, { task_events: !s.task_events })"
                   >
                     {{ s.task_events ? 'Stop project updates' : 'Allow project updates' }}
+                  </button>
+                  <button
+                    v-if="s.task_events"
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    @click="setFlag(s, { task_create: !s.task_create })"
+                  >
+                    {{ s.task_create ? 'Stop task creation' : 'Allow task creation' }}
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" type="button" @click="rotate(s)">New secret</button>
                   <button class="btn btn-sm btn-outline-danger" type="button" @click="remove(s)">Remove</button>
@@ -292,6 +316,20 @@ onMounted(load)
             <label class="form-check-label" for="chat-server-events">Allow project updates</label>
             <div class="form-text">
               Lets its users link private channels to projects they manage, and posts those projects' task activity there.
+            </div>
+          </div>
+          <div class="form-check mb-3">
+            <input
+              id="chat-server-create"
+              v-model="formCreate"
+              class="form-check-input"
+              type="checkbox"
+              :disabled="!formEvents"
+            />
+            <label class="form-check-label" for="chat-server-create">Allow task creation</label>
+            <div class="form-text">
+              Lets its users turn a chat message into a task in a linked project. Ordryn still checks that they can add
+              tasks to that project. Needs project updates.
             </div>
           </div>
           <div class="d-flex gap-2">

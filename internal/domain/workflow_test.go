@@ -302,6 +302,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "admin events: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.CreateChatServersTables(); err != nil {
+		fmt.Fprintf(os.Stderr, "chat servers: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Reproduce production DBs that still have UNIQUE(user_id, name) while a
 	// personal tag is used on both inbox and project tasks. The migration must

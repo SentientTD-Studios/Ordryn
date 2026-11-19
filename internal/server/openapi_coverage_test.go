@@ -31,6 +31,7 @@ var requiredOpenAPIPaths = []string{
 	"/api/v2/chat/directory",
 	"/api/v2/chat/projects",
 	"/api/v2/chat/links/{linkId}",
+	"/api/v2/chat/links/{linkId}/tasks",
 	"/api/v2/chat/events",
 	"/api/v2/auth/register",
 	"/api/v2/auth/login",
