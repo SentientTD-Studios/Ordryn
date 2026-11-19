@@ -10348,6 +10348,9 @@ paths:
                 task_events:
                   type: boolean
                   description: Let this chat server link channels to projects and read their activity (GET /api/v2/chat/events)
+                task_create:
+                  type: boolean
+                  description: Let this chat server create tasks in linked projects for its users (needs task_events)
       responses:
         "201":
           description: Registered
@@ -10389,6 +10392,8 @@ paths:
                 directory_sync:
                   type: boolean
                 task_events:
+                  type: boolean
+                task_create:
                   type: boolean
       responses:
         "200":
@@ -10567,6 +10572,70 @@ paths:
           description: "`invalid_client`: missing or rejected chat server credentials"
         "403":
           description: "`task_events_disabled`: task events aren't allowed for this chat server"
+
+  /api/v2/chat/links/{linkId}/tasks:
+    parameters:
+      - name: linkId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{1,64}$"
+        description: The chat server's own id for the channel link
+    post:
+      tags: [Admin]
+      summary: Create a task from an Ordryn Chat message
+      description: |
+        Creates a task in the link's project as `user_id`, who must be able to add tasks to
+        it. Needs "Task events" and "Task creation" for the chat server, and an active link.
+        `source_key` is unique per chat server: repeating it returns the task already made
+        (200) instead of a new one (201), until that task is deleted. The task.created event
+        for the task carries the same `source_key`. Same authentication as
+        GET /api/v2/chat/projects.
+      security:
+        - ChatClientBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, title, source_key]
+              properties:
+                user_id:
+                  type: integer
+                title:
+                  type: string
+                  maxLength: 200
+                description:
+                  type: string
+                source_key:
+                  type: string
+                  pattern: "^[A-Za-z0-9_.:-]{1,100}$"
+                  example: chatmsg_42
+      responses:
+        "200":
+          description: The task already made for this source_key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatTaskSummary"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatTaskSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: "`invalid_client`: missing or rejected chat server credentials"
+        "403":
+          description: "`forbidden`: the user can't add tasks to this project; `task_events_disabled`; `task_create_disabled`"
+        "404":
+          description: "`link_not_found`: this chat server has no link by that id"
+        "409":
+          description: "`link_paused`: the link is paused; `in_progress`: another request is creating this task"
 
   /api/v2/chat/events:
     get:
@@ -16123,6 +16192,9 @@ components:
         task_events:
           type: boolean
           description: May link its channels to projects and read their activity (GET /api/v2/chat/events)
+        task_create:
+          type: boolean
+          description: May create tasks in linked projects for its users (POST /api/v2/chat/links/{linkId}/tasks)
         created_by:
           type: integer
         created_at:
@@ -16212,6 +16284,25 @@ components:
         occurred_at:
           type: string
           format: date-time
+        source_key:
+          type: string
+          description: |
+            On task.created, for the chat server that made the task from one of its messages
+            (POST /api/v2/chat/links/{linkId}/tasks): the source_key it sent.
+
+    ChatTaskSummary:
+      type: object
+      properties:
+        task_id:
+          type: integer
+        title:
+          type: string
+        url:
+          type: string
+        project_id:
+          type: integer
+        project_name:
+          type: string
 
     ChatDirectory:
       type: object

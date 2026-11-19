@@ -54,6 +54,22 @@ type CreateTaskInput struct {
 	Refinement *string
 	SprintID   *int
 	Fields     map[string]json.RawMessage
+	// AfterInsert, if set, runs once the task is saved and before anyone is
+	// told about it (events, notifications, extensions). If it fails, the new
+	// task is removed and CreateTask returns the error.
+	AfterInsert func(taskID int) error
+}
+
+// runAfterInsert calls in.AfterInsert, removing the task if it fails.
+func runAfterInsert(ctx context.Context, pool *pgxpool.Pool, taskID int, in CreateTaskInput) error {
+	if in.AfterInsert == nil {
+		return nil
+	}
+	if err := in.AfterInsert(taskID); err != nil {
+		_, _ = pool.Exec(context.WithoutCancel(ctx), `DELETE FROM tasks WHERE id = $1`, taskID)
+		return err
+	}
+	return nil
 }
 
 // UpdateTaskInput is a partial update. Nil pointer fields are left unchanged.
@@ -182,6 +198,9 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		if err := applyCreateFields(newID, userID, projectArg, in.Fields); err != nil {
 			return 0, err
 		}
+		if err := runAfterInsert(ctx, pool, newID, in); err != nil {
+			return 0, err
+		}
 		_ = storage.LogTaskEvent(newID, userID, "created", map[string]interface{}{"parent_id": *in.ParentID})
 		autoWatchTask(userID, newID)
 		if pid, ok := projectArg.(int); ok && pid > 0 {
@@ -236,6 +255,9 @@ func CreateTask(ctx context.Context, userID int, in CreateTaskInput) (int, error
 		}
 	}
 	if err := applyCreateFields(newID, userID, projectArg, in.Fields); err != nil {
+		return 0, err
+	}
+	if err := runAfterInsert(ctx, pool, newID, in); err != nil {
 		return 0, err
 	}
 	_ = storage.LogTaskEvent(newID, userID, "created", nil)
