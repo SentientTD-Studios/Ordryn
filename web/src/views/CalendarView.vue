@@ -9,7 +9,8 @@ import AppFooter from '@/components/AppFooter.vue'
 import TimeBlockCalendar from '@/components/TimeBlockCalendar.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
-import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnTabBatch } from '@/composables/useLiveUpdates'
+import { useStaleConflict, staleTaskOf, versionGuard } from '@/composables/useStaleConflict'
 import { useToast } from '@/composables/useToast'
 import { useSidebarState } from '@/composables/useSidebarState'
 
@@ -20,6 +21,7 @@ const route = useRoute()
 const { user } = useAuth()
 const { openAdd, openEdit, lastSavedTask, lastDeletedTask } = useTaskSidebar()
 const { push } = useToast()
+const { handleStaleTask } = useStaleConflict()
 const { sidebarCollapsed, toggleSidebar } = useSidebarState()
 
 const month = ref('')
@@ -120,10 +122,11 @@ async function toggleComplete(id: number, completed: boolean) {
   if (completing.value[id]) return
   completing.value = { ...completing.value, [id]: true }
   try {
-    await api.patchTask(id, { completed: !completed })
+    await api.patchTask(id, { completed: !completed, ...versionGuard(findCalendarTask(id)?.task.version) })
     push(completed ? 'Marked incomplete' : 'Task completed', 'success')
     await loadMonth(month.value)
   } catch (err) {
+    if (await handleStaleTask(err)) return
     push(err instanceof APIError ? err.message : 'Could not update task', 'error')
   } finally {
     const next = { ...completing.value }
@@ -200,10 +203,15 @@ async function onCellDrop(e: DragEvent, date: string) {
   const target = findCell(date)
   if (target) target.tasks = [...target.tasks, { ...task, due: date }]
   try {
-    await api.patchTask(id, { due_date: date })
+    await api.patchTask(id, { due_date: date, ...versionGuard(task.version) })
     push(`Moved "${task.title}" to ${friendlyDay(date)}`, 'success')
   } catch (err) {
-    push(err instanceof APIError ? err.message : 'Could not move task', 'error')
+    if (staleTaskOf(err)) {
+      // The reload below shows the latest; just say why nothing moved.
+      push(`"${task.title}" was changed somewhere else, so it wasn't moved. Showing the latest.`, 'info', 6000)
+    } else {
+      push(err instanceof APIError ? err.message : 'Could not move task', 'error')
+    }
   }
   await loadMonth(month.value)
 }
@@ -223,10 +231,10 @@ watch(lastDeletedTask, (payload) => {
   if (month.value) void loadMonth(month.value)
 })
 
-useLiveUpdates((event, batch) => {
+useLiveUpdates((_event, batch) => {
   // Comments alone don't change this view; skip only when nothing else arrived.
   if (batch.every((e) => e.type === 'task.commented')) return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
+  if (isOwnTabBatch(batch, user.value?.id)) return
   if (month.value) void loadMonth(month.value)
 }, 500)
 </script>

@@ -4,11 +4,87 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"sort"
 
 	"GoTodo/internal/live"
 	"GoTodo/internal/storage"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ReorderGuard is the kanban board a reorder was made from. MovedTaskID is
+// the card that was dragged and FromStatusID the status it had on the
+// caller's board (0 = none); every other listed card is expected to already
+// be in the destination column. A mismatch means the caller's board is out
+// of date, and acting on it would undo or repeat someone else's move, so it
+// is a conflict.
+type ReorderGuard struct {
+	MovedTaskID  int
+	FromStatusID int
+}
+
+// ErrStaleBoard is the conflict returned when a ReorderGuard does not match.
+var ErrStaleBoard = fmt.Errorf("%w: this board is out of date; refresh to see the latest changes", ErrConflict)
+
+func checkReorderGuard(ctx context.Context, pool *pgxpool.Pool, userID int, ids []int, toStatusID int, guard *ReorderGuard) error {
+	// Access first, so a stale-board answer never reveals where a task the
+	// caller cannot see is.
+	for _, id := range ids {
+		canRead, _, _, err := storage.CanUserAccessTask(id, userID)
+		if err != nil {
+			return err
+		}
+		if !canRead {
+			return fmt.Errorf("%w: task %d does not belong to user or mismatched project/parent", ErrValidation, id)
+		}
+	}
+	// "known" is whether the task's status is a real column of its project.
+	// Boards show cards without one in the default column, so those are not
+	// evidence of a stale board.
+	rows, err := pool.Query(ctx,
+		`SELECT t.id, COALESCE(t.status_id, 0), s.id IS NOT NULL
+		   FROM tasks t
+		   LEFT JOIN project_statuses s ON s.id = t.status_id AND s.project_id = t.project_id
+		  WHERE t.id = ANY($1)`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type state struct {
+		status int
+		known  bool
+	}
+	actual := make(map[int]state, len(ids))
+	for rows.Next() {
+		var id, sid int
+		var known bool
+		if err := rows.Scan(&id, &sid, &known); err != nil {
+			return err
+		}
+		actual[id] = state{sid, known}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		st, ok := actual[id]
+		if !ok {
+			return ErrStaleBoard // deleted since the board loaded
+		}
+		if id == guard.MovedTaskID {
+			if st.status != guard.FromStatusID {
+				return ErrStaleBoard
+			}
+			continue
+		}
+		if st.status != toStatusID && st.known {
+			// Someone moved this card to another column since the board loaded.
+			return ErrStaleBoard
+		}
+	}
+	return nil
+}
 
 // ApplyRelativeReorder places orderedIDs into the slots those IDs currently occupy in allIDs.
 func ApplyRelativeReorder(allIDs []int, orderedIDs []int) ([]int, error) {
@@ -48,7 +124,9 @@ func ApplyRelativeReorder(allIDs []int, orderedIDs []int) ([]int, error) {
 // parentID nil or 0 reorders root tasks; otherwise reorders siblings under that parent.
 // statusFilter, when set, is the destination kanban column: tasks in ids that are not
 // already in that column are moved (status + completed) then the column is reordered.
-func ReorderTasks(ctx context.Context, userID int, ids []int, projectFilter *int, parentID *int, statusFilter *int) error {
+// guard, when set, is the board the caller saw; a stale board is refused
+// before anything is written.
+func ReorderTasks(ctx context.Context, userID int, ids []int, projectFilter *int, parentID *int, statusFilter *int, guard *ReorderGuard) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("%w: empty task_ids", ErrValidation)
 	}
@@ -58,6 +136,12 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, projectFilter *int
 		return err
 	}
 	defer storage.CloseDatabase(pool)
+
+	if guard != nil && statusFilter != nil && (parentID == nil || *parentID <= 0) {
+		if err := checkReorderGuard(ctx, pool, userID, ids, *statusFilter, guard); err != nil {
+			return err
+		}
+	}
 
 	nesting := parentID != nil && *parentID > 0
 	columnMoves := 0
@@ -168,9 +252,14 @@ func ReorderTasks(ctx context.Context, userID int, ids []int, projectFilter *int
 		return nil
 	}
 
+	before := slices.Clone(allIDs)
 	allIDs, err = ApplyRelativeReorder(allIDs, ids)
 	if err != nil {
 		return err
+	}
+	if columnMoves == 0 && slices.Equal(before, allIDs) {
+		// Dropped where it already was: nothing changed, so tell no one.
+		return nil
 	}
 
 	tx, err := pool.Begin(ctx)

@@ -408,6 +408,11 @@ export type TaskGitHubIssue = {
 export type Task = {
   id: number
   title: string
+  /**
+   * Goes up whenever the task's content changes. Send it back as `expected_version`
+   * when saving so an edit made from an out-of-date copy is refused (409 `stale_task`).
+   */
+  version?: number
   description: string
   completed: boolean
   due_date: string
@@ -962,6 +967,8 @@ export type CalendarMonthTask = {
   priority: number
   project_name: string
   completed: boolean
+  /** Task version (see Task.version). */
+  version?: number
 }
 
 export type CalendarMonthCell = {
@@ -2105,6 +2112,8 @@ export type ProjectTimelineTask = {
   parent_id: number | null
   status_name?: string
   claimed_by_name?: string
+  /** Task version (see Task.version). */
+  version?: number
 }
 
 /** GET /projects/{id}/timeline: dated tasks and the "blocks" links between them. */

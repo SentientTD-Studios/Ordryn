@@ -611,6 +611,11 @@ func RunMigrations() error {
 		fmt.Printf("migration: MigrateSearchWords failed: %v\n", err)
 		errCount++
 	}
+	// Needs tasks, task_tags, custom_field_values and task_recurrence.
+	if err := MigrateTasksAddVersion(); err != nil {
+		fmt.Printf("migration: MigrateTasksAddVersion failed: %v\n", err)
+		errCount++
+	}
 	if err := CreateChatServersTables(); err != nil {
 		fmt.Printf("migration: CreateChatServersTables failed: %v\n", err)
 		errCount++

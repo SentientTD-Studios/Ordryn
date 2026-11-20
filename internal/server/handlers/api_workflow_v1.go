@@ -315,6 +315,29 @@ func handleProjectStatusesResource(w http.ResponseWriter, r *http.Request, proje
 	}
 }
 
+type apiTaskClaimRequest struct {
+	TakeOver          bool `json:"take_over"`
+	ExpectedClaimedBy *int `json:"expected_claimed_by"`
+}
+
+// writeClaimError reports who holds the task on a claim conflict so the
+// client can offer a takeover instead of silently overwriting the claim.
+func writeClaimError(w http.ResponseWriter, err error) {
+	var cc *domain.ClaimConflictError
+	if !errors.As(err, &cc) {
+		writeWorkflowDomainError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":           "claim_conflict",
+		"message":         cc.Message,
+		"claimed_by":      cc.ClaimedBy,
+		"claimed_by_name": cc.ClaimedByName,
+	})
+}
+
 func apiV1TaskClaim(w http.ResponseWriter, r *http.Request, taskID int) {
 	userID, ok := apiUserFromRequest(r)
 	if !ok {
@@ -323,13 +346,31 @@ func apiV1TaskClaim(w http.ResponseWriter, r *http.Request, taskID int) {
 	}
 	switch r.Method {
 	case http.MethodPost:
-		if err := domain.ClaimTaskForUser(r.Context(), userID, taskID); err != nil {
-			writeWorkflowDomainError(w, err)
+		// The body is optional; older clients send none.
+		var req apiTaskClaimRequest
+		if r.ContentLength != 0 {
+			if err := decodeJSONBody(r, &req); err != nil && err.Error() != "empty body" {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body.")
+				return
+			}
+		}
+		opts := domain.ClaimOptions{TakeOver: req.TakeOver, ExpectedClaimedBy: req.ExpectedClaimedBy}
+		if err := domain.ClaimTaskForUser(r.Context(), userID, taskID, opts); err != nil {
+			writeClaimError(w, err)
 			return
 		}
 	case http.MethodDelete:
-		if err := domain.UnclaimTaskForUser(r.Context(), userID, taskID); err != nil {
-			writeWorkflowDomainError(w, err)
+		var opts domain.UnclaimOptions
+		if raw := strings.TrimSpace(r.URL.Query().Get("expected_claimed_by")); raw != "" {
+			v, err := strconv.Atoi(raw)
+			if err != nil || v < 0 {
+				utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid expected_claimed_by.")
+				return
+			}
+			opts.ExpectedClaimedBy = &v
+		}
+		if err := domain.UnclaimTaskForUser(r.Context(), userID, taskID, opts); err != nil {
+			writeClaimError(w, err)
 			return
 		}
 	default:

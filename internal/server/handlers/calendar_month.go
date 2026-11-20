@@ -14,6 +14,7 @@ type calendarTaskJSON struct {
 	Priority    int    `json:"priority"`
 	ProjectName string `json:"project_name"`
 	Completed   bool   `json:"completed"`
+	Version     int    `json:"version"`
 }
 
 type calendarCellJSON struct {
@@ -121,7 +122,7 @@ func fetchCalendarTasksByDate(userID int, timezone, yearMonth string) map[string
 	end := monthStart.AddDate(0, 1, 0).Format("2006-01-02")
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT t.id, t.title, CAST(t.due_date AS TEXT), COALESCE(t.priority, 0), COALESCE(p.name, ''), COALESCE(t.completed, false)
+		SELECT t.id, t.title, CAST(t.due_date AS TEXT), COALESCE(t.priority, 0), COALESCE(p.name, ''), COALESCE(t.completed, false), t.version
 		FROM tasks t
 		LEFT JOIN projects p ON t.project_id = p.id
 		WHERE t.user_id = $1 AND t.due_date IS NOT NULL AND t.deleted_at IS NULL
@@ -137,7 +138,7 @@ func fetchCalendarTasksByDate(userID int, timezone, yearMonth string) map[string
 	byDate := map[string][]calendarTaskJSON{}
 	for rows.Next() {
 		var ct calendarTaskJSON
-		if err := rows.Scan(&ct.ID, &ct.Title, &ct.Due, &ct.Priority, &ct.ProjectName, &ct.Completed); err != nil {
+		if err := rows.Scan(&ct.ID, &ct.Title, &ct.Due, &ct.Priority, &ct.ProjectName, &ct.Completed, &ct.Version); err != nil {
 			continue
 		}
 		byDate[ct.Due] = append(byDate[ct.Due], ct)

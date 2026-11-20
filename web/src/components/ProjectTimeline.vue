@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { api } from '@/api/client'
+import { useStaleConflict, versionGuard } from '@/composables/useStaleConflict'
 import { APIError, type ProjectTimeline, type ProjectTimelineTask } from '@/api/types'
 import { useToast } from '@/composables/useToast'
 import {
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+const { handleStaleTask } = useStaleConflict()
 
 const ROW_H = 34
 const BAR_H = 20
@@ -216,13 +218,17 @@ async function onBarPointerUp(r: Row) {
   r.task.start_date = next.start_date ?? undefined
   r.task.due_date = next.due_date ?? undefined
   try {
-    await api.patchTask(r.task.id, {
+    const updated = await api.patchTask(r.task.id, {
       ...(next.start_date ? { start_date: next.start_date } : {}),
       ...(next.due_date ? { due_date: next.due_date } : {}),
+      ...versionGuard(r.task.version),
     })
+    // Keep the new version so the next drag of this bar isn't refused as stale.
+    r.task.version = updated.version
   } catch (err) {
     r.task.start_date = prev.start_date
     r.task.due_date = prev.due_date
+    if (await handleStaleTask(err)) return
     toast.push(err instanceof APIError ? err.message : 'Could not move the task', 'error')
   }
 }

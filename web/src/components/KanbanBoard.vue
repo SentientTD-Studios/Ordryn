@@ -368,8 +368,16 @@ import QuickAddChips from '@/components/QuickAddChips.vue'
 import { parseQuickAdd } from '@/utils/quickAdd'
 import { APIError } from '@/api/types'
 import { useAuth } from '@/composables/useAuth'
+import { useStaleConflict, isStaleBoardError, versionGuard } from '@/composables/useStaleConflict'
 import { useToast } from '@/composables/useToast'
-import { pauseLiveReload, resumeLiveReload, useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import {
+  pauseLiveReload,
+  resumeLiveReload,
+  useLiveUpdates,
+  isOwnTabBatch,
+  LIVE_RESYNC,
+  type LiveEvent,
+} from '@/composables/useLiveUpdates'
 import { formatHours, refinementLabel } from '@/utils/estimates'
 import type { ViewDensity } from '@/composables/useViewDensity'
 import { canMoveTaskStatus, hasProjectPerm, PROJECT_PERMS, statusHasGates } from '@/utils/projectPerms'
@@ -408,6 +416,7 @@ const emit = defineEmits<{
 
 const toast = useToast()
 const { user } = useAuth()
+const { promptRefresh, handleStaleTask, claimTask: claimWithConfirm, releaseTask } = useStaleConflict()
 const statuses = ref<ProjectStatus[]>([])
 const loading = ref(true)
 const claimingId = ref<number | null>(null)
@@ -445,6 +454,8 @@ const canEditTasks = computed(() => hasProjectPerm(boardProject.value, PROJECT_P
 // Inline rename. Clicking the title still opens task details; renaming goes
 // through the explicit hover action so the two don't compete for one click.
 const renamingId = ref<number | null>(null)
+/** Task version when the rename started, so a live reload mid-rename can't hide a conflict. */
+const renameBaseVersion = ref<number | undefined>(undefined)
 const renameVal = ref('')
 let renameInputEl: HTMLInputElement | null = null
 
@@ -455,6 +466,7 @@ function setRenameInputEl(el: unknown) {
 async function startRename(task: Task) {
   if (!canEditTasks.value) return
   renameVal.value = task.title
+  renameBaseVersion.value = task.version
   renamingId.value = task.id
   await nextTick()
   renameInputEl?.focus()
@@ -471,9 +483,10 @@ async function saveRename(task: Task) {
   const trimmed = renameVal.value.trim()
   if (!trimmed || trimmed === task.title) return
   try {
-    emit('task-updated', await api.patchTask(task.id, { title: trimmed }))
+    emit('task-updated', await api.patchTask(task.id, { title: trimmed, ...versionGuard(renameBaseVersion.value ?? task.version) }))
     toast.push('Task updated', 'success')
   } catch (err) {
+    if (await handleStaleTask(err)) return
     toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
   }
 }
@@ -661,8 +674,8 @@ function isOverdue(dateStr?: string): boolean {
 async function claimTask(task: Task) {
   claimingId.value = task.id
   try {
-    const updated = await api.claimTask(task.id)
-    emit('task-updated', updated)
+    const updated = await claimWithConfirm(task, user.value?.id)
+    if (updated) emit('task-updated', updated)
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not claim task', 'error')
     emit('changed')
@@ -674,8 +687,8 @@ async function claimTask(task: Task) {
 async function unclaimTask(task: Task) {
   claimingId.value = task.id
   try {
-    const updated = await api.unclaimTask(task.id)
-    emit('task-updated', updated)
+    const updated = await releaseTask(task.id, task.claimed_by)
+    if (updated) emit('task-updated', updated)
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Could not release task', 'error')
     emit('changed')
@@ -1001,6 +1014,19 @@ function canDropOnColumn(fromStatusId: number, toStatusId: number): boolean {
   return canMoveTaskStatus(boardProject.value, from, to, user.value)
 }
 
+/** Undo a drop the server refused: DOM first (Sortable moved it), then local state. */
+function revertCardDrop(evt: Sortable.SortableEvent, card: Task | undefined, fromStatusId: number, toStatusId: number) {
+  const from = evt.from as HTMLElement
+  const to = evt.to as HTMLElement
+  if (evt.oldIndex != null) {
+    const cards = Array.from(from.querySelectorAll(':scope > .kanban-card')).filter((el) => el !== evt.item)
+    from.insertBefore(evt.item, cards[evt.oldIndex] ?? null)
+  }
+  if (to !== from) emit('board-reorder', { statusId: toStatusId, taskIds: collectIds(to) })
+  if (!Number.isNaN(fromStatusId)) emit('board-reorder', { statusId: fromStatusId, taskIds: collectIds(from) })
+  if (card) emit('task-updated', card)
+}
+
 async function onCardDrop(evt: Sortable.SortableEvent) {
   const to = evt.to as HTMLElement
   const from = evt.from as HTMLElement
@@ -1017,11 +1043,15 @@ async function onCardDrop(evt: Sortable.SortableEvent) {
     return !!t && !t.parent_id
   })
 
+  const current = !Number.isNaN(taskId) ? boardTasks.value.find((t) => t.id === taskId) : undefined
+  // What this board believes, so the server can refuse a move made from a
+  // stale board (e.g. a second computer that slept through the first move).
+  const seenStatusId = current?.status_id ?? 0
+
   // Optimistic local update before API round-trip
   emit('board-reorder', { statusId, taskIds: orderedIds })
 
   try {
-    const current = !Number.isNaN(taskId) ? boardTasks.value.find((t) => t.id === taskId) : undefined
     if (statusChanged) {
       const col = statuses.value.find((s) => s.id === statusId)
       if (current && col) {
@@ -1034,17 +1064,29 @@ async function onCardDrop(evt: Sortable.SortableEvent) {
       }
       // Reorder is root-only; persist subtask column moves via PATCH.
       if (current?.parent_id) {
-        await api.patchTask(taskId, { status_id: statusId })
+        await api.patchTask(taskId, { status_id: statusId, expected_status_id: seenStatusId })
       }
     }
     if (rootIds.length) {
+      const guard =
+        current && !current.parent_id && rootIds.includes(taskId)
+          ? { moved_task_id: taskId, from_status_id: seenStatusId }
+          : {}
       await api.reorderTasks({
         task_ids: rootIds,
         status_id: statusId,
         project: String(props.projectId),
+        ...guard,
       })
     }
   } catch (err) {
+    if (isStaleBoardError(err)) {
+      // Nothing was saved. Put the card back where this board had it, then
+      // offer to bring the board up to date.
+      revertCardDrop(evt, current, fromStatusId, statusId)
+      void promptRefresh('This board is out of date — the card was changed somewhere else (maybe on another device).')
+      return
+    }
     toast.push(err instanceof APIError ? err.message : 'Could not update board', 'error')
     emit('changed')
   }
@@ -1101,15 +1143,16 @@ watch(
   },
 )
 
-useLiveUpdates((event) => {
+const BOARD_SHAPE_EVENTS = new Set(['project.updated', 'project.created', 'project.deleted'])
+
+useLiveUpdates((_event, batch) => {
+  const forThisBoard = (e: LiveEvent) => !e.project_id || e.project_id === props.projectId
   // Someone else's change may move a card this view's filters hide.
-  if (event.type.startsWith('task.') && (!event.project_id || event.project_id === props.projectId)) {
+  if (batch.some((e) => (e.type.startsWith('task.') || e.type === LIVE_RESYNC) && forThisBoard(e))) {
     scheduleColumnCounts()
-    return
   }
-  if (event.type !== 'project.updated' && event.type !== 'project.created' && event.type !== 'project.deleted') return
-  if (event.project_id && event.project_id !== props.projectId) return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
+  const shape = batch.filter((e) => BOARD_SHAPE_EVENTS.has(e.type) && forThisBoard(e))
+  if (!shape.length || isOwnTabBatch(shape, user.value?.id)) return
   void loadStatuses(true)
 })
 

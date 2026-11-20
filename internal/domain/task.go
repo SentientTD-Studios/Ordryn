@@ -97,6 +97,62 @@ type UpdateTaskInput struct {
 	SprintID **int
 	// Fields: nil = leave; non-nil map merges (JSON null clears a key).
 	Fields map[string]json.RawMessage
+	// ExpectedVersion: nil = no check; otherwise the tasks.version the caller
+	// edited from. If the task has changed since, nothing is written and
+	// UpdateTask returns ErrStaleTask.
+	ExpectedVersion *int
+}
+
+// ErrStaleTask is the conflict returned when a task changed after the caller
+// loaded it, so saving would overwrite someone else's edit.
+var ErrStaleTask = fmt.Errorf("%w: this task was changed somewhere else since you opened it", ErrConflict)
+
+// taskEditLockSpace namespaces the advisory locks taken by lockTaskEdit ('task').
+const taskEditLockSpace = 0x7461736b
+
+// lockTaskEdit serializes version-checked edits of one task, so two saves
+// made from the same version cannot both pass the check. The lock is held on
+// its own connection until unlock is called.
+func lockTaskEdit(ctx context.Context, taskID int) (unlock func(), err error) {
+	pool, err := storage.OpenDatabase()
+	if err != nil {
+		return nil, err
+	}
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1, $2)`, taskEditLockSpace, taskID); err != nil {
+		conn.Release()
+		return nil, err
+	}
+	return func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1, $2)`, taskEditLockSpace, taskID)
+		conn.Release()
+	}, nil
+}
+
+// LockTaskAtVersion checks that taskID is still at expected and, if so,
+// returns with the task's edit lock held; call unlock once the write is done.
+// The caller must already have checked access to the task.
+func LockTaskAtVersion(ctx context.Context, taskID, expected int) (unlock func(), err error) {
+	unlock, err = lockTaskEdit(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	current, err := storage.GetTaskVersion(taskID)
+	if err != nil {
+		unlock()
+		if errors.Is(err, storage.ErrTaskNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if current != expected {
+		unlock()
+		return nil, ErrStaleTask
+	}
+	return unlock, nil
 }
 
 // UpdateResult summarizes what changed for audit logging in handlers.
@@ -439,6 +495,14 @@ func UpdateTask(ctx context.Context, userID, taskID int, in UpdateTaskInput) (*U
 		if err := denyMissingTaskPerm(accessProjectID, writeRole, perm); err != nil {
 			return nil, err
 		}
+	}
+
+	if in.ExpectedVersion != nil {
+		unlock, err := LockTaskAtVersion(ctx, taskID, *in.ExpectedVersion)
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
 	}
 
 	var title, description, dueDate string

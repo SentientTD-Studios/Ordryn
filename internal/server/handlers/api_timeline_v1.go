@@ -19,6 +19,7 @@ type apiTimelineTaskJSON struct {
 	ParentID      *int   `json:"parent_id"`
 	StatusName    string `json:"status_name,omitempty"`
 	ClaimedByName string `json:"claimed_by_name,omitempty"`
+	Version       int    `json:"version"`
 }
 
 type apiTimelineLinkJSON struct {
@@ -65,6 +66,7 @@ func apiV1ProjectTimeline(w http.ResponseWriter, r *http.Request, projectID int)
 		item := apiTimelineTaskJSON{
 			ID: t.ID, Title: t.Title, StartDate: t.StartDate, DueDate: t.DueDate,
 			Completed: t.Completed, Priority: t.Priority, StatusName: t.StatusName, ClaimedByName: t.ClaimedByName,
+			Version: t.Version,
 		}
 		if t.ParentID > 0 {
 			pid := t.ParentID

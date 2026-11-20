@@ -249,7 +249,7 @@ func TestStandupSessionFlow(t *testing.T) {
 
 	// Claimed open work shows on a person's row.
 	claimed := mustCreateTask(t, 1, CreateTaskInput{Title: "Ship standups", ProjectID: &pid})
-	if err := ClaimTaskForUser(ctx, editor, claimed); err != nil {
+	if err := ClaimTaskForUser(ctx, editor, claimed, ClaimOptions{}); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 

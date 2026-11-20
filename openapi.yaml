@@ -2255,6 +2255,8 @@ paths:
                 $ref: "#/components/schemas/TaskReorderResult"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /api/v2/tasks/bulk:
     post:
@@ -2442,6 +2444,10 @@ paths:
     patch:
       tags: [Tasks]
       summary: Update a task
+      description: |
+        With `expected_version`, the whole update (including `recurrence`) is applied
+        only if the task is still at that version; otherwise nothing is saved and the
+        response is 409 `stale_task` carrying the task as it is now.
       security:
         - SessionCookie: []
         - BearerAuth: []
@@ -2462,6 +2468,20 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The task changed since `expected_version` (or moved since `expected_status_id`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    enum: [stale_task, stale_board, conflict]
+                  message:
+                    type: string
+                  task:
+                    $ref: "#/components/schemas/Task"
     delete:
       tags: [Tasks]
       summary: Move a task to the trash (returns undo_token)
@@ -5002,9 +5022,19 @@ paths:
     post:
       tags: [Tasks]
       summary: Claim a kanban task (or take over from another claimer)
+      description: |
+        Claiming a task you already hold changes nothing and sends no events.
+        A task someone else holds is refused with 409 `claim_conflict` (naming
+        the holder) unless the body sets `take_over`.
       security:
         - SessionCookie: []
         - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskClaim"
       responses:
         "200":
           description: Updated task
@@ -5018,13 +5048,35 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Someone else holds the task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimConflict"
     delete:
       tags: [Tasks]
       summary: Release claim on a kanban task
+      description: |
+        Releasing a task nobody holds changes nothing. With `expected_claimed_by`,
+        a task now held by someone else is refused with 409 `claim_conflict`.
       security:
         - SessionCookie: []
         - BearerAuth: []
+      parameters:
+        - name: expected_claimed_by
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Who the caller saw holding the task.
       responses:
+        "409":
+          description: Someone other than expected holds the task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimConflict"
         "200":
           description: Updated task
           content:
@@ -14326,6 +14378,13 @@ components:
       properties:
         id:
           type: integer
+        version:
+          type: integer
+          description: |
+            Goes up whenever the task's content changes (fields, tags, custom field
+            values, repeat rule). Not bumped by manual ordering, claims, reviewers,
+            favourites or trash bookkeeping. Send it back as `expected_version` on
+            PATCH to have an edit made from an out-of-date copy refused.
         title:
           type: string
         description:
@@ -14510,6 +14569,7 @@ components:
               parent_id: { type: integer, nullable: true }
               status_name: { type: string }
               claimed_by_name: { type: string }
+              version: { type: integer, description: "Task version; see Task.version." }
         links:
           type: array
           description: "`from_task_id` blocks `to_task_id`; both are in `tasks`."
@@ -14908,6 +14968,18 @@ components:
             - $ref: "#/components/schemas/TaskRecurrenceInput"
           nullable: true
           description: Set the repeat rule, or null to stop repeating. Omit to leave unchanged.
+        expected_version:
+          type: integer
+          description: |
+            The task `version` the caller edited from. When set and the task has changed
+            since, nothing is saved and the response is 409 `stale_task` with the current
+            task. Omit to save unconditionally (older clients).
+        expected_status_id:
+          type: integer
+          description: |
+            The kanban status the caller last saw the task in (0 = none). When set and
+            the task has moved since, nothing is changed and the response is 409 with
+            error `stale_board`.
 
     CustomFieldDef:
       type: object
@@ -14971,6 +15043,46 @@ components:
         per_page:
           type: integer
         project:
+          type: string
+        status_id:
+          type: integer
+          description: Kanban destination column. Listed root tasks not already in it are moved into it.
+        moved_task_id:
+          type: integer
+          description: |
+            With from_status_id, the card that was dragged. Send both to have a stale
+            board refused: the moved task must still have from_status_id, and every
+            other listed task must still be in status_id (tasks with no real column
+            are exempt). Otherwise nothing is changed and the response is 409 with
+            error `stale_board`.
+        from_status_id:
+          type: integer
+          description: The status the dragged card had on the caller's board (0 = none). See moved_task_id.
+
+    TaskClaim:
+      type: object
+      properties:
+        take_over:
+          type: boolean
+          description: Take the task from whoever holds it now. Without it, a task someone else holds is refused with 409.
+        expected_claimed_by:
+          type: integer
+          description: |
+            Who the caller saw holding the task (0 = nobody). A takeover only proceeds
+            while that is still the holder.
+
+    ClaimConflict:
+      type: object
+      properties:
+        error:
+          type: string
+          enum: [claim_conflict]
+        message:
+          type: string
+        claimed_by:
+          type: integer
+          description: User who holds the task now.
+        claimed_by_name:
           type: string
 
     TaskBulk:
@@ -15540,6 +15652,9 @@ components:
           type: string
         completed:
           type: boolean
+        version:
+          type: integer
+          description: Task version; see Task.version.
 
     CalendarMonthCell:
       type: object

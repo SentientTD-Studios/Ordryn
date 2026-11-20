@@ -1265,7 +1265,7 @@ func applyAutomationAction(sys int, rule *storage.AutomationRule, a AutomationAc
 		if snap.ClaimedBy == 0 {
 			return nil, nil
 		}
-		if err := UnclaimTaskForUser(ctx, sys, taskID); err != nil {
+		if err := UnclaimTaskForUser(ctx, sys, taskID, UnclaimOptions{}); err != nil {
 			return nil, err
 		}
 		return &AutomationChange{Action: a.Type, Field: "assignee", From: snap.ClaimedByName}, nil

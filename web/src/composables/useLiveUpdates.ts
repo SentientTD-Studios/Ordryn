@@ -1,6 +1,7 @@
 import { onUnmounted } from 'vue'
 import { withBase } from '@/base'
 import { LIVE_CEREMONY_UPDATED, LIVE_RESYNC, coalesceLiveEvents } from '@/utils/liveEvents'
+import { hasRecentOwnMutation } from '@/utils/ownMutations'
 
 export { LIVE_CEREMONY_UPDATED, LIVE_RESYNC } from '@/utils/liveEvents'
 
@@ -24,11 +25,31 @@ export type LiveEvent = {
 type LiveHandler = (event: LiveEvent, batch: LiveEvent[]) => void | Promise<void>
 type RawListener = (event: LiveEvent) => void
 
+/**
+ * The server pings every 25s. A stream that has said nothing for longer than
+ * this is dead even if the browser still thinks it is open: after a computer
+ * sleeps, the proxy drops the connection but a receive-only EventSource never
+ * notices, so the page would keep showing pre-sleep data indefinitely.
+ */
+const STALE_AFTER_MS = 65_000
+/** On returning to the tab, reconnect sooner than the watchdog would. */
+const STALE_ON_RETURN_MS = 35_000
+/**
+ * Waking from sleep needs no special case: the last message is then minutes
+ * old, so the first tick after wake reconnects. Hidden tabs may only tick once
+ * a minute (browser throttling), which is fine for the same reason.
+ */
+const WATCHDOG_MS = 10_000
+
 const listeners = new Set<RawListener>()
 let source: EventSource | null = null
 let pauseCount = 0
 let pendingWhilePaused: LiveEvent[] = []
 let lostConnection = false
+let lastMessageAt = 0
+let watchdog: ReturnType<typeof setInterval> | null = null
+let pageHooksInstalled = false
+let wanted = false
 
 export function pauseLiveReload(): void {
   pauseCount += 1
@@ -61,11 +82,17 @@ function dispatch(event: LiveEvent): void {
   }
 }
 
-export function startLiveUpdates(): void {
-  if (source || typeof EventSource === 'undefined') return
-  const url = withBase('/api/v2/events')
-  source = new EventSource(url)
-  source.addEventListener('task-update', (raw) => {
+function markAlive(): void {
+  lastMessageAt = Date.now()
+}
+
+function openSource(): void {
+  const es = new EventSource(withBase('/api/v2/events'))
+  source = es
+  markAlive()
+  es.addEventListener('task-update', (raw) => {
+    if (source !== es) return
+    markAlive()
     const msg = raw as MessageEvent<string>
     let payload: LiveEvent | null = null
     try {
@@ -75,22 +102,94 @@ export function startLiveUpdates(): void {
     }
     dispatch(payload)
   })
+  es.addEventListener('ping', () => {
+    if (source === es) markAlive()
+  })
   // The browser reconnects on its own, but anything sent while the stream was
   // down is gone. After a reconnect, tell views to refetch what they show.
-  source.addEventListener('error', () => {
-    lostConnection = true
+  es.addEventListener('error', () => {
+    if (source === es) lostConnection = true
   })
-  source.addEventListener('ready', () => {
+  es.addEventListener('ready', () => {
+    if (source !== es) return
+    markAlive()
     if (!lostConnection) return
     lostConnection = false
     dispatch({ type: LIVE_RESYNC })
   })
 }
 
+/** Drop the current stream and open a fresh one; views refetch once it is up. */
+function reconnect(): void {
+  if (!wanted) return
+  source?.close()
+  source = null
+  lostConnection = true
+  openSource()
+}
+
+function isStale(limitMs: number, now = Date.now()): boolean {
+  return !source || source.readyState === EventSource.CLOSED || now - lastMessageAt > limitMs
+}
+
+function tick(): void {
+  if (isStale(STALE_AFTER_MS)) reconnect()
+}
+
+function onVisible(): void {
+  if (document.visibilityState === 'visible' && isStale(STALE_ON_RETURN_MS)) reconnect()
+}
+
+function onPageShow(e: PageTransitionEvent): void {
+  // Restored from the back/forward cache: the old stream is gone.
+  if (e.persisted) reconnect()
+}
+
+function installPageHooks(): void {
+  if (pageHooksInstalled || typeof window === 'undefined') return
+  pageHooksInstalled = true
+  document.addEventListener('visibilitychange', onVisible)
+  window.addEventListener('online', reconnect)
+  window.addEventListener('pageshow', onPageShow)
+}
+
+function removePageHooks(): void {
+  if (!pageHooksInstalled) return
+  pageHooksInstalled = false
+  document.removeEventListener('visibilitychange', onVisible)
+  window.removeEventListener('online', reconnect)
+  window.removeEventListener('pageshow', onPageShow)
+}
+
+export function startLiveUpdates(): void {
+  if (source || typeof EventSource === 'undefined') return
+  wanted = true
+  openSource()
+  installPageHooks()
+  if (!watchdog) watchdog = setInterval(tick, WATCHDOG_MS)
+}
+
 export function stopLiveUpdates(): void {
+  wanted = false
   source?.close()
   source = null
   lostConnection = false
+  if (watchdog) clearInterval(watchdog)
+  watchdog = null
+  removePageHooks()
+}
+
+/**
+ * Bring every view up to date, e.g. after the server refused an action made
+ * from out-of-date data. Reconnects first when the stream looks dead (views
+ * refetch once it is back); otherwise tells views to refetch now.
+ */
+export function refreshLiveData(): void {
+  if (wanted && isStale(STALE_ON_RETURN_MS)) {
+    reconnect()
+    return
+  }
+  dispatch({ type: LIVE_RESYNC })
 }
 
 export function subscribeLiveUpdates(handler: RawListener): () => void {
@@ -100,11 +199,19 @@ export function subscribeLiveUpdates(handler: RawListener): () => void {
   }
 }
 
-/** True when this focused tab already applied the actor's own mutation. */
-export function isOwnFocusedLiveEvent(event: LiveEvent, userId?: number | null): boolean {
+/**
+ * True when this tab caused the event and has already applied the change.
+ * The same user acting from another tab or device is not "own": that view
+ * still needs to refresh.
+ */
+export function isOwnTabLiveEvent(event: LiveEvent, userId?: number | null): boolean {
   if (!userId || !event.actor_id || event.actor_id !== userId) return false
-  if (typeof document === 'undefined') return false
-  return document.hasFocus()
+  return hasRecentOwnMutation()
+}
+
+/** True when every event in a debounced batch came from this tab's own writes. */
+export function isOwnTabBatch(batch: LiveEvent[], userId?: number | null): boolean {
+  return batch.length > 0 && batch.every((e) => isOwnTabLiveEvent(e, userId))
 }
 
 /**
@@ -122,8 +229,11 @@ export function useLiveUpdates(
 
   function flush(): void {
     timer = null
-    if (isLiveReloadPaused() || queued.length === 0) {
-      queued.length = 0
+    if (queued.length === 0) return
+    if (isLiveReloadPaused()) {
+      // A drag started after these arrived: keep them and try again rather
+      // than dropping them.
+      timer = setTimeout(flush, debounceMs)
       return
     }
     const batch = coalesceLiveEvents(queued.splice(0))

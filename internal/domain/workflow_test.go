@@ -462,6 +462,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "time blocks: %v\n", err)
 		os.Exit(1)
 	}
+	if err := storage.MigrateTasksAddVersion(); err != nil {
+		fmt.Fprintf(os.Stderr, "task version: %v\n", err)
+		os.Exit(1)
+	}
 	code := m.Run()
 	_ = db.Stop()
 	os.Exit(code)
@@ -807,7 +811,7 @@ func TestReorderSkipsEventForKanbanColumn(t *testing.T) {
 	}
 
 	statusFilter := todoID
-	if err := ReorderTasks(ctx, 1, []int{id2, id1}, &pid, nil, &statusFilter); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{id2, id1}, &pid, nil, &statusFilter, nil); err != nil {
 		t.Fatalf("kanban reorder: %v", err)
 	}
 	if n := len(eventsOfType(t, id1, 1, "reordered")); n != 0 {
@@ -850,7 +854,7 @@ func TestReorderMovesTaskIntoKanbanColumn(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &doneID); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &doneID, nil); err != nil {
 		t.Fatalf("move via reorder: %v", err)
 	}
 
@@ -879,7 +883,7 @@ func TestReorderMovesTaskIntoKanbanColumn(t *testing.T) {
 		t.Fatalf("completed events=%d want 1", n)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &todoID); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &todoID, nil); err != nil {
 		t.Fatalf("move back: %v", err)
 	}
 	if err := pool.QueryRow(ctx,
@@ -892,6 +896,69 @@ func TestReorderMovesTaskIntoKanbanColumn(t *testing.T) {
 	}
 	if completed {
 		t.Fatal("expected completed=false after move to To Do")
+	}
+}
+
+// A second device that still shows the card in its old column must not be
+// able to repeat (or undo) a move that already happened.
+func TestKanbanReorderGuardRefusesStaleBoard(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Stale Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+	statuses, err := ListProjectStatusesForUser(ctx, 1, proj.ID)
+	if err != nil {
+		t.Fatalf("list statuses: %v", err)
+	}
+	var todoID, doneID int
+	for _, s := range statuses {
+		switch s.Name {
+		case "To Do":
+			todoID = s.ID
+		case "Done":
+			doneID = s.ID
+		}
+	}
+	pid := proj.ID
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Card", ProjectID: &pid})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Device A moves To Do -> Done.
+	if err := ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &doneID,
+		&ReorderGuard{MovedTaskID: taskID, FromStatusID: todoID}); err != nil {
+		t.Fatalf("first move: %v", err)
+	}
+	// Device B, still showing To Do, makes the same move.
+	err = ReorderTasks(ctx, 1, []int{taskID}, &pid, nil, &doneID,
+		&ReorderGuard{MovedTaskID: taskID, FromStatusID: todoID})
+	if !errors.Is(err, ErrStaleBoard) {
+		t.Fatalf("repeat move: err=%v want ErrStaleBoard", err)
+	}
+	if n := len(eventsOfType(t, taskID, 1, "status_changed")); n != 1 {
+		t.Fatalf("status_changed events=%d want 1", n)
+	}
+
+	// A destination column that holds a card the board doesn't know moved
+	// there is stale too.
+	otherID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Other", ProjectID: &pid})
+	if err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	err = ReorderTasks(ctx, 1, []int{taskID, otherID}, &pid, nil, &todoID,
+		&ReorderGuard{MovedTaskID: taskID, FromStatusID: doneID})
+	if err != nil {
+		t.Fatalf("matching board should move: %v", err)
+	}
+	err = ReorderTasks(ctx, 1, []int{otherID, taskID}, &pid, nil, &doneID,
+		&ReorderGuard{MovedTaskID: taskID, FromStatusID: todoID})
+	if !errors.Is(err, ErrStaleBoard) {
+		t.Fatalf("stale destination: err=%v want ErrStaleBoard", err)
 	}
 }
 
@@ -929,7 +996,7 @@ func TestSubtaskKanbanColumnMoveUsesUpdateNotReorder(t *testing.T) {
 		t.Fatalf("create child: %v", err)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{childID}, &pid, nil, &doneID); err == nil {
+	if err := ReorderTasks(ctx, 1, []int{childID}, &pid, nil, &doneID, nil); err == nil {
 		t.Fatal("expected reorder of subtask to fail")
 	} else if !errors.Is(err, ErrValidation) {
 		t.Fatalf("reorder subtask: err=%v want validation", err)
@@ -976,7 +1043,7 @@ func TestReorderLogsEventWithoutStatusFilter(t *testing.T) {
 		t.Fatalf("create Two: %v", err)
 	}
 
-	if err := ReorderTasks(ctx, 1, []int{id2, id1}, &pid, nil, nil); err != nil {
+	if err := ReorderTasks(ctx, 1, []int{id2, id1}, &pid, nil, nil, nil); err != nil {
 		t.Fatalf("list reorder: %v", err)
 	}
 	if n := len(eventsOfType(t, id2, 1, "reordered")); n != 1 {

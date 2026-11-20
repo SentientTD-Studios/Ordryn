@@ -29,6 +29,7 @@ type apiTaskJSON struct {
 	Completed         bool               `json:"completed"`
 	DueDate           string             `json:"due_date"`
 	StartDate         string             `json:"start_date,omitempty"`
+	Version           int                `json:"version"`
 	ProjectID         *int               `json:"project_id,omitempty"`
 	Project           string             `json:"project,omitempty"`
 	Priority          int                `json:"priority"`
@@ -104,6 +105,13 @@ type apiTaskPatchRequest struct {
 	SprintID      optionalInt        `json:"sprint_id"`
 	Fields        optionalJSONMap    `json:"fields"`
 	Recurrence    optionalRecurrence `json:"recurrence"`
+	// ExpectedStatusID is the column the client last saw the task in. When
+	// set and the task has moved since, the PATCH is refused with 409.
+	ExpectedStatusID *int `json:"expected_status_id"`
+	// ExpectedVersion is the task version the client edited from. When set
+	// and the task has changed since, nothing is saved and the response is
+	// 409 stale_task carrying the current task.
+	ExpectedVersion *int `json:"expected_version"`
 }
 
 // optionalJSONMap distinguishes omitted vs present object for JSON merge patches.
@@ -187,6 +195,10 @@ type apiTaskReorderRequest struct {
 	PerPage  *int    `json:"per_page"`
 	Project  *string `json:"project"`
 	StatusID *int    `json:"status_id"`
+	// MovedTaskID and FromStatusID describe the drag the client made. When
+	// both are set, a board that no longer matches is refused with 409.
+	MovedTaskID  *int `json:"moved_task_id"`
+	FromStatusID *int `json:"from_status_id"`
 }
 
 type apiReorderOKResponse struct {
@@ -326,6 +338,7 @@ func taskToAPIJSONOpts(t tasks.Task, listOnly bool) apiTaskJSON {
 		Completed:         t.Completed,
 		DueDate:           t.DueDate,
 		StartDate:         t.StartDate,
+		Version:           t.Version,
 		Priority:          t.Priority,
 		Position:          t.Position,
 		ChildCount:        t.ChildCount,
@@ -772,6 +785,44 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 		}
 	}
 
+	if req.ExpectedStatusID != nil || req.ExpectedVersion != nil {
+		// Check access first so a 409 never reveals anything to a non-member.
+		if canRead, _, _, err := storage.CanUserAccessTask(taskID, userID); err != nil || !canRead {
+			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Task not found.")
+			return
+		}
+	}
+	if req.ExpectedVersion != nil {
+		// Held across the task update and the recurrence save below, so the
+		// whole PATCH lands on the version the client edited or not at all.
+		// (UpdateTask is not given ExpectedVersion: it would try to take the
+		// same lock on another connection and wait on itself.)
+		unlock, err := domain.LockTaskAtVersion(r.Context(), taskID, *req.ExpectedVersion)
+		if err != nil {
+			switch {
+			case errors.Is(err, domain.ErrStaleTask):
+				writeStaleTask(w, taskID, userID)
+			case errors.Is(err, domain.ErrNotFound):
+				utils.APIJSONError(w, http.StatusNotFound, "not_found", "Task not found.")
+			default:
+				utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update task.")
+			}
+			return
+		}
+		defer unlock()
+	}
+	if req.ExpectedStatusID != nil {
+		fields, err := storage.GetWorkflowFieldsForTasks([]int{taskID})
+		if err != nil {
+			utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to update task.")
+			return
+		}
+		if f, ok := fields[taskID]; ok && f.StatusID != *req.ExpectedStatusID {
+			utils.APIJSONError(w, http.StatusConflict, "stale_board", "This task has moved since your board loaded. Refresh to see the latest changes.")
+			return
+		}
+	}
+
 	if isEmptyTaskUpdate(in) && req.Recurrence.Set {
 		// Recurrence-only PATCH: skip the no-op task update.
 	} else if _, err := domain.UpdateTask(r.Context(), userID, taskID, in); err != nil {
@@ -815,6 +866,22 @@ func apiV1PatchTask(w http.ResponseWriter, r *http.Request, taskID int) {
 	out := taskToAPIJSON(task)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(out)
+}
+
+// writeStaleTask answers a PATCH made from an out-of-date copy: 409 with the
+// task as it is now, so the client can show what changed instead of
+// overwriting it.
+func writeStaleTask(w http.ResponseWriter, taskID, userID int) {
+	body := map[string]interface{}{
+		"error":   "stale_task",
+		"message": "This task was changed somewhere else since you opened it. Nothing was saved.",
+	}
+	if task, err := tasks.FetchTaskByIDForUser(taskID, userID, GetUserTimezoneByID(userID), 1); err == nil {
+		body["task"] = taskToAPIJSON(task)
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func apiV1DeleteTask(w http.ResponseWriter, r *http.Request, taskID int) {
@@ -1155,7 +1222,24 @@ func apiV1ReorderTasks(w http.ResponseWriter, r *http.Request) {
 		projectFilter = parseProjectFilter(*req.Project)
 	}
 
-	if err := domain.ReorderTasks(r.Context(), userID, req.TaskIDs, projectFilter, req.ParentID, req.StatusID); err != nil {
+	var guard *domain.ReorderGuard
+	if req.MovedTaskID != nil && req.FromStatusID != nil {
+		guard = &domain.ReorderGuard{MovedTaskID: *req.MovedTaskID, FromStatusID: *req.FromStatusID}
+	}
+
+	if err := domain.ReorderTasks(r.Context(), userID, req.TaskIDs, projectFilter, req.ParentID, req.StatusID, guard); err != nil {
+		if errors.Is(err, domain.ErrStaleBoard) {
+			utils.APIJSONError(w, http.StatusConflict, "stale_board", "This board is out of date. Refresh to see the latest changes.")
+			return
+		}
+		if errors.Is(err, domain.ErrConflict) {
+			utils.APIJSONError(w, http.StatusConflict, "conflict", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrForbidden) {
+			utils.APIJSONError(w, http.StatusForbidden, "forbidden", sharingClientMessage(err, "Forbidden."))
+			return
+		}
 		if errors.Is(err, domain.ErrValidation) {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Task does not belong to user or mismatched project/parent.")
 			return

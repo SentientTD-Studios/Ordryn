@@ -26,6 +26,7 @@ import { useImageUpload } from '@/composables/useImageUpload'
 import { insertMarkdownAtCursor } from '@/utils/taskCommentBody'
 import { dropHasFiles, imageFileFromClipboard, imageFileFromDrop, shouldIgnoreTaskOverlayClose } from '@/utils/imageUpload'
 import { useAuth } from '@/composables/useAuth'
+import { useStaleConflict, staleTaskOf, versionGuard } from '@/composables/useStaleConflict'
 import { useSite } from '@/composables/useSite'
 import { allowTaskRouteNavigation, useTaskSidebar } from '@/composables/useTaskSidebar'
 import { taskPageRoute } from '@/utils/projectRoute'
@@ -35,7 +36,7 @@ import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
 import { canMoveTaskStatus, hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
 import { isArchivedProject, isProjectOwner, projectOptionLabel } from '@/utils/projectLabel'
 import { sprintLockedForUser, sprintOptionLabel } from '@/utils/sprintLabel'
-import { useLiveUpdates, isOwnFocusedLiveEvent, LIVE_RESYNC, type LiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnTabLiveEvent, LIVE_RESYNC, type LiveEvent } from '@/composables/useLiveUpdates'
 import { batchTouchesDiscussion } from '@/utils/liveEvents'
 import { assignableTags, archiveConfirmMessage, isArchivedTask, isProtectedTag } from '@/utils/tags'
 import { ESTIMATE_STEP, MAX_ESTIMATE_HOURS, parseEstimateInput } from '@/utils/estimates'
@@ -63,6 +64,7 @@ useBodyScrollLock(open)
 const toast = useToast()
 const { askConfirm, askUnsaved, state: confirmState } = useConfirm()
 const { user } = useAuth()
+const { claimTask: claimWithConfirm, releaseTask } = useStaleConflict()
 const { enabled: imageEnabled, uploadImageFile } = useImageUpload()
 const router = useRouter()
 const showTaskNumber = computed(() => (mode.value === 'edit' || mode.value === 'view') && !!taskId.value)
@@ -776,6 +778,171 @@ function captureFormSnapshot(): FormSnapshot {
   }
 }
 
+/** The form as it would look freshly loaded from `t`. */
+function snapshotFromTask(t: Task): FormSnapshot {
+  return {
+    title: t.title,
+    description: t.description || '',
+    projectId: t.project_id ?? '',
+    parentId: t.parent_id ?? '',
+    priority: t.priority,
+    dueDate: t.due_date || '',
+    startDate: t.start_date || '',
+    selectedTagIds: (t.tags || []).map((x) => x.id),
+    newTags: '',
+    statusId: t.status_id ?? '',
+    sprintId: formSprintId(t.sprint_id),
+    estimateHours: t.estimate_hours ?? '',
+    refinement: t.refinement ?? '',
+    customFields: { ...(t.fields || {}) },
+    recurrence: draftFromRecurrence(t.recurrence),
+  }
+}
+
+type FormKey = keyof FormSnapshot
+
+function sameFormValue(key: FormKey, a: FormSnapshot, b: FormSnapshot): boolean {
+  switch (key) {
+    case 'selectedTagIds':
+      return sameIdSet(a.selectedTagIds, b.selectedTagIds)
+    case 'customFields':
+      return sameFields(a.customFields, b.customFields)
+    case 'recurrence':
+      return sameRecurrenceDraft(a.recurrence, b.recurrence)
+    case 'newTags':
+      return a.newTags.trim() === b.newTags.trim()
+    case 'sprintId':
+      return formSprintId(a.sprintId) === formSprintId(b.sprintId)
+    default:
+      return a[key] === b[key]
+  }
+}
+
+function changedFormKeys(from: FormSnapshot, to: FormSnapshot): FormKey[] {
+  return (Object.keys(from) as FormKey[]).filter((k) => !sameFormValue(k, from, to))
+}
+
+/** Custom field keys whose values differ between two field maps. */
+function changedFieldKeys(from: Record<string, unknown>, to: Record<string, unknown>): string[] {
+  const a = fieldsPayload(from)
+  const b = fieldsPayload(to)
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  return [...keys].filter((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null))
+}
+
+const FORM_KEY_LABELS: Record<FormKey, string> = {
+  title: 'title',
+  description: 'description',
+  projectId: 'project',
+  parentId: 'parent task',
+  priority: 'priority',
+  dueDate: 'due date',
+  startDate: 'start date',
+  selectedTagIds: 'tags',
+  newTags: 'tags',
+  statusId: 'status',
+  sprintId: 'sprint',
+  estimateHours: 'estimate',
+  refinement: 'refinement',
+  customFields: 'custom fields',
+  recurrence: 'repeat rule',
+}
+
+/**
+ * The task changed on the server after this form loaded it. Move the form
+ * onto the latest copy: fields this person did not touch take the new values,
+ * fields they edited keep their edit. Returns the labels of fields both sides
+ * changed, which the person should look over before saving again.
+ */
+function rebaseFormOnto(latest: Task): string[] {
+  const base = currentTask.value ? snapshotFromTask(currentTask.value) : snapshotFromTask(latest)
+  const theirs = snapshotFromTask(latest)
+  const mine = captureFormSnapshot()
+  const myKeys = new Set(changedFormKeys(base, mine))
+  const theirKeys = new Set(changedFormKeys(base, theirs))
+
+  if (!myKeys.has('title')) title.value = theirs.title
+  if (!myKeys.has('description')) description.value = theirs.description
+  if (!myKeys.has('projectId')) projectId.value = theirs.projectId
+  if (!myKeys.has('parentId')) parentId.value = theirs.parentId
+  if (!myKeys.has('priority')) priority.value = theirs.priority
+  if (!myKeys.has('dueDate')) dueDate.value = theirs.dueDate
+  if (!myKeys.has('startDate')) startDate.value = theirs.startDate
+  if (!myKeys.has('selectedTagIds') && !myKeys.has('newTags')) {
+    taskTags.value = latest.tags ? [...latest.tags] : []
+    selectedTagIds.value = theirs.selectedTagIds
+  }
+  if (!myKeys.has('statusId')) statusId.value = theirs.statusId
+  if (!myKeys.has('sprintId')) sprintId.value = theirs.sprintId
+  if (!myKeys.has('estimateHours')) estimateHours.value = theirs.estimateHours
+  if (!myKeys.has('refinement')) refinement.value = theirs.refinement
+  if (!myKeys.has('recurrence')) recurrenceDraft.value = theirs.recurrence
+
+  // Custom fields merge per key, not as one blob.
+  const myFieldKeys = new Set(changedFieldKeys(base.customFields, mine.customFields))
+  const theirFieldKeys = changedFieldKeys(base.customFields, theirs.customFields)
+  const mergedFields: Record<string, unknown> = { ...theirs.customFields }
+  for (const k of myFieldKeys) mergedFields[k] = mine.customFields[k]
+  customFieldValues.value = mergedFields
+
+  completed.value = latest.completed
+  claimedBy.value = latest.claimed_by ?? null
+  claimedByName.value = latest.claimed_by_name || ''
+  currentTask.value = latest
+
+  const both = new Set<string>()
+  for (const k of myKeys) {
+    if (k === 'customFields') continue
+    if (theirKeys.has(k)) both.add(FORM_KEY_LABELS[k])
+  }
+  if (theirFieldKeys.some((k) => myFieldKeys.has(k))) both.add(FORM_KEY_LABELS.customFields)
+  return [...both]
+}
+
+/**
+ * A save was refused because the task changed elsewhere. Ask what to do;
+ * never overwrite silently.
+ */
+async function resolveStaleSave(err: unknown): Promise<void> {
+  const stale = staleTaskOf(err)
+  if (!stale || !taskId.value) return
+  const id = taskId.value
+  let latest = stale.current
+  if (!latest) {
+    try {
+      latest = await api.getTask(id)
+    } catch {
+      toast.push('This task is no longer available', 'info')
+      close()
+      return
+    }
+  }
+  const choice = await askUnsaved({
+    title: 'Task changed elsewhere',
+    message:
+      'Someone changed this task (maybe you, on another device) since you opened it. Nothing was saved. ' +
+      'Keep your edits on top of the latest version, or discard them?',
+    saveLabel: 'Keep my edits',
+    discardLabel: 'Discard my edits',
+    stayLabel: 'Cancel',
+  })
+  if (choice === 'stay' || taskId.value !== id) return
+  if (choice === 'discard') {
+    await loadTask(id)
+    toast.push('Loaded the latest version', 'info')
+    return
+  }
+  const overlap = rebaseFormOnto(latest)
+  await activityLog.value?.refresh()
+  toast.push(
+    overlap.length
+      ? `Updated to the latest version. You both changed: ${overlap.join(', ')}. Review, then save.`
+      : 'Updated to the latest version with your edits kept. Review, then save.',
+    'info',
+    8000,
+  )
+}
+
 function isFormDirty(): boolean {
   if (mode.value !== 'edit' || !currentTask.value) return false
   const t = currentTask.value
@@ -847,7 +1014,7 @@ useLiveUpdates(async (_last: LiveEvent, batch: LiveEvent[]) => {
   if (!open.value || !taskId.value) return
   const id = taskId.value
   const relevant = batch.filter(
-    (e) => e.type !== 'notification.created' && !isOwnFocusedLiveEvent(e, user.value?.id),
+    (e) => e.type !== 'notification.created' && !isOwnTabLiveEvent(e, user.value?.id),
   )
   if (!relevant.length) return
 
@@ -883,7 +1050,7 @@ useLiveUpdates(async (_last: LiveEvent, batch: LiveEvent[]) => {
   }
   if (mode.value === 'add') return
   if (isFormDirty()) {
-    toast.push('This task was updated in another session. Save or discard to avoid overwriting.', 'info')
+    toast.push('This task was changed somewhere else. Your edits are kept; saving will let you combine them with the latest version.', 'info', 6000)
     return
   }
   try {
@@ -955,7 +1122,7 @@ async function saveStatusOnly(): Promise<boolean> {
   }
   saving.value = true
   try {
-    const updated = await api.patchTask(taskId.value, payload)
+    const updated = await api.patchTask(taskId.value, { ...payload, ...versionGuard(t.version) })
     currentTask.value = updated
     notifySaved(updated, false)
     toast.push('Task saved', 'success')
@@ -965,6 +1132,10 @@ async function saveStatusOnly(): Promise<boolean> {
     close()
     return true
   } catch (err) {
+    if (staleTaskOf(err)) {
+      await resolveStaleSave(err)
+      return false
+    }
     const msg = err instanceof APIError ? err.message : err instanceof Error ? err.message : 'Save failed'
     toast.push(msg, 'error')
     return false
@@ -1049,32 +1220,43 @@ async function save(keepOpen = false): Promise<boolean> {
       }
       return true
     }
-    if (!taskId.value) return false
-    const payload: Parameters<typeof api.patchTask>[1] = {
-      title: title.value.trim(),
-      description: description.value,
-      priority: priority.value,
-      tag_ids: tagIds,
+    if (!taskId.value || !currentTask.value) return false
+    // Send only what this person changed, so a save never rewrites fields
+    // they didn't touch with what this form happened to load.
+    const base = snapshotFromTask(currentTask.value)
+    const mine = captureFormSnapshot()
+    const changed = new Set(changedFormKeys(base, mine))
+    const payload: Parameters<typeof api.patchTask>[1] = { ...versionGuard(currentTask.value.version) }
+    if (changed.has('title')) payload.title = title.value.trim()
+    if (changed.has('description')) payload.description = description.value
+    if (changed.has('priority')) payload.priority = priority.value
+    if (changed.has('selectedTagIds') || changed.has('newTags')) payload.tag_ids = tagIds
+    if (changed.has('parentId')) {
       // 0 clears parent (promotes to root); JSON null is indistinguishable from omitted for **int.
-      parent_id: isSubtask.value ? Number(parentId.value) : 0,
+      payload.parent_id = isSubtask.value ? Number(parentId.value) : 0
     }
-    if (!isSubtask.value) {
+    if (!isSubtask.value && changed.has('projectId')) {
       // 0 clears project (inbox); same convention as parent_id.
       payload.project_id = projectId.value === '' ? 0 : Number(projectId.value)
     }
-    if (dueDate.value) payload.due_date = dueDate.value
-    else payload.clear_due_date = true
-    payload.start_date = startDate.value || null
-    if (isKanbanTask.value) {
-      if (statusId.value !== '') payload.status_id = Number(statusId.value)
-      payload.sprint_id = sprintPayloadId(sprintId.value)
-      // Only send what changed: re-saving an estimate derived from legacy points would detach it
-      // from the project's points-to-hours rate.
-      const nextEstimate = estimateHours.value === '' ? null : Number(estimateHours.value)
-      if (nextEstimate !== (currentTask.value?.estimate_hours ?? null)) payload.estimate_hours = nextEstimate
-      if (refinement.value !== (currentTask.value?.refinement ?? '')) payload.refinement = refinement.value
+    if (changed.has('dueDate')) {
+      if (dueDate.value) payload.due_date = dueDate.value
+      else payload.clear_due_date = true
     }
-    payload.fields = fieldsPayload()
+    if (changed.has('startDate')) payload.start_date = startDate.value || null
+    if (isKanbanTask.value) {
+      if (changed.has('statusId') && statusId.value !== '') payload.status_id = Number(statusId.value)
+      if (changed.has('sprintId')) payload.sprint_id = sprintPayloadId(sprintId.value)
+      // Re-saving an unchanged estimate derived from legacy points would detach it
+      // from the project's points-to-hours rate.
+      if (changed.has('estimateHours')) payload.estimate_hours = estimateHours.value === '' ? null : Number(estimateHours.value)
+      if (changed.has('refinement')) payload.refinement = refinement.value
+    }
+    const fieldKeys = changedFieldKeys(base.customFields, mine.customFields)
+    if (fieldKeys.length) {
+      const all = fieldsPayload()
+      payload.fields = Object.fromEntries(fieldKeys.map((k) => [k, all[k] ?? null]))
+    }
     if (!isSubtask.value && recurrenceChanged()) {
       payload.recurrence = recurrencePayload(recurrenceDraft.value)
     }
@@ -1089,6 +1271,10 @@ async function save(keepOpen = false): Promise<boolean> {
     close()
     return true
   } catch (err) {
+    if (staleTaskOf(err)) {
+      await resolveStaleSave(err)
+      return false
+    }
     const msg = err instanceof APIError ? err.message : err instanceof Error ? err.message : 'Save failed'
     toast.push(msg, 'error')
     return false
@@ -1283,7 +1469,11 @@ async function claimCurrentTask() {
   if (!taskId.value || !canClaimTask.value) return
   claiming.value = true
   try {
-    const task = await api.claimTask(taskId.value)
+    const task = await claimWithConfirm(
+      { id: taskId.value, title: title.value, claimed_by: claimedBy.value, claimed_by_name: claimedByName.value },
+      user.value?.id,
+    )
+    if (!task) return
     claimedBy.value = task.claimed_by ?? null
     claimedByName.value = task.claimed_by_name || ''
     toast.push('Task claimed', 'success')
@@ -1299,7 +1489,8 @@ async function unclaimCurrentTask() {
   if (!taskId.value || !canClaimTask.value) return
   claiming.value = true
   try {
-    const task = await api.unclaimTask(taskId.value)
+    const task = await releaseTask(taskId.value, claimedBy.value)
+    if (!task) return
     claimedBy.value = task.claimed_by ?? null
     claimedByName.value = task.claimed_by_name || ''
     toast.push('Task released', 'success')

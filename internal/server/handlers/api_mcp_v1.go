@@ -521,8 +521,12 @@ var mcpTools = []mcpTool{
 	{
 		Name:        "claim_task",
 		Title:       "Claim or release a task",
-		Description: "Claim a task so the board shows you are working on it (release=true to drop the claim). Only for kanban boards.",
-		InputSchema: objSchema(map[string]any{"task_id": taskIDProp, "release": boolProp("Release your claim instead.")}, "task_id"),
+		Description: "Claim a task so the board shows you are working on it (release=true to drop the claim). Only for kanban boards. A task someone else holds is refused unless take_over=true; ask the person first.",
+		InputSchema: objSchema(map[string]any{
+			"task_id":   taskIDProp,
+			"release":   boolProp("Release your claim instead."),
+			"take_over": boolProp("Take the task over from whoever holds it now."),
+		}, "task_id"),
 		audience:    mcpForLocal,
 		scope:       storage.APIScopeTasksWrite,
 		call: func(args map[string]any) mcpCall {
@@ -530,11 +534,14 @@ var mcpTools = []mcpTool{
 			if !ok {
 				return mcpCall{err: taskIDErr}
 			}
-			method := http.MethodPost
+			path := "/tasks/" + strconv.Itoa(id) + "/claim"
 			if argBool(args, "release") {
-				method = http.MethodDelete
+				return mcpCall{method: http.MethodDelete, path: path}
 			}
-			return mcpCall{method: method, path: "/tasks/" + strconv.Itoa(id) + "/claim"}
+			if argBool(args, "take_over") {
+				return mcpCall{method: http.MethodPost, path: path, body: map[string]any{"take_over": true}}
+			}
+			return mcpCall{method: http.MethodPost, path: path}
 		},
 	},
 }

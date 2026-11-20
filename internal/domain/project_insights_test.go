@@ -106,7 +106,7 @@ func TestProjectInsights(t *testing.T) {
 	if err := SetTaskCompleted(ctx, 1, done, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := ClaimTaskForUser(ctx, 2, claimed); err != nil {
+	if err := ClaimTaskForUser(ctx, 2, claimed, ClaimOptions{}); err != nil {
 		t.Fatal(err)
 	}
 

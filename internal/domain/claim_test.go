@@ -36,7 +36,7 @@ func TestClaimTakeoverAndUnclaim(t *testing.T) {
 		t.Fatalf("expected no auto-claim, got %d", fields[taskID].ClaimedBy)
 	}
 
-	if err := ClaimTaskForUser(ctx, 1, taskID); err != nil {
+	if err := ClaimTaskForUser(ctx, 1, taskID, ClaimOptions{}); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	fields, _ = storage.GetWorkflowFieldsForTasks([]int{taskID})
@@ -44,8 +44,22 @@ func TestClaimTakeoverAndUnclaim(t *testing.T) {
 		t.Fatalf("claimed_by=%d want 1", fields[taskID].ClaimedBy)
 	}
 
+	// Claiming a task someone else holds needs an explicit takeover.
+	err = ClaimTaskForUser(ctx, 2, taskID, ClaimOptions{})
+	var cc *ClaimConflictError
+	if !errors.As(err, &cc) || !errors.Is(err, ErrConflict) || cc.ClaimedBy != 1 {
+		t.Fatalf("claim without takeover: err=%v want claim conflict naming user 1", err)
+	}
+
+	// A takeover confirmed against the wrong holder is refused.
+	wrong := 3
+	if err := ClaimTaskForUser(ctx, 2, taskID, ClaimOptions{TakeOver: true, ExpectedClaimedBy: &wrong}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale takeover: err=%v want conflict", err)
+	}
+
 	// Editor can take over.
-	if err := ClaimTaskForUser(ctx, 2, taskID); err != nil {
+	holder := 1
+	if err := ClaimTaskForUser(ctx, 2, taskID, ClaimOptions{TakeOver: true, ExpectedClaimedBy: &holder}); err != nil {
 		t.Fatalf("takeover: %v", err)
 	}
 	fields, _ = storage.GetWorkflowFieldsForTasks([]int{taskID})
@@ -53,12 +67,63 @@ func TestClaimTakeoverAndUnclaim(t *testing.T) {
 		t.Fatalf("claimed_by=%d want 2", fields[taskID].ClaimedBy)
 	}
 
-	if err := UnclaimTaskForUser(ctx, 2, taskID); err != nil {
+	// A release from a view that still shows user 1 holding it is refused.
+	if err := UnclaimTaskForUser(ctx, 2, taskID, UnclaimOptions{ExpectedClaimedBy: &holder}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale release: err=%v want conflict", err)
+	}
+
+	if err := UnclaimTaskForUser(ctx, 2, taskID, UnclaimOptions{}); err != nil {
 		t.Fatalf("unclaim: %v", err)
 	}
 	fields, _ = storage.GetWorkflowFieldsForTasks([]int{taskID})
 	if fields[taskID].ClaimedBy != 0 {
 		t.Fatalf("expected released, got %d", fields[taskID].ClaimedBy)
+	}
+}
+
+func TestRepeatClaimAndReleaseAreNoOps(t *testing.T) {
+	ctx := context.Background()
+	proj, err := CreateProject(ctx, 1, "Repeat Claim Board", "")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := SetProjectWorkflowMode(ctx, 1, proj.ID, storage.WorkflowKanban); err != nil {
+		t.Fatalf("enable kanban: %v", err)
+	}
+	pid := proj.ID
+	taskID, err := CreateTask(ctx, 1, CreateTaskInput{Title: "Repeat", ProjectID: &pid})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	countEvents := func(kind string) int {
+		events, err := storage.GetEventsForTask(taskID, 1, 100)
+		if err != nil {
+			t.Fatalf("events: %v", err)
+		}
+		n := 0
+		for _, e := range events {
+			if e.EventType == kind {
+				n++
+			}
+		}
+		return n
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := ClaimTaskForUser(ctx, 1, taskID, ClaimOptions{}); err != nil {
+			t.Fatalf("claim %d: %v", i, err)
+		}
+	}
+	if n := countEvents("claimed"); n != 1 {
+		t.Fatalf("claimed events=%d want 1 (repeat claim must not log again)", n)
+	}
+	for i := 0; i < 2; i++ {
+		if err := UnclaimTaskForUser(ctx, 1, taskID, UnclaimOptions{}); err != nil {
+			t.Fatalf("unclaim %d: %v", i, err)
+		}
+	}
+	if n := countEvents("unclaimed"); n != 1 {
+		t.Fatalf("unclaimed events=%d want 1 (repeat release must not log again)", n)
 	}
 }
 
@@ -73,7 +138,7 @@ func TestClaimRequiresKanban(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	err = ClaimTaskForUser(ctx, 1, taskID)
+	err = ClaimTaskForUser(ctx, 1, taskID, ClaimOptions{})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("err=%v want validation", err)
 	}
@@ -97,7 +162,7 @@ func TestWorkflowClaimScopeMineHidesUnclaimed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create claimed: %v", err)
 	}
-	if err := ClaimTaskForUser(ctx, 1, claimedID); err != nil {
+	if err := ClaimTaskForUser(ctx, 1, claimedID, ClaimOptions{}); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 
@@ -156,10 +221,10 @@ func TestWorkflowClaimScopeMineHidesCompletedKanban(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create done: %v", err)
 	}
-	if err := ClaimTaskForUser(ctx, 1, openID); err != nil {
+	if err := ClaimTaskForUser(ctx, 1, openID, ClaimOptions{}); err != nil {
 		t.Fatalf("claim open: %v", err)
 	}
-	if err := ClaimTaskForUser(ctx, 1, doneID); err != nil {
+	if err := ClaimTaskForUser(ctx, 1, doneID, ClaimOptions{}); err != nil {
 		t.Fatalf("claim done: %v", err)
 	}
 	if err := SetTaskCompleted(ctx, 1, doneID, true); err != nil {

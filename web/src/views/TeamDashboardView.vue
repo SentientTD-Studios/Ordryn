@@ -8,7 +8,7 @@ import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useSidebarState } from '@/composables/useSidebarState'
-import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnTabBatch } from '@/composables/useLiveUpdates'
 import { formatHours } from '@/utils/estimates'
 
 const LAST_PROJECT_KEY = 'ordryn.teamDashboardProject'
@@ -102,7 +102,7 @@ watch(sprintId, (next, prev) => {
 useLiveUpdates((event, batch) => {
   if (batch.every((e) => e.type === 'task.commented')) return
   if (event.type === 'notification.created' || event.type === 'extension.store') return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
+  if (isOwnTabBatch(batch, user.value?.id)) return
   void loadInsights()
 }, 1500)
 
