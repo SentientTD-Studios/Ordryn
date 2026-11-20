@@ -65,6 +65,9 @@ type TaskTimeEntry struct {
 
 // TaskWorkflowFields are kanban-related fields attached to tasks.
 type TaskWorkflowFields struct {
+	// Version is tasks.version: it changes whenever the task's content does
+	// (see task_version.go).
+	Version          int
 	StatusID         int
 	StatusName       string
 	EstimateHours    *float64
@@ -731,7 +734,7 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		        t.claimed_by, COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, ''),
 		        t.sprint_id, COALESCE(sp.name, ''),
 		        t.reviewer_id, COALESCE(NULLIF(ru.full_name, ''), NULLIF(ru.user_name, ''), ru.email, ''),
-		        COALESCE(CAST(t.start_date AS TEXT), '')
+		        COALESCE(CAST(t.start_date AS TEXT), ''), t.version
 		 FROM tasks t
 		 LEFT JOIN project_statuses s ON s.id = t.status_id
 		 LEFT JOIN projects p ON p.id = t.project_id
@@ -759,10 +762,12 @@ func GetWorkflowFieldsForTasks(taskIDs []int) (map[int]TaskWorkflowFields, error
 		var reviewerID sql.NullInt64
 		var reviewerName string
 		var startDate string
-		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &refinement, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName, &startDate); err != nil {
+		var version int
+		if err := rows.Scan(&id, &statusID, &statusName, &estimate, &refinement, &mode, &spent, &claimedBy, &claimedByName, &sprintID, &sprintName, &reviewerID, &reviewerName, &startDate, &version); err != nil {
 			return nil, err
 		}
 		f := TaskWorkflowFields{
+			Version:          version,
 			StartDate:        startDate,
 			StatusName:       statusName,
 			Refinement:       refinement,
@@ -809,6 +814,34 @@ func SetTaskClaimedBy(taskID int, claimedBy *int) error {
 		`UPDATE tasks SET claimed_by = $1, date_modified = NOW() AT TIME ZONE 'UTC' WHERE id = $2`,
 		arg, taskID)
 	return err
+}
+
+// CompareAndSetTaskClaimedBy sets claimed_by only while it still equals
+// expected (0 = unclaimed), so two clients acting on the same stale view
+// cannot both win. On a miss it returns the claimer actually stored.
+func CompareAndSetTaskClaimedBy(taskID, expected int, claimedBy *int) (ok bool, current int, err error) {
+	pool, err := OpenDatabase()
+	if err != nil {
+		return false, 0, err
+	}
+	defer CloseDatabase(pool)
+
+	var arg interface{}
+	if claimedBy != nil && *claimedBy > 0 {
+		arg = *claimedBy
+	}
+	tag, err := pool.Exec(context.Background(),
+		`UPDATE tasks SET claimed_by = $1, date_modified = NOW() AT TIME ZONE 'UTC'
+		 WHERE id = $2 AND COALESCE(claimed_by, 0) = $3`,
+		arg, taskID, expected)
+	if err != nil {
+		return false, 0, err
+	}
+	if tag.RowsAffected() > 0 {
+		return true, 0, nil
+	}
+	current, err = GetTaskClaimedBy(taskID)
+	return false, current, err
 }
 
 // GetTaskClaimedBy returns the current claimer user id (0 if none).

@@ -190,7 +190,7 @@ func TestAutomationClaimMovesToInProgress(t *testing.T) {
 
 	task := newProjectTask(t, f.projectID, "claim me")
 	replay()
-	if err := ClaimTaskForUser(ctx, 2, task); err != nil {
+	if err := ClaimTaskForUser(ctx, 2, task, ClaimOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	replay()
@@ -239,7 +239,7 @@ func TestAutomationRulesDoNotChain(t *testing.T) {
 
 	task := newProjectTask(t, f.projectID, "no chain")
 	replay()
-	if err := ClaimTaskForUser(ctx, 2, task); err != nil {
+	if err := ClaimTaskForUser(ctx, 2, task, ClaimOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	replay()

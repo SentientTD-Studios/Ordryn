@@ -18,6 +18,7 @@ type TimelineTask struct {
 	ParentID      int
 	StatusName    string
 	ClaimedByName string
+	Version       int
 }
 
 // TimelineLink is a "from blocks to" dependency between two timeline tasks.
@@ -42,7 +43,7 @@ func ListProjectTimeline(projectID int) ([]TimelineTask, []TimelineLink, int, bo
 		       COALESCE(CAST(t.start_date AS TEXT), ''), COALESCE(CAST(t.due_date AS TEXT), ''),
 		       COALESCE(t.completed, false), COALESCE(t.priority, 0), COALESCE(t.parent_id, 0),
 		       COALESCE(s.name, ''),
-		       COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, '')
+		       COALESCE(NULLIF(cu.full_name, ''), NULLIF(cu.user_name, ''), cu.email, ''), t.version
 		FROM tasks t
 		LEFT JOIN project_statuses s ON s.id = t.status_id
 		LEFT JOIN users cu ON cu.id = t.claimed_by
@@ -57,7 +58,7 @@ func ListProjectTimeline(projectID int) ([]TimelineTask, []TimelineLink, int, bo
 	for rows.Next() {
 		var it TimelineTask
 		if err := rows.Scan(&it.ID, &it.Title, &it.StartDate, &it.DueDate, &it.Completed, &it.Priority,
-			&it.ParentID, &it.StatusName, &it.ClaimedByName); err != nil {
+			&it.ParentID, &it.StatusName, &it.ClaimedByName, &it.Version); err != nil {
 			rows.Close()
 			return nil, nil, 0, false, err
 		}

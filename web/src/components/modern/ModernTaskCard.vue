@@ -33,7 +33,7 @@ const emit = defineEmits<{
   'toggle-select': [checked: boolean]
   'toggle-complete': []
   'toggle-expand': []
-  'patch-task': [payload: { id: number; title?: string; description?: string }]
+  'patch-task': [payload: { id: number; title?: string; description?: string; baseVersion?: number }]
   'add-subtask': []
   edit: []
 }>()
@@ -50,6 +50,8 @@ const childProgress = () => {
 
 // Inline editing. Clicking the title opens task details; renaming in place goes
 // through the explicit "Rename" action so the two don't fight over one click.
+// The task version when editing started: a live reload mid-edit must not hide a conflict.
+const editBaseVersion = ref<number | undefined>(undefined)
 const isEditingTitle = ref(false)
 const titleVal = ref('')
 const titleInput = ref<HTMLInputElement | null>(null)
@@ -57,6 +59,7 @@ const titleInput = ref<HTMLInputElement | null>(null)
 async function startEditTitle() {
   if (!props.canWrite) return
   titleVal.value = props.task.title
+  editBaseVersion.value = props.task.version
   isEditingTitle.value = true
   await nextTick()
   titleInput.value?.focus()
@@ -68,7 +71,7 @@ function saveTitle() {
   isEditingTitle.value = false
   const trimmed = titleVal.value.trim()
   if (trimmed && trimmed !== props.task.title) {
-    emit('patch-task', { id: props.task.id, title: trimmed })
+    emit('patch-task', { id: props.task.id, title: trimmed, baseVersion: editBaseVersion.value })
   }
 }
 
@@ -82,6 +85,7 @@ const descVal = ref('')
 function startEditDesc() {
   if (!props.canWrite) return
   descVal.value = props.task.description || ''
+  editBaseVersion.value = props.task.version
   isEditingDesc.value = true
 }
 
@@ -90,7 +94,7 @@ function saveDesc() {
   isEditingDesc.value = false
   const trimmed = descVal.value.trim()
   if (trimmed !== (props.task.description || '')) {
-    emit('patch-task', { id: props.task.id, description: trimmed })
+    emit('patch-task', { id: props.task.id, description: trimmed, baseVersion: editBaseVersion.value })
   }
 }
 

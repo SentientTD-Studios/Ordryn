@@ -212,3 +212,19 @@ func TestAPITaskPatchFieldsJSON(t *testing.T) {
 		t.Fatal("null fields object should fail")
 	}
 }
+
+func TestAPITaskPatchExpectedVersionJSON(t *testing.T) {
+	var req apiTaskPatchRequest
+	if err := json.Unmarshal([]byte(`{"title":"x"}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.ExpectedVersion != nil {
+		t.Fatal("omitted expected_version must not be checked (older clients)")
+	}
+	if err := json.Unmarshal([]byte(`{"title":"x","expected_version":7}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.ExpectedVersion == nil || *req.ExpectedVersion != 7 {
+		t.Fatalf("expected_version=%v want 7", req.ExpectedVersion)
+	}
+}

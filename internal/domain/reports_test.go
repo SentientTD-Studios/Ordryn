@@ -37,7 +37,7 @@ func TestTimesheetAndWorkloadScopes(t *testing.T) {
 	if _, err := AddTimeEntryForUser(ctx, ben, task, 30, "review"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ClaimTaskForUser(ctx, ana, task); err != nil {
+	if err := ClaimTaskForUser(ctx, ana, task, ClaimOptions{}); err != nil {
 		t.Fatal(err)
 	}
 

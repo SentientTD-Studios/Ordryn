@@ -11,7 +11,8 @@ import { useToast } from '@/composables/useToast'
 import { useSidebarState } from '@/composables/useSidebarState'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
-import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnTabBatch } from '@/composables/useLiveUpdates'
+import { useStaleConflict, versionGuard } from '@/composables/useStaleConflict'
 
 const router = useRouter()
 const stats = ref<DashboardStats | null>(null)
@@ -28,6 +29,7 @@ const { user } = useAuth()
 const overdueCount = inject<Ref<number>>('overdueCount')
 const loading = ref(true)
 const toast = useToast()
+const { handleStaleTask } = useStaleConflict()
 
 function selectHome() {
   void router.push('/')
@@ -90,7 +92,7 @@ async function toggleComplete(task: Task) {
   const inToday = dueTodayTasks.value.some((t) => t.id === task.id)
   const inWeek = dueThisWeekTasks.value.some((t) => t.id === task.id)
   try {
-    const updated = await api.patchTask(task.id, { completed: true })
+    const updated = await api.patchTask(task.id, { completed: true, ...versionGuard(task.version) })
     overdueTasks.value = overdueTasks.value.filter((t) => t.id !== task.id)
     dueTodayTasks.value = dueTodayTasks.value.filter((t) => t.id !== task.id)
     dueThisWeekTasks.value = dueThisWeekTasks.value.filter((t) => t.id !== task.id)
@@ -110,6 +112,7 @@ async function toggleComplete(task: Task) {
     }
     toast.push('Task completed', 'success')
   } catch (err) {
+    if (await handleStaleTask(err)) return
     toast.push(err instanceof APIError ? err.message : 'Could not update task', 'error')
   } finally {
     const next = { ...completing.value }
@@ -151,10 +154,10 @@ watch(lastDeletedTask, (payload) => {
   })
 })
 
-useLiveUpdates((event, batch) => {
+useLiveUpdates((_event, batch) => {
   // Comments alone don't change this view; skip only when nothing else arrived.
   if (batch.every((e) => e.type === 'task.commented')) return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
+  if (isOwnTabBatch(batch, user.value?.id)) return
   void refreshDashboard().catch(() => {
     /* keep current view if refresh fails */
   })

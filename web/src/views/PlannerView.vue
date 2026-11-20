@@ -7,7 +7,8 @@ import ModernSidebar from '@/components/modern/ModernSidebar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskSidebar } from '@/composables/useTaskSidebar'
-import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnTabBatch } from '@/composables/useLiveUpdates'
+import { useStaleConflict, versionGuard } from '@/composables/useStaleConflict'
 import { useToast } from '@/composables/useToast'
 import { useSidebarState } from '@/composables/useSidebarState'
 import { dayLabel, snoozeOptions } from '@/utils/planner'
@@ -16,6 +17,7 @@ const router = useRouter()
 const { user } = useAuth()
 const { openEdit, lastSavedTask, lastDeletedTask } = useTaskSidebar()
 const { push } = useToast()
+const { handleStaleTask } = useStaleConflict()
 const { sidebarCollapsed, toggleSidebar } = useSidebarState()
 
 const DAYS_KEY = 'gotodo.plannerDays'
@@ -88,6 +90,7 @@ async function withBusy(id: number, fn: () => Promise<unknown>, ok: string, fail
     push(ok, 'success')
     await load()
   } catch (err) {
+    if (await handleStaleTask(err)) return
     push(err instanceof APIError ? err.message : fail, 'error')
   } finally {
     const next = { ...busy.value }
@@ -97,7 +100,12 @@ async function withBusy(id: number, fn: () => Promise<unknown>, ok: string, fail
 }
 
 function complete(t: PlannerTask) {
-  void withBusy(t.id, () => api.patchTask(t.id, { completed: true }), 'Task completed', 'Could not complete the task')
+  void withBusy(
+    t.id,
+    () => api.patchTask(t.id, { completed: true, ...versionGuard(t.version) }),
+    'Task completed',
+    'Could not complete the task',
+  )
 }
 
 function snooze(t: PlannerTask, until: string) {
@@ -132,9 +140,9 @@ watch(lastDeletedTask, (payload) => {
   void load()
 })
 
-useLiveUpdates((event, batch) => {
+useLiveUpdates((_event, batch) => {
   if (batch.every((e) => e.type === 'task.commented')) return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
+  if (isOwnTabBatch(batch, user.value?.id)) return
   void load()
 }, 500)
 

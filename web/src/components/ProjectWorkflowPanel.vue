@@ -308,7 +308,7 @@ import { canManageProject } from '@/utils/projectPerms'
 import type { Project, ProjectRoleDef, ProjectStatus } from '@/api/types'
 import { APIError } from '@/api/types'
 import { useToast } from '@/composables/useToast'
-import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnTabBatch } from '@/composables/useLiveUpdates'
 import { useAuth } from '@/composables/useAuth'
 
 const props = defineProps<{ project: Project }>()
@@ -622,11 +622,11 @@ watch(
 
 onMounted(loadStatuses)
 
-useLiveUpdates((event) => {
+useLiveUpdates((event, batch) => {
   if (event.type !== 'project.updated' && event.type !== 'project.created' && event.type !== 'project.deleted') return
   if (event.project_id && event.project_id !== props.project.id) return
   if (renameId.value != null || deleteTarget.value) return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
+  if (isOwnTabBatch(batch, user.value?.id)) return
   void loadStatuses()
 })
 

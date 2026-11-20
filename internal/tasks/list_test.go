@@ -142,7 +142,8 @@ func TestMain(m *testing.M) {
 			sprint_id INTEGER,
 			deleted_at TIMESTAMPTZ,
 			deleted_by INTEGER,
-			delete_batch TEXT
+			delete_batch TEXT,
+			version INTEGER NOT NULL DEFAULT 1
 		);
 		CREATE TABLE task_tags (
 			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,

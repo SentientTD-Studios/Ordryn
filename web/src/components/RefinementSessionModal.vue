@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
+import { useStaleConflict, versionGuard } from '@/composables/useStaleConflict'
 import type {
   Project,
   ProjectSprint,
@@ -41,6 +42,7 @@ const props = defineProps<{
 const emit = defineEmits<{ close: []; 'active-changed': [active: boolean]; 'tasks-changed': [] }>()
 
 const toast = useToast()
+const { handleStaleTask } = useStaleConflict()
 const { askConfirm } = useConfirm()
 const { maxDescription } = useTaskTextLimits()
 useBodyScrollLock(() => props.open)
@@ -60,6 +62,8 @@ const detail = ref<Task | null>(null)
 const detailLoading = ref(false)
 const editingDescription = ref(false)
 const descriptionDraft = ref('')
+/** Task version when the description draft was started (see saveDescription). */
+const descriptionBaseVersion = ref<number | undefined>(undefined)
 const estimateDraft = ref<number | ''>('')
 const savingTask = ref(false)
 const addIdsDraft = ref('')
@@ -231,10 +235,11 @@ async function saveEstimate() {
   if (!t || next === undefined || !estimateDirty.value) return
   savingTask.value = true
   try {
-    detail.value = await api.patchTask(t.id, { estimate_hours: next })
+    detail.value = await api.patchTask(t.id, { estimate_hours: next, ...versionGuard(t.version) })
     emit('tasks-changed')
     toast.push('Estimate saved', 'success')
   } catch (err) {
+    if (await handleStaleTask(err)) return
     toast.push(errMessage(err, 'Could not save the estimate'), 'error')
   } finally {
     savingTask.value = false
@@ -246,11 +251,15 @@ async function saveDescription() {
   if (!t) return
   savingTask.value = true
   try {
-    detail.value = await api.patchTask(t.id, { description: descriptionDraft.value })
+    // The version the draft was started from, not whatever a live reload
+    // brought in while typing.
+    const base = descriptionBaseVersion.value ?? t.version
+    detail.value = await api.patchTask(t.id, { description: descriptionDraft.value, ...versionGuard(base) })
     emit('tasks-changed')
     editingDescription.value = false
     toast.push('Description saved', 'success')
   } catch (err) {
+    if (await handleStaleTask(err)) return
     toast.push(errMessage(err, 'Could not save the description'), 'error')
   } finally {
     savingTask.value = false
@@ -259,6 +268,7 @@ async function saveDescription() {
 
 function startEditingDescription() {
   descriptionDraft.value = detail.value?.description || ''
+  descriptionBaseVersion.value = detail.value?.version
   editingDescription.value = true
 }
 

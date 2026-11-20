@@ -163,6 +163,7 @@ import type {
   MFARecoveryCodes,
 } from './types'
 import { APIError, type APIErrorBody } from './types'
+import { beginOwnMutation, isMutatingMethod } from '@/utils/ownMutations'
 
 function auditQueryString(params: AuditQuery): string {
   const qs = new URLSearchParams()
@@ -178,11 +179,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const res = await fetch(withBase(path), {
-    ...init,
-    headers,
-    credentials: 'include',
-  })
+  const settle = isMutatingMethod(init.method) ? beginOwnMutation() : null
+  let res: Response
+  try {
+    res = await fetch(withBase(path), {
+      ...init,
+      headers,
+      credentials: 'include',
+    })
+  } finally {
+    settle?.()
+  }
 
   if (res.status === 204) {
     return undefined as T
@@ -253,7 +260,13 @@ function downloadPost(path: string, body: unknown, fallbackName: string): Promis
 async function upload<T>(path: string, field: string, file: Blob | File): Promise<T> {
   const fd = new FormData()
   fd.append(field, file)
-  const res = await fetch(withBase(path), { method: 'POST', body: fd, credentials: 'include' })
+  const settle = beginOwnMutation()
+  let res: Response
+  try {
+    res = await fetch(withBase(path), { method: 'POST', body: fd, credentials: 'include' })
+  } finally {
+    settle()
+  }
   const text = await res.text()
   let data: unknown = null
   if (text) {
@@ -864,6 +877,10 @@ export const api = {
       sprint_id: number | null
       fields: Record<string, unknown>
       recurrence: TaskRecurrenceInput | null
+      /** Version the caller edited from (Task.version); a task changed since gets 409 `stale_task`. */
+      expected_version: number
+      /** Column the caller last saw; a task that has moved since gets 409 `stale_board`. */
+      expected_status_id: number
     }>,
   ) {
     return request<Task>(`/api/v2/tasks/${id}`, {
@@ -942,6 +959,9 @@ export const api = {
     project?: string
     parent_id?: number | null
     status_id?: number | null
+    /** The dragged card and the column it left; a board that no longer matches gets 409 `stale_board`. */
+    moved_task_id?: number
+    from_status_id?: number
   }) {
     return request<{ ok: boolean }>('/api/v2/tasks/reorder', {
       method: 'POST',
@@ -1575,12 +1595,24 @@ export const api = {
     })
   },
 
-  claimTask(taskId: number) {
-    return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'POST' })
+  /**
+   * Claim a task. A task someone else holds is refused (409 `claim_conflict`)
+   * unless `takeOver` is set; `expectedClaimedBy` is who the caller saw holding it.
+   */
+  claimTask(taskId: number, opts: { takeOver?: boolean; expectedClaimedBy?: number | null } = {}) {
+    const body: { take_over?: boolean; expected_claimed_by?: number } = {}
+    if (opts.takeOver) body.take_over = true
+    if (opts.expectedClaimedBy !== undefined) body.expected_claimed_by = opts.expectedClaimedBy ?? 0
+    return request<Task>(`/api/v2/tasks/${taskId}/claim`, {
+      method: 'POST',
+      body: Object.keys(body).length ? JSON.stringify(body) : undefined,
+    })
   },
 
-  unclaimTask(taskId: number) {
-    return request<Task>(`/api/v2/tasks/${taskId}/claim`, { method: 'DELETE' })
+  /** Release a claim. `expectedClaimedBy` is who the caller saw holding it; a mismatch gets 409. */
+  unclaimTask(taskId: number, expectedClaimedBy?: number | null) {
+    const qs = expectedClaimedBy !== undefined ? `?expected_claimed_by=${expectedClaimedBy ?? 0}` : ''
+    return request<Task>(`/api/v2/tasks/${taskId}/claim${qs}`, { method: 'DELETE' })
   },
 
   setTaskReviewer(taskId: number, userName: string) {

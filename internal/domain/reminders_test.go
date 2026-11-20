@@ -109,7 +109,7 @@ func TestDueReminderPassRemindsOwnerAndClaimerOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("board task: %v", err)
 	}
-	if err := ClaimTaskForUser(ctx, claimer, boardTask); err != nil {
+	if err := ClaimTaskForUser(ctx, claimer, boardTask, ClaimOptions{}); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	soloTask, err := CreateTask(ctx, solo, CreateTaskInput{Title: "Personal errand", DueDate: tomorrow})

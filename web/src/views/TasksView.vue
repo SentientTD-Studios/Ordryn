@@ -39,7 +39,8 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useViewDensity } from '@/composables/useViewDensity'
 import { useSidebarState } from '@/composables/useSidebarState'
 import { focusSiteSearch, useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
-import { useLiveUpdates, isOwnFocusedLiveEvent } from '@/composables/useLiveUpdates'
+import { useLiveUpdates, isOwnTabBatch, LIVE_RESYNC } from '@/composables/useLiveUpdates'
+import { useStaleConflict, versionGuard } from '@/composables/useStaleConflict'
 import { clearCustomFieldDefsCache } from '@/composables/useCustomFieldDefs'
 import { isArchivedProject, isProjectOwner } from '@/utils/projectLabel'
 import { hasAnyProjectWrite, hasProjectPerm, PROJECT_PERMS } from '@/utils/projectPerms'
@@ -57,6 +58,7 @@ const { sidebarCollapsed, toggleSidebar } = useSidebarState()
 const { focusedTaskId, registerTaskShortcuts, unregisterTaskShortcuts } = useKeyboardShortcuts()
 const projectNav = useProjectNav()
 const toast = useToast()
+const { handleStaleTask } = useStaleConflict()
 const { askConfirm } = useConfirm()
 const { user } = useAuth()
 const {
@@ -742,19 +744,27 @@ watch(
 async function toggleComplete(task: Task) {
   if (!hasProjectPerm(projectForTask(task), PROJECT_PERMS.TASKS_COMPLETE)) return
   try {
-    applyTaskUpdate(await api.patchTask(task.id, { completed: !task.completed }))
+    applyTaskUpdate(await api.patchTask(task.id, { completed: !task.completed, ...versionGuard(task.version) }))
   } catch (err) {
+    if (await handleStaleTask(err)) return
     toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
   }
 }
 
-async function handleInlineTaskPatch(payload: { id: number; title?: string; description?: string }) {
+async function handleInlineTaskPatch(payload: { id: number; title?: string; description?: string; baseVersion?: number }) {
   const found = findTaskInTree(payload.id)
   if (found && !hasProjectPerm(projectForTask(found.task), PROJECT_PERMS.TASKS_EDIT)) return
   try {
-    applyTaskUpdate(await api.patchTask(payload.id, { title: payload.title, description: payload.description }))
+    applyTaskUpdate(
+      await api.patchTask(payload.id, {
+        title: payload.title,
+        description: payload.description,
+        ...versionGuard(payload.baseVersion ?? found?.task.version),
+      }),
+    )
     toast.push('Task updated', 'success')
   } catch (err) {
+    if (await handleStaleTask(err)) return
     toast.push(err instanceof APIError ? err.message : 'Update failed', 'error')
   }
 }
@@ -1155,19 +1165,19 @@ onMounted(async () => {
   await reloadInitial()
 })
 
-useLiveUpdates((event, batch) => {
-  // Comments alone don't change this view; skip only when nothing else arrived.
-  if (batch.every((e) => e.type === 'task.commented')) return
-  if (event.type === 'extension.store') return
-  if (event.type === 'notification.created') return
-  if (isOwnFocusedLiveEvent(event, user.value?.id)) return
-  if (event.type === 'extensions.reloaded') {
+const TASKS_VIEW_IGNORED = new Set(['task.commented', 'extension.store', 'notification.created'])
+const PROJECT_SHAPE_EVENTS = new Set(['project.updated', 'project.created', 'project.deleted', LIVE_RESYNC])
+
+useLiveUpdates((_event, batch) => {
+  // Look at the whole burst: one ignorable event must not hide a real change.
+  const relevant = batch.filter((e) => !TASKS_VIEW_IGNORED.has(e.type))
+  if (!relevant.length) return
+  if (isOwnTabBatch(relevant, user.value?.id)) return
+  if (relevant.some((e) => e.type === 'extensions.reloaded')) {
     clearCustomFieldDefsCache()
     void surfaces.load()
-    void reloadInitial()
-    return
   }
-  if (event.type === 'project.updated' || event.type === 'project.created' || event.type === 'project.deleted') {
+  if (relevant.some((e) => PROJECT_SHAPE_EVENTS.has(e.type))) {
     void loadMeta()
     kanbanColumnsRev.value++
   }

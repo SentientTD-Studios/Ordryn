@@ -43,7 +43,7 @@ func TestOffboardHandsOffWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ClaimTaskForUser(ctx, leaving, task); err != nil {
+	if err := ClaimTaskForUser(ctx, leaving, task, ClaimOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := storage.CreateAPIKey(leaving, "laptop"); err != nil {
@@ -104,7 +104,7 @@ func TestOffboardReleasesClaimsTheSuccessorCantTake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ClaimTaskForUser(ctx, leaving, task); err != nil {
+	if err := ClaimTaskForUser(ctx, leaving, task, ClaimOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	res, err := OffboardAccountForUser(ctx, owner, leaving, OffboardInput{SuccessorID: successor, Claims: OffboardClaimsReassign})

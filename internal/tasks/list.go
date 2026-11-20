@@ -458,6 +458,7 @@ func attachWorkflowFieldsToTasks(taskList []Task) error {
 			t.ReviewerID = f.ReviewerID
 			t.ReviewerName = f.ReviewerName
 			t.StartDate = f.StartDate
+			t.Version = f.Version
 		}
 	}
 	for i := range taskList {
