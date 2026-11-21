@@ -16555,6 +16555,9 @@ components:
                 type: integer
               role_name:
                 type: string
+              avatar_url:
+                type: string
+                description: Profile picture URL, or empty when none is set
         site_roles:
           type: array
           items:
