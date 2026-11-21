@@ -21,6 +21,8 @@ type apiChatDirectoryUserJSON struct {
 	IsBanned bool   `json:"is_banned"`
 	RoleID   int    `json:"role_id"`
 	RoleName string `json:"role_name"`
+	// AvatarURL is "" when the user has no profile picture.
+	AvatarURL string `json:"avatar_url"`
 }
 
 type apiChatDirectoryRoleJSON struct {
@@ -90,7 +92,7 @@ func APIV2ChatDirectory(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Users = append(out.Users, apiChatDirectoryUserJSON{
 			ID: u.ID, Email: u.Email, UserName: u.UserName, FullName: u.FullName,
-			IsBanned: u.IsBanned, RoleID: u.RoleID, RoleName: u.RoleName,
+			IsBanned: u.IsBanned, RoleID: u.RoleID, RoleName: u.RoleName, AvatarURL: u.AvatarURL,
 		})
 	}
 

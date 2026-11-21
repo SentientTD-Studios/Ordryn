@@ -17,6 +17,7 @@ type UserSummary struct {
 	IsBanned  bool
 	RoleID    int
 	RoleName  string
+	AvatarURL string
 }
 
 // ListUsers returns all registered users ordered by id. AI agent accounts are
@@ -30,7 +31,7 @@ func ListUsers() ([]UserSummary, error) {
 
 	rows, err := pool.Query(context.Background(),
 		`SELECT u.id, u.email, COALESCE(u.user_name, ''), u.full_name, u.first_name, u.last_name, COALESCE(u.is_banned, FALSE),
-		        u.role_id, COALESCE(r.name, ''), COALESCE(r.display_name, '')
+		        u.role_id, COALESCE(r.name, ''), COALESCE(r.display_name, ''), COALESCE(u.avatar_url, '')
 		 FROM users u
 		 LEFT JOIN roles r ON r.id = u.role_id
 		 WHERE NOT COALESCE(u.is_agent, FALSE) ORDER BY u.id ASC`)
@@ -43,7 +44,7 @@ func ListUsers() ([]UserSummary, error) {
 	for rows.Next() {
 		var roleDisplay string
 		var u UserSummary
-		if err := rows.Scan(&u.ID, &u.Email, &u.UserName, &u.FullName, &u.FirstName, &u.LastName, &u.IsBanned, &u.RoleID, &u.RoleName, &roleDisplay); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.UserName, &u.FullName, &u.FirstName, &u.LastName, &u.IsBanned, &u.RoleID, &u.RoleName, &roleDisplay, &u.AvatarURL); err != nil {
 			return nil, err
 		}
 		u.RoleName = SiteRoleLabel(u.RoleName, roleDisplay)
