@@ -142,7 +142,7 @@ func NotifyProjectMembersTaskCommented(taskID, actorUserID, projectID int, comme
 	} else if projectName != "" {
 		mentionTitle = fmt.Sprintf("You were mentioned in %s", projectName)
 	}
-	body := commentPreview(commentBody)
+	body, image := commentPreview(commentBody)
 
 	mentioned := make(map[int]struct{})
 	for _, m := range ResolveCommentMentions(projectID, commentBody) {
@@ -180,6 +180,7 @@ func NotifyProjectMembersTaskCommented(taskID, actorUserID, projectID int, comme
 			TaskID:      taskID,
 			Title:       title,
 			Body:        body,
+			ImageURL:    image,
 		})
 	}
 	if _, err := storage.CreateUserNotificationsBulk(items); err != nil {

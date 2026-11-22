@@ -193,6 +193,7 @@ func httpWebhookPayload(format, content, eventType string, vars map[string]strin
 			URL:        vars["url"],
 			Priority:   vars["priority"],
 			Comment:    vars["comment"],
+			Images:     imageURLs(vars),
 			ClaimedBy:  vars["claimed_by"],
 			DueDate:    vars["due_date"],
 			Sprint:     vars["sprint"],
@@ -268,7 +269,8 @@ type webhookJSONBody struct {
 	URL           string            `json:"url,omitempty"`
 	Priority      string            `json:"priority,omitempty"`
 	Comment       string            `json:"comment,omitempty"`
-	ClaimedBy     string            `json:"claimed_by,omitempty"`
+	Images        []string          `json:"images,omitempty"`
+	ClaimedBy    string            `json:"claimed_by,omitempty"`
 	DueDate       string            `json:"due_date,omitempty"`
 	Sprint        string            `json:"sprint,omitempty"`
 	Tags          string            `json:"tags,omitempty"`
@@ -358,12 +360,27 @@ func discordPayload(content string, vars map[string]string) map[string]any {
 	if len(fields) > 0 {
 		embed["fields"] = fields
 	}
-	return map[string]any{"embeds": []any{embed}}
+	embeds := []any{embed}
+	for i, u := range imageURLs(vars) {
+		if i == 0 {
+			embed["image"] = map[string]any{"url": u}
+			continue
+		}
+		// Extra embeds sharing the first one's url merge into a gallery.
+		if vars["url"] == "" {
+			break
+		}
+		embeds = append(embeds, map[string]any{"url": vars["url"], "image": map[string]any{"url": u}})
+	}
+	return map[string]any{"embeds": embeds}
 }
 
 func slackPayload(content string, vars map[string]string) map[string]any {
 	blocks := []map[string]any{
 		{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": content}},
+	}
+	for _, u := range imageURLs(vars) {
+		blocks = append(blocks, map[string]any{"type": "image", "image_url": u, "alt_text": "Comment image"})
 	}
 	if vars["url"] != "" {
 		blocks = append(blocks, map[string]any{
@@ -382,6 +399,9 @@ func teamsPayload(content string, vars map[string]string) map[string]any {
 	body := []map[string]any{
 		{"type": "TextBlock", "text": vars["name"], "weight": "Bolder", "size": "Medium", "wrap": true},
 		{"type": "TextBlock", "text": content, "wrap": true},
+	}
+	for _, u := range imageURLs(vars) {
+		body = append(body, map[string]any{"type": "Image", "url": u, "altText": "Comment image", "size": "Large"})
 	}
 	actions := []map[string]any{}
 	if vars["url"] != "" {
@@ -420,6 +440,9 @@ func gchatPayload(content string, vars map[string]string) map[string]any {
 	}
 	widgets := []map[string]any{
 		{"textParagraph": map[string]any{"text": gchatHTML(content)}},
+	}
+	for _, u := range imageURLs(vars) {
+		widgets = append(widgets, map[string]any{"image": map[string]any{"imageUrl": u, "altText": "Comment image"}})
 	}
 	for _, row := range []struct{ label, key string }{
 		{"Status", "status"},
@@ -501,6 +524,9 @@ func sendNtfy(webhookURL, auth, content string, vars map[string]string, opts sen
 	}
 	if p := ntfyPriority(vars["priority"]); p != "" {
 		headers["Priority"] = p
+	}
+	if imgs := imageURLs(vars); len(imgs) > 0 {
+		headers["Attach"] = imgs[0] // ntfy shows one attachment as an inline preview
 	}
 	opts.ExtraHeaders = headers
 	if strings.TrimSpace(auth) != "" {

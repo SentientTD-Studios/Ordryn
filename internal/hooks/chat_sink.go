@@ -39,7 +39,9 @@ type ChatEventPayload struct {
 	Actor       string `json:"actor,omitempty"`
 	ActorID     int    `json:"actor_id,omitempty"`
 	Comment     string `json:"comment,omitempty"`
-	URL         string `json:"url,omitempty"`
+	// Images are absolute URLs of the comment's images; Comment has them removed.
+	Images      []string `json:"images,omitempty"`
+	URL        string `json:"url,omitempty"`
 	DueDate     string `json:"due_date,omitempty"`
 	ClaimedBy   string `json:"claimed_by,omitempty"`
 	Priority    string `json:"priority,omitempty"`
@@ -100,7 +102,7 @@ func HandleChatEvent(ev Event) {
 	payload := ChatEventPayload{
 		EventID: ev.EventID, Type: ev.Type, ProjectID: projectID, ProjectName: snap.ProjectName,
 		TaskID: taskID, Status: vars["status"], OldStatus: vars["old_status"],
-		Actor: vars["actor"], ActorID: ev.ActorID, Comment: vars["comment"], URL: vars["url"],
+		Actor: vars["actor"], ActorID: ev.ActorID, Comment: vars["comment"], Images: imageURLs(vars), URL: vars["url"],
 		DueDate: vars["due_date"], ClaimedBy: vars["claimed_by"], Priority: vars["priority"],
 		Sprint: vars["sprint"], Member: vars["member"], Changed: vars["changed"], OccurredAt: vars["occurred_at"],
 	}

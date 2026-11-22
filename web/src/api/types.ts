@@ -554,6 +554,8 @@ export type Notification = {
   type: string
   title: string
   body: string
+  /** First image in the source comment (http(s) or /uploads/ URL). */
+  image_url?: string
   project_id?: number | null
   task_id?: number | null
   project_name?: string

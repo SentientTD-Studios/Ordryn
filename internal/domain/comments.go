@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"GoTodo/internal/live"
+	"GoTodo/internal/mdimage"
 	"GoTodo/internal/storage"
 )
 
@@ -475,13 +476,24 @@ func RestoreCommentRevisionForAdmin(ctx context.Context, userID, revisionID int)
 	return updated, nil
 }
 
-func commentPreview(body string) string {
-	body = strings.TrimSpace(body)
-	if body == "" {
-		return "New comment"
+// commentPreview returns a short plain-text preview of a comment and the URL of
+// its first image ("" when none). Image markdown is pulled out so notifications
+// never show raw `![alt](url)` syntax or a URL cut off part-way.
+func commentPreview(body string) (string, string) {
+	text, images := mdimage.Split(strings.TrimSpace(body))
+	image := ""
+	if len(images) > 0 {
+		image = images[0]
 	}
-	if len(body) <= maxCommentPreview {
-		return body
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" {
+		if image != "" {
+			return mdimage.Placeholder(len(images)), image
+		}
+		return "New comment", ""
 	}
-	return body[:maxCommentPreview-3] + "..."
+	if r := []rune(text); len(r) > maxCommentPreview {
+		text = strings.TrimSpace(string(r[:maxCommentPreview-1])) + "…"
+	}
+	return text, image
 }

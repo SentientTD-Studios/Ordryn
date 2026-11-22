@@ -43,7 +43,8 @@ type UserNotification struct {
 	TaskID      int
 	Title       string
 	Body        string
-	ReadAt      *time.Time
+	ImageURL    string // first image in the source comment, if any
+	ReadAt     *time.Time
 	CreatedAt   time.Time
 	ActorName   string
 	ProjectName string
@@ -74,6 +75,7 @@ func CreateUserNotificationsTable() error {
 			ON user_notifications (user_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_notifications_user_unread
 			ON user_notifications (user_id) WHERE read_at IS NULL`,
+		`ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, s := range stmts {
 		if _, err := pool.Exec(context.Background(), s); err != nil {
@@ -91,8 +93,8 @@ const NotificationAutomation = "automation"
 // AI agent (no inbox), opted out of its type, or opted out of automation
 // notices and the actor is the automation account.
 const insertUserNotificationSQL = `INSERT INTO user_notifications
-		(user_id, actor_user_id, type, project_id, task_id, title, body)
-	 SELECT $1, $2, $3, $4, $5, $6, $7
+		(user_id, actor_user_id, type, project_id, task_id, title, body, image_url)
+	 SELECT $1, $2, $3, $4, $5, $6, $7, $8
 	 WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = $1 AND is_agent)
 	   AND NOT EXISTS (
 		SELECT 1 FROM user_notification_optouts
@@ -126,7 +128,7 @@ func CreateUserNotification(n UserNotification) (int, error) {
 	// AI agents and recipients who opted out of this type get nothing (id 0).
 	var id int
 	err = pool.QueryRow(context.Background(), insertUserNotificationSQL+` RETURNING id`,
-		n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body,
+		n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body, n.ImageURL,
 	).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil
@@ -159,7 +161,7 @@ func CreateUserNotificationsBulk(items []UserNotification) ([]int, error) {
 			taskArg = n.TaskID
 		}
 		tag, err := pool.Exec(context.Background(), insertUserNotificationSQL,
-			n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body,
+			n.UserID, actorArg, n.Type, projectArg, taskArg, n.Title, n.Body, n.ImageURL,
 		)
 		if err != nil {
 			return delivered, err
@@ -212,7 +214,7 @@ func listUserNotifications(userID, limit, offset int, unreadOnly bool) ([]UserNo
 	rows, err := pool.Query(context.Background(),
 		`SELECT n.id, n.user_id, COALESCE(n.actor_user_id, 0), n.type,
 		        COALESCE(n.project_id, 0), COALESCE(n.task_id, 0),
-		        n.title, n.body, n.read_at, n.created_at,
+		        n.title, n.body, n.image_url, n.read_at, n.created_at,
 		        COALESCE(NULLIF(u.full_name, ''), NULLIF(u.user_name, ''), u.email, ''),
 		        COALESCE(p.name, '')
 		 FROM user_notifications n
@@ -233,7 +235,7 @@ func listUserNotifications(userID, limit, offset int, unreadOnly bool) ([]UserNo
 		var readAt sql.NullTime
 		if err := rows.Scan(
 			&n.ID, &n.UserID, &n.ActorUserID, &n.Type,
-			&n.ProjectID, &n.TaskID, &n.Title, &n.Body, &readAt, &n.CreatedAt,
+			&n.ProjectID, &n.TaskID, &n.Title, &n.Body, &n.ImageURL, &readAt, &n.CreatedAt,
 			&n.ActorName, &n.ProjectName,
 		); err != nil {
 			return nil, 0, err

@@ -6,8 +6,42 @@ import (
 	"strings"
 	"time"
 
+	"GoTodo/internal/mdimage"
 	"GoTodo/internal/storage"
 )
+
+// maxCommentImages caps how many comment images a destination is sent
+// (Discord shows at most four in one gallery).
+const maxCommentImages = 4
+
+// commentTextAndImages splits a comment's markdown into display text (images
+// removed, truncated) and absolute image URLs, so chat destinations get real
+// images instead of raw `![alt](url)` syntax.
+func commentTextAndImages(raw string) (string, []string) {
+	text, urls := mdimage.Split(strings.TrimSpace(raw))
+	base := publicBaseURL()
+	images := make([]string, 0, len(urls))
+	for _, u := range urls {
+		if abs := mdimage.Absolute(u, base); abs != "" && len(images) < maxCommentImages {
+			images = append(images, abs)
+		}
+	}
+	if text == "" && len(urls) > 0 {
+		text = mdimage.Placeholder(len(urls))
+	}
+	return truncateRunes(text, 400), images
+}
+
+// imageURLs returns the comment image URLs carried in vars["images"].
+func imageURLs(vars map[string]string) []string {
+	var out []string
+	for _, u := range strings.Split(vars["images"], "\n") {
+		if u = strings.TrimSpace(u); u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
 
 const (
 	EventTaskCreated              = "task.created"
@@ -154,7 +188,7 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 	if count <= 0 && ev.Type == EventTaskReordered {
 		count = 1
 	}
-	comment := truncateRunes(strings.TrimSpace(ev.Comment), 400)
+	comment, images := commentTextAndImages(ev.Comment)
 	desc := truncateRunes(strings.TrimSpace(snap.Description), 2000)
 	parentID := snap.ParentID
 	vars := map[string]string{
@@ -173,6 +207,7 @@ func eventVars(ev Event, snap *storage.HookTaskSnapshot, actor string) map[strin
 		"parent_id":    strconv.Itoa(parentID),
 		"estimate":     strconv.FormatFloat(snap.EstimateHours, 'f', -1, 64),
 		"comment":      comment,
+		"images":       strings.Join(images, "\n"),
 		"claimed_by":   snap.ClaimedByName,
 		"due_date":     snap.DueDate,
 		"sprint":       snap.SprintName,
