@@ -16,6 +16,7 @@ type apiNotificationJSON struct {
 	Type        string  `json:"type"`
 	Title       string  `json:"title"`
 	Body        string  `json:"body"`
+	ImageURL    string  `json:"image_url,omitempty"`
 	ProjectID   *int    `json:"project_id,omitempty"`
 	TaskID      *int    `json:"task_id,omitempty"`
 	ProjectName string  `json:"project_name,omitempty"`
@@ -38,6 +39,7 @@ func notificationToAPIJSON(n storage.UserNotification) apiNotificationJSON {
 		Type:        n.Type,
 		Title:       n.Title,
 		Body:        n.Body,
+		ImageURL:    n.ImageURL,
 		ProjectName: n.ProjectName,
 		ActorName:   n.ActorName,
 		CreatedAt:   n.CreatedAt.UTC().Format(time.RFC3339),

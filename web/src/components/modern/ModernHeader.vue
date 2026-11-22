@@ -281,6 +281,14 @@ async function onLogout() {
                 >
                   <div class="fw-semibold small">{{ n.title }}</div>
                   <div class="small text-muted">{{ n.body }}</div>
+                  <img
+                    v-if="n.image_url"
+                    :src="n.image_url"
+                    alt=""
+                    class="notif-image mt-1"
+                    loading="lazy"
+                    decoding="async"
+                  />
                   <div v-if="n.actor_name" class="small text-muted mt-1">{{ n.actor_name }}</div>
                 </button>
               </div>
@@ -356,6 +364,13 @@ async function onLogout() {
   white-space: normal;
   border-bottom: 1px solid color-mix(in srgb, var(--ordryn-muted) 18%, transparent);
   padding: 0.65rem 1rem;
+}
+.notif-image {
+  display: block;
+  max-width: 100%;
+  max-height: 6rem;
+  border-radius: 0.25rem;
+  object-fit: cover;
 }
 .notif-unread {
   background: color-mix(in srgb, var(--ordryn-accent) 10%, transparent);

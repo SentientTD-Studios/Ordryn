@@ -14795,6 +14795,10 @@ components:
           type: string
         body:
           type: string
+          description: Plain-text preview. Comment images are removed (see image_url).
+        image_url:
+          type: string
+          description: First image in the source comment, when it had one (absolute URL or /uploads/ path).
         project_id:
           type: integer
           nullable: true
@@ -16496,6 +16500,12 @@ components:
           type: integer
         comment:
           type: string
+          description: Comment text with image markdown removed.
+        images:
+          type: array
+          items:
+            type: string
+          description: Absolute URLs of the comment's images (up to 4), in order.
         url:
           type: string
         due_date:
