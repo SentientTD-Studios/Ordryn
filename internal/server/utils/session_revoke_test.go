@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"GoTodo/internal/statestore"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -48,9 +49,7 @@ func clearsCookie(rec *httptest.ResponseRecorder) bool {
 }
 
 func TestActiveSessionUserID(t *testing.T) {
-	origRedis := RedisClient
-	RedisClient = nil
-	t.Cleanup(func() { RedisClient = origRedis })
+	t.Cleanup(statestore.SetForTest(nil))
 
 	current := map[interface{}]interface{}{"user_id": 7, SessionVersionKey: 3, SessionIDKey: "abc"}
 	legacy := map[interface{}]interface{}{"user_id": 7}

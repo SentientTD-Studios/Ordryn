@@ -15,10 +15,16 @@ import {
   workerStatusBadge,
 } from '@/utils/systemHealth'
 
-// Admin → System: a point-in-time look at the database pool, Redis, the server
+// Admin → System: a point-in-time look at the database pool, the state store, the server
 // process, and the background workers. Backups, the audit stream, and
 // automation rules show their own status on their pages.
 const health = ref<SystemHealth | null>(null)
+
+function stateStoreLabel(backend: string): string {
+  if (backend === 'redis') return 'Redis'
+  if (backend === 'postgres') return 'Postgres (main database)'
+  return 'Not configured'
+}
 const loading = ref(false)
 const error = ref('')
 
@@ -102,16 +108,18 @@ onMounted(refresh)
         </div>
 
         <div class="col-12 col-md-4">
-          <div class="card h-100" :class="{ 'border-danger': !health.redis.ok }">
+          <div class="card h-100" :class="{ 'border-danger': !health.state_store.ok }">
             <div class="card-header d-flex align-items-center gap-2">
-              <h2 class="h6 mb-0 me-auto">Redis</h2>
-              <span class="badge" :class="health.redis.ok ? 'text-bg-success' : 'text-bg-danger'">
-                {{ health.redis.ok ? 'Up' : 'Not answering' }}
+              <h2 class="h6 mb-0 me-auto">State store</h2>
+              <span class="badge" :class="health.state_store.ok ? 'text-bg-success' : 'text-bg-danger'">
+                {{ health.state_store.ok ? 'Up' : 'Not answering' }}
               </span>
             </div>
             <div class="card-body small">
-              <p class="mb-2">Ping {{ formatMs(health.redis.ping_ms) }}</p>
-              <p v-if="health.redis.error" class="text-danger mb-2">{{ health.redis.error }}</p>
+              <p class="mb-2">
+                {{ stateStoreLabel(health.state_store.backend) }} · Ping {{ formatMs(health.state_store.ping_ms) }}
+              </p>
+              <p v-if="health.state_store.error" class="text-danger mb-2">{{ health.state_store.error }}</p>
               <p class="text-muted mb-0">Used for sign-in, rate limits, sessions, and live updates.</p>
             </div>
           </div>

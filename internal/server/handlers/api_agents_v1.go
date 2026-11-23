@@ -357,8 +357,8 @@ func apiV1AgentKeys(w http.ResponseWriter, r *http.Request, userID, projectID, a
 			}
 			writeJSON(w, http.StatusOK, out)
 		case http.MethodPost:
-			if !utils.RedisAvailable() {
-				utils.APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", "Redis is required for the REST API.")
+			if !utils.StateStoreAvailable() {
+				utils.APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", "A state store (Redis or Postgres) is required for the REST API.")
 				return
 			}
 			var req struct {

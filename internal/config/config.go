@@ -99,7 +99,7 @@ func SetSkipRequiredForTest(skip *bool) {
 }
 
 // ValidateRequired checks README-minimum env vars after .env is loaded.
-// Under tests, DB/Redis may be absent; SESSION_KEY may use the test fallback.
+// Under tests, the database may be absent; SESSION_KEY may use the test fallback.
 func ValidateRequired() error {
 	if skipFullRequiredCheck() {
 		key := strings.TrimSpace(os.Getenv("SESSION_KEY"))
@@ -119,18 +119,51 @@ func ValidateRequired() error {
 	if sessionKey == "" {
 		missing = append(missing, "SESSION_KEY")
 	}
-	redisURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
-	redisAddr := strings.TrimSpace(os.Getenv("REDIS_ADDR"))
-	if redisURL == "" && redisAddr == "" {
-		missing = append(missing, "REDIS_URL (or REDIS_ADDR)")
-	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}
 	if len(sessionKey) < minSessionKeyLen {
 		return fmt.Errorf("SESSION_KEY must be at least %d characters long", minSessionKeyLen)
 	}
+	if _, err := StateStoreBackend(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// State store backends: where short-lived server state lives (sign-out
+// revocations, sign-in lockouts, device and SSO sign-in handshakes, undo
+// tokens, rate limits) and how live updates reach other app instances.
+const (
+	StateStoreRedis    = "redis"
+	StateStorePostgres = "postgres"
+)
+
+// RedisConfigured reports whether REDIS_URL or REDIS_ADDR is set.
+func RedisConfigured() bool {
+	return strings.TrimSpace(os.Getenv("REDIS_URL")) != "" || strings.TrimSpace(os.Getenv("REDIS_ADDR")) != ""
+}
+
+// StateStoreBackend resolves STATE_STORE. Unset means Redis when it's
+// configured and the main Postgres database otherwise, so existing Redis
+// installs keep working and small installs need only Postgres.
+func StateStoreBackend() (string, error) {
+	switch v := strings.ToLower(strings.TrimSpace(os.Getenv("STATE_STORE"))); v {
+	case "":
+		if RedisConfigured() {
+			return StateStoreRedis, nil
+		}
+		return StateStorePostgres, nil
+	case StateStoreRedis:
+		if !RedisConfigured() {
+			return "", fmt.Errorf("STATE_STORE=redis needs REDIS_URL (or REDIS_ADDR)")
+		}
+		return StateStoreRedis, nil
+	case StateStorePostgres, "postgresql", "pg":
+		return StateStorePostgres, nil
+	default:
+		return "", fmt.Errorf("STATE_STORE must be redis or postgres, got %q", v)
+	}
 }
 
 // BrandEnv reads ORDRYN_<name>, falling back to the legacy GOTODO_<name>.

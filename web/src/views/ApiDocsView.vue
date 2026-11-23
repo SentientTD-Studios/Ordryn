@@ -178,7 +178,7 @@ onUnmounted(() => {
                     <p class="text-muted small mb-0">
                         Personal keys are created on the profile page; project keys in a project's settings under
                         <strong>API keys</strong>. Either is shown in full only once at creation.
-                        Revoked keys stop working immediately. The API requires Redis for key validation and rate limiting.
+                        Revoked keys stop working immediately. The API requires the server's state store (Redis or Postgres) for key validation and rate limiting.
                     </p>
 
                     <h2 id="project-keys" class="h4 mt-4">Project API keys</h2>
@@ -343,7 +343,7 @@ POST {{ basePath }}/api/v2/agent/runs/41/finish        { "status": "succeeded", 
                     <p>
                         Browser / SPA clients can register and log in with JSON and receive an httpOnly session cookie
                         (same cookie store as the legacy web UI). Resource routes under <code>/api/v2</code> accept either
-                        that cookie or a Bearer API key (Redis required for rate limiting / key lookup).
+                        that cookie or a Bearer API key.
                         Session traffic uses a higher rate-limit budget than Bearer keys; see <a href="#rate-limits">Rate limits</a>.
                     </p>
                     <table class="table table-sm api-docs-table">
@@ -356,8 +356,8 @@ POST {{ basePath }}/api/v2/agent/runs/41/finish        { "status": "succeeded", 
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/register</code></td><td>Public (API enabled + Redis)</td><td>Create account with unique <code>user_name</code>; respects invite-only settings; sets session cookie; returns user JSON</td></tr>
-                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/login</code></td><td>Public (API enabled + Redis)</td><td>Email/password login; if MFA is enabled returns <code>{"mfa_required":true}</code> with a pending cookie instead of a full session</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/register</code></td><td>Public (API enabled)</td><td>Create account with unique <code>user_name</code>; respects invite-only settings; sets session cookie; returns user JSON</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/login</code></td><td>Public (API enabled)</td><td>Email/password login; if MFA is enabled returns <code>{"mfa_required":true}</code> with a pending cookie instead of a full session</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/mfa/verify</code></td><td>Public (pending MFA cookie)</td><td>Submit a TOTP or recovery code to complete login</td></tr>
                             <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/logout</code></td><td>API enabled</td><td>Signs out this session (cookie cleared and revoked)</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/api/v2/auth/username-available</code></td><td>Public</td><td>Check username format and availability</td></tr>
@@ -407,8 +407,8 @@ POST {{ basePath }}/api/v2/auth/mfa/verify
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/device/code</code></td><td>Public (API enabled + Redis)</td><td>Start device authorization; returns <code>device_code</code>, <code>user_code</code>, and verification URLs</td></tr>
-                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/device/token</code></td><td>Public (API enabled + Redis)</td><td>Poll for approval; returns <code>api_key</code> once when approved</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/device/code</code></td><td>Public (API enabled)</td><td>Start device authorization; returns <code>device_code</code>, <code>user_code</code>, and verification URLs</td></tr>
+                            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/api/v2/auth/device/token</code></td><td>Public (API enabled)</td><td>Poll for approval; returns <code>api_key</code> once when approved</td></tr>
                             <tr><td><span class="badge bg-success">GET</span></td><td><code>/auth/device?user_code=…</code></td><td>Browser session (optional)</td><td>Approve or deny the request in the browser; returns to the app via <code>redirect_uri</code> when set</td></tr>
                         </tbody>
                     </table>
@@ -462,14 +462,14 @@ Content-Type: application/json
                             <tr><td>405</td><td><code>method_not_allowed</code></td><td>HTTP method not supported for this path</td></tr>
                             <tr><td>409</td><td><code>name_conflict</code> / <code>limit_reached</code></td><td>Saved view name or per-user limit conflict</td></tr>
                             <tr><td>429</td><td><code>rate_limit_exceeded</code></td><td>Too many requests (see <code>Retry-After</code> header)</td></tr>
-                            <tr><td>503</td><td><code>api_unavailable</code></td><td>Redis unavailable</td></tr>
+                            <tr><td>503</td><td><code>api_unavailable</code></td><td>State store (Redis or Postgres) unavailable</td></tr>
                             <tr><td>500</td><td><code>internal_error</code></td><td>Unexpected server error</td></tr>
                         </tbody>
                     </table>
 
                     <h2 id="rate-limits" class="h4 mt-4">Rate limits</h2>
                     <p>
-                        Limits apply per user using independent token buckets in Redis
+                        Limits apply per user using independent token buckets in the state store
                         (reads and writes do not share a budget):
                     </p>
                     <p class="fw-semibold mb-1">External API (Bearer API key)</p>

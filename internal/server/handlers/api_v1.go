@@ -1134,12 +1134,12 @@ func apiV1UndoTasks(w http.ResponseWriter, r *http.Request) {
 
 	var snaps []DeletedTaskSnapshot
 	if strings.TrimSpace(req.UndoToken) != "" {
-		redisSnaps, err := utils.LoadUndoToken(r.Context(), userID, req.UndoToken)
+		storedSnaps, err := utils.LoadUndoToken(r.Context(), userID, req.UndoToken)
 		if err != nil {
 			utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
-		snaps = fromRedisUndoSnapshots(redisSnaps)
+		snaps = fromUndoSnapshots(storedSnaps)
 	} else {
 		pu, err := loadPendingUndo(r)
 		if err != nil {

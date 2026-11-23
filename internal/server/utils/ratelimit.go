@@ -4,70 +4,32 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"GoTodo/internal/statestore"
 )
 
-// tokenBucketScript implements a simple token-bucket using Redis hashes.
-const tokenBucketScript = `local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local refill_rate = tonumber(ARGV[2])
-local capacity = tonumber(ARGV[3])
-local requested = tonumber(ARGV[4])
-local ttl = tonumber(ARGV[5])
-
-local data = redis.call("HMGET", key, "tokens", "last")
-local tokens = data[1]
-local last = data[2]
-if tokens == false or tokens == nil then
-  tokens = capacity
-  last = now
-else
-  tokens = tonumber(tokens)
-  last = tonumber(last)
-end
-local delta = math.max(0, now - last)
-local add = delta * refill_rate
-tokens = math.min(capacity, tokens + add)
-if tokens < requested then
-  redis.call("HMSET", key, "tokens", tokens, "last", now)
-  redis.call("EXPIRE", key, ttl)
-  return 0
-else
-  tokens = tokens - requested
-  redis.call("HMSET", key, "tokens", tokens, "last", now)
-  redis.call("EXPIRE", key, ttl)
-  return 1
-end`
-
-// AllowRequest uses the Redis-backed token bucket to decide whether the request
-// identified by key is allowed. Returns true if allowed.
-func AllowRequest(ctx context.Context, client *redis.Client, key string, capacity int, refillRate float64, requested int, ttlSeconds int) (bool, error) {
-	if client == nil {
-		// No Redis configured; allow (fail-open)
+// AllowRequest takes one token from the bucket named key (capacity tokens,
+// refilling at refillRate per second, forgotten after ttlSeconds idle) and
+// reports whether one was available. Without a state store (unit tests) it
+// allows everything.
+func AllowRequest(ctx context.Context, key string, capacity int, refillRate float64, ttlSeconds int) (bool, error) {
+	store := stateStore()
+	if store == nil {
 		return true, nil
 	}
-
-	now := time.Now().Unix()
-	res, err := client.Eval(ctx, tokenBucketScript, []string{key}, now, refillRate, capacity, requested, ttlSeconds).Result()
-	if err != nil {
-		return false, fmt.Errorf("redis eval error: %w", err)
-	}
-	allowed, ok := res.(int64)
-	if !ok {
-		return false, fmt.Errorf("unexpected redis response: %T", res)
-	}
-	return allowed == 1, nil
+	return store.Allow(ctx, key, capacity, refillRate, time.Duration(ttlSeconds)*time.Second)
 }
 
 // RateLimitMiddleware returns a middleware that enforces a token-bucket limit.
 // - capacity: bucket capacity
 // - refillRate: tokens per second
-// - ttlSeconds: Redis key TTL
+// - ttlSeconds: how long an idle bucket is remembered
 // - keyFunc: returns a stable key for the request (e.g. per-IP or per-account)
 func RateLimitMiddleware(capacity int, refillRate float64, ttlSeconds int, keyFunc func(*http.Request) string) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
@@ -81,9 +43,9 @@ func RateLimitMiddleware(capacity int, refillRate float64, ttlSeconds int, keyFu
 			// Prefix to keep rate-limit keys separate
 			key = "rl:tb:" + key
 
-			allowed, err := AllowRequest(r.Context(), RedisClient, key, capacity, refillRate, 1, ttlSeconds)
+			allowed, err := AllowRequest(r.Context(), key, capacity, refillRate, ttlSeconds)
 			if err != nil {
-				// On Redis error, fail-open but log via header
+				// On a state store error, fail open but say so in a header
 				w.Header().Set("X-RateLimit-Error", err.Error())
 				next(w, r)
 				return
@@ -214,20 +176,25 @@ func loginFailureCounters(email, ip string) []failureCounter {
 
 // CheckLogin decides whether a sign-in attempt for email from ip may proceed.
 // Lockout state must not depend on whether the client stays connected, so the
-// Redis calls ignore cancellation of ctx.
+// state store calls ignore cancellation of ctx.
 func CheckLogin(ctx context.Context, email, ip string) (LoginGate, error) {
-	if RedisClient == nil {
+	store := stateStore()
+	if store == nil {
 		return LoginAllowed, nil
 	}
 	ctx = context.WithoutCancel(ctx)
 	ipOverLimit := false
 	for _, c := range loginFailureCounters(email, ip) {
-		val, err := RedisClient.Get(ctx, c.key).Int64()
-		if err == redis.Nil {
+		raw, err := store.Get(ctx, c.key)
+		if errors.Is(err, statestore.ErrNotFound) {
 			continue
 		}
 		if err != nil {
 			return LoginAllowed, err
+		}
+		val, err := strconv.ParseInt(string(raw), 10, 64)
+		if err != nil {
+			return LoginAllowed, fmt.Errorf("login counter %s: %w", c.key, err)
 		}
 		if val < c.limit {
 			continue
@@ -239,8 +206,8 @@ func CheckLogin(ctx context.Context, email, ip string) (LoginGate, error) {
 		return LoginLocked, nil
 	}
 	if ipOverLimit {
-		allowed, err := AllowRequest(ctx, RedisClient, "rl:tb:login-slow:"+ip,
-			1, 1.0/LoginSlowdownSeconds, 1, LoginFailureWindowSeconds)
+		allowed, err := AllowRequest(ctx, "rl:tb:login-slow:"+ip,
+			1, 1.0/LoginSlowdownSeconds, LoginFailureWindowSeconds)
 		if err != nil {
 			return LoginAllowed, err
 		}
@@ -253,17 +220,14 @@ func CheckLogin(ctx context.Context, email, ip string) (LoginGate, error) {
 
 // RecordFailedLogin counts a failed password or MFA code for email from ip.
 func RecordFailedLogin(ctx context.Context, email, ip string) error {
-	if RedisClient == nil {
+	store := stateStore()
+	if store == nil {
 		return nil
 	}
 	ctx = context.WithoutCancel(ctx)
 	for _, c := range loginFailureCounters(email, ip) {
-		val, err := RedisClient.Incr(ctx, c.key).Result()
-		if err != nil {
+		if _, err := store.Incr(ctx, c.key, LoginFailureWindowSeconds*time.Second); err != nil {
 			return err
-		}
-		if val == 1 {
-			_, _ = RedisClient.Expire(ctx, c.key, LoginFailureWindowSeconds*time.Second).Result()
 		}
 	}
 	return nil
@@ -273,12 +237,13 @@ func RecordFailedLogin(ctx context.Context, email, ip string) error {
 // The per-email and per-IP counters run out on their own, so a successful
 // sign-in doesn't reset the budget of someone guessing from elsewhere.
 func ClearFailedLogin(ctx context.Context, email, ip string) error {
-	if RedisClient == nil {
+	store := stateStore()
+	if store == nil {
 		return nil
 	}
 	counters := loginFailureCounters(email, ip)
 	if len(counters) == 0 || !strings.HasPrefix(counters[0].key, "rl:fail:email-ip:") {
 		return nil
 	}
-	return RedisClient.Del(context.WithoutCancel(ctx), counters[0].key).Err()
+	return store.Del(context.WithoutCancel(ctx), counters[0].key)
 }

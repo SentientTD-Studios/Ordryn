@@ -73,7 +73,7 @@ func verifyTasksHavePerm(ctx context.Context, db *pgxpool.Pool, ids []int, userI
 }
 
 // deleteTasksForAPI moves tasks (and their subtasks) to the trash and returns
-// a Redis undo token; the session also keeps the undo when possible. Undo and
+// an undo token in the state store; the session also keeps the undo when possible. Undo and
 // the Trash view restore them with nothing lost.
 func deleteTasksForAPI(ctx context.Context, r *http.Request, w http.ResponseWriter, ids []int, userID int) (string, error) {
 	if _, err := domain.TrashTasksForUser(ctx, userID, ids); err != nil {
@@ -87,7 +87,7 @@ func deleteTasksForAPI(ctx context.Context, r *http.Request, w http.ResponseWrit
 		snapshots = append(snapshots, DeletedTaskSnapshot{ID: id})
 	}
 	_ = savePendingUndo(r, w, snapshots)
-	return utils.SaveUndoToken(ctx, userID, toRedisUndoSnapshots(snapshots))
+	return utils.SaveUndoToken(ctx, userID, toUndoSnapshots(snapshots))
 }
 
 func bulkSetCompleted(ctx context.Context, db *pgxpool.Pool, ids []int, userID int, completed bool) error {

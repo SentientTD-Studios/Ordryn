@@ -11,7 +11,6 @@ import (
 	"GoTodo/internal/storage"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -28,12 +27,12 @@ type hookListener struct {
 	fn func(hooks.Event)
 }
 
-// Init installs the process-wide hub. A nil Redis client keeps fan-out in-process
-// (unit tests). Production always has Redis from server startup.
-func Init(client *redis.Client) {
+// Init installs the process-wide hub. A nil bridge keeps fan-out in-process
+// (unit tests); the server passes its state store.
+func Init(bridge PubSub) {
 	hubMu.Lock()
 	defer hubMu.Unlock()
-	hub = NewHub(client)
+	hub = NewHub(bridge)
 }
 
 func Ready() bool {

@@ -3,11 +3,11 @@ package live
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
 const userChannelPrefix = "user:"
@@ -73,21 +73,32 @@ const (
 	TypeCeremonyUpdated          = "ceremony.updated"
 )
 
-// Hub fans events out to in-process SSE subscribers and, when Redis is
-// configured, across process instances.
+// PubSub carries events between app instances. statestore.Store implements it
+// with Redis pub/sub or Postgres LISTEN/NOTIFY.
+type PubSub interface {
+	Publish(ctx context.Context, channel string, payload []byte) error
+	Subscribe(ctx context.Context, handler func(channel string, payload []byte))
+}
+
+// Hub fans events out to in-process SSE subscribers and, when a PubSub is
+// given, across process instances.
 type Hub struct {
 	mu       sync.RWMutex
 	channels map[string]map[chan []byte]struct{}
-	bridge   *redisBridge
+	bridge   PubSub
 	origin   string
 }
 
-func NewHub(client *redis.Client) *Hub {
+// NewHub returns a hub. A nil bridge keeps fan-out in this process (unit tests).
+func NewHub(bridge PubSub) *Hub {
 	h := &Hub{
 		channels: make(map[string]map[chan []byte]struct{}),
 		origin:   uuid.NewString(),
+		bridge:   bridge,
 	}
-	h.bridge = newRedisBridge(client, h.handleRemote)
+	if bridge != nil {
+		bridge.Subscribe(context.Background(), h.handleRemote)
+	}
 	return h
 }
 
@@ -175,7 +186,9 @@ func (h *Hub) Broadcast(channelKey string, event []byte) {
 	}
 	h.deliverLocal(channelKey, event)
 	if h.bridge != nil {
-		h.bridge.publish(channelKey, event)
+		if err := h.bridge.Publish(context.Background(), channelKey, event); err != nil {
+			log.Printf("live: publish to other instances: %v", err)
+		}
 	}
 }
 

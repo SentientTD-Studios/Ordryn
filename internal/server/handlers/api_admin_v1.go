@@ -408,8 +408,8 @@ func apiV1PatchAdminSettings(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Global announcement text must be 500 characters or less.")
 		return
 	}
-	if next.EnableAPI && !utils.RedisAvailable() {
-		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Cannot enable REST API without Redis.")
+	if next.EnableAPI && !utils.StateStoreAvailable() {
+		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "Cannot enable the REST API without a state store (Redis or Postgres).")
 		return
 	}
 	if errMsg := validateEmailSettings(&next); errMsg != "" {

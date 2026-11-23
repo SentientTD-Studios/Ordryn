@@ -19,6 +19,7 @@ import (
 	"GoTodo/internal/domain"
 	githubclient "GoTodo/internal/githubclient"
 	"GoTodo/internal/server/utils"
+	"GoTodo/internal/statestore"
 	"GoTodo/internal/storage"
 )
 
@@ -178,8 +179,9 @@ func APIV1MeGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
 		utils.APIJSONError(w, http.StatusBadRequest, "invalid_request", "GitHub OAuth is not configured.")
 		return
 	}
-	if utils.RedisClient == nil {
-		utils.APIJSONError(w, http.StatusServiceUnavailable, "unavailable", "OAuth requires Redis.")
+	store := statestore.Current()
+	if store == nil {
+		utils.APIJSONError(w, http.StatusServiceUnavailable, "unavailable", "OAuth requires a state store (Redis or Postgres).")
 		return
 	}
 	settings, err := storage.GetSiteSettings()
@@ -197,7 +199,7 @@ func APIV1MeGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
 	redirectURI := utils.AbsoluteURLForRequest(r, "/api/v2/auth/github/callback")
 
 	ctx := r.Context()
-	if err := utils.RedisClient.Set(ctx, githubOAuthStatePref+state, strconv.Itoa(userID), githubOAuthStateTTL).Err(); err != nil {
+	if err := store.Set(ctx, githubOAuthStatePref+state, []byte(strconv.Itoa(userID)), githubOAuthStateTTL); err != nil {
 		utils.APIJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to store OAuth state.")
 		return
 	}
@@ -219,8 +221,9 @@ func APIV1GitHubOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	redirectFail := func(reason string) {
 		http.Redirect(w, r, utils.PublicPath("/settings?github=error&reason="+url.QueryEscape(reason)), http.StatusSeeOther)
 	}
-	if utils.RedisClient == nil {
-		redirectFail("redis")
+	store := statestore.Current()
+	if store == nil {
+		redirectFail("unavailable")
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
@@ -235,14 +238,13 @@ func APIV1GitHubOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	key := githubOAuthStatePref + state
-	userIDStr, err := utils.RedisClient.Get(ctx, key).Result()
-	_ = utils.RedisClient.Del(ctx, key).Err()
-	if err != nil || userIDStr == "" {
+	// Read and delete in one step so a state value works only once.
+	userIDRaw, err := store.GetDel(ctx, githubOAuthStatePref+state)
+	if err != nil || len(userIDRaw) == 0 {
 		redirectFail("state")
 		return
 	}
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := strconv.Atoi(string(userIDRaw))
 	if err != nil || userID <= 0 {
 		redirectFail("state")
 		return

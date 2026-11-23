@@ -319,8 +319,8 @@ const signupMailPerHour = 5
 // timing reveals which happened. Usernames are public, so a taken one is reported.
 func registerWithVerification(w http.ResponseWriter, r *http.Request, email, userName, password, timezone string) {
 	// Every request here sends an email, so limit how often one client can do it.
-	allowed, err := utils.AllowRequest(context.WithoutCancel(r.Context()), utils.RedisClient,
-		"rl:tb:signup-mail:"+utils.ClientIP(r), signupMailPerHour, signupMailPerHour/3600.0, 1, 3600)
+	allowed, err := utils.AllowRequest(context.WithoutCancel(r.Context()),
+		"rl:tb:signup-mail:"+utils.ClientIP(r), signupMailPerHour, signupMailPerHour/3600.0, 3600)
 	if err != nil {
 		fmt.Printf("sign-up limit check: %v\n", err)
 	} else if !allowed {
@@ -519,8 +519,8 @@ func APIV1AuthLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // loginGateAllows checks the sign-in limits for email from this client and, when
-// the attempt can't proceed, writes the 429 and returns false. Redis errors fail
-// open: a Redis outage shouldn't stop everyone signing in.
+// the attempt can't proceed, writes the 429 and returns false. State store errors
+// fail open: an outage shouldn't stop everyone signing in.
 func loginGateAllows(w http.ResponseWriter, r *http.Request, email string) bool {
 	gate, err := utils.CheckLogin(r.Context(), email, utils.ClientIP(r))
 	if err != nil {

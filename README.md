@@ -1,6 +1,6 @@
 # Ordryn
 
-Ordryn (formerly GoTodo) is a self-hosted project and task management platform built with Go, PostgreSQL, Redis, and Vue 3. It brings personal tasks, collaborative projects, and Kanban boards together with user accounts, invite-based access, role-based permissions, and a JSON /api/v2 API for web and mobile clients (/api/v1 remains a compatibility alias).
+Ordryn (formerly GoTodo) is a self-hosted project and task management platform built with Go, PostgreSQL, and Vue 3 (Redis optional). It brings personal tasks, collaborative projects, and Kanban boards together with user accounts, invite-based access, role-based permissions, and a JSON /api/v2 API for web and mobile clients (/api/v1 remains a compatibility alias).
 
 Published versions: [GitHub Releases](https://github.com/SentientTD-Studios/Ordryn/releases).
 
@@ -261,7 +261,7 @@ Reference: [`openapi.yaml`](openapi.yaml) (`/api/v2/admin/chat`, `/api/v2/chat/d
 
 - Go 1.24+
 - PostgreSQL
-- Redis (required for `/api/v2` auth, rate limits, device SSO, and live updates)
+- Redis (optional; see "State store" below)
 - Node.js + npm (to build or develop the Vue SPA)
 
 ## Quick start
@@ -274,7 +274,22 @@ npm run build:web      # writes web/dist; UI path is 503 without it
 make run
 ```
 
-Set `DB_*`, `SESSION_KEY`, and `REDIS_URL` in `.env`. Open http://localhost:8080/
+Set `DB_*` and `SESSION_KEY` in `.env`. Open http://localhost:8080/
+
+### State store
+
+Short-lived server state (sign-out revocations, sign-in lockouts, device and SSO
+sign-in handshakes, undo tokens, rate limits) and live updates between app
+instances go through a state store, set with `STATE_STORE`:
+
+- `postgres`: uses the main database. Nothing else to run. Works with several
+  app instances (live updates use `LISTEN/NOTIFY`, which needs a direct or
+  session-pooled connection, not PgBouncer in transaction mode). Rate limits are
+  kept per instance. Good for personal, family, and small-team sites.
+- `redis`: uses `REDIS_URL` (or `REDIS_ADDR` + `REDIS_PASSWORD`). For large or
+  busy sites.
+
+Unset, it uses Redis when `REDIS_URL`/`REDIS_ADDR` is set and Postgres otherwise.
 
 `go run .` is fine too.
 

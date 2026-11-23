@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"GoTodo/internal/server/utils"
+	"GoTodo/internal/statestore"
 	"GoTodo/internal/storage"
-
-	"github.com/redis/go-redis/v9"
 )
 
 type deviceDecisionRequest struct {
@@ -28,7 +28,7 @@ func APIV1DeviceStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	record, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode)
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, statestore.ErrNotFound) {
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Authorization request expired or not found.")
 			return
 		}
@@ -92,7 +92,7 @@ func APIV1DeviceApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	record, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode)
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, statestore.ErrNotFound) {
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Authorization request expired or not found.")
 			return
 		}
@@ -161,7 +161,7 @@ func APIV1DeviceDeny(w http.ResponseWriter, r *http.Request) {
 	}
 	record, err := utils.GetDeviceAuthByUserCode(r.Context(), userCode)
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, statestore.ErrNotFound) {
 			utils.APIJSONError(w, http.StatusNotFound, "not_found", "Authorization request expired or not found.")
 			return
 		}

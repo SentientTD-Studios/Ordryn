@@ -109,8 +109,8 @@ func apiV1ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiV1CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	if !utils.RedisAvailable() {
-		utils.APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", "Redis is required for the REST API.")
+	if !utils.StateStoreAvailable() {
+		utils.APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", "A state store (Redis or Postgres) is required for the REST API.")
 		return
 	}
 	userID, ok := utils.GetAPIUserID(r)
