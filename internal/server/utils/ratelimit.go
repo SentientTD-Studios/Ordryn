@@ -32,6 +32,26 @@ func AllowRequest(ctx context.Context, key string, capacity int, refillRate floa
 // - ttlSeconds: how long an idle bucket is remembered
 // - keyFunc: returns a stable key for the request (e.g. per-IP or per-account)
 func RateLimitMiddleware(capacity int, refillRate float64, ttlSeconds int, keyFunc func(*http.Request) string) func(http.HandlerFunc) http.HandlerFunc {
+	return rateLimitWith(keyFunc, func(ctx context.Context, key string) (bool, error) {
+		return AllowRequest(ctx, key, capacity, refillRate, ttlSeconds)
+	})
+}
+
+// localLimiter holds the buckets for LocalRateLimitMiddleware.
+var localLimiter = statestore.NewLocalLimiter()
+
+// LocalRateLimitMiddleware is RateLimitMiddleware with buckets kept in this
+// process instead of the state store, so it costs no Redis command per
+// request. Use it for authenticated machine callers that poll often (the chat
+// server's event polling), where a per-instance limit is enough.
+func LocalRateLimitMiddleware(capacity int, refillRate float64, ttlSeconds int, keyFunc func(*http.Request) string) func(http.HandlerFunc) http.HandlerFunc {
+	ttl := time.Duration(ttlSeconds) * time.Second
+	return rateLimitWith(keyFunc, func(_ context.Context, key string) (bool, error) {
+		return localLimiter.Allow(key, capacity, refillRate, ttl), nil
+	})
+}
+
+func rateLimitWith(keyFunc func(*http.Request) string, allow func(context.Context, string) (bool, error)) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			key := keyFunc(r)
@@ -43,7 +63,7 @@ func RateLimitMiddleware(capacity int, refillRate float64, ttlSeconds int, keyFu
 			// Prefix to keep rate-limit keys separate
 			key = "rl:tb:" + key
 
-			allowed, err := AllowRequest(r.Context(), key, capacity, refillRate, ttlSeconds)
+			allowed, err := allow(r.Context(), key)
 			if err != nil {
 				// On a state store error, fail open but say so in a header
 				w.Header().Set("X-RateLimit-Error", err.Error())

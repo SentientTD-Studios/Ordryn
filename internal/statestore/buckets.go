@@ -33,6 +33,20 @@ func newMemBuckets() *memBuckets {
 	return &memBuckets{buckets: make(map[string]*memBucket), now: time.Now}
 }
 
+// LocalLimiter is an in-process token-bucket limiter for routes that don't
+// need a shared limit, whatever the state store backend. It keeps per-request
+// rate limiting off Redis for authenticated, high-frequency callers.
+type LocalLimiter struct{ b *memBuckets }
+
+// NewLocalLimiter returns an empty LocalLimiter.
+func NewLocalLimiter() *LocalLimiter { return &LocalLimiter{b: newMemBuckets()} }
+
+// Allow takes one token from the bucket named key and reports whether one was
+// available (see memBuckets.allow).
+func (l *LocalLimiter) Allow(key string, capacity int, refillPerSec float64, ttl time.Duration) bool {
+	return l.b.allow(key, capacity, refillPerSec, ttl)
+}
+
 func (m *memBuckets) allow(key string, capacity int, refillPerSec float64, ttl time.Duration) bool {
 	now := m.now()
 	m.mu.Lock()

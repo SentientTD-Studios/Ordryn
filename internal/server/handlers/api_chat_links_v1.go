@@ -31,7 +31,9 @@ var chatLinkIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 const chatEventsPageSize = 200
 
 // ChatEventsChain rate-limits the chat link and event endpoints per IP, in a
-// bucket of their own so event polling can't starve directory sync.
+// bucket of their own so event polling can't starve directory sync. The
+// buckets live in process, not the state store: a chat server polls every few
+// seconds, and a Redis command per poll adds up to ~17k a day per chat server.
 func ChatEventsChain(handler http.HandlerFunc) http.HandlerFunc {
 	key := func(r *http.Request) string {
 		if ip := utils.KeyByIP(r); ip != "" {
@@ -41,7 +43,7 @@ func ChatEventsChain(handler http.HandlerFunc) http.HandlerFunc {
 	}
 	return utils.RequireAPIEnabled(
 		utils.RequireStateStore(
-			utils.RateLimitMiddleware(60, 2, 120, key)(handler),
+			utils.LocalRateLimitMiddleware(60, 2, 120, key)(handler),
 		),
 	)
 }
