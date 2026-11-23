@@ -10,7 +10,9 @@ import (
 	"GoTodo/internal/server/handlers"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
+	"GoTodo/internal/statestore"
 	"GoTodo/internal/storage"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -71,10 +73,12 @@ func StartServer() error {
 	addr := net.JoinHostPort(host, port)
 	//addr := fmt.Sprintf(":%s", port)
 
-	if err := utils.InitRedis(); err != nil {
-		return fmt.Errorf("redis: %w", err)
+	store, err := statestore.Init(context.Background())
+	if err != nil {
+		return err
 	}
-	live.Init(utils.RedisClient)
+	fmt.Printf("State store: %s\n", store.Backend())
+	live.Init(store)
 
 	if err := storage.RunMigrations(); err != nil {
 		fmt.Printf("Warning: migrations completed with errors: %v\n", err)
@@ -186,7 +190,7 @@ func registerAPIV1Routes() {
 	devicePublic := handlers.DeviceAuthPublicChain
 	handleAPI("/auth/device/code", devicePublic(handlers.APIDeviceCode))
 	handleAPI("/auth/device/token", devicePublic(handlers.APIDeviceToken))
-	handleAPI("/auth/device/status", utils.RequireAPIEnabled(utils.RequireAPIRedis(handlers.APIV1DeviceStatus)))
+	handleAPI("/auth/device/status", utils.RequireAPIEnabled(utils.RequireStateStore(handlers.APIV1DeviceStatus)))
 	handleAPI("/auth/device/approve", utils.AuthSessionChain(handlers.APIV1DeviceApprove))
 	handleAPI("/auth/device/deny", utils.AuthSessionChain(handlers.APIV1DeviceDeny))
 
@@ -229,7 +233,7 @@ func registerAPIV1Routes() {
 	handleAPI("/agent/", v1(handlers.APIV1AgentRouter))
 	// MCP tool calls are replayed through the REST API, which applies the key's
 	// normal rate limits; the envelope only gets a light per-key limit.
-	handleAPI("/mcp", utils.RequireAPIRedis(utils.RequireSessionOrAPIKey(
+	handleAPI("/mcp", utils.RequireStateStore(utils.RequireSessionOrAPIKey(
 		utils.RateLimitMiddleware(240, 4.0, 60, utils.KeyByIPAndBearer)(handlers.APIV1MCP))))
 	handleAPI("/calendar", v1(handlers.APIV1CalendarRouter))
 	handleAPI("/calendar/", v1(handlers.APIV1CalendarRouter))

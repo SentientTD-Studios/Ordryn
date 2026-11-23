@@ -6,7 +6,7 @@ Operator install, reverse proxy, and API docs: [Ordryn wiki](https://github.com/
 
 ## Develop
 
-Terminal 1 — API (API must be enabled + Redis):
+Terminal 1 — API (API must be enabled):
 
 ```bash
 ORDRYN_MODE=full make run

@@ -13,7 +13,7 @@ import (
 	"GoTodo/internal/sessionstore"
 )
 
-func toRedisUndoSnapshots(tasks []DeletedTaskSnapshot) []utils.UndoTaskSnapshot {
+func toUndoSnapshots(tasks []DeletedTaskSnapshot) []utils.UndoTaskSnapshot {
 	out := make([]utils.UndoTaskSnapshot, 0, len(tasks))
 	for _, t := range tasks {
 		out = append(out, utils.UndoTaskSnapshot{
@@ -34,7 +34,7 @@ func toRedisUndoSnapshots(tasks []DeletedTaskSnapshot) []utils.UndoTaskSnapshot 
 	return out
 }
 
-func fromRedisUndoSnapshots(tasks []utils.UndoTaskSnapshot) []DeletedTaskSnapshot {
+func fromUndoSnapshots(tasks []utils.UndoTaskSnapshot) []DeletedTaskSnapshot {
 	out := make([]DeletedTaskSnapshot, 0, len(tasks))
 	for _, t := range tasks {
 		out = append(out, DeletedTaskSnapshot{

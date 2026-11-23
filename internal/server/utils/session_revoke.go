@@ -111,23 +111,22 @@ func revokedSessionKey(sid string) string {
 }
 
 // RevokeSessionID marks one sign-in as signed out until its cookie would have
-// expired anyway. Without Redis it does nothing; the cookie is still cleared.
+// expired anyway. Without a state store (unit tests) it does nothing; the
+// cookie is still cleared.
 func RevokeSessionID(ctx context.Context, sid string) error {
-	if RedisClient == nil || sid == "" {
+	store := stateStore()
+	if store == nil || sid == "" {
 		return nil
 	}
-	return RedisClient.Set(ctx, revokedSessionKey(sid), 1, time.Duration(SessionMaxAge())*time.Second).Err()
+	return store.Set(ctx, revokedSessionKey(sid), []byte("1"), time.Duration(SessionMaxAge())*time.Second)
 }
 
 func isSessionIDRevoked(ctx context.Context, sid string) (bool, error) {
-	if RedisClient == nil || sid == "" {
+	store := stateStore()
+	if store == nil || sid == "" {
 		return false, nil
 	}
-	n, err := RedisClient.Exists(ctx, revokedSessionKey(sid)).Result()
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	return store.Exists(ctx, revokedSessionKey(sid))
 }
 
 // SessionStringValue reads a string session value, or "".

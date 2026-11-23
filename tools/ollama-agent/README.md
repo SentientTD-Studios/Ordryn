@@ -6,7 +6,7 @@ moves the card, and finishes the run. Everything goes through the REST API with 
 guardrails apply exactly as they would for Claude Code or any other client.
 
 Requirements: Node 18+, [Ollama](https://ollama.com) running locally, and a GoTodo instance with the REST API
-enabled (Admin → Settings) and Redis configured.
+enabled (Admin → Settings).
 
 ## The easy way: download it from the site
 

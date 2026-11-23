@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,7 +14,6 @@ import (
 	"time"
 
 	"GoTodo/internal/config"
-	srvutils "GoTodo/internal/server/utils"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/version"
 
@@ -179,11 +177,11 @@ func respondJSON(w http.ResponseWriter, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func changelogCacheKeys(repo string) (dataKey, etagKey, memKey string) {
-	dataKey = fmt.Sprintf("changelog:data:%s:%s", changelogCacheVersion, repo)
-	etagKey = fmt.Sprintf("changelog:etag:%s:%s", changelogCacheVersion, repo)
-	memKey = repo + "#" + changelogCacheVersion
-	return
+// changelogCacheKey names a repo's entry in the in-process changelog cache.
+// Each instance keeps its own copy: it's ten minutes of public release notes,
+// and PreloadChangelog warms it at startup anyway.
+func changelogCacheKey(repo string) string {
+	return repo + "#" + changelogCacheVersion
 }
 
 func cachedChangelogEntries(raw string) ([]ChangelogEntry, bool) {
@@ -274,14 +272,7 @@ func changelogEntriesFromGitHubReleases(releases []githubRelease) []ChangelogEnt
 	return out
 }
 
-func storeChangelogCache(ctx context.Context, dataKey, etagKey, memKey, payload, etag string) {
-	if srvutils.RedisClient != nil {
-		_ = srvutils.RedisClient.Set(ctx, dataKey, payload, 10*time.Minute).Err()
-		if etag != "" {
-			_ = srvutils.RedisClient.Set(ctx, etagKey, etag, 10*time.Minute).Err()
-		}
-		return
-	}
+func storeChangelogCache(memKey, payload, etag string) {
 	memCache.mu.Lock()
 	memCache.m[memKey] = memItem{data: payload, etag: etag, expiry: time.Now().Add(10 * time.Minute)}
 	memCache.mu.Unlock()
@@ -307,27 +298,17 @@ func newGitHubReleasesRequest(rawURL, etag string) (*http.Request, error) {
 // fetchFromGitHub fetches every release page from the GitHub API (default page
 // size is 30; we request 100 and follow Link rel=next) and maps them to ChangelogEntry.
 func fetchFromGitHub(repo string) ([]ChangelogEntry, error) {
-	ctx := context.Background()
-	dataKey, etagKey, memKey := changelogCacheKeys(repo)
+	memKey := changelogCacheKey(repo)
 
 	var cachedJSON string
 	var cachedETag string
 
-	if srvutils.RedisClient != nil {
-		if v, err := srvutils.RedisClient.Get(ctx, dataKey).Result(); err == nil {
-			cachedJSON = v
-		}
-		if e, err := srvutils.RedisClient.Get(ctx, etagKey).Result(); err == nil {
-			cachedETag = e
-		}
-	} else {
-		memCache.mu.RLock()
-		if it, ok := memCache.m[memKey]; ok && time.Now().Before(it.expiry) {
-			cachedJSON = it.data
-			cachedETag = it.etag
-		}
-		memCache.mu.RUnlock()
+	memCache.mu.RLock()
+	if it, ok := memCache.m[memKey]; ok && time.Now().Before(it.expiry) {
+		cachedJSON = it.data
+		cachedETag = it.etag
 	}
+	memCache.mu.RUnlock()
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	pageURL := githubReleasesListURL(repo, 1)
@@ -418,7 +399,7 @@ func fetchFromGitHub(repo string) ([]ChangelogEntry, error) {
 
 	out := changelogEntriesFromGitHubReleases(all)
 	finalB, _ := json.Marshal(out)
-	storeChangelogCache(ctx, dataKey, etagKey, memKey, string(finalB), firstETag)
+	storeChangelogCache(memKey, string(finalB), firstETag)
 	return out, nil
 }
 
@@ -554,7 +535,7 @@ func normalizeReleaseHTML(htmlStr, version, title, date string) string {
 }
 
 // PreloadChangelog attempts to fetch releases once (used at startup)
-// It populates the Redis or in-memory cache via fetchFromGitHub.
+// It populates the in-memory cache via fetchFromGitHub.
 func PreloadChangelog() error {
 	if !config.Cfg.ShowChangelog {
 		return nil

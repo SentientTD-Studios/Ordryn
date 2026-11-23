@@ -8,9 +8,8 @@ import (
 	"strings"
 
 	"GoTodo/internal/server/utils"
+	"GoTodo/internal/statestore"
 	"GoTodo/internal/storage"
-
-	"github.com/redis/go-redis/v9"
 )
 
 const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
@@ -41,7 +40,7 @@ func writeDeviceOAuthError(w http.ResponseWriter, status int, code string) {
 // DeviceAuthPublicChain wraps public device authorization API endpoints.
 func DeviceAuthPublicChain(handler http.HandlerFunc) http.HandlerFunc {
 	return utils.RequireAPIEnabled(
-		utils.RequireAPIRedis(
+		utils.RequireStateStore(
 			utils.RateLimitMiddleware(10, 1.0, 60, utils.KeyByIP)(handler),
 		),
 	)
@@ -151,7 +150,7 @@ func APIDeviceToken(w http.ResponseWriter, r *http.Request) {
 
 	record, plaintext, err := utils.ConsumeApprovedDeviceToken(r.Context(), req.DeviceCode)
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, statestore.ErrNotFound) {
 			writeDeviceOAuthError(w, http.StatusBadRequest, "expired_token")
 			return
 		}

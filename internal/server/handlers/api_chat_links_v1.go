@@ -40,7 +40,7 @@ func ChatEventsChain(handler http.HandlerFunc) http.HandlerFunc {
 		return ""
 	}
 	return utils.RequireAPIEnabled(
-		utils.RequireAPIRedis(
+		utils.RequireStateStore(
 			utils.RateLimitMiddleware(60, 2, 120, key)(handler),
 		),
 	)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -29,7 +30,7 @@ const (
 	DeviceAuthDenied   DeviceAuthStatus = "denied"
 )
 
-// DeviceAuthRecord is stored in Redis while a device authorization is active.
+// DeviceAuthRecord is kept in the state store while a device authorization is active.
 type DeviceAuthRecord struct {
 	DeviceCode  string           `json:"device_code"`
 	UserCode    string           `json:"user_code"`
@@ -150,45 +151,105 @@ func deviceAuthUserKey(userCode string) string {
 	return deviceAuthUserPrefix + NormalizeUserCode(userCode)
 }
 
+func deviceAuthTTL() time.Duration {
+	return time.Duration(DeviceAuthTTLSeconds) * time.Second
+}
+
 func saveDeviceAuthRecord(ctx context.Context, record *DeviceAuthRecord) error {
-	if RedisClient == nil {
-		return fmt.Errorf("redis unavailable")
+	store := stateStore()
+	if store == nil {
+		return fmt.Errorf("state store unavailable")
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
 		return err
 	}
-	pipe := RedisClient.TxPipeline()
-	pipe.Set(ctx, deviceAuthCodeKey(record.DeviceCode), data, time.Duration(DeviceAuthTTLSeconds)*time.Second)
-	pipe.Set(ctx, deviceAuthUserKey(record.UserCode), record.DeviceCode, time.Duration(DeviceAuthTTLSeconds)*time.Second)
-	_, err = pipe.Exec(ctx)
-	return err
+	return store.SetMany(ctx, map[string][]byte{
+		deviceAuthCodeKey(record.DeviceCode): data,
+		deviceAuthUserKey(record.UserCode):   []byte(record.DeviceCode),
+	}, deviceAuthTTL())
 }
 
-func loadDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*DeviceAuthRecord, error) {
-	if RedisClient == nil {
-		return nil, fmt.Errorf("redis unavailable")
+// loadDeviceAuthRaw returns the record and the exact bytes it was stored as,
+// for updateDeviceAuthRecord's compare-and-set.
+func loadDeviceAuthRaw(ctx context.Context, deviceCode string) (*DeviceAuthRecord, []byte, error) {
+	store := stateStore()
+	if store == nil {
+		return nil, nil, fmt.Errorf("state store unavailable")
 	}
-	data, err := RedisClient.Get(ctx, deviceAuthCodeKey(deviceCode)).Bytes()
+	data, err := store.Get(ctx, deviceAuthCodeKey(deviceCode))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var record DeviceAuthRecord
 	if err := json.Unmarshal(data, &record); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &record, nil
+	return &record, data, nil
+}
+
+func loadDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*DeviceAuthRecord, error) {
+	record, _, err := loadDeviceAuthRaw(ctx, deviceCode)
+	return record, err
+}
+
+func deviceCodeForUserCode(ctx context.Context, userCode string) (string, error) {
+	store := stateStore()
+	if store == nil {
+		return "", fmt.Errorf("state store unavailable")
+	}
+	deviceCode, err := store.Get(ctx, deviceAuthUserKey(userCode))
+	if err != nil {
+		return "", err
+	}
+	return string(deviceCode), nil
 }
 
 func loadDeviceAuthByUserCode(ctx context.Context, userCode string) (*DeviceAuthRecord, error) {
-	if RedisClient == nil {
-		return nil, fmt.Errorf("redis unavailable")
-	}
-	deviceCode, err := RedisClient.Get(ctx, deviceAuthUserKey(userCode)).Result()
+	deviceCode, err := deviceCodeForUserCode(ctx, userCode)
 	if err != nil {
 		return nil, err
 	}
 	return loadDeviceAuthByDeviceCode(ctx, deviceCode)
+}
+
+var (
+	// errDeviceAuthUnchanged tells updateDeviceAuthRecord to leave the record as is.
+	errDeviceAuthUnchanged = errors.New("device auth unchanged")
+	// errDeviceAuthConflict means another request changed the record first.
+	errDeviceAuthConflict = errors.New("device auth changed concurrently")
+)
+
+// updateDeviceAuthRecord applies change to the stored record and writes it back
+// only if nobody else changed it in between, so two approvals, or two polls
+// collecting the API key, can't both succeed. change may return
+// errDeviceAuthUnchanged to skip the write.
+func updateDeviceAuthRecord(ctx context.Context, deviceCode string, change func(*DeviceAuthRecord) error) (*DeviceAuthRecord, error) {
+	record, old, err := loadDeviceAuthRaw(ctx, deviceCode)
+	if err != nil {
+		return nil, err
+	}
+	if err := change(record); err != nil {
+		if errors.Is(err, errDeviceAuthUnchanged) {
+			return record, nil
+		}
+		return nil, err
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		return nil, err
+	}
+	store := stateStore()
+	ok, err := store.CompareAndSet(ctx, deviceAuthCodeKey(deviceCode), old, data, deviceAuthTTL())
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errDeviceAuthConflict
+	}
+	// Keep the user-code lookup alive as long as the record, as saves always have.
+	_ = store.Set(ctx, deviceAuthUserKey(record.UserCode), []byte(deviceCode), deviceAuthTTL())
+	return record, nil
 }
 
 // SafeDeviceRedirectURI validates an optional native-app deep link for post-approval
@@ -298,48 +359,60 @@ func GetDeviceAuthByUserCode(ctx context.Context, userCode string) (*DeviceAuthR
 
 // ApproveDeviceAuth marks a request approved and stores the one-time API key payload.
 func ApproveDeviceAuth(ctx context.Context, userCode string, userID int, apiKey string, key *storage.APIKey) error {
-	record, err := loadDeviceAuthByUserCode(ctx, userCode)
+	deviceCode, err := deviceCodeForUserCode(ctx, userCode)
 	if err != nil {
 		return err
 	}
-	if record.Status != DeviceAuthPending {
-		return fmt.Errorf("device auth not pending")
-	}
-	record.Status = DeviceAuthApproved
-	record.UserID = userID
-	record.APIKey = apiKey
-	record.KeyPrefix = key.KeyPrefix
-	record.KeyName = key.Name
-	record.KeyID = key.ID
-	record.ExpiresAt = key.ExpiresAt
-	return saveDeviceAuthRecord(ctx, record)
+	_, err = updateDeviceAuthRecord(ctx, deviceCode, func(record *DeviceAuthRecord) error {
+		if record.Status != DeviceAuthPending {
+			return fmt.Errorf("device auth not pending")
+		}
+		record.Status = DeviceAuthApproved
+		record.UserID = userID
+		record.APIKey = apiKey
+		record.KeyPrefix = key.KeyPrefix
+		record.KeyName = key.Name
+		record.KeyID = key.ID
+		record.ExpiresAt = key.ExpiresAt
+		return nil
+	})
+	return err
 }
 
 // DenyDeviceAuth marks a request denied.
 func DenyDeviceAuth(ctx context.Context, userCode string) error {
-	record, err := loadDeviceAuthByUserCode(ctx, userCode)
+	deviceCode, err := deviceCodeForUserCode(ctx, userCode)
 	if err != nil {
 		return err
 	}
-	if record.Status != DeviceAuthPending {
-		return fmt.Errorf("device auth not pending")
-	}
-	record.Status = DeviceAuthDenied
-	return saveDeviceAuthRecord(ctx, record)
+	_, err = updateDeviceAuthRecord(ctx, deviceCode, func(record *DeviceAuthRecord) error {
+		if record.Status != DeviceAuthPending {
+			return fmt.Errorf("device auth not pending")
+		}
+		record.Status = DeviceAuthDenied
+		return nil
+	})
+	return err
 }
 
-// ConsumeApprovedDeviceToken returns the approved API key once and clears it from Redis.
+// ConsumeApprovedDeviceToken returns the approved API key once and clears it
+// from the state store. Of two concurrent polls, only one gets the key.
 func ConsumeApprovedDeviceToken(ctx context.Context, deviceCode string) (record *DeviceAuthRecord, plaintext string, err error) {
-	record, err = loadDeviceAuthByDeviceCode(ctx, deviceCode)
+	record, err = updateDeviceAuthRecord(ctx, deviceCode, func(r *DeviceAuthRecord) error {
+		if r.Status != DeviceAuthApproved || r.APIKey == "" {
+			return errDeviceAuthUnchanged
+		}
+		plaintext = r.APIKey
+		r.APIKey = ""
+		return nil
+	})
+	if errors.Is(err, errDeviceAuthConflict) {
+		// Another poll collected the key first; answer as a repeat poll would.
+		record, err = loadDeviceAuthByDeviceCode(ctx, deviceCode)
+		plaintext = ""
+	}
 	if err != nil {
 		return nil, "", err
-	}
-	if record.Status == DeviceAuthApproved && record.APIKey != "" {
-		plaintext = record.APIKey
-		record.APIKey = ""
-		if err := saveDeviceAuthRecord(ctx, record); err != nil {
-			return nil, "", err
-		}
 	}
 	return record, plaintext, nil
 }

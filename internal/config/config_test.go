@@ -159,3 +159,53 @@ func TestJSONFillsWhenEnvUnset(t *testing.T) {
 		t.Fatalf("SiteName = %q, want FromJSON", Cfg.SiteName)
 	}
 }
+
+func TestStateStoreBackend(t *testing.T) {
+	tests := []struct {
+		store, url, addr string
+		want             string
+		wantErr          bool
+	}{
+		{"", "", "", StateStorePostgres, false},
+		{"", "redis://localhost:6379/0", "", StateStoreRedis, false},
+		{"", "", "localhost:6379", StateStoreRedis, false},
+		{"postgres", "redis://localhost:6379/0", "", StateStorePostgres, false},
+		{"PG", "", "", StateStorePostgres, false},
+		{"redis", "", "", "", true},
+		{"redis", "redis://localhost:6379/0", "", StateStoreRedis, false},
+		{"memcached", "", "", "", true},
+	}
+	for _, tt := range tests {
+		t.Setenv("STATE_STORE", tt.store)
+		t.Setenv("REDIS_URL", tt.url)
+		t.Setenv("REDIS_ADDR", tt.addr)
+		got, err := StateStoreBackend()
+		if (err != nil) != tt.wantErr || got != tt.want {
+			t.Errorf("STATE_STORE=%q url=%q addr=%q: got %q, %v; want %q (err=%v)",
+				tt.store, tt.url, tt.addr, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
+func TestValidateRequiredWithoutRedis(t *testing.T) {
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", "u")
+	t.Setenv("DB_PASSWORD", "p")
+	t.Setenv("DB_NAME", "db")
+	t.Setenv("SESSION_KEY", "test-session-key-for-unit-tests-32chars!!")
+	t.Setenv("REDIS_URL", "")
+	t.Setenv("REDIS_ADDR", "")
+	t.Setenv("STATE_STORE", "")
+
+	SetSkipRequiredForTest(boolPtr(false))
+	t.Cleanup(func() { SetSkipRequiredForTest(nil) })
+
+	if err := ValidateRequired(); err != nil {
+		t.Fatalf("ValidateRequired: %v", err)
+	}
+	t.Setenv("STATE_STORE", "redis")
+	if err := ValidateRequired(); err == nil {
+		t.Fatal("STATE_STORE=redis without REDIS_URL should fail")
+	}
+}

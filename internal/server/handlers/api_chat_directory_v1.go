@@ -42,7 +42,7 @@ type apiChatDirectoryJSON struct {
 // outside the session/API-key chains: chat credentials aren't user keys.
 func ChatDirectoryChain(handler http.HandlerFunc) http.HandlerFunc {
 	return utils.RequireAPIEnabled(
-		utils.RequireAPIRedis(
+		utils.RequireStateStore(
 			utils.RateLimitMiddleware(30, 0.5, 120, utils.KeyByIP)(handler),
 		),
 	)

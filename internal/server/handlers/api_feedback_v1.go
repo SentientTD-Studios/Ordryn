@@ -307,13 +307,13 @@ func readFeedbackCookie(r *http.Request, boardID int) string {
 }
 
 // feedbackAllow applies one token bucket. It fails closed: public write
-// endpoints must not run unthrottled if Redis is unavailable.
+// endpoints must not run unthrottled without a state store.
 func feedbackAllow(w http.ResponseWriter, r *http.Request, key string, capacity int, refill float64, ttl int, msg string) bool {
-	if utils.RedisClient == nil {
+	if !utils.StateStoreAvailable() {
 		utils.APIJSONError(w, http.StatusServiceUnavailable, "unavailable", "Feedback boards are temporarily unavailable.")
 		return false
 	}
-	allowed, err := utils.AllowRequest(r.Context(), utils.RedisClient, "rl:tb:fb:"+key, capacity, refill, 1, ttl)
+	allowed, err := utils.AllowRequest(r.Context(), "rl:tb:fb:"+key, capacity, refill, ttl)
 	if err != nil {
 		utils.APIJSONError(w, http.StatusServiceUnavailable, "unavailable", "Feedback boards are temporarily unavailable.")
 		return false

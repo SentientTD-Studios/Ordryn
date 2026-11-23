@@ -2552,6 +2552,6 @@ export interface SystemHealth {
     live_streams: number
   }
   database: DBPoolStats
-  redis: { ok: boolean; ping_ms: number; error?: string }
+  state_store: { backend: string; ok: boolean; ping_ms: number; error?: string }
   workers: WorkerStatus[]
 }

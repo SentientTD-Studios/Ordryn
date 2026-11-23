@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"GoTodo/internal/statestore"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -70,10 +71,8 @@ func TestAPIRateLimitMiddlewareUnauthorized(t *testing.T) {
 	}
 }
 
-func TestAPIRateLimitMiddlewareRequiresRedis(t *testing.T) {
-	orig := RedisClient
-	RedisClient = nil
-	t.Cleanup(func() { RedisClient = orig })
+func TestAPIRateLimitMiddlewareRequiresStateStore(t *testing.T) {
+	t.Cleanup(statestore.SetForTest(nil))
 
 	req := SetAPIUserID(httptest.NewRequest(http.MethodGet, "/api/v2/tasks", nil), 1)
 	rec := httptest.NewRecorder()

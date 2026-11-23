@@ -3,8 +3,8 @@ info:
   title: Ordryn / GoTodo API
   description: |
     JSON API for Ordryn (GoTodo). Self-host with `ORDRYN_MODE=full` (UI + API) or
-    `ORDRYN_MODE=api` (API only). Redis is required for `/api/v2` authentication,
-    rate limiting, and live SSE fan-out.
+    `ORDRYN_MODE=api` (API only). `/api/v2` authentication, rate limiting, and live
+    SSE fan-out use the server's state store (`STATE_STORE`: Redis or Postgres).
 
     Auth: session cookie (SPA login/register) or `Authorization: Bearer <api_key>`.
 
@@ -35,7 +35,7 @@ info:
     account settings. When limited, tasks in other projects return 404 and
     lists are filtered to the project.
 
-    Rate limits (per user, Redis token bucket). Reads and writes are independent.
+    Rate limits (per user, token bucket; with the Postgres state store, per app instance). Reads and writes are independent.
     Bearer API keys: 120 GET/min (~2/sec) and 60 writes/min (~1/sec).
     SPA session cookies use a higher budget (600 GET/min, 240 writes/min) so the
     web UI is not gated by the external API ceiling.
@@ -9697,7 +9697,7 @@ paths:
       tags: [Admin]
       summary: System health
       description: >-
-        Admins only. Database pool and Redis latency, process stats, and the state of each
+        Admins only. Database pool and state store latency, process stats, and the state of each
         background worker (last run, duration, last error, and whether it is late or stuck).
       security:
         - SessionCookie: []
@@ -11930,9 +11930,17 @@ components:
           description: Application version (git release tag). Checkouts use the latest reachable tag; unstamped builds without git tags report "dev".
         api_enabled:
           type: boolean
+        state_store:
+          type: string
+          enum: [redis, postgres, ""]
+          description: The state store backend in use ("" if none is connected).
+        state_store_ok:
+          type: boolean
+          description: The state store answered a ping within 2 seconds.
         redis_ok:
           type: boolean
-          description: Redis answered a PING within 2 seconds.
+          deprecated: true
+          description: Alias of state_store_ok, kept for older clients.
         db_ok:
           type: boolean
           description: >-
@@ -12036,9 +12044,12 @@ components:
               type: integer
         database:
           $ref: "#/components/schemas/DBPoolStats"
-        redis:
+        state_store:
           type: object
           properties:
+            backend:
+              type: string
+              enum: [redis, postgres, ""]
             ok:
               type: boolean
             ping_ms:

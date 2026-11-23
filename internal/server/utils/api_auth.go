@@ -35,7 +35,7 @@ const (
 	SPATTLSeconds    = 300
 )
 
-// RateLimitSpec is the Redis token-bucket configuration for one request.
+// RateLimitSpec is the token-bucket configuration for one request.
 type RateLimitSpec struct {
 	Key      string
 	Capacity int
@@ -60,11 +60,6 @@ func IsAPIEnabled() bool {
 		return false
 	}
 	return s.EnableAPI
-}
-
-// RedisAvailable reports whether a Redis client is connected.
-func RedisAvailable() bool {
-	return RedisClient != nil
 }
 
 // SetAPIUserID stores the authenticated API user on the request context.
@@ -129,18 +124,6 @@ func rejectExternalAPIIfDisabled(w http.ResponseWriter) bool {
 	return true
 }
 
-// RequireAPIRedis ensures Redis is available (fail closed for API).
-func RequireAPIRedis(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !RedisAvailable() {
-			APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable",
-				"The REST API requires Redis for authentication and rate limiting.")
-			return
-		}
-		next(w, r)
-	}
-}
-
 // RequireAPIKey validates Bearer token and attaches user ID to context.
 func RequireAPIKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -190,8 +173,8 @@ func RateLimitSpecFor(userID int, kind string, method string) RateLimitSpec {
 
 // APIRateLimitMiddleware enforces per-user token bucket limits.
 // Session (SPA) traffic uses a higher independent budget than Bearer API keys.
-// Read and write methods use separate Redis keys so writes cannot starve reads.
-// Fails closed when Redis is unavailable.
+// Read and write methods use separate buckets so writes cannot starve reads.
+// Fails closed when no state store is connected.
 func APIRateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := GetAPIUserID(r)
@@ -199,14 +182,13 @@ func APIRateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			APIJSONError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated.")
 			return
 		}
-		if RedisClient == nil {
-			APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable",
-				"The REST API requires Redis for rate limiting.")
+		if !StateStoreAvailable() {
+			APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", stateStoreUnavailableMsg)
 			return
 		}
 
 		spec := RateLimitSpecFor(userID, GetAPIAuthKind(r), r.Method)
-		allowed, err := AllowRequest(r.Context(), RedisClient, spec.Key, spec.Capacity, spec.Refill, 1, spec.TTL)
+		allowed, err := AllowRequest(r.Context(), spec.Key, spec.Capacity, spec.Refill, spec.TTL)
 		if err != nil {
 			APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable",
 				"Rate limiting is temporarily unavailable.")
@@ -236,19 +218,19 @@ func isWriteMethod(method string) bool {
 }
 
 // APIChain composes the standard /api/v2 middleware chain.
-// Accepts a session cookie (SPA) or Bearer API key; Redis is required for rate limiting.
+// Accepts a session cookie (SPA) or Bearer API key; a state store is required for rate limiting.
 func APIChain(handler http.HandlerFunc) http.HandlerFunc {
-	return RequireAPIRedis(
+	return RequireStateStore(
 		RequireSessionOrAPIKey(
 			APIRateLimitMiddleware(handler),
 		),
 	)
 }
 
-// AuthPublicChain wraps JSON login/register (Redis + IP rate limit; no API key).
+// AuthPublicChain wraps JSON login/register (state store + IP rate limit; no API key).
 // SPA auth is not gated by site_settings.enable_api.
 func AuthPublicChain(handler http.HandlerFunc) http.HandlerFunc {
-	return RequireAPIRedis(
+	return RequireStateStore(
 		RateLimitMiddleware(10, 1.0, 60, KeyByIP)(handler),
 	)
 }
@@ -262,9 +244,8 @@ func AuthMeChain(handler http.HandlerFunc) http.HandlerFunc {
 				if rejectExternalAPIIfDisabled(w) {
 					return
 				}
-				if !RedisAvailable() {
-					APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable",
-						"The REST API requires Redis for authentication and rate limiting.")
+				if !StateStoreAvailable() {
+					APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", stateStoreUnavailableMsg)
 					return
 				}
 				if !authenticateBearer(w, r, token) {
@@ -288,9 +269,8 @@ func RequireSessionOrAPIKey(next http.HandlerFunc) http.HandlerFunc {
 			if rejectExternalAPIIfDisabled(w) {
 				return
 			}
-			if !RedisAvailable() {
-				APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable",
-					"The REST API requires Redis for authentication and rate limiting.")
+			if !StateStoreAvailable() {
+				APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", stateStoreUnavailableMsg)
 				return
 			}
 			if !authenticateBearer(w, r, token) {

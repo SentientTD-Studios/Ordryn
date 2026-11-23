@@ -8,13 +8,14 @@ import (
 
 	"GoTodo/internal/live"
 	"GoTodo/internal/server/utils"
+	"GoTodo/internal/statestore"
 	"GoTodo/internal/storage"
 	"GoTodo/internal/version"
 	"GoTodo/internal/workers"
 )
 
 // APIV1AdminSystemHealth handles GET /api/v2/admin/system/health (admins
-// only): database pool and Redis latency, process stats, and the state of each
+// only): database pool and state store latency, process stats, and the state of each
 // background worker. Backups, the audit stream and automation rules report
 // their own status on their admin pages, so they aren't repeated here beyond
 // the scheduled-backup worker's run state.
@@ -28,15 +29,16 @@ func APIV1AdminSystemHealth(w http.ResponseWriter, r *http.Request) {
 	defer cancelDB()
 	db := storage.SharedPoolStats(dbCtx)
 
-	redisCtx, cancelRedis := context.WithTimeout(r.Context(), healthCheckTimeout)
-	defer cancelRedis()
-	redisLatency, redisErr := utils.RedisPing(redisCtx)
-	redis := map[string]interface{}{
-		"ok":      redisErr == nil,
-		"ping_ms": float64(redisLatency.Microseconds()) / 1000,
+	storeCtx, cancelStore := context.WithTimeout(r.Context(), healthCheckTimeout)
+	defer cancelStore()
+	storeLatency, storeErr := statestore.Ping(storeCtx)
+	store := map[string]interface{}{
+		"backend": stateStoreBackend(),
+		"ok":      storeErr == nil,
+		"ping_ms": float64(storeLatency.Microseconds()) / 1000,
 	}
-	if redisErr != nil {
-		redis["error"] = redisErr.Error()
+	if storeErr != nil {
+		store["error"] = storeErr.Error()
 	}
 
 	var ms runtime.MemStats
@@ -55,8 +57,8 @@ func APIV1AdminSystemHealth(w http.ResponseWriter, r *http.Request) {
 			"gc_cycles":        ms.NumGC,
 			"live_streams":     live.SubscriberCount(),
 		},
-		"database": db,
-		"redis":    redis,
-		"workers":  workers.Snapshots(),
+		"database":    db,
+		"state_store": store,
+		"workers":     workers.Snapshots(),
 	})
 }

@@ -18,6 +18,7 @@ import (
 	"GoTodo/internal/domain"
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/sessionstore"
+	"GoTodo/internal/statestore"
 	"GoTodo/internal/storage"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -127,8 +128,9 @@ func APIV1SSOStart(w http.ResponseWriter, r *http.Request) {
 		fail("Single sign-on isn't set up on this site.")
 		return
 	}
-	if utils.RedisClient == nil {
-		fail("Single sign-on needs Redis.")
+	store := statestore.Current()
+	if store == nil {
+		fail("Single sign-on isn't available right now.")
 		return
 	}
 	p, err := ssoProvider(r.Context(), s.IssuerURL)
@@ -150,7 +152,7 @@ func APIV1SSOStart(w http.ResponseWriter, r *http.Request) {
 	}
 	pending := ssoPendingLogin{Nonce: nonce, Verifier: oauth2.GenerateVerifier(), Return: safeReturnPath(r.URL.Query().Get("return"))}
 	raw, _ := json.Marshal(pending)
-	if err := utils.RedisClient.Set(r.Context(), ssoStatePrefix+state, raw, ssoStateTTL).Err(); err != nil {
+	if err := store.Set(r.Context(), ssoStatePrefix+state, raw, ssoStateTTL); err != nil {
 		fail("Couldn't start sign-in.")
 		return
 	}
@@ -176,7 +178,8 @@ func APIV1SSOCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code, state := strings.TrimSpace(q.Get("code")), strings.TrimSpace(q.Get("state"))
-	if code == "" || state == "" || utils.RedisClient == nil {
+	store := statestore.Current()
+	if code == "" || state == "" || store == nil {
 		fail("Sign-in was interrupted. Try again.")
 		return
 	}
@@ -187,13 +190,13 @@ func APIV1SSOCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	raw, err := utils.RedisClient.GetDel(ctx, ssoStatePrefix+state).Result()
-	if err != nil || raw == "" {
+	raw, err := store.GetDel(ctx, ssoStatePrefix+state)
+	if err != nil || len(raw) == 0 {
 		fail("This sign-in link expired. Try again.")
 		return
 	}
 	var pending ssoPendingLogin
-	if json.Unmarshal([]byte(raw), &pending) != nil {
+	if json.Unmarshal(raw, &pending) != nil {
 		fail("Sign-in was interrupted. Try again.")
 		return
 	}

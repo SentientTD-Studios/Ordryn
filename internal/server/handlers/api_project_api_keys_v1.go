@@ -82,8 +82,8 @@ func apiV1ProjectAPIKeys(w http.ResponseWriter, r *http.Request, projectID int, 
 }
 
 func apiV1CreateProjectAPIKey(w http.ResponseWriter, r *http.Request, userID, projectID int) {
-	if !utils.RedisAvailable() {
-		utils.APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", "Redis is required for the REST API.")
+	if !utils.StateStoreAvailable() {
+		utils.APIJSONError(w, http.StatusServiceUnavailable, "api_unavailable", "A state store (Redis or Postgres) is required for the REST API.")
 		return
 	}
 	var req apiProjectKeyCreateRequest
