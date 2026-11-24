@@ -14,10 +14,10 @@
 
 ## Branch and target check
 
-- [ ] This branch was created from current `dev`.
-- [ ] This PR targets `dev`.
-- [ ] This is a `release/*` or `hotfix/*` PR targeting `main` and I am an authorized maintainer.
-- [ ] I rebased or merged the latest target branch into this branch.
+- [ ] This branch was created from current `main`.
+- [ ] This PR targets `main`.
+- [ ] If this is a `hotfix/*` PR, I am an authorized maintainer.
+- [ ] I rebased or merged the latest `main` into this branch.
 
 ## Validation
 
