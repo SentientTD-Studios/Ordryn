@@ -5,8 +5,10 @@ import (
 	"fmt"
 )
 
-// RunMigrations attempts to create required tables and apply non-destructive migrations.
-// It continues on errors, but returns an aggregated error if all operations fail.
+// RunMigrations creates required tables and applies migrations, in dependency
+// order, on every startup. There is no record of which migrations have run, so
+// each step must be safe to re-run. A failing step is logged and the rest still
+// run; if any step fails, it returns an error counting the failures.
 func RunMigrations() error {
 	errCount := 0
 
