@@ -44,6 +44,9 @@ type apiSiteResponse struct {
 	// Maintenance is true while the site is read-only for everyone but admins.
 	Maintenance        bool   `json:"maintenance"`
 	MaintenanceMessage string `json:"maintenance_message,omitempty"`
+	// APIEnabled is false when an admin has switched off API key access, so the
+	// UI can say so on the API key and agent panels.
+	APIEnabled bool `json:"api_enabled"`
 }
 
 // APIV1Site returns public site metadata for the SPA shell.
@@ -112,5 +115,6 @@ func APIV1Site(w http.ResponseWriter, r *http.Request) {
 		MinPasswordLength:        domain.PasswordMinLength(),
 		Maintenance:              maint.Enabled,
 		MaintenanceMessage:       maint.Message,
+		APIEnabled:               utils.IsAPIEnabled(),
 	})
 }

@@ -9,7 +9,6 @@ import (
 	"GoTodo/internal/server/utils"
 	"GoTodo/internal/statestore"
 	"GoTodo/internal/storage"
-	"GoTodo/internal/version"
 )
 
 // healthCheckTimeout bounds each dependency check so a starved database pool
@@ -17,11 +16,12 @@ import (
 // hanging like everything else.
 const healthCheckTimeout = 2 * time.Second
 
-// APIV1Health is a public readiness probe for API clients and uptime monitors
-// (no auth). It only says whether each dependency answered; the detailed
-// numbers are admin-only at /api/v2/admin/system/health.
-// GET /api/v2/health → { version, api_enabled, state_store, state_store_ok, redis_ok, db_ok, mode }
-// redis_ok is a deprecated alias of state_store_ok, kept for older clients.
+// APIV1Health is a public readiness probe for uptime monitors (no auth). It
+// answers only up or down: 200 {"ok":true} when the database and state store
+// both answered, 503 {"ok":false} otherwise. The version, backends and
+// per-dependency results are admin-only at /api/v2/admin/system/health, so an
+// anonymous caller learns nothing about what the server runs.
+// GET /api/v2/health → { ok }
 func APIV1Health(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.APIJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
@@ -36,17 +36,15 @@ func APIV1Health(w http.ResponseWriter, r *http.Request) {
 	_, storeErr := statestore.Ping(storeCtx)
 	storeOK := storeErr == nil
 
+	ok := dbOK && storeOK
+	status := http.StatusOK
+	if !ok {
+		status = http.StatusServiceUnavailable
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"version":        version.Version,
-		"api_enabled":    utils.IsAPIEnabled(),
-		"state_store":    stateStoreBackend(),
-		"state_store_ok": storeOK,
-		"redis_ok":       storeOK,
-		"db_ok":          dbOK,
-		"mode":           utils.GetRuntimeMode(),
-	})
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": ok})
 }
 
 // stateStoreBackend names the connected state store ("redis" or "postgres"),

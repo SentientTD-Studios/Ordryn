@@ -80,10 +80,17 @@ paths:
     get:
       tags: [Health]
       summary: Public health probe
+      description: Up/down only, for uptime monitors. Details are at /api/v2/admin/system/health.
       security: []
       responses:
         "200":
-          description: Health snapshot
+          description: The database and state store are answering
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: The database or state store did not answer
           content:
             application/json:
               schema:
@@ -11924,31 +11931,14 @@ components:
 
     Health:
       type: object
+      required: [ok]
       properties:
-        version:
-          type: string
-          description: Application version (git release tag). Checkouts use the latest reachable tag; unstamped builds without git tags report "dev".
-        api_enabled:
-          type: boolean
-        state_store:
-          type: string
-          enum: [redis, postgres, ""]
-          description: The state store backend in use ("" if none is connected).
-        state_store_ok:
-          type: boolean
-          description: The state store answered a ping within 2 seconds.
-        redis_ok:
-          type: boolean
-          deprecated: true
-          description: Alias of state_store_ok, kept for older clients.
-        db_ok:
+        ok:
           type: boolean
           description: >-
-            The database pool handed out a connection and Postgres answered within 2 seconds.
-            False while every connection is busy, so uptime monitors can alert on it.
-        mode:
-          type: string
-          enum: [full, api]
+            True when the database and state store both answered within 2 seconds.
+            The response is 503 with ok=false otherwise. Version, backends and
+            per-dependency status are admin-only at /api/v2/admin/system/health.
 
     DBPoolStats:
       type: object
@@ -12135,6 +12125,9 @@ components:
           description: The site is read-only for everyone but admins.
         maintenance_message:
           type: string
+        api_enabled:
+          type: boolean
+          description: False when an admin has switched off API key access.
 
     ProjectAccess:
       type: object
