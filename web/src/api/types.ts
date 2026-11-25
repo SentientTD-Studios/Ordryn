@@ -675,6 +675,8 @@ export type SiteInfo = {
   /** The site is read-only for everyone but admins. */
   maintenance?: boolean
   maintenance_message?: string
+  /** False when an admin has switched off API key access. */
+  api_enabled?: boolean
 }
 
 /** Who may create an account after setup: invite only, anyone, or nobody. */

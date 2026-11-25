@@ -43,12 +43,12 @@ function formatTime(iso: string) {
 async function load() {
   loading.value = true
   try {
-    const [list, health] = await Promise.all([
+    const [list, site] = await Promise.all([
       api.listProjectAPIKeys(props.project.id),
-      api.health().catch(() => null),
+      api.site().catch(() => null),
     ])
     keys.value = list
-    apiEnabled.value = health ? health.api_enabled : true
+    apiEnabled.value = site?.api_enabled ?? true
   } catch (err) {
     toast.push(err instanceof APIError ? err.message : 'Failed to load API keys', 'error')
   } finally {

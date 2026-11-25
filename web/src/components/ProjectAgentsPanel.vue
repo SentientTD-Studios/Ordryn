@@ -86,16 +86,16 @@ function formatTime(iso: string) {
 async function load() {
   loading.value = true
   try {
-    const [list, roleList, health, runList, memberList] = await Promise.all([
+    const [list, roleList, site, runList, memberList] = await Promise.all([
       api.listProjectAgents(props.project.id),
       api.listProjectRoles(props.project.id).catch(() => ({ catalog: [], roles: [] })),
-      api.health().catch(() => null),
+      api.site().catch(() => null),
       api.listProjectAgentRuns(props.project.id).catch(() => [] as AgentRun[]),
       api.listProjectMembers(props.project.id).catch(() => [] as ProjectMember[]),
     ])
     agents.value = list
     roles.value = roleList.roles || []
-    apiEnabled.value = health ? health.api_enabled : true
+    apiEnabled.value = site?.api_enabled ?? true
     runs.value = runList
     humanMembers.value = memberList.filter((m) => !m.is_agent)
     statuses.value = isKanban.value ? await api.listProjectStatuses(props.project.id).catch(() => []) : []

@@ -291,9 +291,7 @@ async function upload<T>(path: string, field: string, file: Blob | File): Promis
 
 export const api = {
   health() {
-    return request<{ version: string; api_enabled: boolean; state_store: string; state_store_ok: boolean; redis_ok: boolean; db_ok: boolean; mode: string }>(
-      '/api/v2/health',
-    )
+    return request<{ ok: boolean }>('/api/v2/health')
   },
 
   site() {
